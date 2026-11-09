@@ -6,7 +6,7 @@
 mod activity;
 mod active_window;
 mod audio;
-mod battery;
+pub mod battery;
 mod bell;
 mod bluetooth;
 mod chevron;

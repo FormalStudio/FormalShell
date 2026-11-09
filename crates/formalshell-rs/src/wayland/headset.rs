@@ -131,9 +131,7 @@ impl App {
         let learned = headset::learned(&self.store);
         if !learned.is_empty() {
             let mut faces = self.store.state.data.earbuds_faces.clone();
-            if let Some(map) = faces.as_object_mut() {
-                map.extend(learned);
-            }
+            faces.extend(learned);
             crate::services::state::set(vec![crate::services::state::Field::EarbudsFaces(faces)]);
         }
         let Some(list) = self.store.bluetooth.headsets.clone() else { return };

@@ -57,7 +57,7 @@ pub fn rail() -> Vec<Box<dyn Cell>> {
         Indicator::new(&[Topic::Notifications], reminder, true, Action::ReminderSummary),
         Indicator::new(&[Topic::Caffeinate], |env| env.store.caffeinate.active.then(|| Item::new("coffee", "CAFFEINATE ON")), true, Action::Caffeinate(false)),
         Indicator::new(&[Topic::NightLight], |env| env.store.nightlight.active.then(|| Item::new("lightbulb", "NIGHT LIGHT ON")), true, Action::None),
-        Indicator::new(&[Topic::State], |env| (!env.store.state.data.overnight.is_null()).then(|| Item::new("moon-star", "OVERNIGHT ON")), true, Action::OvernightOff),
+        Indicator::new(&[Topic::State], |env| env.store.state.data.overnight.is_some().then(|| Item::new("moon-star", "OVERNIGHT ON")), true, Action::OvernightOff),
     ];
     let mut rail: Vec<Box<dyn Cell>> = vec![Box::new(super::activity::Activity::default())];
     rail.extend(cells.into_iter().map(|c| Box::new(c) as Box<dyn Cell>));

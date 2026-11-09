@@ -1,7 +1,7 @@
 //! `overnight`: toggle, enable, disable, and what was
 //! changed and will be put back (`restore`, null while off).
 
-use serde_json::{Value as Json, json};
+use serde_json::json;
 
 use super::registry::{Function, Target, Type, Value};
 use crate::services::overnight;
@@ -19,19 +19,15 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn record(app: &App) -> Json {
-    app.store.state.data.overnight.clone()
-}
-
 fn active(app: &App) -> bool {
-    !record(app).is_null()
+    app.store.state.data.overnight.is_some()
 }
 
 fn on(app: &mut App, want: bool) {
     if active(app) == want {
         return;
     }
-    let snap = record(app);
+    let snap = app.store.state.data.overnight.clone().unwrap_or_default();
     if let Some(rt) = &app.runtime {
         if want {
             rt.service(overnight::enable);
@@ -58,5 +54,5 @@ fn disable(app: &mut App, _: &[Value]) -> Value {
 }
 
 fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(json!({"active": active(app), "restore": record(app)}).to_string())
+    Value::Str(json!({"active": active(app), "restore": app.store.state.data.overnight}).to_string())
 }

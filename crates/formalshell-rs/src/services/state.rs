@@ -4,6 +4,7 @@
 //! once per burst of setters.
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -11,181 +12,187 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use async_io::Timer;
-use serde::de::DeserializeOwned;
+use fs_js::lenient;
+use fs_menu::abbrev::Book;
+use fs_menu::frecency::Record;
+use fs_system::display::hdr;
+use serde::de::{DeserializeOwned, Deserializer};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use super::devices::earbuds;
 use super::watch::Watch;
+use super::{lights, overnight};
 use crate::runtime::Ctx;
 use crate::store;
 
 /// Setters landing within this of each other share one write.
 const DEBOUNCE: Duration = Duration::from_millis(20);
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Data {
-    /// The light slot, and the picture for both modes while
-    /// `wallpaper_dark` is empty.
-    pub wallpaper: String,
-    pub wallpaper_dark: String,
-    /// The picker's choice between a flat colour and the picture: a
-    /// `#rrggbb`, `false` for the picture, null when it never chose.
-    pub wallpaper_color: Value,
-    pub mode: String,
-    /// `{ mode, untilMs }` while a manual flip snoozes `theme.mode: "auto"`.
-    pub mode_override: Value,
-    pub dnd: bool,
-    pub calendar_birth_year: i64,
-    pub calendar_life_expectancy: i64,
-    pub clock_format: String,
-    /// Every pick's frecency record, keyed by subject id (`app:<desktop id>`,
-    /// a node id, ...).
-    pub picks: Value,
-    /// `{pinned, learned}`, fs-menu's `abbrev::Book`.
-    pub abbreviations: Value,
-    /// Subject ids pinned to the launcher's `Recent`, in pin order.
-    pub recent_pinned: Value,
-    pub emoji_uses: Value,
-    pub reminders: Value,
-    pub battery_show_percent: Value,
-    pub overnight: Value,
-    pub lights: Value,
-    pub hdr: Value,
-    pub sidebar_collapsed: bool,
-    /// `{address: {art, name}}`: the picture set and the name the earbuds
-    /// backend last gave each device, upper-case addresses.
-    pub earbuds_faces: Value,
-    /// The settings UI's overrides, a settings.json-shaped object the config
-    /// service merges under settings.json.
-    pub settings: Value,
+/// Every key of the file, declared once: its field, its type, the `Field`
+/// that sets it, and its default where that is not the type's own. The file
+/// names are the fields in camelCase.
+macro_rules! keys {
+    ($($(#[$doc:meta])* $field:ident: $ty:ty => $variant:ident $(= $default:expr)?,)*) => {
+        #[derive(Clone, Debug, PartialEq, Serialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct Data {
+            $($(#[$doc])* pub $field: $ty,)*
+        }
+
+        impl Default for Data {
+            fn default() -> Self {
+                Self { $($field: keys!(@default $($default)?),)* }
+            }
+        }
+
+        /// The file as read: a key missing or of the wrong type is `None`,
+        /// and takes its default.
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Read {
+            $(#[serde(default, deserialize_with = "read_key")] $field: Option<$ty>,)*
+        }
+
+        impl From<Read> for Data {
+            fn from(read: Read) -> Self {
+                let default = Data::default();
+                Self { $($field: read.$field.unwrap_or(default.$field),)* }
+            }
+        }
+
+        /// One key of the file. Setters are lists of these so a pair that has
+        /// to land together (a wallpaper and its mode) is one write.
+        #[derive(Clone, Debug, PartialEq)]
+        pub enum Field {
+            $($variant($ty),)*
+            /// A picker or IPC pick: a setter only, read against the slots as
+            /// they are when it lands. Diffs carry the slots and
+            /// `WallpaperColor`.
+            Pick(Choice),
+            /// One override at a dotted path, `None` dropping it: a setter
+            /// only, applied onto the object as it is when it lands, so two
+            /// quick edits never undo each other. Diffs carry the whole
+            /// `Settings`.
+            SettingKey(String, Option<Value>),
+        }
+
+        impl Field {
+            fn apply(self, data: &mut Data) {
+                match self {
+                    $(Field::$variant(v) => data.$field = v,)*
+                    Field::Pick(choice) => data.pick(choice),
+                    Field::SettingKey(path, v) => super::config::set_path(&mut data.settings, &path, v),
+                }
+            }
+        }
+
+        impl Data {
+            /// The fields of `self` that differ from `old`.
+            fn diff(&self, old: &Data) -> Diff {
+                let mut moved = Vec::new();
+                $(if self.$field != old.$field {
+                    moved.push(Field::$variant(self.$field.clone()));
+                })*
+                Diff(moved)
+            }
+        }
+    };
+    (@default) => { Default::default() };
+    (@default $default:expr) => { $default };
 }
 
-impl Default for Data {
-    fn default() -> Self {
-        Self {
-            wallpaper: String::new(),
-            wallpaper_dark: String::new(),
-            wallpaper_color: Value::Null,
-            mode: "dark".into(),
-            mode_override: Value::Null,
-            dnd: false,
-            calendar_birth_year: 0,
-            calendar_life_expectancy: 0,
-            clock_format: String::new(),
-            picks: Value::Array(vec![]),
-            abbreviations: Value::Null,
-            recent_pinned: Value::Array(vec![]),
-            emoji_uses: Value::Array(vec![]),
-            reminders: Value::Array(vec![]),
-            battery_show_percent: Value::Null,
-            overnight: Value::Null,
-            lights: Value::Null,
-            hdr: Value::Null,
-            sidebar_collapsed: false,
-            earbuds_faces: Value::Object(Map::new()),
-            settings: Value::Object(Map::new()),
-        }
+keys! {
+    /// The light slot, and the picture for both modes while
+    /// `wallpaper_dark` is empty.
+    wallpaper: String => Wallpaper,
+    wallpaper_dark: String => WallpaperDark,
+    /// The picker's choice between a flat colour and the picture: a
+    /// `#rrggbb`, `false` for the picture, null when it never chose.
+    wallpaper_color: Value => WallpaperColor,
+    mode: String => Mode = "dark".into(),
+    /// `{ mode, untilMs }` while a manual flip snoozes `theme.mode: "auto"`.
+    mode_override: Value => ModeOverride,
+    dnd: bool => Dnd,
+    calendar_birth_year: i64 => CalendarBirthYear,
+    calendar_life_expectancy: i64 => CalendarLifeExpectancy,
+    clock_format: String => ClockFormat,
+    /// Every pick's frecency record, keyed by subject id (`app:<desktop id>`,
+    /// a node id, ...).
+    picks: Vec<Record> => Picks,
+    abbreviations: Option<Book> => Abbreviations,
+    /// Subject ids pinned to the launcher's `Recent`, in pin order.
+    recent_pinned: Vec<String> => RecentPinned,
+    emoji_uses: Vec<Record> => EmojiUses,
+    reminders: Value => Reminders = Value::Array(Vec::new()),
+    /// The battery cell's label, over `bar.widgets.battery.showLabel`.
+    battery_show_percent: Option<bool> => BatteryShowPercent,
+    overnight: Option<overnight::Record> => Overnight,
+    lights: Option<lights::Record> => Lights,
+    hdr: Option<hdr::Wants> => Hdr,
+    sidebar_collapsed: bool => SidebarCollapsed,
+    /// Upper-case addresses.
+    earbuds_faces: BTreeMap<String, earbuds::Face> => EarbudsFaces,
+    /// The settings UI's overrides, a settings.json-shaped object the config
+    /// service merges under settings.json.
+    settings: Value => Settings = Value::Object(Map::new()),
+}
+
+/// A key of the wrong type reads as absent.
+fn read_key<'de, D: Deserializer<'de>, T: Lenient>(d: D) -> Result<Option<T>, D::Error> {
+    Ok(T::read(Value::deserialize(d)?))
+}
+
+/// How a key reads: whole, or a list or map entry by entry, so one bad
+/// entry costs only itself. The records read each field the same way.
+trait Lenient: Sized {
+    fn read(value: Value) -> Option<Self>;
+}
+
+macro_rules! whole {
+    ($($ty:ty),*) => {
+        $(impl Lenient for $ty {
+            fn read(value: Value) -> Option<Self> {
+                serde_json::from_value(value).ok()
+            }
+        })*
+    };
+}
+
+whole!(String, bool, i64, Value, overnight::Record, lights::Record);
+
+impl<T: DeserializeOwned> Lenient for Vec<T> {
+    fn read(value: Value) -> Option<Self> {
+        lenient::list(value)
     }
 }
 
-/// One key of the file. Setters are lists of these so a pair that has to land
-/// together (a wallpaper and its mode) is one write.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Field {
-    Wallpaper(String),
-    WallpaperDark(String),
-    /// A picker or IPC pick: a setter only, read against the slots as they
-    /// are when it lands. Diffs carry the slots and `WallpaperColor`.
-    Pick(Choice),
-    WallpaperColor(Value),
-    Mode(String),
-    ModeOverride(Value),
-    Dnd(bool),
-    CalendarBirthYear(i64),
-    CalendarLifeExpectancy(i64),
-    ClockFormat(String),
-    Picks(Value),
-    Abbreviations(Value),
-    RecentPinned(Value),
-    EmojiUses(Value),
-    Reminders(Value),
-    BatteryShowPercent(Value),
-    Overnight(Value),
-    Lights(Value),
-    Hdr(Value),
-    SidebarCollapsed(bool),
-    EarbudsFaces(Value),
-    Settings(Value),
-    /// One override at a dotted path, `None` dropping it: a setter only,
-    /// applied onto the object as it is when it lands, so two quick edits
-    /// never undo each other. Diffs carry the whole `Settings`.
-    SettingKey(String, Option<Value>),
+impl<T: DeserializeOwned> Lenient for BTreeMap<String, T> {
+    fn read(value: Value) -> Option<Self> {
+        lenient::map(value)
+    }
+}
+
+impl<T: Lenient> Lenient for Option<T> {
+    fn read(value: Value) -> Option<Self> {
+        if value.is_null() { Some(None) } else { T::read(value).map(Some) }
+    }
+}
+
+impl Lenient for Book {
+    fn read(value: Value) -> Option<Self> {
+        let Value::Object(mut book) = value else { return None };
+        let mut take = |key: &str| book.remove(key).unwrap_or(Value::Null);
+        let pinned = lenient::map(take("pinned")).unwrap_or_default();
+        let learned = lenient::map::<Value>(take("learned")).unwrap_or_default();
+        Some(Book { pinned, learned: learned.into_iter().filter_map(|(q, records)| Some((q, lenient::list(records)?))).collect() })
+    }
 }
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Diff(pub Vec<Field>);
 
-impl Field {
-    fn apply(self, data: &mut Data) {
-        match self {
-            Field::Wallpaper(v) => data.wallpaper = v,
-            Field::WallpaperDark(v) => data.wallpaper_dark = v,
-            Field::Pick(choice) => data.pick(choice),
-            Field::WallpaperColor(v) => data.wallpaper_color = v,
-            Field::Mode(v) => data.mode = v,
-            Field::ModeOverride(v) => data.mode_override = v,
-            Field::Dnd(v) => data.dnd = v,
-            Field::CalendarBirthYear(v) => data.calendar_birth_year = v,
-            Field::CalendarLifeExpectancy(v) => data.calendar_life_expectancy = v,
-            Field::ClockFormat(v) => data.clock_format = v,
-            Field::Picks(v) => data.picks = v,
-            Field::Abbreviations(v) => data.abbreviations = v,
-            Field::RecentPinned(v) => data.recent_pinned = v,
-            Field::EmojiUses(v) => data.emoji_uses = v,
-            Field::Reminders(v) => data.reminders = v,
-            Field::BatteryShowPercent(v) => data.battery_show_percent = v,
-            Field::Overnight(v) => data.overnight = v,
-            Field::Lights(v) => data.lights = v,
-            Field::Hdr(v) => data.hdr = v,
-            Field::SidebarCollapsed(v) => data.sidebar_collapsed = v,
-            Field::EarbudsFaces(v) => data.earbuds_faces = v,
-            Field::Settings(v) => data.settings = v,
-            Field::SettingKey(path, v) => super::config::set_path(&mut data.settings, &path, v),
-        }
-    }
-}
-
 impl Data {
-    fn fields(&self) -> [Field; 21] {
-        [
-            Field::Wallpaper(self.wallpaper.clone()),
-            Field::WallpaperDark(self.wallpaper_dark.clone()),
-            Field::WallpaperColor(self.wallpaper_color.clone()),
-            Field::Mode(self.mode.clone()),
-            Field::ModeOverride(self.mode_override.clone()),
-            Field::Dnd(self.dnd),
-            Field::CalendarBirthYear(self.calendar_birth_year),
-            Field::CalendarLifeExpectancy(self.calendar_life_expectancy),
-            Field::ClockFormat(self.clock_format.clone()),
-            Field::Picks(self.picks.clone()),
-            Field::Abbreviations(self.abbreviations.clone()),
-            Field::RecentPinned(self.recent_pinned.clone()),
-            Field::EmojiUses(self.emoji_uses.clone()),
-            Field::Reminders(self.reminders.clone()),
-            Field::BatteryShowPercent(self.battery_show_percent.clone()),
-            Field::Overnight(self.overnight.clone()),
-            Field::Lights(self.lights.clone()),
-            Field::Hdr(self.hdr.clone()),
-            Field::SidebarCollapsed(self.sidebar_collapsed),
-            Field::EarbudsFaces(self.earbuds_faces.clone()),
-            Field::Settings(self.settings.clone()),
-        ]
-    }
-
-    /// The fields of `self` that differ from `old`.
-    fn diff(&self, old: &Data) -> Diff {
-        Diff(self.fields().into_iter().zip(old.fields()).filter(|(n, o)| n != o).map(|(n, _)| n).collect())
-    }
-
     fn set(&mut self, fields: Vec<Field>) -> Diff {
         let old = self.clone();
         for field in fields {
@@ -219,76 +226,42 @@ impl Data {
     /// shell does not know is dropped on the next write, as `JsonAdapter` does.
     fn parse(text: &str) -> Result<Data, serde_json::Error> {
         let value: Value = serde_json::from_str(text)?;
-        let empty = Map::new();
-        let object = value.as_object().unwrap_or(&empty);
-        let mut data = Data::default();
-        let take = |key: &str| object.get(key).cloned();
-        fn typed<T: DeserializeOwned>(v: Option<Value>) -> Option<T> {
-            serde_json::from_value(v?).ok()
+        if !value.is_object() {
+            return Ok(Data::default());
         }
-        fn array(v: Option<Value>) -> Option<Value> {
-            v.filter(Value::is_array)
+        let mut data = Data::from(Read::deserialize(&value)?);
+        if !data.reminders.is_array() {
+            data.reminders = Data::default().reminders;
         }
-        data.wallpaper = typed(take("wallpaper")).unwrap_or(data.wallpaper);
-        data.wallpaper_dark = typed(take("wallpaperDark")).unwrap_or(data.wallpaper_dark);
-        data.wallpaper_color = match take("wallpaperColor") {
-            Some(Value::Bool(false)) => Value::Bool(false),
-            Some(v) => fs_theme::theme::wallpaper_color(&v).flatten().map_or(Value::Null, Value::from),
-            None => Value::Null,
+        if !data.settings.is_object() {
+            data.settings = Data::default().settings;
+        }
+        data.wallpaper_color = match data.wallpaper_color {
+            Value::Bool(false) => Value::Bool(false),
+            v => fs_theme::theme::wallpaper_color(&v).flatten().map_or(Value::Null, Value::from),
         };
-        data.mode = typed(take("mode")).unwrap_or(data.mode);
-        data.mode_override = take("modeOverride").unwrap_or(Value::Null);
-        data.dnd = typed(take("dnd")).unwrap_or(data.dnd);
-        data.calendar_birth_year = typed(take("calendarBirthYear")).unwrap_or(0);
-        data.calendar_life_expectancy = typed(take("calendarLifeExpectancy")).unwrap_or(0);
-        data.clock_format = typed(take("clockFormat")).unwrap_or(data.clock_format);
         // `appLaunches` predates `picks`: read once into it as app subjects,
         // never written again.
-        data.picks = array(take("picks")).or_else(|| array(take("appLaunches")).map(app_picks)).unwrap_or(data.picks);
-        data.abbreviations = take("abbreviations").filter(Value::is_object).unwrap_or(Value::Null);
-        data.recent_pinned = array(take("recentPinned")).unwrap_or(data.recent_pinned);
-        data.emoji_uses = array(take("emojiUses")).unwrap_or(data.emoji_uses);
-        data.reminders = array(take("reminders")).unwrap_or(data.reminders);
-        data.battery_show_percent = take("batteryShowPercent").unwrap_or(Value::Null);
-        data.overnight = take("overnight").unwrap_or(Value::Null);
-        data.lights = take("lights").unwrap_or(Value::Null);
-        data.hdr = take("hdr").unwrap_or(Value::Null);
-        data.sidebar_collapsed = typed(take("sidebarCollapsed")).unwrap_or(false);
-        data.earbuds_faces = take("earbudsFaces").filter(Value::is_object).unwrap_or(data.earbuds_faces);
-        data.settings = take("settings").filter(Value::is_object).unwrap_or(data.settings);
+        if !value.get("picks").is_some_and(Value::is_array)
+            && let Some(launches) = value.get("appLaunches").filter(|v| v.is_array())
+        {
+            data.picks = lenient::list::<Record>(launches.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|r| Record { id: if r.id.is_empty() { r.id } else { format!("app:{}", r.id) }, ..r })
+                .collect();
+        }
         Ok(data)
     }
 
     /// Four-space indent and sorted keys, the shape `JsonAdapter` writes.
     fn to_text(&self) -> String {
-        let mut map = Map::new();
-        map.insert("wallpaper".into(), self.wallpaper.clone().into());
-        map.insert("wallpaperDark".into(), self.wallpaper_dark.clone().into());
-        map.insert("wallpaperColor".into(), self.wallpaper_color.clone());
-        map.insert("mode".into(), self.mode.clone().into());
-        map.insert("modeOverride".into(), self.mode_override.clone());
-        map.insert("dnd".into(), self.dnd.into());
-        map.insert("calendarBirthYear".into(), self.calendar_birth_year.into());
-        map.insert("calendarLifeExpectancy".into(), self.calendar_life_expectancy.into());
-        map.insert("clockFormat".into(), self.clock_format.clone().into());
-        map.insert("picks".into(), self.picks.clone());
-        map.insert("abbreviations".into(), self.abbreviations.clone());
-        map.insert("recentPinned".into(), self.recent_pinned.clone());
-        map.insert("emojiUses".into(), self.emoji_uses.clone());
-        map.insert("reminders".into(), self.reminders.clone());
-        map.insert("batteryShowPercent".into(), self.battery_show_percent.clone());
-        map.insert("overnight".into(), self.overnight.clone());
-        map.insert("lights".into(), self.lights.clone());
-        map.insert("hdr".into(), self.hdr.clone());
-        map.insert("sidebarCollapsed".into(), self.sidebar_collapsed.into());
-        map.insert("earbudsFaces".into(), self.earbuds_faces.clone());
-        map.insert("settings".into(), self.settings.clone());
-        let mut doc = Value::Object(map);
+        let mut doc = serde_json::to_value(self).expect("state.json's records serialize");
         sort_keys(&mut doc);
         let mut out = Vec::new();
         let format = serde_json::ser::PrettyFormatter::with_indent(b"    ");
         let mut ser = serde_json::Serializer::with_formatter(&mut out, format);
-        serde::Serialize::serialize(&doc, &mut ser).expect("a Value serializes");
+        doc.serialize(&mut ser).expect("a Value serializes");
         out.push(b'\n');
         String::from_utf8(out).expect("serde_json writes UTF-8")
     }
@@ -296,22 +269,6 @@ impl Data {
 
 /// Every object's keys in order at every depth: serde_json keeps insertion
 /// order once any crate in the build asks for `preserve_order`.
-/// `appLaunches`' records as picks: each desktop id an `app:` subject.
-fn app_picks(launches: Value) -> Value {
-    let Value::Array(items) = launches else { return Value::Array(vec![]) };
-    Value::Array(
-        items
-            .into_iter()
-            .map(|mut r| {
-                if let Some(id) = r.get("id").and_then(Value::as_str).map(|id| format!("app:{id}")) {
-                    r["id"] = Value::String(id);
-                }
-                r
-            })
-            .collect(),
-    )
-}
-
 fn sort_keys(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -556,7 +513,7 @@ mod tests {
     fn defaults_match_the_adapter() {
         let d = Data::default();
         assert_eq!((d.wallpaper.as_str(), d.mode.as_str(), d.dnd), ("", "dark", false));
-        assert_eq!(d.picks, json!([]));
+        assert!(d.picks.is_empty());
         assert_eq!(d.mode_override, Value::Null);
         assert_eq!((d.calendar_birth_year, d.calendar_life_expectancy), (0, 0));
     }
@@ -567,7 +524,6 @@ mod tests {
         assert!(text.starts_with("{\n    \"abbreviations\": null,\n"), "{text}");
         assert!(text.ends_with("}\n"));
         let keys: Vec<String> = serde_json::from_str::<Map<String, Value>>(&text).unwrap().keys().cloned().collect();
-        assert_eq!(keys.len(), 21);
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted);
@@ -575,39 +531,220 @@ mod tests {
 
     #[test]
     fn round_trip_keeps_every_field() {
-        let data = Data {
-            wallpaper: "/w.png".into(),
-            wallpaper_dark: "/d.png".into(),
-            wallpaper_color: json!("#402484"),
-            mode: "light".into(),
-            mode_override: json!({"mode": "dark", "untilMs": 5}),
-            dnd: true,
-            calendar_birth_year: 1990,
-            calendar_life_expectancy: 80,
-            clock_format: "%H".into(),
-            picks: json!([{"id": "app:a", "count": 2, "lastMs": 3}]),
-            abbreviations: json!({"pinned": {"ff": "app:firefox"}, "learned": {}}),
-            recent_pinned: json!(["clipboard"]),
-            emoji_uses: json!([{"id": "emoji.x", "count": 1, "lastMs": 1}]),
-            reminders: json!([{"id": 1, "message": "m", "setAt": 1, "dueAt": 2}]),
-            battery_show_percent: json!(false),
-            overnight: json!({"backlight": 40}),
-            lights: json!({"source": "palette"}),
-            hdr: json!({"DP-1": {"prior": {}}}),
-            sidebar_collapsed: true,
-            earbuds_faces: json!({"2C:BE:EE:65:A0:21": {"art": "b175_black", "name": "CMF Headphone Pro"}}),
-            settings: json!({"bar": {"style": "solid"}}),
-        };
+        let data = Data::parse(FULL).unwrap();
+        let default = serde_json::to_value(Data::default()).unwrap();
+        let full = serde_json::to_value(&data).unwrap();
+        for (key, value) in default.as_object().unwrap() {
+            assert_ne!(&full[key], value, "FULL leaves {key} at its default");
+        }
         assert_eq!(Data::parse(&data.to_text()).unwrap(), data);
+    }
+
+    /// Every key holding a record, written as the shell writes it.
+    const FULL: &str = r#"{
+    "abbreviations": {
+        "learned": {
+            "fx": [
+                {
+                    "count": 2,
+                    "id": "app:foxtrot",
+                    "lastMs": 1794159485000
+                }
+            ]
+        },
+        "pinned": {
+            "fo": "app:foxtrot"
+        }
+    },
+    "batteryShowPercent": false,
+    "calendarBirthYear": 1990,
+    "calendarLifeExpectancy": 80,
+    "clockFormat": "h:mm AP",
+    "dnd": true,
+    "earbudsFaces": {
+        "2C:BE:EE:65:A0:21": {
+            "art": "b175_black",
+            "name": "CMF Headphone Pro",
+            "seen": 3
+        }
+    },
+    "emojiUses": [
+        {
+            "count": 1,
+            "id": "emoji.😿",
+            "lastMs": 1794159492872
+        }
+    ],
+    "hdr": {
+        "DP-1": {
+            "instance": "abc_1794159485_123",
+            "prior": {
+                "bitdepth": 8,
+                "cm": "srgb",
+                "sdrbrightness": 1.0,
+                "sdrsaturation": 0.98
+            }
+        },
+        "DP-2": {
+            "note": "kept",
+            "prior": {
+                "cm": "wide",
+                "sdrbrightness": 1
+            }
+        }
+    },
+    "lights": {
+        "colour": "ff8000",
+        "effect": "breathe",
+        "onLevel": 3,
+        "source": "custom"
+    },
+    "mode": "light",
+    "modeOverride": {
+        "mode": "dark",
+        "untilMs": 1794200000000
+    },
+    "overnight": {
+        "aura": true,
+        "backlight": -1,
+        "ddc": {
+            "DP-2": 55.5,
+            "HDMI-A-1": 70
+        },
+        "leds": {
+            "input3::capslock": 1
+        },
+        "profile": 2,
+        "since": 1794159485000
+    },
+    "picks": [
+        {
+            "count": 1,
+            "id": "clipboard",
+            "lastMs": 1794159485000
+        },
+        {
+            "count": 1.5,
+            "id": "emoji:😿",
+            "lastMs": 1794159492872
+        }
+    ],
+    "recentPinned": [
+        "clipboard"
+    ],
+    "reminders": [
+        {
+            "dueAt": 1794159545000,
+            "id": "1",
+            "message": "tea",
+            "setAt": 1794159485000
+        }
+    ],
+    "settings": {
+        "bar": {
+            "style": "solid"
+        }
+    },
+    "sidebarCollapsed": true,
+    "wallpaper": "/w/light.png",
+    "wallpaperColor": false,
+    "wallpaperDark": "/w/dark.png"
+}
+"#;
+
+    /// A whole file captured from an `--emoji` run.
+    const CAPTURED: &str = r#"{
+    "abbreviations": null,
+    "batteryShowPercent": null,
+    "calendarBirthYear": 0,
+    "calendarLifeExpectancy": 0,
+    "clockFormat": "",
+    "dnd": false,
+    "earbudsFaces": {},
+    "emojiUses": [
+        {
+            "count": 1,
+            "id": "emoji.😿",
+            "lastMs": 1794159492872
+        }
+    ],
+    "hdr": null,
+    "lights": null,
+    "mode": "dark",
+    "modeOverride": null,
+    "overnight": null,
+    "picks": [
+        {
+            "count": 1,
+            "id": "clipboard",
+            "lastMs": 1794159485000
+        },
+        {
+            "count": 1,
+            "id": "toggles",
+            "lastMs": 1794159485000
+        },
+        {
+            "count": 1,
+            "id": "emoji:😿",
+            "lastMs": 1794159492872
+        }
+    ],
+    "recentPinned": [],
+    "reminders": [],
+    "settings": {},
+    "sidebarCollapsed": false,
+    "wallpaper": "",
+    "wallpaperColor": null,
+    "wallpaperDark": ""
+}
+"#;
+
+    #[test]
+    fn a_written_file_reads_back_and_writes_byte_for_byte() {
+        for text in [FULL, CAPTURED] {
+            assert_eq!(Data::parse(text).unwrap().to_text(), text);
+        }
+        assert_eq!(Data::default().to_text(), Data::parse(&Data::default().to_text()).unwrap().to_text());
+    }
+
+    #[test]
+    fn a_bad_field_or_entry_costs_only_itself() {
+        let d = Data::parse(
+            r#"{
+                "overnight": {"profile": "x", "backlight": 40, "leds": {"a": 1}},
+                "hdr": {"x": 1, "DP-1": {"prior": {"cm": 3, "bitdepth": 10}}},
+                "picks": [{"id": "a", "count": 1, "lastMs": 1}, 5, {"id": "b", "count": "x"}],
+                "earbudsFaces": {"A": {"art": "x", "name": 4}, "B": 3},
+                "abbreviations": {"pinned": {"a": "app:a", "b": 1}, "learned": {"q": [{"id": "app:a", "count": 1, "lastMs": 1}, 2], "r": 5}},
+                "recentPinned": ["clipboard", 1]
+            }"#,
+        )
+        .unwrap();
+        let overnight = d.overnight.unwrap();
+        assert_eq!((overnight.profile, overnight.backlight), (None, Some(40.into())));
+        assert_eq!(overnight.leds.unwrap().len(), 1);
+        let hdr = d.hdr.unwrap();
+        assert_eq!(hdr.keys().collect::<Vec<_>>(), ["DP-1"]);
+        assert_eq!(hdr["DP-1"].prior.as_ref().unwrap().bitdepth, Some(10.into()));
+        assert_eq!(d.picks.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["a"]);
+        assert_eq!(d.earbuds_faces.keys().collect::<Vec<_>>(), ["A"]);
+        assert_eq!((d.earbuds_faces["A"].art.as_deref(), d.earbuds_faces["A"].name.as_deref()), (Some("x"), None));
+        let book = d.abbreviations.unwrap();
+        assert_eq!(book.pinned.keys().collect::<Vec<_>>(), ["a"]);
+        assert_eq!(book.learned.keys().collect::<Vec<_>>(), ["q"]);
+        assert_eq!(book.learned["q"].len(), 1);
+        assert_eq!(d.recent_pinned, ["clipboard"]);
     }
 
     #[test]
     fn app_launches_are_read_once_into_picks() {
+        let record = |id: &str, count: f64, last_ms: f64| Record { id: id.into(), count, last_ms };
         let d = Data::parse(r#"{"appLaunches":[{"id":"firefox","count":3,"lastMs":9}]}"#).unwrap();
-        assert_eq!(d.picks, json!([{"id": "app:firefox", "count": 3, "lastMs": 9}]));
+        assert_eq!(d.picks, [record("app:firefox", 3.0, 9.0)]);
         assert!(!d.to_text().contains("appLaunches"));
         let both = Data::parse(r#"{"picks":[{"id":"wifi","count":1,"lastMs":1}],"appLaunches":[{"id":"x","count":1,"lastMs":1}]}"#).unwrap();
-        assert_eq!(both.picks, json!([{"id": "wifi", "count": 1, "lastMs": 1}]));
+        assert_eq!(both.picks, [record("wifi", 1.0, 1.0)]);
     }
 
     #[test]
@@ -615,7 +752,7 @@ mod tests {
         let d = Data::parse(r#"{"future":1,"dnd":"yes","mode":"light","appLaunches":{"a":1},"calendarBirthYear":"x"}"#).unwrap();
         assert_eq!(d.mode, "light");
         assert!(!d.dnd);
-        assert_eq!(d.picks, json!([]));
+        assert!(d.picks.is_empty());
         assert_eq!(d.calendar_birth_year, 0);
         assert!(!d.to_text().contains("future"));
     }

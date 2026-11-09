@@ -322,7 +322,7 @@ pub struct App {
     peek_asked: Option<String>,
     /// The Install row whose `fspec info` was last asked for.
     info_asked: Option<String>,
-    menu_launches: Option<serde_json::Value>,
+    menu_launches: Option<Vec<fs_menu::frecency::Record>>,
     pub capture: crate::surfaces::capture::Capture,
     pickers: picker::Pickers,
     desktop_clock: desktop_clock::State,
@@ -1410,9 +1410,7 @@ impl App {
             Action::ToggleSourceMute => self.service(devices::audio::toggle_source_mute),
             Action::ToggleWifi => self.service(devices::network::toggle_wifi),
             Action::ToggleBluetooth => self.service(devices::bluetooth::toggle_power),
-            Action::BatteryPercent(on) => {
-                self.service(move |_| crate::services::state::set(vec![crate::services::state::Field::BatteryShowPercent(serde_json::Value::Bool(on))]))
-            }
+            Action::BatteryPercent(on) => crate::surfaces::bar::cells::battery::show_percent(on),
             Action::Tray { key, click: TrayClick::Menu, offset } => {
                 let _ = self.open_tray_menu(&key, Some(anchor + offset), false);
             }
@@ -1429,8 +1427,7 @@ impl App {
             }
             Action::Caffeinate(on) => self.set_caffeinated(on),
             Action::OvernightOff => {
-                let record = self.store.state.data.overnight.clone();
-                if let Some(rt) = self.runtime.as_ref().filter(|_| !record.is_null()) {
+                if let (Some(rt), Some(record)) = (&self.runtime, self.store.state.data.overnight.clone()) {
                     rt.service(move |ctx| overnight::disable(ctx, record));
                 }
             }

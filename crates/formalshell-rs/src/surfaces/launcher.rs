@@ -537,7 +537,7 @@ pub fn snapshot(store: &Store) -> Snapshot {
         "theme.dark": store.state.data.mode == "dark",
         "caffeinate.active": store.caffeinate.active,
         "notifications.dnd": store.notifications.model.dnd,
-        "overnight.active": !store.state.data.overnight.is_null(),
+        "overnight.active": store.state.data.overnight.is_some(),
         "hdr.active": crate::services::display::hdr_active(store),
         "wifi.ssid": store.network.ssid.as_ref().map_or("", |(s, _)| s.as_str()),
         "audio.sink": store.audio.default_sink,
@@ -1267,9 +1267,8 @@ impl Model {
                 }
             }
             Mode::Menu if emoji => {
-                let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
                 let paste = crate::settings::CLIPBOARD_PASTE.get(&store.config);
-                store.menu.emoji.as_ref().map_or_else(Vec::new, |e| e.rows(q, paste, &uses, None))
+                store.menu.emoji.as_ref().map_or_else(Vec::new, |e| e.rows(q, paste, &store.state.data.emoji_uses, None))
             }
             Mode::Menu if level == Some("keybinds") => {
                 let reply = store.menu.binds.as_ref().map(|r| r.as_deref().map_err(|_| ()));
@@ -1281,7 +1280,7 @@ impl Model {
             Mode::Menu if plugin => model::visible_children(nodes, level, cond).into_iter().cloned().collect(),
             Mode::Menu if q.is_empty() && level.is_none() => {
                 let outside = |id: &str| outside_subject(store, id);
-                let rest = model::root_rest(nodes, &recent_pinned(store), &picks(store), now_ms(), model::RECENT_MAX, cond, outside);
+                let rest = model::root_rest(nodes, &store.state.data.recent_pinned, &store.state.data.picks, now_ms(), model::RECENT_MAX, cond, outside);
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
                 if view == View::AppGrid && recent {
                     rest.into_iter().filter(|r| r.kind != NodeKind::App).collect()
@@ -1300,8 +1299,7 @@ impl Model {
             Mode::Menu if level == Some("calc") => fs_menu::calc::result_node(q).into_iter().collect(),
             Mode::Menu => {
                 let calc = level.is_none().then(|| fs_menu::calc::result_node(q)).flatten();
-                let picks = picks(store);
-                let boost = fs_menu::search::Boost { abbrev: Some(&self.lookup), picks: &picks, now: now_ms() };
+                let boost = fs_menu::search::Boost { abbrev: Some(&self.lookup), picks: &store.state.data.picks, now: now_ms() };
                 let ranked = fs_menu::search::rank_with(nodes, q, cond, level, boost).into_iter().cloned();
                 calc.into_iter().chain(ranked).collect()
             }
@@ -1346,7 +1344,7 @@ impl Model {
         if self.mode != Mode::Menu {
             return Default::default();
         }
-        let book = abbreviation_book(store);
+        let book = index::abbreviation_book(store);
         fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, self.list_text(), now_ms(), |id| resolves(store, id))
     }
 
@@ -1968,7 +1966,7 @@ impl Model {
         index::ask(Ask::Conds(conds));
         index::ask(Ask::Binds);
         index::ask(Ask::Files);
-        let paths: Vec<String> = picks(store).into_iter().filter_map(|r| Some(r.id.strip_prefix(fs_menu::actions::FILE_SUBJECT)?.to_owned())).collect();
+        let paths: Vec<String> = store.state.data.picks.iter().filter_map(|r| Some(r.id.strip_prefix(fs_menu::actions::FILE_SUBJECT)?.to_owned())).collect();
         if !paths.is_empty() {
             index::ask(Ask::Stat(paths));
         }
@@ -2215,7 +2213,7 @@ impl Model {
             discrete_gpu: store.monitor.cards.iter().any(|c| c.discrete),
             picker_select: self.picker.select,
             abbrev,
-            pinned: recent_pinned(store).contains(&id),
+            pinned: store.state.data.recent_pinned.contains(&id),
             removable,
             single: node.kind == NodeKind::Image
                 && self.on_picker()
@@ -2524,9 +2522,9 @@ impl Model {
     pub fn edit_answer(&mut self, store: &Store, value: Option<String>, cancelled: bool) {
         let Some((subject, old)) = self.editing.take() else { return };
         let Some(new) = value.filter(|_| !cancelled).as_deref().and_then(fs_menu::abbrev::key) else { return };
-        let book = fs_menu::abbrev::forget(&abbreviation_book(store), &old, &subject);
+        let book = fs_menu::abbrev::forget(&index::abbreviation_book(store), &old, &subject);
         let book = fs_menu::abbrev::pin(&book, &new, &subject);
-        state::set(vec![state::Field::Abbreviations(json!(book))]);
+        state::set(vec![state::Field::Abbreviations(Some(book))]);
     }
 
     /// Enter: the row's first action.
@@ -2587,14 +2585,14 @@ impl Model {
             Some(path) => store.menu.files.get(path) == Some(&None),
             None => apps_known && id.starts_with("app:") && !resolves(store, id),
         };
-        let held: Vec<fs_menu::frecency::Record> = picks(store).into_iter().filter(|r| !gone(&r.id)).collect();
-        let mut fields = vec![state::Field::Picks(json!(fs_menu::frecency::record(&held, &id, now, None)))];
+        let held: Vec<fs_menu::frecency::Record> = store.state.data.picks.iter().filter(|r| !gone(&r.id)).cloned().collect();
+        let mut fields = vec![state::Field::Picks(fs_menu::frecency::record(&held, &id, now, None))];
         let q = self.list_text();
         let q_norm = fs_menu::search::normalize(q.trim());
         let exact = fs_menu::search::tier(node, &q_norm, &fs_menu::search::slug(&q_norm)) == fs_menu::search::TIER_EXACT;
         if !exact && fs_menu::abbrev::key(q).is_some() && store.menu.nodes().contains_key(&node.id) {
-            let book = fs_menu::abbrev::learn(&abbreviation_book(store), q, &id, now);
-            fields.push(state::Field::Abbreviations(json!(book)));
+            let book = fs_menu::abbrev::learn(&index::abbreviation_book(store), q, &id, now);
+            fields.push(state::Field::Abbreviations(Some(book)));
         }
         state::set(fields);
     }
@@ -2656,13 +2654,13 @@ impl Model {
                     // would teach the pair straight back.
                     "abbrev.forget" | "abbrev.pin" => {
                         let subject = fs_menu::actions::subject_id(node);
-                        let book = abbreviation_book(store);
+                        let book = index::abbreviation_book(store);
                         let book = if verb == "abbrev.pin" {
                             fs_menu::abbrev::pin(&book, arg, &subject)
                         } else {
                             fs_menu::abbrev::forget(&book, arg, &subject)
                         };
-                        state::set(vec![state::Field::Abbreviations(json!(book))]);
+                        state::set(vec![state::Field::Abbreviations(Some(book))]);
                         self.dirty = true;
                         if action.keep_open {
                             return Out::None;
@@ -2672,11 +2670,11 @@ impl Model {
                     }
                     // A pin is no pick either: it would count twice.
                     "recent.pin" | "recent.unpin" => {
-                        let mut pinned: Vec<String> = recent_pinned(store).into_iter().filter(|id| id != arg).collect();
+                        let mut pinned: Vec<String> = store.state.data.recent_pinned.iter().filter(|id| *id != arg).cloned().collect();
                         if verb == "recent.pin" {
                             pinned.push(arg.to_owned());
                         }
-                        state::set(vec![state::Field::RecentPinned(json!(pinned))]);
+                        state::set(vec![state::Field::RecentPinned(pinned)]);
                         self.dirty = true;
                         if action.keep_open {
                             return Out::None;
@@ -2759,9 +2757,8 @@ impl Model {
         }
         self.picked(store, node);
         if node.id.starts_with("emoji.") {
-            let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
-            let next = fs_menu::frecency::record(&uses, &node.id, now_ms(), None);
-            state::set(vec![state::Field::EmojiUses(serde_json::to_value(next).unwrap_or_default())]);
+            let next = fs_menu::frecency::record(&store.state.data.emoji_uses, &node.id, now_ms(), None);
+            state::set(vec![state::Field::EmojiUses(next)]);
         }
         if action.keep_open {
             return out;
@@ -2893,8 +2890,7 @@ impl Model {
                     index::ask(Ask::Emoji);
                     return json!([]);
                 };
-                let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
-                return Value::Array(index.rows(q, true, &uses, None).iter().map(|n| json!({"id": n.id, "label": n.label, "icon": n.icon, "kind": n.kind.as_str()})).collect());
+                return Value::Array(index.rows(q, true, &store.state.data.emoji_uses, None).iter().map(|n| json!({"id": n.id, "label": n.label, "icon": n.icon, "kind": n.kind.as_str()})).collect());
             }
             Some("keybinds") => {
                 index::ask(Ask::Binds);
@@ -2906,10 +2902,9 @@ impl Model {
             _ => {}
         }
         let snap = snapshot(store);
-        let picks = picks(store);
-        let book = abbreviation_book(store);
+        let book = index::abbreviation_book(store);
         let lookup = fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, q, now_ms(), |id| resolves(store, id));
-        let boost = fs_menu::search::Boost { abbrev: Some(&lookup), picks: &picks, now: now_ms() };
+        let boost = fs_menu::search::Boost { abbrev: Some(&lookup), picks: &store.state.data.picks, now: now_ms() };
         let mut rows: Vec<Value> = fs_menu::search::rank_with(nodes, q, &store.menu.cond, level, boost)
             .into_iter()
             .map(|n| {
@@ -2928,27 +2923,6 @@ impl Model {
 
 pub fn now_ms() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
-}
-
-pub fn picks(store: &Store) -> Vec<fs_menu::frecency::Record> {
-    serde_json::from_value(store.state.data.picks.clone()).unwrap_or_default()
-}
-
-/// The subject ids pinned to `Recent`, in pin order.
-fn recent_pinned(store: &Store) -> Vec<String> {
-    serde_json::from_value(store.state.data.recent_pinned.clone()).unwrap_or_default()
-}
-
-/// The app subjects' picks, keyed by desktop id as the apps source orders by.
-pub fn launches(store: &Store) -> Vec<fs_menu::frecency::Record> {
-    picks(store)
-        .into_iter()
-        .filter_map(|r| Some(fs_menu::frecency::Record { id: r.id.strip_prefix("app:")?.to_owned(), ..r }))
-        .collect()
-}
-
-pub fn abbreviation_book(store: &Store) -> fs_menu::abbrev::Book {
-    serde_json::from_value(store.state.data.abbreviations.clone()).unwrap_or_default()
 }
 
 /// `menu.abbreviations` in settings.json, query to subject id.

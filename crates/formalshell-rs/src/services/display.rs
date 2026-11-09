@@ -505,10 +505,6 @@ fn apply(name: &str, color: outputs::Color) {
     compositor::send(Command::SetOutputColor(name.to_owned(), color));
 }
 
-fn prior_json(c: &outputs::Color) -> Value {
-    serde_json::json!({ "cm": c.cm, "bitdepth": c.bitdepth, "sdrbrightness": c.sdrbrightness, "sdrsaturation": c.sdrsaturation })
-}
-
 fn supported_names(store: &Store) -> Vec<String> {
     rows(store).iter().filter(|r| r.enabled && hdr_supported(store, &r.name)).map(|r| r.name.clone()).collect()
 }
@@ -525,7 +521,7 @@ pub fn hdr_active(store: &Store) -> bool {
 /// `{ active, outputs: [{ name, supported, reason, on, wanted, cm }] }`, in
 /// this key order.
 pub fn hdr_status(store: &Store) -> String {
-    let wanted = hdr::state_of(&store.state.data.hdr);
+    let wanted = store.state.data.hdr.clone().unwrap_or_default();
     let active = rows(store).iter().any(|r| hdr::is_on(Some(r)));
     let outputs: Vec<String> = rows(store)
         .iter()
@@ -602,22 +598,17 @@ impl Hdr {
         if on && !hdr_supported(store, name) {
             return format!("HDR unavailable on {name}: {}", hdr_reason(store, name));
         }
-        let saved = &store.state.data.hdr;
-        let wanted = hdr::state_of(saved);
-        let prior_value = wanted.get(name).and_then(|w| w.get("prior")).cloned().filter(|p| p.is_object());
+        let saved = store.state.data.hdr.clone().unwrap_or_default();
+        let prior = saved.get(name).and_then(|w| w.prior.as_ref()).map(hdr::off_color);
         if on {
-            let prior = match &prior_value {
-                Some(p) => hdr::off_color(p),
-                None => hdr::prior_of(row),
-            };
-            state::set(vec![Field::Hdr(Value::Object(hdr::with_output(saved, name, &prior, &instance())))]);
+            let prior = prior.unwrap_or_else(|| hdr::prior_of(row));
+            state::set(vec![Field::Hdr(Some(hdr::with_output(&saved, name, &prior, &instance())))]);
             self.tried.insert(name.to_owned());
             apply(name, on_color(store));
         } else {
-            state::set(vec![Field::Hdr(Value::Object(hdr::without_output(saved, name)))]);
+            state::set(vec![Field::Hdr(Some(hdr::without_output(&saved, name)))]);
             if hdr::is_on(Some(row)) {
-                let prior = prior_value.unwrap_or_else(|| prior_json(&hdr::prior_of(row)));
-                apply(name, hdr::off_color(&prior));
+                apply(name, prior.unwrap_or_else(|| hdr::prior_of(row)));
             }
         }
         "ok".into()
@@ -663,23 +654,23 @@ impl Hdr {
         self.unplugged.extend(self.seen.iter().filter(|n| outputs::find_output(rows(store), n).is_none()).cloned());
         self.seen.extend(rows(store).iter().map(|r| r.name.clone()));
         let verdicts: HashMap<String, Verdict> = rows(store).iter().map(|r| (r.name.clone(), store.display.verdict(&r.name))).collect();
-        let pending = hdr::pending_reapply(&store.state.data.hdr, rows(store), &verdicts, &self.tried);
+        let mut saved = store.state.data.hdr.clone().unwrap_or_default();
+        let pending = hdr::pending_reapply(&saved, rows(store), &verdicts, &self.tried);
         if pending.is_empty() {
             return;
         }
         let now = instance();
-        let mut saved = store.state.data.hdr.clone();
         for name in pending {
             self.tried.insert(name.clone());
             if !self.reloaded && !self.unplugged.contains(&name) && hdr::wanted_under(&saved, &name, &now) {
                 eprintln!("hdr: {name} is in SDR under the Hyprland that put it in HDR, so it was turned off there; dropping the want");
-                saved = Value::Object(hdr::without_output(&saved, &name));
+                saved = hdr::without_output(&saved, &name);
                 continue;
             }
-            saved = Value::Object(hdr::with_instance(&saved, &name, &now));
+            saved = hdr::with_instance(&saved, &name, &now);
             apply(&name, on_color(store));
         }
-        state::set(vec![Field::Hdr(saved)]);
+        state::set(vec![Field::Hdr(Some(saved))]);
     }
 }
 

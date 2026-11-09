@@ -1033,6 +1033,7 @@ dependencies = [
  "icu_collator",
  "percent-encoding",
  "regex",
+ "serde",
  "serde_json",
 ]
 

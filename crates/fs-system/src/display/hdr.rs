@@ -10,9 +10,10 @@
 //! the rule.
 
 use super::outputs::{self, Color, Output};
-use fs_js as js;
-use serde_json::{Map, Value, json};
-use std::collections::{HashMap, HashSet};
+use fs_js::{self as js, lenient};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Number, Value};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EXT_COLORIMETRY: u8 = 5;
 const EXT_HDR_STATIC: u8 = 6;
@@ -125,48 +126,80 @@ pub fn on_color(brightness: f64, saturation: f64) -> Color {
     Color { cm: "hdr".into(), bitdepth: 10, sdrbrightness: brightness, sdrsaturation: saturation }
 }
 
-/// `prior` is whatever state.json held for the output: an object, possibly
-/// partial, or null.
-pub fn off_color(prior: &Value) -> Color {
-    let cm = prior.get("cm").and_then(Value::as_str).unwrap_or("");
-    let positive = |key: &str| prior.get(key).and_then(Value::as_f64).filter(|n| *n > 0.0).unwrap_or(1.0);
-    Color {
-        cm: if outputs::is_hdr_preset(cm) || cm.is_empty() { "srgb".into() } else { cm.into() },
-        bitdepth: if prior.get("bitdepth").and_then(Value::as_f64) == Some(10.0) { 10 } else { 8 },
-        sdrbrightness: positive("sdrbrightness"),
-        sdrsaturation: positive("sdrsaturation"),
+/// The prior as state.json holds it: possibly partial, each number as it was
+/// written, so a write that does not touch it gives it back unchanged.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Prior {
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub cm: Option<String>,
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub bitdepth: Option<Number>,
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub sdrbrightness: Option<Number>,
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub sdrsaturation: Option<Number>,
+    /// Keys this shell does not write, kept as they are.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl From<&Color> for Prior {
+    fn from(c: &Color) -> Self {
+        Prior {
+            cm: Some(c.cm.clone()),
+            bitdepth: Some(c.bitdepth.into()),
+            sdrbrightness: Number::from_f64(c.sdrbrightness),
+            sdrsaturation: Number::from_f64(c.sdrsaturation),
+            extra: Map::new(),
+        }
     }
 }
 
-/// state.json's `hdr`: `{ "<output>": { prior } }`, an entry present while the
-/// user wants that output in HDR. Always a fresh map.
-pub fn state_of(saved: &Value) -> Map<String, Value> {
-    saved
-        .as_object()
-        .map(|o| o.iter().filter(|(_, v)| v.is_object()).map(|(k, v)| (k.clone(), v.clone())).collect())
-        .unwrap_or_default()
+/// The colour settings to put back: an HDR preset or no `cm` is sRGB, a
+/// depth other than 10 is 8, and a missing level is 1.
+pub fn off_color(prior: &Prior) -> Color {
+    let cm = prior.cm.as_deref().unwrap_or("");
+    let number = |n: &Option<Number>| n.as_ref().and_then(Number::as_f64);
+    let positive = |n: &Option<Number>| number(n).filter(|n| *n > 0.0).unwrap_or(1.0);
+    Color {
+        cm: if outputs::is_hdr_preset(cm) || cm.is_empty() { "srgb".into() } else { cm.into() },
+        bitdepth: if number(&prior.bitdepth) == Some(10.0) { 10 } else { 8 },
+        sdrbrightness: positive(&prior.sdrbrightness),
+        sdrsaturation: positive(&prior.sdrsaturation),
+    }
 }
 
+/// One output in state.json's `hdr`, present while the user wants it in HDR:
+/// the colour settings to put back and the compositor instance it was put in
+/// HDR under.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Want {
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub prior: Option<Prior>,
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    /// Keys this shell does not write, kept as they are.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// state.json's `hdr`, keyed by output name.
+pub type Wants = BTreeMap<String, Want>;
+
 /// `instance` is the compositor instance the output was put in HDR under.
-pub fn with_output(saved: &Value, name: &str, prior: &Color, instance: &str) -> Map<String, Value> {
-    let mut out = state_of(saved);
-    out.insert(
-        name.to_string(),
-        json!({ "prior": {
-            "cm": prior.cm,
-            "bitdepth": prior.bitdepth,
-            "sdrbrightness": prior.sdrbrightness,
-            "sdrsaturation": prior.sdrsaturation,
-        }, "instance": instance }),
-    );
+pub fn with_output(saved: &Wants, name: &str, prior: &Color, instance: &str) -> Wants {
+    let mut out = saved.clone();
+    out.insert(name.to_string(), Want { prior: Some(prior.into()), instance: Some(instance.to_string()), extra: Map::new() });
     out
 }
 
 /// The same want, now held under `instance`.
-pub fn with_instance(saved: &Value, name: &str, instance: &str) -> Map<String, Value> {
-    let mut out = state_of(saved);
-    if let Some(Value::Object(w)) = out.get_mut(name) {
-        w.insert("instance".into(), json!(instance));
+pub fn with_instance(saved: &Wants, name: &str, instance: &str) -> Wants {
+    let mut out = saved.clone();
+    if let Some(w) = out.get_mut(name) {
+        w.instance = Some(instance.to_string());
     }
     out
 }
@@ -174,12 +207,12 @@ pub fn with_instance(saved: &Value, name: &str, instance: &str) -> Map<String, V
 /// Whether `name` was put in HDR under the compositor instance still running.
 /// That compositor showing it in SDR at a shell start means it was turned off
 /// outside the shell, so the want is dropped rather than put back.
-pub fn wanted_under(saved: &Value, name: &str, instance: &str) -> bool {
-    !instance.is_empty() && state_of(saved).get(name).and_then(|w| w.get("instance")).and_then(Value::as_str) == Some(instance)
+pub fn wanted_under(saved: &Wants, name: &str, instance: &str) -> bool {
+    !instance.is_empty() && saved.get(name).and_then(|w| w.instance.as_deref()) == Some(instance)
 }
 
-pub fn without_output(saved: &Value, name: &str) -> Map<String, Value> {
-    let mut out = state_of(saved);
+pub fn without_output(saved: &Wants, name: &str) -> Wants {
+    let mut out = saved.clone();
     out.remove(name);
     out
 }
@@ -187,15 +220,9 @@ pub fn without_output(saved: &Value, name: &str) -> Map<String, Value> {
 /// Outputs a shell start (or a config reload that reset the rules) has to put
 /// back in HDR: wanted in state, present and lit, supported, not in HDR now,
 /// and not already tried since the last reset.
-pub fn pending_reapply(
-    saved: &Value,
-    rows: &[Output],
-    verdicts: &HashMap<String, Verdict>,
-    tried: &HashSet<String>,
-) -> Vec<String> {
-    let wanted = state_of(saved);
+pub fn pending_reapply(saved: &Wants, rows: &[Output], verdicts: &HashMap<String, Verdict>, tried: &HashSet<String>) -> Vec<String> {
     rows.iter()
-        .filter(|row| wanted.contains_key(&row.name) && row.enabled && !is_on(Some(row)))
+        .filter(|row| saved.contains_key(&row.name) && row.enabled && !is_on(Some(row)))
         .filter(|row| verdicts.get(&row.name).is_some_and(|v| v.supported))
         .filter(|row| !tried.contains(&row.name))
         .map(|row| row.name.clone())
@@ -205,6 +232,7 @@ pub fn pending_reapply(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use crate::display::outputs::{RuleOverrides, hyprland_color_rule, hyprland_monitor_rule, hyprland_rule_lua, parse_hyprland_outputs};
 
     fn row(f: impl FnOnce(&mut Output)) -> Output {
@@ -367,8 +395,8 @@ mod tests {
         }));
         assert_eq!(prior.cm, "wide");
         assert_eq!(prior.bitdepth, 10);
-        let as_value = json!({ "cm": prior.cm, "bitdepth": prior.bitdepth });
-        assert_eq!(off_color(&as_value).cm, "wide");
+        let partial: Prior = serde_json::from_value(json!({ "cm": prior.cm, "bitdepth": prior.bitdepth })).unwrap();
+        assert_eq!(off_color(&partial), Color { cm: "wide".into(), bitdepth: 10, sdrbrightness: 1.0, sdrsaturation: 1.0 });
         assert_eq!(
             prior_of(&row(|r| {
                 r.cm = "hdr".into();
@@ -377,33 +405,31 @@ mod tests {
             .cm,
             "srgb"
         );
-        assert_eq!(off_color(&json!({ "cm": "hdr" })).cm, "srgb");
-        assert_eq!(off_color(&Value::Null).bitdepth, 8);
+        assert_eq!(off_color(&Prior { cm: Some("hdr".into()), ..Prior::default() }).cm, "srgb");
+        assert_eq!(off_color(&Prior::default()).bitdepth, 8);
     }
 
     #[test]
     fn state_helpers_return_fresh_objects() {
         let prior = Color { cm: "srgb".into(), bitdepth: 8, sdrbrightness: 1.0, sdrsaturation: 1.0 };
-        let a = Value::Object(with_output(&Value::Null, "eDP-1", &prior, "sig-a"));
-        assert!(a.get("eDP-1").is_some());
+        let a = with_output(&Wants::new(), "eDP-1", &prior, "sig-a");
+        assert!(a.contains_key("eDP-1"));
         assert!(wanted_under(&a, "eDP-1", "sig-a"));
         assert!(!wanted_under(&a, "eDP-1", "sig-b"));
         assert!(!wanted_under(&a, "eDP-1", ""));
-        assert!(!wanted_under(&json!({ "eDP-1": { "prior": {} } }), "eDP-1", "sig-a"));
-        let moved = Value::Object(with_instance(&a, "eDP-1", "sig-b"));
+        let bare: Wants = [("eDP-1".to_string(), Want::default())].into();
+        assert!(!wanted_under(&bare, "eDP-1", "sig-a"));
+        let moved = with_instance(&a, "eDP-1", "sig-b");
         assert!(wanted_under(&moved, "eDP-1", "sig-b"));
-        assert_eq!(moved["eDP-1"]["prior"], a["eDP-1"]["prior"]);
+        assert_eq!(moved["eDP-1"].prior, a["eDP-1"].prior);
         let b = without_output(&a, "eDP-1");
         assert!(!b.contains_key("eDP-1"));
-        assert!(a.get("eDP-1").is_some());
-        assert_eq!(state_of(&json!("junk")).len(), 0);
-        let keys: Vec<String> = state_of(&json!({ "x": 1, "y": { "prior": {} } })).keys().cloned().collect();
-        assert_eq!(keys.join(","), "y");
+        assert!(a.contains_key("eDP-1"));
     }
 
     #[test]
     fn reapply_wants_only_supported_lit_outputs_not_in_hdr_and_untried() {
-        let saved = json!({ "eDP-1": { "prior": {} }, "DP-1": { "prior": {} }, "DP-2": { "prior": {} }, "DP-3": { "prior": {} } });
+        let saved: Wants = ["eDP-1", "DP-1", "DP-2", "DP-3"].into_iter().map(|n| (n.to_string(), Want::default())).collect();
         let named = |name: &str| row(|r| r.name = name.into());
         let rows = vec![
             named("eDP-1"),
@@ -433,6 +459,18 @@ mod tests {
         assert_eq!(pending_reapply(&saved, &rows, &verdicts, &HashSet::new()).join(","), "eDP-1");
         let tried: HashSet<String> = ["eDP-1".to_string()].into();
         assert_eq!(pending_reapply(&saved, &rows, &verdicts, &tried).len(), 0);
-        assert_eq!(pending_reapply(&Value::Null, &rows, &verdicts, &HashSet::new()).len(), 0);
+        assert_eq!(pending_reapply(&Wants::new(), &rows, &verdicts, &HashSet::new()).len(), 0);
+    }
+
+    #[test]
+    fn a_want_reads_back_as_written() {
+        let text = json!({ "DP-2": { "note": "kept", "prior": { "cm": "wide", "sdrbrightness": 1, "x": [1] } } });
+        let wants: Wants = serde_json::from_value(text.clone()).unwrap();
+        assert_eq!(off_color(wants["DP-2"].prior.as_ref().unwrap()).sdrbrightness, 1.0);
+        assert_eq!(serde_json::to_value(&wants).unwrap(), text);
+        assert_eq!(serde_json::to_string(&wants).unwrap(), r#"{"DP-2":{"prior":{"cm":"wide","sdrbrightness":1,"x":[1]},"note":"kept"}}"#);
+        let bad: Want = serde_json::from_value(json!({ "prior": { "cm": 3, "bitdepth": 10 }, "instance": 4 })).unwrap();
+        assert_eq!(bad.prior.unwrap().bitdepth, Some(10.into()));
+        assert_eq!(bad.instance, None);
     }
 }

@@ -16,20 +16,57 @@
 //! the brightness keys step from end on the restored level.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 
 use fs_system::overnight::{self, AURA_ZONES, SCREEN_PERCENT};
 use fs_upower::Profile;
-use serde_json::{Map, Value, json};
+use fs_js::lenient;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Number, Value, json};
 
 use crate::runtime::Ctx;
 use crate::services::devices::power;
 use crate::services::display;
 use crate::services::state::{self, Field};
 
+/// state.json's `overnight`, present while it is on. Empty from the enable
+/// until the reads land, each key then written as it is known. Numbers keep
+/// the form they were written in and are rounded only on the way back.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Record {
+    /// The `PowerProfile` enum number.
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Number>,
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub backlight: Option<Number>,
+    /// Percent by connector.
+    #[serde(deserialize_with = "lenient::entries", skip_serializing_if = "Option::is_none")]
+    pub ddc: Option<BTreeMap<String, Number>>,
+    /// Brightness by LED name, a number or the string `brightnessctl` read.
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub leds: Option<BTreeMap<String, Value>>,
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub aura: Option<bool>,
+    /// Keys this shell does not write, kept as they are.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl Record {
+    /// The screens to put back and their percent: the backlight unless there
+    /// was none to dim, and every DDC monitor.
+    fn screens(&self) -> Vec<(String, i64)> {
+        let backlight = self.backlight.as_ref().and_then(Number::as_f64).filter(|l| *l >= 0.0).map(|l| ("backlight".to_owned(), l.round() as i64));
+        let ddc = self.ddc.iter().flatten().filter_map(|(id, pct)| Some((id.clone(), pct.as_f64()?.round() as i64)));
+        backlight.into_iter().chain(ddc).collect()
+    }
+}
+
 thread_local! {
     /// The record this thread last wrote while active, for the merges the
     /// LED listing and the Aura probe make once they finish.
-    static RECORD: RefCell<Option<Map<String, Value>>> = const { RefCell::new(None) };
+    static RECORD: RefCell<Option<Record>> = const { RefCell::new(None) };
     /// Bumped by every enable and disable: an enable still awaiting a read
     /// after a newer call stops there and touches nothing.
     static GENERATION: Cell<u64> = const { Cell::new(0) };
@@ -64,17 +101,17 @@ fn profile_of(n: i64) -> Option<Profile> {
     }
 }
 
-fn write(record: Option<Map<String, Value>>) {
-    state::set(vec![Field::Overnight(record.clone().map_or(Value::Null, Value::Object))]);
+fn write(record: Option<Record>) {
+    state::set(vec![Field::Overnight(record.clone())]);
     RECORD.with_borrow_mut(|r| *r = record);
 }
 
-/// Merges one key into the stored record; nothing once disabled.
-fn record(key: &str, value: Value) {
+/// Merges into the stored record; nothing once disabled.
+fn merge(change: impl FnOnce(&mut Record)) {
     let next = RECORD.with_borrow(|r| {
-        r.clone().map(|mut m| {
-            m.insert(key.into(), value);
-            m
+        r.clone().map(|mut rec| {
+            change(&mut rec);
+            rec
         })
     });
     if next.is_some() {
@@ -116,7 +153,7 @@ pub fn enable(ctx: &Ctx) {
     let generation = next_generation();
     // Empty until the reads below land, but the store reads active at once,
     // so a disable right behind this one is not dropped as a no-op.
-    write(Some(Map::new()));
+    write(Some(Record::default()));
     let ctx = ctx.clone();
     ctx.clone().spawn(async move {
         let profiles = power::profiles().await.ok();
@@ -128,18 +165,16 @@ pub fn enable(ctx: &Ctx) {
         if !current(generation) {
             return;
         }
-        let mut rec = Map::new();
-        if let Some(p) = active {
-            rec.insert("profile".into(), json!(profile_number(p)));
-        }
         let backlight = screens.iter().find(|(id, ..)| id == "backlight").map_or(-1, |(_, pct, _)| *pct);
-        rec.insert("backlight".into(), json!(backlight));
-        let ddc: Map<String, Value> =
-            screens.iter().filter(|(id, pct, _)| id != "backlight" && *pct > SCREEN_PERCENT).map(|(id, pct, _)| (id.clone(), json!(pct))).collect();
-        rec.insert("ddc".into(), Value::Object(ddc));
-        rec.insert("leds".into(), json!({}));
-        rec.insert("aura".into(), json!(false));
-        write(Some(rec));
+        let ddc = screens.iter().filter(|(id, pct, _)| id != "backlight" && *pct > SCREEN_PERCENT).map(|(id, pct, _)| (id.clone(), (*pct).into())).collect();
+        write(Some(Record {
+            profile: active.map(|p| profile_number(p).into()),
+            backlight: Some(backlight.into()),
+            ddc: Some(ddc),
+            leds: Some(BTreeMap::new()),
+            aura: Some(false),
+            extra: Map::new(),
+        }));
         // Recorded first, so a restart from here on still knows what to put back.
         for (id, pct, _) in &screens {
             if *pct > SCREEN_PERCENT {
@@ -156,8 +191,8 @@ pub fn enable(ctx: &Ctx) {
             if leds.is_empty() || !current(generation) {
                 return;
             }
-            let snapshot: Map<String, Value> = overnight::led_snapshot(&leds).into_iter().map(|(n, b)| (n, json!(b))).collect();
-            record("leds", Value::Object(snapshot));
+            let snapshot = overnight::led_snapshot(&leds).into_iter().map(|(n, b)| (n, json!(b))).collect();
+            merge(|rec| rec.leds = Some(snapshot));
             let names: Vec<String> = leds.into_iter().map(|l| l.name).collect();
             let _ = run(sh(LED_OFF, &names)).await;
         };
@@ -165,7 +200,7 @@ pub fn enable(ctx: &Ctx) {
             if let Some((0, _)) = run(sh(AURA_OFF, &zones)).await
                 && current(generation)
             {
-                record("aura", json!(true));
+                merge(|rec| rec.aura = Some(true));
             }
         };
         futures_lite::future::zip(leds, aura).await;
@@ -174,17 +209,11 @@ pub fn enable(ctx: &Ctx) {
 
 /// `snap`: the record state.json holds, which is what gets put back unless
 /// this thread holds a newer one.
-pub fn disable(ctx: &Ctx, snap: Value) {
+pub fn disable(ctx: &Ctx, snap: Record) {
     next_generation();
-    let snap = RECORD.with_borrow_mut(Option::take).map_or(snap, Value::Object);
+    let snap = RECORD.with_borrow_mut(Option::take).unwrap_or(snap);
     write(None);
-    let mut screens: Vec<(String, i64)> = Vec::new();
-    if let Some(level) = snap.get("backlight").and_then(Value::as_f64).filter(|l| *l >= 0.0) {
-        screens.push(("backlight".into(), level.round() as i64));
-    }
-    if let Some(Value::Object(ddc)) = snap.get("ddc") {
-        screens.extend(ddc.iter().filter_map(|(id, pct)| Some((id.clone(), pct.as_f64()?.round() as i64))));
-    }
+    let screens = snap.screens();
     // Queued now, behind whatever the dim still has out on each device.
     let unknown: Vec<(String, i64)> = screens.into_iter().filter(|(id, pct)| !restore(ctx, id, *pct)).collect();
     let ctx = ctx.clone();
@@ -196,18 +225,15 @@ pub fn disable(ctx: &Ctx, snap: Value) {
                 restore(&ctx, id, *pct);
             }
         }
-        if let Some(want) = snap.get("profile").and_then(Value::as_i64).and_then(profile_of)
+        if let Some(want) = snap.profile.as_ref().and_then(Number::as_i64).and_then(profile_of)
             && let Ok(p) = power::profiles().await
             && p.state().await.is_ok_and(|s| s.active != want)
         {
             let _ = p.set_active(want).await;
         }
-        let leds: Vec<(String, Value)> = match snap.get("leds") {
-            Some(Value::Object(m)) => m.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-            _ => Vec::new(),
-        };
+        let leds: Vec<(String, Value)> = snap.leds.unwrap_or_default().into_iter().collect();
         let restore = overnight::restore_args(&leds);
-        if snap.get("aura") == Some(&Value::Bool(true)) {
+        if snap.aura == Some(true) {
             let zones: Vec<String> = AURA_ZONES.iter().map(|z| z.to_string()).collect();
             let _ = run(sh(AURA_ON, &zones)).await;
         }
@@ -225,4 +251,24 @@ fn restore(ctx: &Ctx, id: &str, percent: i64) -> bool {
     }
     display::set_level(ctx, id, percent);
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn a_bad_field_keeps_the_rest_and_numbers_round_on_restore() {
+        let rec: Record = serde_json::from_value(json!({
+            "profile": "x", "backlight": 40.6, "ddc": {"DP-1": 55.5, "DP-2": "x"}, "leds": {"a": 1}, "note": 1
+        }))
+        .unwrap();
+        assert_eq!(rec.profile, None);
+        assert_eq!(rec.screens(), [("backlight".to_owned(), 41), ("DP-1".to_owned(), 56)]);
+        assert_eq!(serde_json::to_value(&rec).unwrap(), json!({"backlight": 40.6, "ddc": {"DP-1": 55.5}, "leds": {"a": 1}, "note": 1}));
+        let none: Record = serde_json::from_value(json!({"backlight": -1})).unwrap();
+        assert!(none.screens().is_empty());
+    }
 }

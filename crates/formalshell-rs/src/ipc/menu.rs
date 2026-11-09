@@ -129,7 +129,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
 fn abbreviations(app: &mut App, _: &[Value]) -> Value {
     use crate::surfaces::launcher as l;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64);
-    text(fs_menu::abbrev::report(&l::configured_abbreviations(&app.store), &l::abbreviation_book(&app.store), now).to_string())
+    text(fs_menu::abbrev::report(&l::configured_abbreviations(&app.store), &crate::services::menu::abbreviation_book(&app.store), now).to_string())
 }
 
 fn select(app: &mut App, args: &[Value]) -> Value {

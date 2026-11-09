@@ -21,6 +21,7 @@ use fs_types::{BtAddress, Percent};
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::scene::{IRect, Paint, Scene};
+use crate::services::devices::earbuds;
 use crate::services::devices::headsets::Headset;
 use crate::store::Store;
 use crate::paint::{Kit, Painter};
@@ -76,7 +77,7 @@ pub fn face(store: &Store, address: BtAddress) -> Face {
     let name = claimed
         .map(|d| d.name.as_str())
         .filter(|n| !n.is_empty())
-        .or_else(|| remembered(store, address, "name"))
+        .or_else(|| remembered(store, address, |f| f.name.as_deref()))
         .or_else(|| seen.map(|h| h.name.as_str()).filter(|n| !n.is_empty()))
         .map_or_else(|| address.to_string(), str::to_owned);
     let mut parts: Vec<Part> = Vec::new();
@@ -98,22 +99,22 @@ pub fn face(store: &Store, address: BtAddress) -> Face {
     let art = claimed
         .map(|d| d.art.clone())
         .filter(|a| !a.is_empty())
-        .or_else(|| remembered(store, address, "art").map(str::to_owned))
+        .or_else(|| remembered(store, address, |f| f.art.as_deref()).map(str::to_owned))
         .unwrap_or_default();
     Face { icon, art, name, parts, panel: if claimed.is_some() { "earbuds" } else { "bluetooth" } }
 }
 
-/// What the earbuds backend last called `address` (`key` "name") or the
-/// picture set it named (`key` "art").
-fn remembered<'a>(store: &'a Store, address: BtAddress, key: &str) -> Option<&'a str> {
-    store.state.data.earbuds_faces.get(&address.to_string())?.get(key)?.as_str().filter(|s| !s.is_empty())
+/// What the earbuds backend last called `address` (`field` the name) or the
+/// picture set it named (the art).
+fn remembered(store: &Store, address: BtAddress, field: fn(&earbuds::Face) -> Option<&str>) -> Option<&str> {
+    store.state.data.earbuds_faces.get(&address.to_string()).and_then(field).filter(|s| !s.is_empty())
 }
 
 /// The `address -> {art, name}` entries the earbuds backend reports now
 /// that state.json does not hold yet: a device's own address, or for one
 /// with none (the AirPods daemon's) the connected Bluetooth headset of its
 /// name. A set it has not named yet keeps the one remembered.
-pub fn learned(store: &Store) -> Vec<(String, serde_json::Value)> {
+pub fn learned(store: &Store) -> Vec<(String, earbuds::Face)> {
     let headsets = store.bluetooth.headsets.as_deref().unwrap_or_default();
     store
         .earbuds
@@ -125,10 +126,11 @@ pub fn learned(store: &Store) -> Vec<(String, serde_json::Value)> {
                 Some(address) => address,
                 None => headsets.iter().find(|h| h.connected && !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name))?.address,
             };
-            let art = if d.art.is_empty() { remembered(store, address, "art").unwrap_or_default() } else { d.art.as_str() };
-            let entry = serde_json::json!({"art": art, "name": d.name});
+            let art = if d.art.is_empty() { remembered(store, address, |f| f.art.as_deref()).unwrap_or_default() } else { d.art.as_str() };
             let key = address.to_string();
-            (store.state.data.earbuds_faces.get(&key) != Some(&entry)).then_some((key, entry))
+            let held = store.state.data.earbuds_faces.get(&key);
+            let entry = earbuds::Face { art: Some(art.to_owned()), name: Some(d.name.clone()), ..held.cloned().unwrap_or_default() };
+            (held != Some(&entry)).then_some((key, entry))
         })
         .collect()
 }

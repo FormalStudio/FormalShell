@@ -4,6 +4,8 @@
 //! engine rather than Rust's neighbours (`f64::round` rounds half away from
 //! zero, JS rounds half up; Rust's `trim` also strips U+0085, JS's does not).
 
+pub mod lenient;
+
 use std::cmp::Ordering;
 use std::sync::LazyLock;
 

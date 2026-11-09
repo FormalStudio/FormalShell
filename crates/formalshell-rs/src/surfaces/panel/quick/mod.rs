@@ -279,7 +279,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     }
 
     out.push(Tile::toggle("caffeinate", "coffee", "Caffeinate", store.caffeinate.active));
-    out.push(Tile::toggle("overnight", "moon-star", "Overnight", !store.state.data.overnight.is_null()));
+    out.push(Tile::toggle("overnight", "moon-star", "Overnight", store.state.data.overnight.is_some()));
 
     if let Some(output) = store.compositor.outputs.iter().find(|o| display::hdr_supported(store, &o.name)) {
         out.push(Tile::toggle("hdr", "sun-medium", "HDR", display::hdr_active(store)).subtitle(Some(output.name.clone())));

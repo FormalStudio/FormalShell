@@ -17,7 +17,9 @@ use async_channel::{Receiver, Sender};
 use async_io::Timer;
 use fs_system::lights as model;
 use futures_lite::FutureExt;
-use serde_json::{Map, Value, json};
+use fs_js::lenient;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Number, Value};
 
 use crate::runtime::Ctx;
 use crate::services::proc::{self, argv};
@@ -117,10 +119,27 @@ pub enum Cmd {
     Source(String),
 }
 
+/// state.json's `lights`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Record {
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// rrggbb, the custom colour.
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub colour: Option<String>,
+    /// The brightness the toggle turns back on to, as it was written.
+    #[serde(deserialize_with = "lenient::field", skip_serializing_if = "Option::is_none")]
+    pub on_level: Option<Number>,
+    /// Keys this shell does not write, kept as they are.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
 enum Msg {
     Cmd(Cmd),
     Palette(String),
-    Record(Value),
+    Record(Option<Record>),
     Probed(Option<model::Probe>),
     Written(String),
 }
@@ -143,14 +162,14 @@ pub fn palette(hex: String) {
 }
 
 /// state.json's `lights` record, from the UI thread.
-pub fn record(value: Value) {
-    send(Msg::Record(value));
+pub fn record(record: Option<Record>) {
+    send(Msg::Record(record));
 }
 
 struct Machine {
     ctx: Ctx,
     state: State,
-    record: Map<String, Value>,
+    record: Record,
     palette_ready: bool,
     queue: Vec<Vec<String>>,
     writing: bool,
@@ -163,7 +182,7 @@ impl Machine {
         Self {
             ctx,
             state: State::default(),
-            record: Map::new(),
+            record: Record::default(),
             palette_ready: false,
             queue: Vec::new(),
             writing: false,
@@ -173,25 +192,23 @@ impl Machine {
     }
 
     fn publish(&mut self) {
-        let source = self.record.get("source").and_then(Value::as_str).filter(|s| model::SOURCES.contains(s)).unwrap_or("wallpaper");
+        let source = self.record.source.as_deref().filter(|s| model::SOURCES.contains(s)).unwrap_or("wallpaper");
         self.state.source = source.to_owned();
-        let custom = model::normalize_hex(self.record.get("colour").and_then(Value::as_str));
+        let custom = model::normalize_hex(self.record.colour.as_deref());
         self.state.custom_colour = if custom.is_empty() { "ffffff".into() } else { custom };
         self.ctx.publish(store::Diff::Lights(Diff(self.state.clone())));
     }
 
     fn on_level(&self) -> i64 {
-        match self.record.get("onLevel").and_then(Value::as_i64) {
+        match self.record.on_level.as_ref().and_then(Number::as_i64) {
             Some(n) if n > 0 => n,
             _ => model::BRIGHTNESS.len() as i64 - 1,
         }
     }
 
-    fn save(&mut self, fields: &[(&str, Value)]) {
-        for (k, v) in fields {
-            self.record.insert((*k).to_owned(), v.clone());
-        }
-        state::set(vec![Field::Lights(Value::Object(self.record.clone()))]);
+    fn save(&mut self, change: impl FnOnce(&mut Record)) {
+        change(&mut self.record);
+        state::set(vec![Field::Lights(Some(self.record.clone()))]);
     }
 
     fn wanted_colour(&self) -> String {
@@ -275,7 +292,7 @@ impl Machine {
         }
         if level == 0 && self.state.brightness > 0 {
             let on = self.state.brightness;
-            self.save(&[("onLevel", json!(on))]);
+            self.save(|r| r.on_level = Some(on.into()));
         }
         self.state.brightness = level;
         self.send(args);
@@ -302,7 +319,7 @@ impl Machine {
                 }
             }
             Cmd::Colour(hex) => {
-                self.save(&[("source", json!("custom")), ("colour", json!(hex))]);
+                self.save(|r| (r.source, r.colour) = (Some("custom".into()), Some(hex.clone())));
                 let id = if model::uses_colour(&self.state.effect) { self.state.effect.clone() } else { "static".into() };
                 let speed = self.state.speed.clone();
                 self.state.source = "custom".into();
@@ -310,7 +327,7 @@ impl Machine {
                 self.apply_effect(&id, &hex, &speed);
             }
             Cmd::Source(value) => {
-                self.save(&[("source", json!(value))]);
+                self.save(|r| r.source = Some(value.clone()));
                 self.state.source = value;
                 if model::uses_colour(&self.state.effect) {
                     let (effect, colour, speed) = (self.state.effect.clone(), self.wanted_colour(), self.state.speed.clone());
@@ -348,8 +365,7 @@ impl Machine {
                     self.settle_at = Some(Instant::now() + PALETTE_SETTLE);
                 }
             }
-            Msg::Record(Value::Object(map)) => self.record = map,
-            Msg::Record(_) => self.record = Map::new(),
+            Msg::Record(record) => self.record = record.unwrap_or_default(),
             Msg::Probed(probe) => self.probed(probe),
             Msg::Written(error) => {
                 self.writing = false;

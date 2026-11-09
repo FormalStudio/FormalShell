@@ -6,9 +6,15 @@ use fs_system::power::model::{Low, Thresholds, battery_icon, charge_state_label,
 use fs_upower::DeviceState;
 
 use crate::services::devices::power;
+use crate::services::state::{self, Field};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
 use crate::paint::{Look, Tone};
+
+/// The label toggled from the cell, kept in state.json over settings.
+pub fn show_percent(on: bool) {
+    state::set(vec![Field::BatteryShowPercent(Some(on))]);
+}
 
 #[derive(Default, PartialEq)]
 struct Read {
@@ -35,13 +41,7 @@ impl Cell for Battery {
         let c = &env.store.config;
         let p = &env.store.power;
         // state.json's override wins; null there falls back to settings.
-        let show_label = env
-            .store
-            .state
-            .data
-            .battery_show_percent
-            .as_bool()
-            .unwrap_or_else(|| c.bool("bar.widgets.battery.showLabel").unwrap_or(true));
+        let show_label = env.store.state.data.battery_show_percent.unwrap_or_else(|| c.bool("bar.widgets.battery.showLabel").unwrap_or(true));
         let r = Read {
             battery: p.battery.clone().map(|b| (b, crate::settings::battery_thresholds(c))),
             on_battery: p.on_battery,

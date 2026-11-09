@@ -7,7 +7,6 @@ use std::collections::HashSet;
 use fs_activity::{Item, State as Run};
 use fs_menu::node::{Kind as NodeKind, Node};
 use fs_menu::providers as p;
-use serde_json::json;
 
 use crate::services::menu::{self as index, Ask};
 use crate::services::packages::{self, Cmd, NO_FSPEC, Verb};
@@ -201,12 +200,12 @@ pub fn land(store: &mut Store) -> bool {
         }
     }
     if !picks.is_empty() {
-        let mut held = crate::surfaces::launcher::picks(store);
+        let mut held = store.state.data.picks.clone();
         let at = crate::surfaces::launcher::now_ms();
         for id in &picks {
             held = fs_menu::frecency::record(&held, id, at, None);
         }
-        state::set(vec![state::Field::Picks(json!(held))]);
+        state::set(vec![state::Field::Picks(held)]);
     }
     moved
 }

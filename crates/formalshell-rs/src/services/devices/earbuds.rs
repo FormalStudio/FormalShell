@@ -69,6 +69,20 @@ impl Backend {
     }
 }
 
+/// What state.json's `earbudsFaces` keeps per address: the picture set and
+/// the name the backend last gave the device.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Face {
+    #[serde(deserialize_with = "fs_js::lenient::field", skip_serializing_if = "Option::is_none")]
+    pub art: Option<String>,
+    #[serde(deserialize_with = "fs_js::lenient::field", skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Keys this shell does not write, kept as they are.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
 pub struct Earbuds {
     backends: Vec<(&'static str, Backend)>,
     devices: Vec<Device>,

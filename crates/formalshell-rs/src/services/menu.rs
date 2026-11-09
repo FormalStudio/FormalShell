@@ -255,6 +255,17 @@ pub fn ask(a: Ask) {
     let _ = ASK.0.try_send(a);
 }
 
+/// The app subjects among state.json's picks, keyed by desktop id as the
+/// apps source orders by.
+pub fn launches(picks: &[Record]) -> Vec<Record> {
+    picks.iter().filter_map(|r| Some(Record { id: r.id.strip_prefix("app:")?.to_owned(), ..*r })).collect()
+}
+
+/// state.json's abbreviations, empty before the first pin or learned pick.
+pub fn abbreviation_book(store: &store::Store) -> fs_menu::abbrev::Book {
+    store.state.data.abbreviations.clone().unwrap_or_default()
+}
+
 pub fn start(ctx: &Ctx) {
     ctx.spawn(run(ctx.clone()));
 }

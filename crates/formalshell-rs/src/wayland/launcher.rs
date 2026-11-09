@@ -1301,7 +1301,7 @@ impl App {
         }
         if self.menu_launches.as_ref() != Some(&self.store.state.data.picks) {
             self.menu_launches = Some(self.store.state.data.picks.clone());
-            index::ask(Ask::Apps(crate::surfaces::launcher::launches(&self.store)));
+            index::ask(Ask::Apps(index::launches(&self.store.state.data.picks)));
         }
     }
 }
