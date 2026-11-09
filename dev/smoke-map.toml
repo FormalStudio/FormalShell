@@ -648,7 +648,7 @@ paths = ["crates/formalshell-rs/src/paths.rs"]
 runs = ["--instance", "--lock-restore", "--login-lock", "--lock"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/ipc/debug.rs"]
+paths = ["crates/formalshell-rs/src/ipc/debug.rs", "crates/formalshell-rs/src/wayland/owner.rs"]
 runs = ["--base", "--dump", "--render"]
 
 [[rule]]

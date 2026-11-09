@@ -6,7 +6,8 @@
 # for the frame log, and the same at a tenth of the speed for frames read
 # mid-flight and at rest. `debug dump` and `debug query` grow with the shell,
 # so they are read as data: every dump key must be one of the keys
-# crates/formalshell-rs/src/ipc/debug.rs builds, and a query answers with the
+# crates/formalshell-rs/src/ipc/debug.rs builds or an owner's `report` in
+# crates/formalshell-rs/src/wayland/owner.rs inserts, and a query answers with the
 # launcher's rows. Every other reply is matched byte for byte.
 leg_base_flag="--base"
 leg_base_order=5
@@ -66,6 +67,7 @@ leg_base_assert() {
   dump_keys=$({
     awk '/let mut dump = json!\(\{/ { on = 1; next } on && /^    \}\);/ { on = 0 } on && match($0, /^        "[A-Za-z]+":/) { print substr($0, 10, RLENGTH - 11) }' crates/formalshell-rs/src/ipc/debug.rs
     sed -n 's/^    dump\["\([A-Za-z]*\)"\] = .*/\1/p' crates/formalshell-rs/src/ipc/debug.rs
+    sed -n 's/^ *dump\.insert("\([A-Za-z]*\)"\.into(), .*/\1/p' crates/formalshell-rs/src/wayland/owner.rs
   } | "$jq_bin" -R . | "$jq_bin" -sc .)
   [ "$dump_keys" != "[]" ] || fail "no dump keys found in crates/formalshell-rs/src/ipc/debug.rs"
   dumps=$(awk 'prev=="> debug dump"{print} {prev=$0}' "$rs_ipc_path")
