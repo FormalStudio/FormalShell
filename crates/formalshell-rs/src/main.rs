@@ -63,7 +63,7 @@ fn main() {
     own_process_group();
     trace::phase("instance");
     text::preload();
-    wayland::lock::preload_login();
+    let prompter = wayland::lock::preload_login();
 
     let conn = Connection::connect_to_env().expect("no Wayland compositor to connect to");
     trace::phase("wayland connect");
@@ -77,7 +77,7 @@ fn main() {
     let handle = event_loop.handle();
     WaylandSource::new(conn.clone(), queue).insert(handle.clone()).expect("wayland source");
 
-    let mut app = App::new(&globals, &qh, started, motion_scale());
+    let mut app = App::new(&globals, &qh, started, motion_scale(), prompter);
     app.warm_bar_faces();
     trace::phase("app");
 

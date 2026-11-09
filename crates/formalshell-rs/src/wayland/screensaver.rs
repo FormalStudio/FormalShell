@@ -45,7 +45,7 @@ use crate::motion::{Animated, Kind};
 use crate::runtime::now_ms;
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::services::screensaver as service;
-use crate::services::visualizer::Avail;
+use crate::services::proc::Avail;
 use crate::settings;
 use crate::surface::{Backend, Ignore, Surface};
 use crate::text::{Family, ShapedText, TextStyle};

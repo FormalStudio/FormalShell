@@ -518,7 +518,7 @@ async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
                     next_check = Instant::now() + every;
                     air.history.clear();
                     let had_motion = air.stop_motion();
-                    let stopped = std::mem::take(&mut air.heart_on) && air.send("heartrate:off".into()).await;
+                    let stopped = std::mem::take(&mut air.heart_on) && air.send(airpods::HEART_OFF.into()).await;
                     if stopped || had_motion {
                         air.load(&ctx, &path).await;
                     }
@@ -533,14 +533,14 @@ async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
                     air.ca_user = false;
                     if restore {
                         let status = air.read(&ctx, &path).await;
-                        if status.ok && status.connected && !status.conversational_awareness && air.send("ca:on".into()).await {
+                        if status.ok && status.connected && !status.conversational_awareness && air.send(airpods::CA_ON.into()).await {
                             air.load(&ctx, &path).await;
                         }
                     }
                 }
             }
             Wake::Event(Event::Op(Op::Airpods(verb))) => {
-                if air.mic && verb.starts_with("ca:") {
+                if air.mic && airpods::is_ca(&verb) {
                     air.ca_user = true;
                     air.ca_restore = false;
                 }
@@ -678,7 +678,7 @@ impl Airpods {
             return false;
         }
         self.ca_restore = true;
-        self.send("ca:off".into()).await
+        self.send(airpods::CA_OFF.into()).await
     }
 
     async fn load(&mut self, ctx: &Ctx, path: &std::path::Path) {
@@ -732,7 +732,7 @@ impl Airpods {
         self.skipped = None;
         self.heart_on = true;
         self.check = Some(Check { started: Instant::now(), first_settled: None, samples: Vec::new() });
-        if self.send("heartrate:on".into()).await {
+        if self.send(airpods::HEART_ON.into()).await {
             self.publish(ctx, &status);
         }
     }
@@ -747,7 +747,7 @@ impl Airpods {
         let Some(check) = self.check.take() else { return };
         self.keep(&check);
         if std::mem::take(&mut self.heart_on) {
-            self.send("heartrate:off".into()).await;
+            self.send(airpods::HEART_OFF.into()).await;
         }
         self.load(ctx, path).await;
     }
@@ -756,7 +756,7 @@ impl Airpods {
         let Some(socket) = socket_path() else { return };
         let connect = async {
             let mut stream = Async::<std::os::unix::net::UnixStream>::connect(&socket).await.ok()?;
-            stream.write_all(b"motion:watch").await.ok()?;
+            stream.write_all(airpods::MOTION_WATCH.as_bytes()).await.ok()?;
             stream.flush().await.ok()?;
             Some(stream)
         };

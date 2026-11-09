@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use zbus::zvariant::{OwnedValue, Value};
 
-use fs_types::Percent;
+use fs_types::{Percent, Urgency};
 
 use crate::image::{self, Image};
 
@@ -12,14 +12,6 @@ pub enum CloseReason {
     Expired = 1,
     Dismissed = 2,
     CloseRequested = 3,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Urgency {
-    Low,
-    #[default]
-    Normal,
-    Critical,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

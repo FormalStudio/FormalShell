@@ -30,6 +30,8 @@ const DEFORM_AMOUNT: f64 = 0.15;
 pub struct Dialog {
     pub(super) modal: Modal,
     ui: Ui,
+    /// The service's id for the request on screen.
+    request: u64,
     avatar_nodes: Vec<NodeId>,
     /// The identity's picture, when it is this session's own account.
     avatar: Option<Bitmap>,
@@ -73,7 +75,7 @@ fn wrap(text: &str, width: f64, theme: &fs_theme::theme::Theme, kit: &mut crate:
 impl App {
     pub(super) fn polkit_event(&mut self, event: Event) {
         match event {
-            Event::Begin { message, identity } => {
+            Event::Begin { request, message, identity } => {
                 let own = !identity.is_empty() && std::env::var("USER").is_ok_and(|u| u == identity);
                 let names = ["polkit", "polkit-scrim-band", "polkit-scrim"];
                 let mut modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Overlay, Some("dialog"), DEFORM_AMOUNT, true);
@@ -82,6 +84,7 @@ impl App {
                 modal.layer = Some(content);
                 self.polkit = Some(Dialog {
                     modal,
+                    request,
                     ui: Ui::new(Some(top)),
                     avatar_nodes: Vec::new(),
                     avatar: None,
@@ -167,12 +170,12 @@ impl App {
         match event.keysym {
             Keysym::Escape => {
                 d.text = field();
-                polkit::send(Cmd::Cancel);
+                polkit::send(Cmd::Cancel(d.request));
             }
             Keysym::Return | Keysym::KP_Enter if enabled => {
                 (d.submitted, d.error) = (true, false);
                 let answer = d.text.replace(buffer());
-                polkit::send(Cmd::Submit(answer));
+                polkit::send(Cmd::Submit(d.request, answer));
             }
             sym if enabled => {
                 d.text.secret = !d.echo;

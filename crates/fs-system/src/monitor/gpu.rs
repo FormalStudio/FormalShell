@@ -10,10 +10,6 @@
 use fs_js as js;
 use std::collections::HashMap;
 
-/// Desktop-entry Exec field codes, per the freedesktop spec. `%%` is a
-/// literal percent and is not one of them.
-const FIELD_CODES: &str = "fFuUickdDnNvm";
-
 // ---- @drm section --------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
@@ -337,38 +333,6 @@ pub(crate) fn output_card<'a>(connector_name: &str, cards: &'a [Card]) -> Option
 
 // ---- launch-on-dGPU ----------------------------------------------------------
 
-/// Exec field codes (%f %F %u %U %i %c %k %d %D %n %N %v %m) removed and
-/// whitespace collapsed. `%%` is a literal percent. One pass, so a literal
-/// `%%` can never be re-read as the start of a field code.
-pub(crate) fn strip_field_codes(exec_string: &str) -> String {
-    let mut out = String::new();
-    let mut chars = exec_string.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '%' {
-            out.push(c);
-            continue;
-        }
-        // `.` in the JS pattern skips line terminators.
-        match chars.peek().copied() {
-            Some(n) if !matches!(n, '\n' | '\r' | '\u{2028}' | '\u{2029}') => {
-                chars.next();
-                if n == '%' {
-                    out.push('%');
-                } else if !FIELD_CODES.contains(n) {
-                    out.push('%');
-                    out.push(n);
-                }
-            }
-            _ => out.push('%'),
-        }
-    }
-    js::split_ws(&out)
-        .into_iter()
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// Which offload helper is on PATH.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OffloadTools {
@@ -385,7 +349,7 @@ pub struct OffloadTools {
 /// never the positional `DRI_PRIME=1`, ambiguous on a box with more than two
 /// GPUs.
 pub fn offload_argv(exec_string: &str, target: Option<&Card>, tools: OffloadTools) -> Vec<String> {
-    let tail = ["sh".to_string(), "-c".to_string(), strip_field_codes(exec_string)];
+    let tail = ["sh".to_string(), "-c".to_string(), crate::exec::strip_field_codes(exec_string)];
 
     let mut head: Vec<String> = if target.is_some_and(|t| t.driver == "nvidia") {
         if tools.nvidia_offload {
@@ -636,21 +600,6 @@ mod tests {
             offload_argv("firefox", Some(&cards[1]), OffloadTools::default()).join(" "),
             "env DRI_PRIME=pci-0000_00_02_0 sh -c firefox"
         );
-    }
-
-    #[test]
-    fn strip_field_codes_removes_a_single_code() {
-        assert_eq!(strip_field_codes("firefox %u"), "firefox");
-    }
-
-    #[test]
-    fn strip_field_codes_collapses_multiple_codes_cleanly() {
-        assert_eq!(strip_field_codes("foo %F --bar %i"), "foo --bar");
-    }
-
-    #[test]
-    fn strip_field_codes_keeps_a_literal_percent_from_double_percent() {
-        assert_eq!(strip_field_codes("echo 100%%"), "echo 100%");
     }
 
     #[test]

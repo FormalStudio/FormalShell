@@ -423,13 +423,25 @@ pub fn command(control_key: &str, value: &Value) -> Option<String> {
     }
 }
 
+pub const CA_ON: &str = "ca:on";
+pub const CA_OFF: &str = "ca:off";
+pub const HEART_ON: &str = "heartrate:on";
+pub const HEART_OFF: &str = "heartrate:off";
+/// Opens the head motion stream on a connection of its own.
+pub const MOTION_WATCH: &str = "motion:watch";
+
+/// Whether `verb` changes conversational awareness.
+pub fn is_ca(verb: &str) -> bool {
+    verb.starts_with("ca:")
+}
+
 /// The verb starting or stopping the stream. `None` for on unless the
 /// daemon reports the service available on a connected link.
 pub fn heart_command(status: &Status, on: bool) -> Option<&'static str> {
     if !on {
-        return Some("heartrate:off");
+        return Some(HEART_OFF);
     }
-    (status.connected && status.heart_rate.available).then_some("heartrate:on")
+    (status.connected && status.heart_rate.available).then_some(HEART_ON)
 }
 
 #[cfg(test)]

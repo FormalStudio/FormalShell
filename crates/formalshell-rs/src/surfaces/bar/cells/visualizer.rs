@@ -15,7 +15,8 @@ use fs_media::visualizer::model::{self, BAR_COUNT, Band, CELL_BAR_COUNT};
 use fs_theme::tokens::WEIGHTS;
 
 use crate::scene::IRect;
-use crate::services::visualizer::{self, Avail};
+use crate::services::proc::Avail;
+use crate::services::visualizer;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Cell, Custom, Env, View};
 use crate::paint::{Ink, Kit, Look, Painter};

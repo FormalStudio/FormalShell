@@ -16,10 +16,6 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-/// asusctl's Aura zones. A zone the chassis lacks makes asusctl exit non-zero,
-/// which the service ignores.
-pub const AURA_ZONES: [&str; 5] = ["keyboard", "logo", "lightbar", "lid", "rear-glow"];
-
 /// Percent, never 0: some panels treat a zero backlight or VCP 10 as off.
 pub const SCREEN_PERCENT: i64 = 1;
 

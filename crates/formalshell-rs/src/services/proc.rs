@@ -11,6 +11,27 @@ use futures_lite::{AsyncReadExt, FutureExt};
 pub const MISSING: i32 = 127;
 pub const TIMED_OUT: i32 = 124;
 
+/// Whether a program the shell shells out to is on PATH, as a one-shot
+/// probe reports it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Avail {
+    /// Until the one-shot PATH probe answers.
+    #[default]
+    Unknown,
+    Available,
+    Missing,
+}
+
+impl Avail {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Avail::Unknown => "unknown",
+            Avail::Available => "available",
+            Avail::Missing => "missing",
+        }
+    }
+}
+
 pub struct Done {
     pub code: i32,
     pub stdout: String,

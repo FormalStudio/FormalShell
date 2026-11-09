@@ -12,17 +12,6 @@ pub struct Launcher {
     os_id: Option<String>,
 }
 
-/// os-release's `ID`, quotes stripped (Bar/launchericon.js).
-fn os_id() -> String {
-    let text = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
-    for line in text.lines() {
-        if let Some(v) = line.trim().strip_prefix("ID=") {
-            return v.trim().trim_matches(['"', '\'']).to_owned();
-        }
-    }
-    String::new()
-}
-
 impl Cell for Launcher {
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Config]
@@ -31,7 +20,7 @@ impl Cell for Launcher {
     fn read(&mut self, env: &Env) -> bool {
         let configured = env.store.config.str("bar.launcherIcon").unwrap_or("").trim().to_owned();
         if self.os_id.is_none() {
-            self.os_id = Some(os_id());
+            self.os_id = Some(fs_info::about::os_id().unwrap_or_default());
         }
         let changed = configured != self.configured;
         self.configured = configured;

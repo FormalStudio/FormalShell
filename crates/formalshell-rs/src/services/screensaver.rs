@@ -11,7 +11,7 @@ use futures_lite::{AsyncReadExt, FutureExt};
 
 use crate::runtime::Ctx;
 use crate::services::proc;
-use crate::services::visualizer::Avail;
+use crate::services::proc::Avail;
 use crate::store;
 
 /// How a run ended on its own: `frames` counts the animation frames it

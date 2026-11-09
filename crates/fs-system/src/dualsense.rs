@@ -1,4 +1,4 @@
-//! Model for the DualSense panel. The battery is UPower's reading of
+//! Model for the DualSense panel. The battery is UPower's own device for
 //! hid-playstation's power_supply node; the light parsers take the raw text a
 //! `cat` on the matching sysfs file would produce, or an absent/unparsable
 //! one, and return a complete default shape rather than leaving a caller to
@@ -11,23 +11,32 @@
 
 use fs_js as js;
 use fs_types::Percent;
+use fs_upower::DeviceState;
 
 use crate::power::model::{Low, Thresholds};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Supply {
     pub level: Percent,
-    pub status_label: String,
+    pub state: DeviceState,
     /// Off a straight read of the level, with no charge-direction gating.
     pub low: Option<Low>,
 }
 
 impl Supply {
-    /// `status`: the supply's POWER_SUPPLY_STATUS word ("Charging",
-    /// "Discharging", "Full", "Not charging", "Unknown"), surfaced as the
-    /// hero meta line.
-    pub fn new(level: Percent, status: &str) -> Supply {
-        Supply { level, status_label: status.to_owned(), low: Thresholds::DUALSENSE.low(level) }
+    pub fn new(level: Percent, state: DeviceState) -> Supply {
+        Supply { level, state, low: Thresholds::DUALSENSE.low(level) }
+    }
+
+    /// The hero meta line: the sysfs status word UPower's state stands for.
+    pub fn status_label(&self) -> &'static str {
+        match self.state {
+            DeviceState::Charging => "Charging",
+            DeviceState::Discharging | DeviceState::Empty => "Discharging",
+            DeviceState::FullyCharged => "Full",
+            DeviceState::PendingCharge | DeviceState::PendingDischarge => "Not charging",
+            DeviceState::Unknown => "Unknown",
+        }
     }
 }
 
@@ -66,43 +75,42 @@ pub fn parse_player_leds(brightnesses: Option<&[Option<&str>]>) -> usize {
     brightnesses.map_or(0, |list| list.iter().filter(|b| b.is_some_and(|t| js::trim(t) == "1")).count())
 }
 
-/// The hero meta line: the sysfs status word alone, e.g. "Charging" /
-/// "Discharging" / "Full" / "Not charging". Sysfs carries no time-to-empty for
-/// this device, so nothing is estimated or invented here.
+/// The hero meta line: the status word alone. UPower carries no
+/// time-to-empty for this device, so nothing is estimated or invented here.
 pub fn state_line(supply: Option<&Supply>) -> String {
-    supply.map_or_else(String::new, |s| s.status_label.clone())
+    supply.map_or_else(String::new, |s| s.status_label().to_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn supply(level: u8, status: &str) -> Supply {
-        Supply::new(Percent::whole(level), status)
+    fn supply(level: u8, state: DeviceState) -> Supply {
+        Supply::new(Percent::whole(level), state)
     }
 
     #[test]
     fn supply_ok_reading() {
-        let s = supply(80, "Discharging");
+        let s = supply(80, DeviceState::Discharging);
         assert_eq!(s.level.rounded(), 80);
-        assert_eq!(s.status_label, "Discharging");
+        assert_eq!(s.status_label(), "Discharging");
         assert_eq!(s.low, None);
     }
 
     #[test]
     fn supply_warn_band() {
-        assert_eq!(supply(20, "Discharging").low, Some(Low::Warn));
+        assert_eq!(supply(20, DeviceState::Discharging).low, Some(Low::Warn));
     }
 
     #[test]
     fn supply_critical_band_wins_over_warn() {
-        assert_eq!(supply(10, "Discharging").low, Some(Low::Critical));
+        assert_eq!(supply(10, DeviceState::Discharging).low, Some(Low::Critical));
     }
 
     #[test]
     fn supply_ignores_charging() {
-        let s = supply(5, "Charging");
-        assert_eq!(s.status_label, "Charging");
+        let s = supply(5, DeviceState::Charging);
+        assert_eq!(s.status_label(), "Charging");
         assert_eq!(s.low, Some(Low::Critical));
     }
 
@@ -151,12 +159,12 @@ mod tests {
 
     #[test]
     fn state_line_discharging() {
-        assert_eq!(state_line(Some(&supply(80, "Discharging"))), "Discharging");
+        assert_eq!(state_line(Some(&supply(80, DeviceState::Discharging))), "Discharging");
     }
 
     #[test]
     fn state_line_full() {
-        assert_eq!(state_line(Some(&supply(100, "Full"))), "Full");
+        assert_eq!(state_line(Some(&supply(100, DeviceState::FullyCharged))), "Full");
     }
 
     #[test]

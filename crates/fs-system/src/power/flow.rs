@@ -277,20 +277,6 @@ fn is_adapter(s: &Supply) -> bool {
     !is_battery(s) && !s.kind.is_empty() && !s.name.contains("source") && s.scope != "Device"
 }
 
-/// A battery sitting at its charge limit reports "Not charging" (or "Full" on
-/// drivers that call the limit full) at a capacity within a percent of
-/// charge_control_end_threshold, with the adapter present.
-pub(crate) fn held_at_limit(status: &str, capacity: Option<f64>, limit: Option<f64>, adapter_online: bool) -> bool {
-    let (Some(capacity), Some(limit)) = (capacity, limit) else { return false };
-    if !adapter_online || limit >= 100.0 {
-        return false;
-    }
-    if status != "Not charging" && status != "Full" {
-        return false;
-    }
-    capacity >= limit - 1.0
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BatteryState {
     None,
@@ -347,7 +333,7 @@ pub struct Battery {
     pub link: Link,
 }
 
-fn battery(supply: Option<&Supply>, adapter_online: bool) -> Battery {
+fn battery(supply: Option<&Supply>, held: bool) -> Battery {
     let Some(supply) = supply else {
         return Battery {
             present: false,
@@ -364,7 +350,6 @@ fn battery(supply: Option<&Supply>, adapter_online: bool) -> Battery {
     };
 
     let status = supply.status.as_str();
-    let held = held_at_limit(status, supply.capacity, supply.limit, adapter_online);
     let state = if held {
         BatteryState::Held
     } else {
@@ -384,7 +369,10 @@ fn battery(supply: Option<&Supply>, adapter_online: bool) -> Battery {
     };
 
     let detail = match state {
-        BatteryState::Held => format!("Held at {}%", js::num_str(supply.limit.unwrap_or(f64::NAN))),
+        BatteryState::Held => match supply.limit.and_then(super::model::charge_limit) {
+            Some(limit) => format!("Held at {limit}%"),
+            None => "Held at limit".to_string(),
+        },
         BatteryState::Charging => with_watts("Charging"),
         BatteryState::Discharging => with_watts("Discharging"),
         BatteryState::Full => "Full".to_string(),
@@ -453,6 +441,9 @@ pub struct Extras {
     pub cpu_w: Option<f64>,
     pub gpu_w: Option<f64>,
     pub iphone_percent: Option<f64>,
+    /// The battery holds at its charge limit, as UPower's state says
+    /// (`charge_threshold_active`); the supply files cannot tell it.
+    pub held: bool,
 }
 
 /// The kernel numbers typec ports from 0 and UCSI connectors, and the
@@ -596,7 +587,7 @@ pub fn build_flow(snapshot: &Snapshot, extras: &Extras) -> Flow {
     let usbc_charger = ports.iter().any(|p| p.supplying);
     adapter_online = adapter_online || usbc_charger;
 
-    let bat = battery(battery_supply, adapter_online);
+    let bat = battery(battery_supply, extras.held);
     let adapter_watts = adapter_supply.filter(|s| s.online == Some(true)).and_then(supply_watts);
     let adapter_present = adapter_supply.is_some() || usbc_charger;
 
@@ -683,7 +674,7 @@ pub fn sample_flow() -> Flow {
         ]
         .join("\n"),
     );
-    build_flow(&snapshot, &Extras { cpu_w: None, gpu_w: Some(22.73), iphone_percent: Some(87.0) })
+    build_flow(&snapshot, &Extras { cpu_w: None, gpu_w: Some(22.73), iphone_percent: Some(87.0), held: true })
 }
 
 #[cfg(test)]
@@ -794,28 +785,11 @@ mod tests {
         assert_eq!(s.ports[0].product, "A=B");
     }
 
-    // heldAtLimit
-
-    #[test]
-    fn held_at_limit_cases() {
-        assert!(held_at_limit("Not charging", Some(80.0), Some(80.0), true));
-        assert!(held_at_limit("Full", Some(79.0), Some(80.0), true));
-    }
-
-    #[test]
-    fn not_held_without_adapter_or_below_limit_or_no_limit() {
-        assert!(!held_at_limit("Not charging", Some(80.0), Some(80.0), false));
-        assert!(!held_at_limit("Not charging", Some(60.0), Some(80.0), true));
-        assert!(!held_at_limit("Not charging", Some(100.0), None, true));
-        assert!(!held_at_limit("Not charging", Some(100.0), Some(100.0), true));
-        assert!(!held_at_limit("Charging", Some(80.0), Some(80.0), true));
-    }
-
     // buildFlow on the g815
 
     #[test]
     fn g815_battery_is_held_with_no_flow() {
-        let f = flow(G815, Extras { gpu_w: Some(22.73), ..Default::default() });
+        let f = flow(G815, Extras { gpu_w: Some(22.73), held: true, ..Default::default() });
         assert_eq!(f.battery.state.as_str(), "held");
         assert_eq!(f.battery.detail, "Held at 80%");
         assert_eq!(f.battery.value, "80%");

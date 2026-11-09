@@ -162,14 +162,6 @@ const IPAD_EDGES: [(Edge, &str, &str); 4] =
 /// The networks Wi-Fi's menu lists at most, as GNOME's does.
 const NETWORKS: usize = 8;
 
-fn profile_name(p: Profile) -> &'static str {
-    match p {
-        Profile::PowerSaver => "Power saver",
-        Profile::Balanced => "Balanced",
-        Profile::Performance => "Performance",
-    }
-}
-
 /// The battery pill's glyph and percent, as the bar's battery cell reads
 /// them; none without a laptop battery.
 fn battery(store: &Store) -> Option<(&'static str, String)> {
@@ -259,7 +251,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     out.push(
         Tile::toggle("power-mode", "gauge", "Power mode", profiles.is_some_and(|p| p.active != Profile::Balanced))
             .split(profiles.is_some())
-            .subtitle(profiles.map(|p| profile_name(p.active).to_owned()))
+            .subtitle(profiles.map(|p| p.active.label().to_owned()))
             .unless(profiles.is_none().then_some("power-profiles-daemon is not running")),
     );
 
@@ -593,7 +585,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             let lines = PROFILES
                 .iter()
                 .filter(|(x, _)| *x != Profile::Performance || p.has_performance())
-                .map(|&(x, glyph)| row(id, x.to_wire(), glyph, profile_name(x), p.active == x))
+                .map(|&(x, glyph)| row(id, x.to_wire(), glyph, x.label(), p.active == x))
                 .collect();
             MenuView { glyph: tile.glyph, title: "Power mode", on: tile.on, lines, settings: Some(("Power settings", Hand::Panel("power"))) }
         }

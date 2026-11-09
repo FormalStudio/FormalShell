@@ -158,6 +158,26 @@ pub fn effect_args(id: &str, colour: &str, speed: &str) -> Option<Vec<String>> {
     Some(args)
 }
 
+/// asusctl's Aura zones. A zone the chassis lacks makes asusctl exit non-zero,
+/// which the script ignores.
+const AURA_ZONES: [&str; 5] = ["keyboard", "logo", "lightbar", "lid", "rear-glow"];
+
+/// `asusctl aura power <zone>` with no flags clears every power state for the
+/// zone, which is off. Exit 3 is this script's own "no asusctl".
+const AURA_OFF: &str = "command -v asusctl >/dev/null || exit 3; for z; do asusctl aura power \"$z\" >/dev/null 2>&1; done; exit 0";
+
+/// The states the host's asus-aura unit sets at boot (sleep left off, so the
+/// zones stay dark while suspended).
+const AURA_ON: &str = "for z; do asusctl aura power \"$z\" --boot --awake --shutdown >/dev/null 2>&1; done; exit 0";
+
+/// argv that turns every Aura zone's power states off (`true`) or back to the
+/// boot unit's (`false`).
+pub fn aura_power_argv(off: bool) -> Vec<String> {
+    let mut argv: Vec<String> = ["sh", "-c", if off { AURA_OFF } else { AURA_ON }, "sh"].map(String::from).to_vec();
+    argv.extend(AURA_ZONES.map(String::from));
+    argv
+}
+
 pub fn brightness_args(level: i64) -> Option<Vec<String>> {
     let word = usize::try_from(level).ok().and_then(|i| BRIGHTNESS.get(i))?;
     Some(["asusctl", "leds", "set", word].map(String::from).to_vec())

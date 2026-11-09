@@ -332,7 +332,7 @@ fn parse_entry(id: &str, path: &Path, desktops: &[String]) -> Option<(DesktopEnt
             Some(Action {
                 key: (*name).to_owned(),
                 name: g.get("Name")?.to_string(),
-                command: split_exec(g.get("Exec").copied().unwrap_or_default()),
+                command: fs_system::exec::split_exec(g.get("Exec").copied().unwrap_or_default()),
             })
         })
         .collect();
@@ -341,63 +341,10 @@ fn parse_entry(id: &str, path: &Path, desktops: &[String]) -> Option<(DesktopEnt
         name: text("Name"),
         startup_class: text("StartupWMClass"),
         icon: text("Icon"),
-        command: split_exec(fields.get("Exec").copied().unwrap_or_default()),
+        command: fs_system::exec::split_exec(fields.get("Exec").copied().unwrap_or_default()),
         generic_name: text("GenericName"),
     };
     Some((entry, Extras { terminal: flag("Terminal"), actions, path: path.to_owned() }))
-}
-
-/// An `Exec` line as an argv: quotes and backslashes honoured, field codes
-/// (`%f`, `%U`, ...) dropped, `%%` a percent.
-fn split_exec(exec: &str) -> Vec<String> {
-    let mut args: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    let mut live = false;
-    let mut quote: Option<char> = None;
-    let mut chars = exec.chars().peekable();
-    while let Some(c) = chars.next() {
-        match (quote, c) {
-            (Some(q), c) if c == q => quote = None,
-            (Some(_), '\\') => {
-                if let Some(n) = chars.next() {
-                    cur.push(n);
-                }
-            }
-            (Some(_), c) => cur.push(c),
-            (None, '"' | '\'') => {
-                quote = Some(c);
-                live = true;
-            }
-            (None, '\\') => {
-                if let Some(n) = chars.next() {
-                    cur.push(n);
-                    live = true;
-                }
-            }
-            (None, c) if c.is_whitespace() => {
-                if live || !cur.is_empty() {
-                    args.push(std::mem::take(&mut cur));
-                    live = false;
-                }
-            }
-            (None, '%') => match chars.next() {
-                Some('%') => {
-                    cur.push('%');
-                    live = true;
-                }
-                _ => {}
-            },
-            (None, c) => {
-                cur.push(c);
-                live = true;
-            }
-        }
-    }
-    if live || !cur.is_empty() {
-        args.push(cur);
-    }
-    args.retain(|a| !a.is_empty());
-    args
 }
 
 #[cfg(test)]
@@ -438,12 +385,5 @@ mod tests {
         assert!(!shown(Some("KDE;"), None, &[]));
         assert!(!shown(None, Some("Hyprland;"), &["Hyprland"]));
         assert!(shown(None, Some("KDE;"), &["Hyprland"]));
-    }
-
-    #[test]
-    fn exec_lines() {
-        assert_eq!(split_exec("foot --app-id=x %U"), ["foot", "--app-id=x"]);
-        assert_eq!(split_exec(r#"env "A B"=1 /usr/bin/app %%x"#), ["env", "A B=1", "/usr/bin/app", "%x"]);
-        assert!(split_exec("").is_empty());
     }
 }

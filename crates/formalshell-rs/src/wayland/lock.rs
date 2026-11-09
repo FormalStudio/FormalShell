@@ -27,7 +27,7 @@
 
 use fs_theme::palette::ColorRole;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -112,6 +112,9 @@ pub struct Sleep {
 }
 
 pub struct Lock {
+    /// The keyring's prompter while the boot's lock is up, taken by the
+    /// attempt that unlocks it.
+    prompter: Arc<Mutex<Option<prompter::Prompter>>>,
     manager: SessionLockState,
     session: Option<SessionLock>,
     /// Asked for, as `isLocked` reports it.
@@ -176,8 +179,9 @@ pub struct Lock {
 }
 
 impl Lock {
-    pub fn bind(globals: &GlobalList, qh: &QueueHandle<App>) -> Self {
+    pub fn bind(globals: &GlobalList, qh: &QueueHandle<App>, prompter: Option<prompter::Prompter>) -> Self {
         Self {
+            prompter: Arc::new(Mutex::new(prompter)),
             manager: SessionLockState::new(globals, qh),
             session: None,
             locked: false,
@@ -290,23 +294,18 @@ const BOOT_WAIT: Duration = Duration::from_secs(2);
 const ZOOMED_FRAMES: u64 = 5;
 
 static SPLASH: Mutex<Option<JoinHandle<Option<Bitmap>>>> = Mutex::new(None);
-/// The keyring's prompter while the boot's lock waits for its password
-/// (fs_auth::prompter): claimed before the Wayland connection, since apps
-/// started beside the lock ask for secrets within its first second.
-static PROMPTER: Mutex<Option<prompter::Prompter>> = Mutex::new(None);
-
-fn take_prompter() -> Option<prompter::Prompter> {
-    PROMPTER.lock().unwrap_or_else(|e| e.into_inner()).take()
-}
-
 /// The boot lock's picture decoded on a thread of its own, started before
-/// the Wayland connection so the lock's first frame never waits on it.
-pub fn preload_login() {
-    let Ok(text) = std::fs::read_to_string(login_marker()) else { return };
-    *PROMPTER.lock().unwrap_or_else(|e| e.into_inner()) = Some(prompter::Prompter::claim());
+/// the Wayland connection so the lock's first frame never waits on it. Hands
+/// back the keyring's prompter (fs_auth::prompter) while the boot's lock
+/// waits for its password: it is claimed here, before the connection, since
+/// apps started beside the lock ask for secrets within its first second, and
+/// goes to [`Lock::bind`].
+pub fn preload_login() -> Option<prompter::Prompter> {
+    let text = std::fs::read_to_string(login_marker()).ok()?;
+    let claimed = prompter::Prompter::claim();
     let path = text.trim().to_owned();
     if path.is_empty() {
-        return;
+        return Some(claimed);
     }
     let decode = move || {
         let img = image::ImageReader::open(&path).ok().and_then(|r| r.with_guessed_format().ok()).and_then(|r| r.decode().ok()).map(|i| i.to_rgba8());
@@ -320,6 +319,7 @@ pub fn preload_login() {
         Ok(handle) => *SPLASH.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle),
         Err(err) => eprintln!("lock: login picture: {err}"),
     }
+    Some(claimed)
 }
 
 /// A picture asked for whose decode has not been taken yet.
@@ -753,15 +753,17 @@ impl App {
         self.lock.attempt += 1;
         self.lock.dirty = true;
         let attempt = self.lock.attempt;
+        let prompter_slot = self.lock.prompter.clone();
         let spawned = std::thread::Builder::new().name("fs-lock-auth".into()).spawn(move || {
             let keyring_password = password.clone();
+            let prompter = prompter_slot;
             let outcome = match pam::current_user() {
                 Some(user) => pam::check(pam::LOCK_SERVICE, &user, password),
                 None => Outcome::StartFailed("no user".into()),
             };
             let unlocked = outcome == Outcome::Success;
             // Ahead of the answer, whose unlock drops a prompter not taken.
-            if unlocked && let Some(p) = take_prompter() {
+            if unlocked && let Some(p) = prompter.lock().unwrap_or_else(|e| e.into_inner()).take() {
                 p.answer(keyring_password.clone());
             }
             let _ = tx.send(LockMsg::Pam(attempt, outcome));
@@ -896,7 +898,7 @@ impl App {
         self.lock.armed = None;
         if std::mem::take(&mut self.lock.login) {
             self.lock.splash.clear();
-            drop(take_prompter());
+            drop(self.lock.prompter.lock().unwrap_or_else(|e| e.into_inner()).take());
         }
         if let (Some(handle), Some(t)) = (&self.handle, self.lock.clock.take()) {
             handle.remove(t);

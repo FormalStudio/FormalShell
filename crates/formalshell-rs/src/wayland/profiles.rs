@@ -26,8 +26,7 @@ use crate::surfaces::card::{Card, CardSpec, Sizing};
 use crate::surfaces::popup::Popup;
 use crate::ui::{El, Ink, Size, Type, w};
 
-const PROFILES: [(Profile, &str, &str); 3] =
-    [(Profile::PowerSaver, "leaf", "Power Saver"), (Profile::Balanced, "gauge", "Balanced"), (Profile::Performance, "zap", "Performance")];
+const PROFILES: [(Profile, &str); 3] = [(Profile::PowerSaver, "leaf"), (Profile::Balanced, "gauge"), (Profile::Performance, "zap")];
 
 /// How strongly the charge tints the outline.
 const LEVEL_ALPHA: f32 = 0.12;
@@ -63,7 +62,8 @@ fn body(store: &crate::store::Store, side: f64, gap: f64) -> El {
     let buttons = PROFILES
         .iter()
         .enumerate()
-        .map(|(i, (profile, glyph, name))| {
+        .map(|(i, (profile, glyph))| {
+            let name = profile.label();
             let enabled = offer.as_ref().is_some_and(|(on, _)| on[i]);
             let active = offer.as_ref().is_some_and(|(_, a)| a == profile);
             let ink = if active { Ink::Primary } else if enabled { Ink::Muted } else { Ink::Dim };
@@ -77,7 +77,7 @@ fn body(store: &crate::store::Store, side: f64, gap: f64) -> El {
                 })
                 .width(Size::Px(side))
                 .height(side)
-                .tip(if offer.is_some() { (*name).to_owned() } else { format!("{name}: power-profiles-daemon is not running") });
+                .tip(if offer.is_some() { name.to_owned() } else { format!("{name}: power-profiles-daemon is not running") });
             if enabled { chip.interactive().on(format!("profile:{i}")) } else { chip }
         })
         .collect();

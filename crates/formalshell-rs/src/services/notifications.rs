@@ -665,11 +665,7 @@ fn resolve_icon(image: &str, app_icon: &str, desktop_entry: &str, app_name: &str
 }
 
 fn arrival(n: &fs_notifd::Notification, replaced: bool) -> Arrival {
-    let urgency = match n.urgency {
-        fs_notifd::Urgency::Low => Urgency::Low,
-        fs_notifd::Urgency::Normal => Urgency::Normal,
-        fs_notifd::Urgency::Critical => Urgency::Critical,
-    };
+    let urgency = n.urgency;
     let (image, _) = image_of(n);
     Arrival {
         notif: Notif {

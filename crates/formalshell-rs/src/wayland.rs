@@ -333,7 +333,7 @@ pub struct App {
 
 impl App {
     /// `started` is the clock every logged `t=` counts from.
-    pub fn new(globals: &GlobalList, qh: &QueueHandle<Self>, started: Instant, motion_scale: f64) -> Self {
+    pub fn new(globals: &GlobalList, qh: &QueueHandle<Self>, started: Instant, motion_scale: f64, prompter: Option<fs_auth::prompter::Prompter>) -> Self {
         let compositor = CompositorState::bind(globals, qh).expect("wl_compositor is not available");
         let layer_shell = LayerShell::bind(globals, qh).expect("zwlr_layer_shell_v1 is not available");
         let shm = Shm::bind(globals, qh).expect("wl_shm is not available");
@@ -361,7 +361,7 @@ impl App {
             console: console::Console::default(),
             zen: zen::ZenState::default(),
             saver: screensaver::Saver::default(),
-            lock: lock::Lock::bind(globals, qh),
+            lock: lock::Lock::bind(globals, qh, prompter),
             hot: Default::default(),
             polkit: None,
             plugin_overlay: None,

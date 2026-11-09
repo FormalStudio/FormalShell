@@ -14,44 +14,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use fs_js as js;
+pub use fs_types::Urgency;
 
 /// Caps GROUPS on screen, not raw entries: five repeats of one notification
 /// must not evict four unrelated toasts.
 pub(crate) const MAX_POPUPS: usize = 4;
 pub(crate) const DEFAULT_TIMEOUT_MS: i64 = 6000;
 pub const PAST_TTL_MS: i64 = 15 * 60 * 1000;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(into = "u8", try_from = "u8")]
-pub enum Urgency {
-    Low,
-    #[default]
-    Normal,
-    Critical,
-}
-
-impl From<Urgency> for u8 {
-    fn from(u: Urgency) -> u8 {
-        match u {
-            Urgency::Low => 0,
-            Urgency::Normal => 1,
-            Urgency::Critical => 2,
-        }
-    }
-}
-
-impl TryFrom<u8> for Urgency {
-    type Error = String;
-
-    fn try_from(n: u8) -> Result<Self, String> {
-        match n {
-            0 => Ok(Urgency::Low),
-            1 => Ok(Urgency::Normal),
-            2 => Ok(Urgency::Critical),
-            _ => Err(format!("urgency {n} out of range")),
-        }
-    }
-}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Action {

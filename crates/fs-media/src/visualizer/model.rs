@@ -23,6 +23,23 @@ pub const BAR_COUNT: usize = 24;
 pub const MAX_LEVEL: f64 = 1000.0;
 pub const CELL_BAR_COUNT: usize = 6;
 
+/// The cava.conf this contract needs. Every key is in cava 0.10.7's own
+/// example config. Fixed gain rather than autosens (the gain stage below
+/// supplies the height), a 12 kHz upper cutoff to pull hats into the top
+/// band, light smoothing so six bars track transients, stereo so the two
+/// channels keep their own frame. `source` names the PipeWire node to read,
+/// "auto" for the default sink's monitor.
+pub fn cava_config(source: &str) -> String {
+    format!(
+        "[general]\nframerate = 120\nautosens = 0\nsensitivity = 200\nbars = {}\nlower_cutoff_freq = 50\n\
+         higher_cutoff_freq = 12000\nsleep_timer = 3\n\n[input]\nmethod = pipewire\nsource = {source}\n\n\
+         [output]\nmethod = raw\nchannels = stereo\nraw_target = /dev/stdout\ndata_format = ascii\n\
+         ascii_max_range = {}\n\n[smoothing]\nnoise_reduction = 35\nmonstercat = 1.5\n",
+        BAR_COUNT * 2,
+        MAX_LEVEL as i64
+    )
+}
+
 /// Below this level a bar reads as silence and snaps flat. 5/1000 at cava's
 /// sensitivity 200 is the same acoustic level as 2/100 at 800%.
 pub(crate) const NOISE_FLOOR: f64 = 5.0;

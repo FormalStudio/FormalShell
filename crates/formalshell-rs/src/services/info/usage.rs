@@ -124,6 +124,11 @@ fn read() -> Cfg {
     Cfg { claude: s.flag("usage.claude", true), codex: s.flag("usage.codex", true), interval: s.interval("usage.intervalMs", 900_000) }
 }
 
+/// The `claude` CLI rewrites its credentials file in place, which leaves it
+/// missing for a moment: a read that finds nothing tries again this often.
+const CREDENTIALS_READS: usize = 4;
+const CREDENTIALS_RETRY: Duration = Duration::from_millis(300);
+
 const REFRESH_COOLDOWN: Duration = Duration::from_secs(60);
 const REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 const CODEX_TIMEOUT: Duration = Duration::from_secs(20);
@@ -145,12 +150,11 @@ impl Poll {
 
     async fn credentials(&self) -> Option<usage::Credentials> {
         let path = format!("{}/.claude/.credentials.json", std::env::var("HOME").unwrap_or_default());
-        // A rewrite in flight can leave the file missing for a moment.
-        for attempt in 0..4 {
+        for attempt in 0..CREDENTIALS_READS {
             let read = path.clone();
             match self.ctx.pool().run(move || std::fs::read_to_string(read)).await {
                 Some(Ok(text)) => return usage::parse_credentials(&text).ok(),
-                Some(Err(e)) if e.kind() == ErrorKind::NotFound && attempt < 3 => Timer::after(Duration::from_millis(300)).await,
+                Some(Err(e)) if e.kind() == ErrorKind::NotFound && attempt + 1 < CREDENTIALS_READS => Timer::after(CREDENTIALS_RETRY).await,
                 _ => return None,
             };
         }

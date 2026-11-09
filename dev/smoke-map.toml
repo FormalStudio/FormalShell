@@ -404,7 +404,7 @@ paths = ["crates/formalshell-rs/src/surfaces/atlas/**", "crates/formalshell-rs/s
 runs = ["--radio-atlas", "--radio-atlas-cold"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/appmenu.rs", "crates/formalshell-rs/src/services/appicon.rs", "crates/fs-system/src/compositor/appicon.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/appmenu.rs", "crates/formalshell-rs/src/services/appicon.rs", "crates/fs-system/src/compositor/appicon.rs", "crates/fs-system/src/exec.rs"]
 runs = ["--appmenu", "--spaces", "--app-install"]
 
 [[rule]]

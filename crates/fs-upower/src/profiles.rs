@@ -29,6 +29,17 @@ pub enum Profile {
 }
 
 impl Profile {
+    pub const ALL: [Profile; 3] = [Self::PowerSaver, Self::Balanced, Self::Performance];
+
+    /// The words every surface shows for the profile.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PowerSaver => "Power saver",
+            Self::Balanced => "Balanced",
+            Self::Performance => "Performance",
+        }
+    }
+
     pub fn from_wire(wire: &str) -> Option<Self> {
         match wire {
             "power-saver" => Some(Self::PowerSaver),

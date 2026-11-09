@@ -156,6 +156,15 @@ pub fn command(cmd: Cmd) {
     send(Msg::Cmd(cmd));
 }
 
+/// Every Aura zone's power states off, or back to what the boot unit sets.
+/// True when asusctl ran; false without it. The overnight service's door to
+/// the keyboard lights.
+pub async fn aura_power(off: bool) -> bool {
+    let done = proc::capture(&model::aura_power_argv(off), PROBE_TIMEOUT).await;
+    command(Cmd::Refresh);
+    done.code == 0
+}
+
 /// The theme's primary, as rrggbb, from the UI thread.
 pub fn palette(hex: String) {
     send(Msg::Palette(hex));

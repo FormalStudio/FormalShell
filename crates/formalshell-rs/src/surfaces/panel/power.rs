@@ -29,7 +29,6 @@ use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 
 const PROFILES: [Profile; 3] = [Profile::PowerSaver, Profile::Balanced, Profile::Performance];
 const ICONS: [&str; 3] = ["leaf", "gauge", "zap"];
-const NAMES: [&str; 3] = ["Power Saver", "Balanced", "Performance"];
 
 /// The sheet of the flow model a draw reads: the same nodes Power/flow.js
 /// builds, carried as plain strings.
@@ -118,7 +117,7 @@ pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El 
             o
         })
         .collect();
-    w::panel_control(s, w::panel_heading_with(s, "Power profile", NAMES[active]), w::group(options, active, true).squares().ring(ring).on("profile").stop("profile"))
+    w::panel_control(s, w::panel_heading_with(s, "Power profile", PROFILES[active].label()), w::group(options, active, true).squares().ring(ring).on("profile").stop("profile"))
 }
 
 pub struct Power {
@@ -140,10 +139,9 @@ fn active(v: &View) -> usize {
 }
 
 /// The card off UPower's battery and the supply's charge limit.
-fn card(v: &View, b: &devices::power::Battery) -> Card {
+fn card(v: &View, b: &devices::power::Battery, held: bool) -> Card {
     let power = &v.store.power;
     let charging = b.state == DeviceState::Charging;
-    let held = charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, power.on_battery);
     let state = if held {
         Some(("Holding at limit", false))
     } else if power.on_battery {
@@ -163,7 +161,7 @@ fn card(v: &View, b: &devices::power::Battery) -> Card {
         .iter()
         .find(|s| s.kind == "Battery")
         .and_then(|s| s.limit)
-        .and_then(|l| model::parse_charge_limit(&l.to_string()));
+        .and_then(model::charge_limit);
     let mut details = Vec::new();
     if let Some(h) = b.health {
         details.push(format!("Health {}%", h.rounded()));
@@ -208,12 +206,18 @@ impl Panel for Power {
             let watts: Vec<f64> = cards.iter().filter_map(|c| c.record.metrics.power_w).collect();
             (!watts.is_empty()).then(|| watts.iter().sum())
         };
+        let held = v
+            .store
+            .power
+            .battery
+            .as_ref()
+            .is_some_and(|b| charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, v.store.power.on_battery));
         let model = flow::build_flow(
             &sample.snapshot,
-            &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.iphone.battery.map(|b| b * 100.0) },
+            &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.iphone.battery.map(|b| b * 100.0), held },
         );
         match &v.store.power.battery {
-            Some(b) => parts.push(w::panel_text(s, battery_card(s, &card(v, b)))),
+            Some(b) => parts.push(w::panel_text(s, battery_card(s, &card(v, b, held)))),
             None => {
                 if !model.available {
                     parts.push(w::panel_empty(s, "No power sources"));

@@ -191,25 +191,11 @@ pub fn battery_icon(level: Percent, on_battery: bool, threshold_active: bool, li
     }
 }
 
-/// `charge_control_end_threshold`'s only line: the percentage the firmware
-/// stops charging at. Linux exposes it per battery under
-/// /sys/class/power_supply/<name>/, and UPower carries the <name> as
-/// nativePath, so the caller builds the path rather than globbing for it.
-///
-/// `None` for anything that isn't a whole percentage in 1..100: a battery with
-/// no limit support has no such file and `cat` writes nothing to stdout, and
-/// 100 is the firmware's own way of saying "charge to full", which is not a
-/// limit worth a row of its own.
-pub fn parse_charge_limit(text: &str) -> Option<i64> {
-    let line = js::trim(text.split('\n').next().unwrap_or(""));
-    if line.is_empty() {
-        return None;
-    }
-    let value = js::parse_int(line);
-    if !value.is_finite() || value < 1.0 || value >= 100.0 {
-        return None;
-    }
-    Some(value as i64)
+/// `charge_control_end_threshold`'s percentage as a limit worth showing:
+/// whole, in 1..100. 100 is the firmware's way of saying "charge to full",
+/// which is not a limit worth a row of its own.
+pub fn charge_limit(value: f64) -> Option<u8> {
+    (value.is_finite() && (1.0..100.0).contains(&value)).then_some(value as u8)
 }
 
 #[cfg(test)]
@@ -369,33 +355,24 @@ mod tests {
         assert_eq!(format_rate(-8.05), "8.1W");
     }
 
-    // parseChargeLimit
+    // charge_limit
 
     #[test]
-    fn parse_charge_limit_reads_the_threshold_percentage() {
-        assert_eq!(parse_charge_limit("80\n"), Some(80));
+    fn charge_limit_keeps_a_percentage_below_full() {
+        assert_eq!(charge_limit(80.0), Some(80));
+        assert_eq!(charge_limit(1.0), Some(1));
     }
 
     #[test]
-    fn parse_charge_limit_tolerates_no_trailing_newline() {
-        assert_eq!(parse_charge_limit("60"), Some(60));
+    fn charge_limit_treats_a_full_charge_target_as_no_limit() {
+        assert_eq!(charge_limit(100.0), None);
     }
 
     #[test]
-    fn parse_charge_limit_is_none_when_the_file_is_absent() {
-        assert_eq!(parse_charge_limit(""), None);
-    }
-
-    #[test]
-    fn parse_charge_limit_treats_a_full_charge_target_as_no_limit() {
-        assert_eq!(parse_charge_limit("100\n"), None);
-    }
-
-    #[test]
-    fn parse_charge_limit_rejects_an_out_of_range_or_unparseable_value() {
-        assert_eq!(parse_charge_limit("0\n"), None);
-        assert_eq!(parse_charge_limit("-5\n"), None);
-        assert_eq!(parse_charge_limit("nope\n"), None);
+    fn charge_limit_rejects_an_out_of_range_value() {
+        assert_eq!(charge_limit(0.0), None);
+        assert_eq!(charge_limit(-5.0), None);
+        assert_eq!(charge_limit(f64::NAN), None);
     }
 
     // parseRaplMw

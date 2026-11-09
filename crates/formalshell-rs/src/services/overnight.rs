@@ -18,7 +18,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
-use fs_system::overnight::{self, AURA_ZONES, SCREEN_PERCENT};
+use fs_system::overnight::{self, SCREEN_PERCENT};
 use fs_upower::Profile;
 use fs_js::lenient;
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,7 @@ use serde_json::{Map, Number, Value, json};
 use crate::runtime::Ctx;
 use crate::services::devices::power;
 use crate::services::display;
+use crate::services::lights;
 use crate::services::state::{self, Field};
 
 /// state.json's `overnight`, present while it is on. Empty from the enable
@@ -83,22 +84,14 @@ fn current(generation: u64) -> bool {
     GENERATION.with(Cell::get) == generation
 }
 
-/// The `PowerProfile` enum numbers, what the record has always held.
+/// The record holds a profile as its place in [`Profile::ALL`], power
+/// saver first.
 fn profile_number(p: Profile) -> i64 {
-    match p {
-        Profile::PowerSaver => 0,
-        Profile::Balanced => 1,
-        Profile::Performance => 2,
-    }
+    Profile::ALL.iter().position(|x| *x == p).unwrap_or(1) as i64
 }
 
 fn profile_of(n: i64) -> Option<Profile> {
-    match n {
-        0 => Some(Profile::PowerSaver),
-        1 => Some(Profile::Balanced),
-        2 => Some(Profile::Performance),
-        _ => None,
-    }
+    usize::try_from(n).ok().and_then(|i| Profile::ALL.get(i)).copied()
 }
 
 fn write(record: Option<Record>) {
@@ -127,13 +120,6 @@ async fn output(argv: &[&str]) -> Option<(i32, String)> {
 const LED_LIST: &str = "for d in /sys/class/leds/*; do printf '%s\\t%s\\t%s\\n' \"${d##*/}\" \"$(cat \"$d/trigger\" 2>/dev/null)\" \"$(cat \"$d/brightness\" 2>/dev/null)\"; done";
 const LED_OFF: &str = "for n; do brightnessctl -q -d \"$n\" set 0; done";
 const LED_RESTORE: &str = "while [ $# -ge 2 ]; do brightnessctl -q -d \"$1\" set \"$2\"; shift 2; done";
-// `asusctl aura power <zone>` with no flags clears every power state for the
-// zone, which is off. Exit 3 is this script's own "no asusctl".
-const AURA_OFF: &str = "command -v asusctl >/dev/null || exit 3; for z; do asusctl aura power \"$z\" >/dev/null 2>&1; done; exit 0";
-// The states the host's asus-aura unit sets at boot (sleep left off, so the
-// zones stay dark while suspended).
-const AURA_ON: &str = "for z; do asusctl aura power \"$z\" --boot --awake --shutdown >/dev/null 2>&1; done; exit 0";
-
 fn sh(script: &str, args: &[String]) -> Vec<String> {
     let mut argv = vec!["sh".to_owned(), "-c".to_owned(), script.to_owned(), "sh".to_owned()];
     argv.extend(args.iter().cloned());
@@ -184,7 +170,6 @@ pub fn enable(ctx: &Ctx) {
         if let (Some(p), Some(Profile::Performance)) = (&profiles, active) {
             let _ = p.set_active(Profile::Balanced).await;
         }
-        let zones: Vec<String> = AURA_ZONES.iter().map(|z| z.to_string()).collect();
         let leds = async {
             let Some((_, text)) = run(sh(LED_LIST, &[])).await else { return };
             let leds = overnight::parse_leds(&text);
@@ -197,8 +182,7 @@ pub fn enable(ctx: &Ctx) {
             let _ = run(sh(LED_OFF, &names)).await;
         };
         let aura = async {
-            if let Some((0, _)) = run(sh(AURA_OFF, &zones)).await
-                && current(generation)
+            if lights::aura_power(true).await && current(generation)
             {
                 merge(|rec| rec.aura = Some(true));
             }
@@ -234,8 +218,7 @@ pub fn disable(ctx: &Ctx, snap: Record) {
         let leds: Vec<(String, Value)> = snap.leds.unwrap_or_default().into_iter().collect();
         let restore = overnight::restore_args(&leds);
         if snap.aura == Some(true) {
-            let zones: Vec<String> = AURA_ZONES.iter().map(|z| z.to_string()).collect();
-            let _ = run(sh(AURA_ON, &zones)).await;
+            lights::aura_power(false).await;
         }
         if !restore.is_empty() {
             let _ = run(sh(LED_RESTORE, &restore)).await;

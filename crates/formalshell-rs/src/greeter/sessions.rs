@@ -70,7 +70,7 @@ fn parse(id: &str, text: &str) -> Option<Session> {
         let Some((key, value)) = line.split_once('=').filter(|_| in_entry) else { continue };
         match key.trim() {
             "Name" => name = Some(value.trim().to_owned()),
-            "Exec" => exec = Some(strip_codes(value.trim())),
+            "Exec" => exec = Some(fs_system::exec::strip_field_codes(value.trim())),
             "DesktopNames" => desktops = value.trim().trim_end_matches(';').replace(';', ":"),
             "Hidden" | "NoDisplay" if value.trim() == "true" => return None,
             "TryExec" if value.starts_with('/') && !Path::new(value.trim()).exists() => return None,
@@ -79,22 +79,6 @@ fn parse(id: &str, text: &str) -> Option<Session> {
     }
     let exec = exec.filter(|e| !e.is_empty())?;
     Some(Session { id: id.to_owned(), name: name.unwrap_or_else(|| id.to_owned()), exec, desktops })
-}
-
-/// The desktop entry spec's `%f`-style codes, `%%` kept as one `%`.
-fn strip_codes(exec: &str) -> String {
-    let mut out = String::with_capacity(exec.len());
-    let mut chars = exec.chars();
-    while let Some(c) = chars.next() {
-        if c != '%' {
-            out.push(c);
-            continue;
-        }
-        if let Some('%') = chars.next() {
-            out.push('%');
-        }
-    }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The remembered session when it still exists, else Hyprland, else the
@@ -165,7 +149,6 @@ mod tests {
         assert!(parse("x", "[Desktop Entry]\nName=X\nExec=x\nNoDisplay=true\n").is_none());
         assert!(parse("x", "[Desktop Entry]\nName=X\nExec=x\nTryExec=/nonexistent/bin/x\n").is_none());
         assert!(parse("x", "[Desktop Entry]\nName=X\n").is_none());
-        assert_eq!(strip_codes("a %f 100%% b"), "a 100% b");
     }
 
     #[test]

@@ -61,22 +61,10 @@ fn battery(d: &Device, physical: Option<&Device>) -> Option<Battery> {
     })
 }
 
-/// The supply's `status` word UPower read its state from, which is what
-/// the cell's tooltip names.
-fn status_word(s: DeviceState) -> &'static str {
-    match s {
-        DeviceState::Charging => "Charging",
-        DeviceState::Discharging | DeviceState::Empty => "Discharging",
-        DeviceState::FullyCharged => "Full",
-        DeviceState::PendingCharge | DeviceState::PendingDischarge => "Not charging",
-        DeviceState::Unknown => "Unknown",
-    }
-}
-
 /// First match wins.
 fn dualsense(devices: &BTreeMap<String, Device>) -> Option<Supply> {
     let d = devices.values().find(|d| d.native_path.starts_with("ps-controller-battery-") && d.is_present)?;
-    Some(Supply::new(d.percentage.round(), status_word(d.state)))
+    Some(Supply::new(d.percentage.round(), d.state))
 }
 
 fn power(snapshot: Snapshot) -> Power {

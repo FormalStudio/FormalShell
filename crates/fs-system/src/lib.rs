@@ -9,6 +9,7 @@ pub mod compositor;
 pub mod console;
 pub mod display;
 pub mod dualsense;
+pub mod exec;
 pub mod lights;
 pub mod monitor;
 pub mod overnight;
