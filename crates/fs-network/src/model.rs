@@ -1,4 +1,6 @@
 use fs_types::{Fraction, Percent};
+use std::fmt;
+
 use zbus::zvariant::OwnedObjectPath;
 
 /// Wi-Fi signal in percent, 0..=100.
@@ -289,5 +291,52 @@ mod tests {
         assert_eq!(FailReason::from_wire(11), FailReason::SupplicantTimeout);
         assert_eq!(FailReason::from_wire(16), FailReason::DhcpFailed);
         assert_eq!(FailReason::from_wire(99), FailReason::Other(99));
+    }
+}
+
+/// How NetworkManager reads a WEP key (`wep-key-type`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WepKeyType {
+    /// 0: not set, which NetworkManager treats as a key.
+    Unknown,
+    /// 1: the key itself, 5 or 13 ASCII characters or 10 or 26 hex digits.
+    Key,
+    /// 2: a passphrase NetworkManager hashes into the key.
+    Passphrase,
+}
+
+impl WepKeyType {
+    pub(crate) fn from_wire(wire: u32) -> Self {
+        match wire {
+            1 => Self::Key,
+            2 => Self::Passphrase,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// The secret a saved Wi-Fi profile holds.
+#[derive(Clone, PartialEq, Eq)]
+pub enum SavedSecret {
+    Psk(String),
+    Wep { key: String, key_type: WepKeyType },
+}
+
+impl SavedSecret {
+    /// What a person types to join: the passphrase or the WEP key.
+    pub fn text(&self) -> &str {
+        match self {
+            Self::Psk(psk) => psk,
+            Self::Wep { key, .. } => key,
+        }
+    }
+}
+
+impl fmt::Debug for SavedSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Psk(_) => "Psk(..)",
+            Self::Wep { .. } => "Wep(..)",
+        })
     }
 }

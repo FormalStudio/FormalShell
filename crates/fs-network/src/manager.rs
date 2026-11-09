@@ -13,8 +13,8 @@ use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
 use zbus::{Connection, MatchRule, Message, MessageStream, proxy};
 
 use crate::model::{
-    ConnectionState, Device, DeviceKind, FailReason, Security, SignalStrength, Snapshot,
-    WifiNetwork,
+    ConnectionState, Device, DeviceKind, FailReason, SavedSecret, Security, SignalStrength,
+    Snapshot, WepKeyType, WifiNetwork,
 };
 use crate::settings::{self, NewSettings, Profile, Settings};
 
@@ -433,14 +433,26 @@ impl NetworkManager {
         Ok(())
     }
 
-    /// The passphrase saved for the SSID, `Ok(None)` when no profile for it
-    /// holds one. NetworkManager asks polkit before it hands a secret out,
-    /// so the call allows interactive authorization.
-    pub async fn saved_psk(&self, ssid: &str) -> zbus::Result<Option<String>> {
-        for (path, profile) in self.profiles().await? {
-            if profile.ssid != ssid {
-                continue;
-            }
+    /// The secret saved for the SSID, `Ok(None)` when no profile for it holds
+    /// one: the passphrase, or the WEP key with how NetworkManager reads it.
+    /// The profile the SSID is connected through answers first, so a second
+    /// profile for the same SSID cannot hand out its own secret instead.
+    /// NetworkManager asks polkit before it hands a secret out, so the call
+    /// allows interactive authorization.
+    pub async fn saved_secret(&self, ssid: &str) -> zbus::Result<Option<SavedSecret>> {
+        let mut profiles: Vec<OwnedObjectPath> = self
+            .profiles()
+            .await?
+            .into_iter()
+            .filter(|(_, profile)| profile.ssid == ssid)
+            .map(|(path, _)| path)
+            .collect();
+        if let Some(active) = self.active_profile(ssid).await?
+            && let Some(at) = profiles.iter().position(|p| *p == active)
+        {
+            profiles = vec![profiles.swap_remove(at)];
+        }
+        for path in profiles {
             let saved = self.saved(&path).await?;
             let reply = saved
                 .inner()
@@ -451,8 +463,44 @@ impl NetworkManager {
                 )
                 .await?;
             let Some(secrets) = reply else { continue };
-            if let Some(psk) = secrets.get(SECURITY).and_then(|s| s.get("psk")).and_then(|v| v.downcast_ref::<String>().ok()) {
-                return Ok(Some(psk));
+            let Some(section) = secrets.get(SECURITY) else { continue };
+            let text = |key: &str| section.get(key).and_then(|v| v.downcast_ref::<String>().ok());
+            if let Some(psk) = text("psk") {
+                return Ok(Some(SavedSecret::Psk(psk)));
+            }
+            if let Some(key) = text("wep-key0") {
+                let wire = saved
+                    .get_settings()
+                    .await?
+                    .get(SECURITY)
+                    .and_then(|s| s.get("wep-key-type"))
+                    .and_then(|v| v.downcast_ref::<u32>().ok());
+                let key_type = WepKeyType::from_wire(wire.unwrap_or(0));
+                return Ok(Some(SavedSecret::Wep { key, key_type }));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The saved profile the SSID is connected through right now.
+    async fn active_profile(&self, ssid: &str) -> zbus::Result<Option<OwnedObjectPath>> {
+        let profiles = self.profiles().await?;
+        for path in self.manager.get_devices().await? {
+            let Some(device) = self.read_device(path.clone()).await? else {
+                continue;
+            };
+            if device.kind != DeviceKind::Wifi {
+                continue;
+            }
+            let props = self.props(&path, DEVICE_INTERFACE).await?;
+            let Some(active) = prop::<OwnedObjectPath>(&props, "ActiveConnection").filter(|a| a.as_str() != "/") else {
+                continue;
+            };
+            let active_props = self.props(&active, ACTIVE_INTERFACE).await?;
+            if let Some(saved) = prop::<OwnedObjectPath>(&active_props, "Connection")
+                && profiles.iter().any(|(p, profile)| *p == saved && profile.ssid == ssid)
+            {
+                return Ok(Some(saved));
             }
         }
         Ok(None)

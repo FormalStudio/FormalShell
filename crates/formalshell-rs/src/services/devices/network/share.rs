@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use fs_devices::network::wifiqr::{self, Fields, PayloadError};
-use fs_network::{NetworkManager, Security};
+use fs_network::{NetworkManager, SavedSecret, Security, WepKeyType};
 use futures_lite::AsyncWriteExt;
 
 use super::{INNER, Inner, publish};
@@ -71,8 +71,8 @@ enum Read {
     NotConnected,
     Enterprise,
     Open(Target),
-    /// `None` when the profile holds no passphrase.
-    Psk(Target, Option<String>),
+    /// `None` when the profile holds no passphrase or key.
+    Secret(Target, Option<SavedSecret>),
     Failed,
 }
 
@@ -88,8 +88,8 @@ async fn read(nm: &NetworkManager, t: Target) -> Read {
     if !t.security.is_secured() {
         return Read::Open(t);
     }
-    match nm.saved_psk(&t.ssid).await {
-        Ok(psk) => Read::Psk(t, psk),
+    match nm.saved_secret(&t.ssid).await {
+        Ok(secret) => Read::Secret(t, secret),
         Err(err) => {
             eprintln!("network: no passphrase read for {}: {err}", t.ssid);
             Read::Failed
@@ -171,8 +171,8 @@ fn on_reveal(read: &Read) {
     let next = match read {
         Read::Enterprise => Reveal::Failed("ENTERPRISE"),
         Read::Open(_) => Reveal::Failed("OPEN NETWORK"),
-        Read::Psk(_, None) => Reveal::Failed("NO PASSWORD SAVED"),
-        Read::Psk(_, Some(psk)) => Reveal::Shown(psk.clone()),
+        Read::Secret(_, None) => Reveal::Failed("NO PASSWORD SAVED"),
+        Read::Secret(_, Some(secret)) => Reveal::Shown(secret.text().to_owned()),
         Read::NotConnected | Read::Failed => Reveal::Failed("ERROR"),
     };
     INNER.with_borrow_mut(|i| {
@@ -187,19 +187,23 @@ fn on_qr(ctx: &Ctx, read: Read) {
     if INNER.with_borrow(|i| i.qr != Qr::Generating) {
         return;
     }
-    let (target, key_mgmt, password) = match read {
+    let (target, key_mgmt, password, wep_key) = match read {
         Read::NotConnected => return qr_fail("NOT CONNECTED"),
         Read::Enterprise => return qr_fail("ENTERPRISE CANNOT SHARE"),
-        Read::Failed | Read::Psk(_, None) => return qr_fail("ERROR"),
-        Read::Open(t) => (t, "", String::new()),
-        Read::Psk(t, Some(psk)) => (t, "wpa-psk", psk),
+        Read::Failed | Read::Secret(_, None) => return qr_fail("ERROR"),
+        Read::Open(t) => (t, "", String::new(), String::new()),
+        Read::Secret(t, Some(SavedSecret::Psk(psk))) => (t, "wpa-psk", psk, String::new()),
+        // A WEP passphrase is hashed into the key by NetworkManager, which a
+        // WIFI: code has no field for.
+        Read::Secret(_, Some(SavedSecret::Wep { key_type: WepKeyType::Passphrase, .. })) => return qr_fail("ERROR"),
+        Read::Secret(t, Some(SavedSecret::Wep { key, .. })) => (t, "none", String::new(), key),
     };
     let fields = Fields {
         ssid: target.ssid,
         key_mgmt: key_mgmt.to_owned(),
         password,
         hidden: if target.hidden { "yes" } else { "no" }.to_owned(),
-        wep_key: String::new(),
+        wep_key,
     };
     let payload = match wifiqr::build_payload(&fields) {
         Ok(p) => p,

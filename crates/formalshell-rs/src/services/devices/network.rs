@@ -384,7 +384,7 @@ pub fn reveal(ctx: &Ctx, ssid: String, request: u64) {
     let Some(nm) = nm() else { return };
     let ctx = ctx.clone();
     ctx.clone().spawn(async move {
-        let secret = nm.saved_psk(&ssid).await.map_err(|err| err.to_string());
+        let secret = nm.saved_secret(&ssid).await.map(|s| s.map(|s| s.text().to_owned())).map_err(|err| err.to_string());
         if let Err(err) = &secret {
             eprintln!("network: no passphrase read for {ssid}: {err}");
         }

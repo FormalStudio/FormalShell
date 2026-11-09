@@ -8,7 +8,8 @@
 //! it after [`ACTION_TIMEOUT`].
 //! Discovery runs only while the panel is open on a powered adapter, and is
 //! re-armed whenever BlueZ lets it lapse; a refused start waits for the
-//! adapter to change (it powering up) rather than retrying on a timer.
+//! adapter to change (it powering up) or for the panel to reopen or rescan,
+//! rather than retrying on a timer.
 
 use std::cell::RefCell;
 use std::sync::LazyLock;
@@ -198,8 +199,9 @@ fn remotes(state: &fs_bluez::state::State, last: &[Remote]) -> Vec<Remote> {
 }
 
 enum Done {
-    /// A discovery attempt finished; true when BlueZ refused it.
-    Armed(bool),
+    /// The discovery attempt of that generation finished; true when BlueZ
+    /// refused it.
+    Armed(u64, bool),
     Action(u64, Option<&'static str>),
 }
 
@@ -236,6 +238,9 @@ async fn run(ctx: Ctx) {
     let mut flight = ActionInFlight::<(BtAddress, ActionKind), (BtAddress, &'static str)>::default();
     let mut arming = false;
     let mut refused = false;
+    // Bumped by whatever could make a refused start worth trying again; a
+    // reply from an earlier generation says nothing about now.
+    let mut generation = 0u64;
     let mut refresh = true;
     let mut last: Option<Bluetooth> = None;
     let mut last_shown: Vec<BtAddress> = Vec::new();
@@ -254,7 +259,7 @@ async fn run(ctx: Ctx) {
                 && !refused
             {
                 arming = true;
-                let (b, path, tx) = (bluez.clone(), a.path.clone(), done_tx.clone());
+                let (b, path, tx, attempt) = (bluez.clone(), a.path.clone(), done_tx.clone(), generation);
                 ctx.spawn(async move {
                     let refused = match b.start_discovery(&path).await {
                         Err(err) if !err.is_in_progress() => {
@@ -263,7 +268,7 @@ async fn run(ctx: Ctx) {
                         }
                         _ => false,
                     };
-                    let _ = tx.send(Done::Armed(refused)).await;
+                    let _ = tx.send(Done::Armed(attempt, refused)).await;
                 });
             }
             let mut view = snapshot(&snap, open);
@@ -296,7 +301,10 @@ async fn run(ctx: Ctx) {
             Wake::Gone => return,
             Wake::State(first) => {
                 let mut seen = |e: &Event| {
-                    refused &= !matches!(e, Event::AdapterAdded(_) | Event::AdapterChanged(_));
+                    if matches!(e, Event::AdapterAdded(_) | Event::AdapterChanged(_)) {
+                        refused = false;
+                        generation += 1;
+                    }
                     matters(e, open, &last_shown)
                 };
                 refresh = seen(&first);
@@ -304,20 +312,27 @@ async fn run(ctx: Ctx) {
                     refresh |= seen(&e);
                 }
                 if refresh {
-                    // A burst lands as one view, a frame's worth later.
+                    // A burst lands as one view, a frame's worth later; every
+                    // event in it still counts.
                     async_io::Timer::after(COALESCE).await;
-                    while events.try_recv().is_ok() {}
+                    while let Ok(e) = events.try_recv() {
+                        seen(&e);
+                    }
                 }
             }
-            Wake::Done(Done::Armed(turned_down)) => {
+            Wake::Done(Done::Armed(attempt, turned_down)) => {
                 arming = false;
-                refused = turned_down;
+                refused = turned_down && attempt == generation;
             }
             Wake::Done(Done::Action(generation, result)) => {
                 flight.end(generation, |(address, _)| result.map(|text| (address, text)));
             }
             Wake::Ask(Ask::Open(on)) => {
                 open = on;
+                if on {
+                    refused = false;
+                    generation += 1;
+                }
                 bluez.watch_all(on);
                 if !on && bluez.state().default_adapter().is_some_and(|a| a.discovering) {
                     on_adapter(&bluez, &ctx, |b, path| async move {
@@ -327,9 +342,13 @@ async fn run(ctx: Ctx) {
             }
             // StartDiscovery on a discovering adapter is a no-op, so a
             // rescan stops it and lets the loop above arm it again.
-            Wake::Ask(Ask::Rescan) => on_adapter(&bluez, &ctx, |b, path| async move {
-                let _ = b.stop_discovery(&path).await;
-            }),
+            Wake::Ask(Ask::Rescan) => {
+                refused = false;
+                generation += 1;
+                on_adapter(&bluez, &ctx, |b, path| async move {
+                    let _ = b.stop_discovery(&path).await;
+                })
+            }
             Wake::Ask(Ask::Power(on)) => on_adapter(&bluez, &ctx, |b, path| async move {
                 if let Err(err) = b.set_powered(&path, on).await {
                     eprintln!("bluetooth: {err}");
