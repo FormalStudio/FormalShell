@@ -10,12 +10,15 @@ use fs_devices::network::speedtest;
 use futures_lite::FutureExt;
 
 use super::{INNER, publish};
+use crate::services::http;
 use crate::runtime::Ctx;
 
 const ST_PHASE: Duration = Duration::from_millis(5000);
 const ST_SAMPLE: Duration = Duration::from_millis(500);
 const ST_DOWN_URL: &str = "https://speed.cloudflare.com/__down?bytes=25000000";
 const ST_UP_URL: &str = "https://speed.cloudflare.com/__up";
+/// Well past a phase, which drops the worker; curl itself is given no tighter limit.
+const WORKER_CAP: u32 = 120;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Phase {
@@ -132,27 +135,17 @@ fn stat_bytes(iface: &str) -> Option<(f64, f64)> {
     speedtest::parse_stat_bytes(&text).map(|b| (b.rx, b.tx))
 }
 
-/// One worker: curl after curl until the phase drops it. Each curl is this
-/// process's own child, so dropping the future kills it by pid.
+/// One worker: transfer after transfer until the phase drops it. Each curl
+/// is this process's own child, so dropping the future kills it by pid.
 async fn worker(up: bool) {
     loop {
-        let mut cmd = crate::services::proc::command("curl");
-        cmd.args(["-s", "-o", "/dev/null"]);
-        if up {
-            cmd.args(["-X", "POST", "-T", "/dev/zero", ST_UP_URL]);
+        let req = if up {
+            http::Request::get(ST_UP_URL, WORKER_CAP).upload("/dev/zero")
         } else {
-            cmd.arg(ST_DOWN_URL);
-        }
-        let child = cmd
-            .stdin(async_process::Stdio::null())
-            .stdout(async_process::Stdio::null())
-            .stderr(async_process::Stdio::null())
-            .kill_on_drop(true)
-            .spawn();
-        let Ok(mut child) = child else { return };
-        match child.status().await {
-            Ok(s) if s.success() => {}
-            _ => return,
+            http::Request::get(ST_DOWN_URL, WORKER_CAP)
+        };
+        if http::send(&req.output("/dev/null")).await.is_err() {
+            return;
         }
     }
 }

@@ -180,6 +180,11 @@ impl ProbeKind {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Probe {
     pub kind: ProbeKind,
+    /// The forge's API address, for the kinds fetched over HTTP.
+    pub url: String,
+    /// `Name: value` lines sent with it.
+    pub headers: Vec<String>,
+    /// The process to run, for the kinds that are not HTTP.
     pub argv: Vec<String>,
 }
 
@@ -187,8 +192,8 @@ fn strings(parts: &[&str]) -> Vec<String> {
     parts.iter().map(|s| (*s).to_owned()).collect()
 }
 
-/// The cheapest correct upstream probe for one input, as an argv the caller
-/// hands straight to a process spawn.
+/// The cheapest correct upstream probe for one input, as a request or an argv
+/// the caller runs.
 ///
 /// github goes to the commits API with the sha media type, which answers with
 /// a bare 40-char sha and is the same endpoint nix's own github fetcher uses
@@ -206,7 +211,7 @@ fn strings(parts: &[&str]) -> Vec<String> {
 /// Everything else (path, tarball, indirect, sourcehut) is kind `None` and
 /// counts as unknown. Never as current, never as behind.
 pub fn probe_command(input: &FlakeInput) -> Probe {
-    let none = Probe { kind: ProbeKind::None, argv: Vec::new() };
+    let none = Probe { kind: ProbeKind::None, url: String::new(), headers: Vec::new(), argv: Vec::new() };
     let reference = if input.r#ref.is_empty() { "HEAD" } else { input.r#ref.as_str() };
 
     match input.kind.as_str() {
@@ -218,9 +223,7 @@ pub fn probe_command(input: &FlakeInput) -> Probe {
                 "https://api.github.com/repos/{}/{}/commits/{reference}",
                 input.owner, input.repo
             );
-            let mut argv = strings(&["curl", "-sS", "-f", "-m", "15", "-H", "Accept: application/vnd.github.sha"]);
-            argv.push(url);
-            Probe { kind: ProbeKind::Github, argv }
+            Probe { kind: ProbeKind::Github, url, headers: strings(&["Accept: application/vnd.github.sha"]), ..none }
         }
         "gitlab" => {
             if input.owner.is_empty() || input.repo.is_empty() {
@@ -231,9 +234,7 @@ pub fn probe_command(input: &FlakeInput) -> Probe {
                 js::encode_uri_component(&format!("{}/{}", input.owner, input.repo)),
                 js::encode_uri_component(reference)
             );
-            let mut argv = strings(&["curl", "-sS", "-f", "-m", "15"]);
-            argv.push(url);
-            Probe { kind: ProbeKind::Gitlab, argv }
+            Probe { kind: ProbeKind::Gitlab, url, ..none }
         }
         "git" => {
             if input.url.is_empty() {
@@ -247,7 +248,7 @@ pub fn probe_command(input: &FlakeInput) -> Probe {
             ]);
             argv.push(input.url.clone());
             argv.push(reference.to_owned());
-            Probe { kind: ProbeKind::Git, argv }
+            Probe { kind: ProbeKind::Git, argv, ..none }
         }
         _ => none,
     }

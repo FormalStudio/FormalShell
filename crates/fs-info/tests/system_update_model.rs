@@ -130,10 +130,10 @@ fn parse_lock_malformed_text_is_ok_false_never_throws() {
 fn probe_command_github_uses_the_commits_api_with_the_sha_accept_header() {
     let probe = probe_command(&input("nixpkgs"));
     assert_eq!(probe.kind.as_str(), "github");
-    assert_eq!(probe.argv[0], "curl");
-    assert!(probe.argv.iter().any(|a| a == "Accept: application/vnd.github.sha"));
+    assert!(probe.argv.is_empty());
+    assert!(probe.headers.iter().any(|a| a == "Accept: application/vnd.github.sha"));
     assert_eq!(
-        probe.argv.last().unwrap(),
+        &probe.url,
         "https://api.github.com/repos/NixOS/nixpkgs/commits/nixos-unstable"
     );
 }
@@ -147,7 +147,7 @@ fn probe_command_github_without_a_ref_asks_for_head() {
         ..FlakeInput::default()
     });
     assert_eq!(
-        probe.argv.last().unwrap(),
+        &probe.url,
         "https://api.github.com/repos/nix-community/home-manager/commits/HEAD"
     );
 }
@@ -179,7 +179,7 @@ fn probe_command_gitlab_percent_encodes_the_project_path() {
     });
     assert_eq!(probe.kind.as_str(), "gitlab");
     assert_eq!(
-        probe.argv.last().unwrap(),
+        &probe.url,
         "https://gitlab.com/api/v4/projects/group%2Fproj/repository/commits/feat%2Fx"
     );
 }

@@ -24,6 +24,7 @@ pub struct Request {
     query: Vec<(String, String)>,
     body: Option<String>,
     output: Option<PathBuf>,
+    upload: Option<PathBuf>,
 }
 
 pub struct Response {
@@ -86,7 +87,7 @@ impl Request {
         self
     }
 
-    /// One retry, at once, on a transient failure.
+    /// One more attempt, at once, on a transport failure or a transient status.
     pub fn retry_once(mut self) -> Self {
         self.retry = true;
         self
@@ -114,6 +115,12 @@ impl Request {
         self
     }
 
+    /// Makes it a POST whose body streams from a file (`-T`).
+    pub fn upload(mut self, path: impl Into<PathBuf>) -> Self {
+        self.upload = Some(path.into());
+        self
+    }
+
     fn argv(&self) -> Vec<String> {
         let mut a: Vec<String> = ["--silent", "--show-error", "--max-time"].map(String::from).to_vec();
         a.push(self.max_time.to_string());
@@ -128,9 +135,6 @@ impl Request {
         }
         if let Some(n) = self.follow {
             a.extend(["--location".into(), "--max-redirs".into(), n.to_string()]);
-        }
-        if self.retry {
-            a.extend(["--retry", "1", "--retry-delay", "0"].map(String::from));
         }
         if self.compressed {
             a.push("--compressed".into());
@@ -147,6 +151,9 @@ impl Request {
                 a.extend(["--data-urlencode".into(), format!("{k}={v}")]);
             }
         }
+        if let Some(path) = &self.upload {
+            a.extend(["-X".into(), "POST".into(), "-T".into(), path.to_string_lossy().into_owned()]);
+        }
         if let Some(path) = &self.output {
             a.extend(["--output".into(), path.to_string_lossy().into_owned()]);
         }
@@ -155,10 +162,26 @@ impl Request {
     }
 }
 
-/// Dropping the future kills the transfer.
+/// Statuses curl's own `--retry` counts as transient.
+fn transient(status: u16) -> bool {
+    matches!(status, 408 | 429 | 500 | 502 | 503 | 504)
+}
+
+/// Dropping the future kills the transfer. A retry is a whole new curl, so
+/// the failed attempt's body never reaches the retry's stdout or file.
 pub async fn send(req: &Request) -> Result<Response, Failure> {
+    let first = attempt(req).await;
+    let again = req.retry
+        && match &first {
+            Ok(r) => transient(r.status),
+            Err(f) => *f == Failure::Transport,
+        };
+    if again { attempt(req).await } else { first }
+}
+
+async fn attempt(req: &Request) -> Result<Response, Failure> {
     // Past curl's own cap only if curl itself hangs.
-    let outer = Duration::from_secs(u64::from(req.max_time) * (u64::from(req.retry) + 1) + 5);
+    let outer = Duration::from_secs(u64::from(req.max_time) + 5);
     let run = async {
         crate::services::proc::command("curl")
             .args(req.argv())

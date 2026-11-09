@@ -1,6 +1,6 @@
 //! The Information panel's static facts, read once per open: the OS off
 //! os-release, the host name, the board off DMI and the CPU off cpuinfo.
-//! The service reads each file; one the machine lacks (a VM's DMI board,
+//! The service reads each file (`Files`); one the machine lacks (a VM's DMI board,
 //! an ARM cpuinfo with no `model name`) is empty text and leaves its field
 //! `None` rather than a guess.
 
@@ -29,19 +29,6 @@ pub struct Files {
     pub product: String,
     /// /proc/cpuinfo
     pub cpu: String,
-}
-
-impl Files {
-    pub fn read() -> Self {
-        let cat = |path: &str| std::fs::read_to_string(path).unwrap_or_default();
-        Self {
-            os: cat("/etc/os-release"),
-            host: cat("/proc/sys/kernel/hostname"),
-            board: cat("/sys/class/dmi/id/board_name"),
-            product: cat("/sys/class/dmi/id/product_name"),
-            cpu: cat("/proc/cpuinfo"),
-        }
-    }
 }
 
 /// One `KEY=value` from os-release, unquoted the way its shell-style

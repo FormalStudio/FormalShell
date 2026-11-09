@@ -13,6 +13,7 @@ use fs_info::system_update::{self, Counts, FlakeInput, PollState};
 use super::{idle, kicked};
 use crate::runtime::Ctx;
 use crate::services::config;
+use crate::services::http;
 use crate::services::proc;
 use crate::services::wants::Source;
 use crate::services::watch::Watch;
@@ -79,8 +80,23 @@ async fn pass(ctx: &Ctx, dir: &str) {
             continue;
         }
         attempted += 1;
-        let done = proc::capture(&probe.argv, Duration::from_secs(60)).await;
-        let rev = system_update::parse_probe(probe.kind, done.code, &done.stdout);
+        let (code, stdout) = match probe.kind {
+            system_update::ProbeKind::Github | system_update::ProbeKind::Gitlab => {
+                let mut req = http::Request::get(&probe.url, 15);
+                for h in &probe.headers {
+                    req = req.header(h.as_str());
+                }
+                match http::send(&req).await {
+                    Ok(r) if r.ok() => (0, r.text()),
+                    _ => (22, String::new()),
+                }
+            }
+            _ => {
+                let done = proc::capture(&probe.argv, Duration::from_secs(60)).await;
+                (done.code, done.stdout)
+            }
+        };
+        let rev = system_update::parse_probe(probe.kind, code, &stdout);
         if !rev.is_empty() {
             resolved += 1;
         }
