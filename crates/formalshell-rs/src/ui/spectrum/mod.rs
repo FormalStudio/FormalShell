@@ -16,6 +16,7 @@ use crate::services::visualizer;
 use crate::text::TextStyle;
 use crate::ui::{Cx, State, Widget, irect};
 
+pub mod band;
 pub mod scene;
 pub mod styles;
 

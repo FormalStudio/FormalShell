@@ -248,41 +248,6 @@ pub fn stereo_frame_to_levels(
     out
 }
 
-// Level-color bands: each column's own post-response-curve fraction sorts into
-// one of three ink bands so a bar's color reads as its energy, not a
-// per-index rainbow. Both cuts are relative to the running peak: 0.4 is a band
-// ~37% of the peak (-8.6dB); a steady loud passage's loudest band draws 0.757,
-// so 0.85 is only crossed by a band 36% over it.
-pub const LEVEL_DIM_BELOW: f64 = 0.4;
-pub const LEVEL_ACCENT_FROM: f64 = 0.85;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Band {
-    Dim,
-    Content,
-    Accent,
-}
-
-impl Band {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Band::Dim => "dim",
-            Band::Content => "content",
-            Band::Accent => "accent",
-        }
-    }
-}
-
-pub fn level_color_band(level: f64) -> Band {
-    if level >= LEVEL_ACCENT_FROM {
-        Band::Accent
-    } else if level >= LEVEL_DIM_BELOW {
-        Band::Content
-    } else {
-        Band::Dim
-    }
-}
-
 /// A source whose audio never reaches this machine's PipeWire graph (the
 /// iPhone over AMS) has nothing for cava to hear, so a frame is drawn off the
 /// track's tempo instead. Deezer's free API carries a `bpm` per track, 0 when
@@ -513,44 +478,6 @@ mod tests {
     }
 
     #[test]
-    fn level_color_band_zero_is_dim() {
-        assert_eq!(level_color_band(0.0).as_str(), "dim");
-    }
-
-    #[test]
-    fn level_color_band_just_below_dim_threshold_is_dim() {
-        assert_eq!(level_color_band(LEVEL_DIM_BELOW - 0.01).as_str(), "dim");
-    }
-
-    #[test]
-    fn level_color_band_at_dim_threshold_is_content() {
-        assert_eq!(level_color_band(LEVEL_DIM_BELOW).as_str(), "content");
-    }
-
-    #[test]
-    fn level_color_band_mid_range_is_content() {
-        assert_eq!(level_color_band(0.6).as_str(), "content");
-    }
-
-    #[test]
-    fn level_color_band_just_below_accent_threshold_is_content() {
-        assert_eq!(
-            level_color_band(LEVEL_ACCENT_FROM - 0.01).as_str(),
-            "content"
-        );
-    }
-
-    #[test]
-    fn level_color_band_at_accent_threshold_is_accent() {
-        assert_eq!(level_color_band(LEVEL_ACCENT_FROM).as_str(), "accent");
-    }
-
-    #[test]
-    fn level_color_band_full_scale_is_accent() {
-        assert_eq!(level_color_band(1.0).as_str(), "accent");
-    }
-
-    #[test]
     fn baseline_is_bar_count_long() {
         assert_eq!(baseline_levels().len(), 24);
         assert_eq!(BAR_COUNT, 24);
@@ -683,7 +610,6 @@ mod tests {
             assert!(*h > 0.67, "gain {} drew {h}", gains[i]);
             assert!((h - heights[0]).abs() < 1e-6);
         }
-        assert!(heights[0] < LEVEL_ACCENT_FROM);
     }
 
     #[test]
@@ -714,9 +640,7 @@ mod tests {
         r = agc_step(r, frame_peak(&hit_frame), 1.0 / 120.0);
         let hit = level_frame(&hit_frame, r)[0];
         assert!(hit > steady);
-        assert!(hit >= LEVEL_ACCENT_FROM);
         assert!(hit < 1.0);
-        assert!(steady < LEVEL_ACCENT_FROM);
     }
 
     #[test]
@@ -727,9 +651,6 @@ mod tests {
         for i in 1..drawn.len() {
             assert!(drawn[i] - drawn[i - 1] > 0.1, "band {i}: {drawn:?}");
         }
-        // A band a quarter of the peak reads dim, the peak does not.
-        assert_eq!(level_color_band(drawn[1]).as_str(), "dim");
-        assert_eq!(level_color_band(drawn[3]).as_str(), "content");
     }
 
     #[test]

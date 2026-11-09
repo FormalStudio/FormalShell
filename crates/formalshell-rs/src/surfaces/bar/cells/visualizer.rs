@@ -11,7 +11,7 @@
 use std::time::Instant;
 
 use fs_types::Edge;
-use fs_media::visualizer::model::{self, Band, CELL_BAR_COUNT};
+use fs_media::visualizer::model::{self, CELL_BAR_COUNT};
 use fs_theme::tokens::WEIGHTS;
 
 use crate::scene::IRect;
@@ -20,6 +20,7 @@ use crate::services::visualizer;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Cell, Custom, Env, View};
 use crate::paint::{Ink, Kit, Look, Painter};
+use crate::ui::spectrum::band::{self, Band};
 
 const NO_CAVA: &str = "NO CAVA";
 
@@ -196,7 +197,7 @@ impl Custom for Visualizer {
             if *level <= 0.0 {
                 continue;
             }
-            let colour = match model::level_color_band(*level) {
+            let colour = match band::level_color_band(*level) {
                 Band::Accent => look.primary,
                 Band::Content => ink.fg,
                 Band::Dim => ink.dim,

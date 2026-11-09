@@ -23,8 +23,9 @@
 
 use std::f64::consts::PI;
 
-use fs_media::visualizer::model::{BAR_COUNT, Band, LEVEL_ACCENT_FROM, LEVEL_DIM_BELOW, level_color_band};
+use fs_media::visualizer::model::BAR_COUNT;
 use fs_theme::color::Rgba;
+use super::band::{Band, LEVEL_ACCENT_FROM, LEVEL_DIM_BELOW, level_color_band};
 use super::scene::{Scene, TextAlign, TextBaseline};
 use fs_js::round;
 
