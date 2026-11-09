@@ -46,8 +46,9 @@ pub struct State {
     changed_at: Option<Instant>,
     /// The elapsed and playback the bridge's last line carried, apart from
     /// the extrapolation base, which a run-out wait resets to 0. A legacy
-    /// bridge's line is a reading only when it moves these.
-    sent: (f64, String),
+    /// bridge's line is a reading only when it moves these; `None` once the
+    /// session or track is gone, so the next line after a reconnect reads.
+    sent: Option<(f64, String)>,
     pub error: String,
 }
 
@@ -72,7 +73,7 @@ impl Default for State {
             at: Instant::now(),
             position_stale: false,
             changed_at: None,
-            sent: (0.0, String::new()),
+            sent: None,
             error: String::new(),
         }
     }
@@ -129,6 +130,7 @@ impl State {
     }
 
     fn clear_track(&mut self) {
+        self.sent = None;
         self.position_stale = false;
         self.changed_at = None;
         self.title.clear();
@@ -211,8 +213,8 @@ fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
                 state.position_stale = true;
                 state.changed_at = Some(now);
             }
-            let moved = (elapsed, &playback) != (state.sent.0, &state.sent.1);
-            state.sent = (elapsed, playback.clone());
+            let moved = state.sent.as_ref().is_none_or(|(e, p)| (*e, p) != (elapsed, &playback));
+            state.sent = Some((elapsed, playback.clone()));
             if reading.unwrap_or(moved) {
                 (state.elapsed, state.at) = (elapsed, now);
                 state.position_stale = false;
@@ -354,6 +356,7 @@ async fn run(ctx: Ctx) {
             }
             Ev::Exit(code) => {
                 child = None;
+                state.sent = None;
                 state.installed = code != 127;
                 state.available = false;
                 if wanted {
@@ -481,6 +484,20 @@ mod tests {
         s.expire_reading(s.reading_wait().unwrap());
         apply_at(&mut s, legacy("Two", 200.0, 150.0, "playing"), change + Duration::from_secs(3));
         assert_eq!(s.position(change + Duration::from_secs(4)), 4.0, "the repeat is the old track's elapsed");
+    }
+
+    #[test]
+    fn a_legacy_line_after_a_reconnect_is_a_reading() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, AmsEvent::Status { available: true }, t0);
+        apply_at(&mut s, legacy("One", 200.0, 150.0, "playing"), t0);
+        apply_at(&mut s, AmsEvent::Status { available: false }, t0 + Duration::from_secs(1));
+        apply_at(&mut s, AmsEvent::Status { available: true }, t0 + Duration::from_secs(5));
+        let back = t0 + Duration::from_secs(6);
+        apply_at(&mut s, legacy("One", 200.0, 150.0, "playing"), back);
+        assert!(!s.position_stale && s.reading_wait().is_none());
+        assert_eq!(s.position(back + Duration::from_secs(2)), 152.0);
     }
 
     #[test]
