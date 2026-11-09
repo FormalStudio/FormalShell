@@ -2,8 +2,6 @@
 //! and cycle order, and the two value clamps. Rows are plain data built by the
 //! caller from live player properties.
 
-use serde_json::Value;
-
 use fs_js::utf16_len;
 use fs_types::Fraction;
 
@@ -81,14 +79,26 @@ fn player_tokens(row: &PlayerRow) -> Vec<String> {
     out
 }
 
-/// Which player row a playback stream belongs to, or "". `keys` are the
-/// stream's application.name, application.process.binary, application.id and
-/// node.name. A key and a token match when one holds the other. MPRIS carries
-/// no pid, so a name is all there is to go on.
-pub fn stream_owner(keys: &[Option<&str>], rows: &[PlayerRow]) -> String {
-    let names: Vec<String> = keys
-        .iter()
-        .map(|k| k.unwrap_or("").to_lowercase())
+/// The names a playback stream is recognised by.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StreamKeys {
+    /// application.name.
+    pub app_name: Option<String>,
+    /// application.process.binary.
+    pub binary: Option<String>,
+    /// application.id.
+    pub app_id: Option<String>,
+    /// node.name.
+    pub node_name: Option<String>,
+}
+
+/// Which player row a playback stream belongs to, or "". A key and a token
+/// match when one holds the other. MPRIS carries no pid, so a name is all
+/// there is to go on.
+pub fn stream_owner(keys: &StreamKeys, rows: &[PlayerRow]) -> String {
+    let names: Vec<String> = [&keys.app_name, &keys.binary, &keys.app_id, &keys.node_name]
+        .into_iter()
+        .map(|k| k.as_deref().unwrap_or("").to_lowercase())
         .filter(|k| utf16_len(k) >= 3)
         .collect();
     for row in rows {
@@ -101,32 +111,6 @@ pub fn stream_owner(keys: &[Option<&str>], rows: &[PlayerRow]) -> String {
         }
     }
     String::new()
-}
-
-/// The sink-input index `pactl move-sink-input` takes for a Pipewire node, out
-/// of `pactl -f json list sink-inputs`, or -1.
-pub fn sink_input_index(text: &str, node_id: impl std::fmt::Display) -> i64 {
-    let Ok(Value::Array(rows)) = serde_json::from_str::<Value>(text) else {
-        return -1;
-    };
-    let want = node_id.to_string();
-    for row in &rows {
-        let Some(props) = row.get("properties") else {
-            continue;
-        };
-        let object_id = match props.get("object.id") {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Number(n)) => n.to_string(),
-            Some(Value::Bool(b)) => b.to_string(),
-            _ => "undefined".to_string(),
-        };
-        if object_id == want
-            && let Some(Value::Number(index)) = row.get("index")
-        {
-            return index.as_f64().map(|f| f as i64).unwrap_or(-1);
-        }
-    }
-    -1
 }
 
 /// What is left of a bus name once the well-known prefix is off it.
@@ -396,23 +380,21 @@ mod tests {
             ),
             row("org.mpris.MediaPlayer2.spotify", false, "Spotify"),
         ];
+        let keys = |app: Option<&str>, binary: Option<&str>, id: Option<&str>| StreamKeys {
+            app_name: app.map(str::to_owned),
+            binary: binary.map(str::to_owned),
+            app_id: id.map(str::to_owned),
+            node_name: None,
+        };
         assert_eq!(
-            stream_owner(&[Some("Firefox"), Some("firefox")], &rows),
+            stream_owner(&keys(Some("Firefox"), Some("firefox"), None), &rows),
             "org.mpris.MediaPlayer2.firefox.instance_1_2"
         );
         assert_eq!(
-            stream_owner(&[Some("spotify")], &rows),
+            stream_owner(&keys(Some("spotify"), None, None), &rows),
             "org.mpris.MediaPlayer2.spotify"
         );
-        assert_eq!(stream_owner(&[Some("Discord"), Some("discord")], &rows), "");
-        assert_eq!(stream_owner(&[None, Some(""), Some("ab")], &rows), "");
-    }
-
-    #[test]
-    fn sink_input_index_by_object_id() {
-        let text = r#"[{"index":41,"properties":{"object.id":"88"}},{"index":52,"properties":{"object.id":"90"}}]"#;
-        assert_eq!(sink_input_index(text, 90), 52);
-        assert_eq!(sink_input_index(text, 12), -1);
-        assert_eq!(sink_input_index("not json", 90), -1);
+        assert_eq!(stream_owner(&keys(Some("Discord"), Some("discord"), None), &rows), "");
+        assert_eq!(stream_owner(&keys(None, Some(""), Some("ab")), &rows), "");
     }
 }

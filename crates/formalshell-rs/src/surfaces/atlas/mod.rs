@@ -257,7 +257,7 @@ impl Atlas {
         if !self.outputs {
             return;
         }
-        let current = std::iter::once("").chain(r.outputs.iter().map(|o| o.id.as_str())).position(|id| id == r.output);
+        let current = std::iter::once("").chain(r.outputs.iter().map(|(id, _)| id.as_str())).position(|id| id == r.output);
         self.output_cursor = current.unwrap_or(0);
         radio::send(Cmd::RefreshOutputs);
     }
@@ -761,7 +761,7 @@ impl Atlas {
                 Key::Up => self.output_cursor = (self.output_cursor + n - 1) % n,
                 Key::Down => self.output_cursor = (self.output_cursor + 1) % n,
                 Key::Enter | Key::Space => {
-                    let id = if self.output_cursor == 0 { String::new() } else { r.outputs[self.output_cursor - 1].id.clone() };
+                    let id = if self.output_cursor == 0 { String::new() } else { r.outputs[self.output_cursor - 1].0.clone() };
                     self.select_output(id);
                 }
                 _ => return false,

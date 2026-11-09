@@ -391,7 +391,7 @@ impl App {
             return;
         }
         if let Some(i) = on.strip_prefix("output:").and_then(|i| i.parse::<usize>().ok()) {
-            let id = if i == 0 { String::new() } else { r.outputs.get(i - 1).map(|o| o.id.clone()).unwrap_or_default() };
+            let id = if i == 0 { String::new() } else { r.outputs.get(i - 1).map(|(id, _)| id.clone()).unwrap_or_default() };
             m.select_output(id);
             return;
         }

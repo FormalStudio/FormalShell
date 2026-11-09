@@ -388,7 +388,7 @@ fn list_el(a: &Atlas, r: &radio::State, s: &fs_theme::tokens::Space, theme: &The
 
 fn outputs_el(a: &Atlas, r: &radio::State, s: &fs_theme::tokens::Space) -> (bool, El) {
     let mut col = vec![w::section_label(s, "Audio output", None, true)];
-    let choices = std::iter::once((String::new(), "System default".to_owned())).chain(r.outputs.iter().map(|o| (o.id.clone(), o.label.clone())));
+    let choices = std::iter::once((String::new(), "System default".to_owned())).chain(r.outputs.iter().cloned());
     for (i, (id, label)) in choices.enumerate() {
         let cursor = a.output_cursor == i;
         col.push(
@@ -401,7 +401,7 @@ fn outputs_el(a: &Atlas, r: &radio::State, s: &fs_theme::tokens::Space) -> (bool
                 .key(format!("output:{id}")),
         );
     }
-    if r.outputs.is_empty() && !r.outputs_loading {
+    if r.outputs.is_empty() {
         let failed = !r.outputs_error.is_empty();
         let text = if failed { r.outputs_error.clone() } else { "No other audio outputs found".to_owned() };
         col.push(w::caption(text).ink(if failed { Ink::Destructive } else { Ink::Muted }).pad_start(s.control_padding_x));

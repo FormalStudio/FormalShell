@@ -34,7 +34,6 @@
 //! The lit-set functions take the playback position `t` as a plain argument;
 //! every caller passes what `led_position` made of the player's clock.
 
-use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -42,9 +41,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
 
-use fs_js::{
-    encode_uri_component, is_space, round, to_number, to_str, trim, truthy, utf16_len,
-};
+use fs_js::{encode_uri_component, is_space, round, trim, utf16_len};
 
 pub(crate) const INTERLUDE_MIN_SECONDS: f64 = 5.0;
 pub const MISS_TTL_DAYS: f64 = 7.0;
@@ -993,158 +990,6 @@ pub fn hold_seconds(auto: bool, latency_ms: f64, manual_ms: f64) -> f64 {
     (latency + manual) / 1000.0
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Stream {
-    pub id: i64,
-    /// application.name, application.process.binary, application.id and
-    /// node.name, the names `media::stream_owner` matches a player on.
-    pub keys: [Option<String>; 4],
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LatencyGraph {
-    pub streams: Vec<Stream>,
-    /// Sink node ids by node.name.
-    pub sinks: HashMap<String, i64>,
-    /// Downstream latency in ms by node id.
-    pub latency: HashMap<i64, f64>,
-    pub default_sink: String,
-}
-
-/// `Number(x) || 0`.
-fn number_or_zero(v: Option<&Value>) -> f64 {
-    let n = to_number(v);
-    if n.is_nan() { 0.0 } else { n }
-}
-
-/// `pw-dump`'s whole graph, cut down to what the output latency needs: every
-/// playback stream with the names `media::stream_owner` matches a player on,
-/// each node's downstream latency in ms, sinks by node.name, and the default
-/// sink's name out of the "default" metadata.
-///
-/// A port's Latency param with direction "Input" is the latency from that port
-/// to the ear, PipeWire's own sum over everything downstream of it: a bluez5
-/// sink puts its packet, codec and transport delay there, and a link carries it
-/// up to the stream feeding it, through any loopback or filter chain in
-/// between. It is quantum + rate + ns, the first two in frames of the graph
-/// clock, so the settings metadata's quantum and rate turn them into time; a
-/// forced value wins, as it does in the graph itself.
-///
-/// A node whose `id` is not an integer is left out.
-pub fn latency_graph(text: &str) -> Option<LatencyGraph> {
-    let Ok(Value::Array(objects)) = serde_json::from_str::<Value>(text) else {
-        return None;
-    };
-    let (mut rate, mut quantum, mut force_rate, mut force_quantum) = (48000.0, 1024.0, 0.0, 0.0);
-    let mut default_sink = String::new();
-    for meta in &objects {
-        if meta.get("type").and_then(Value::as_str) != Some("PipeWire:Interface:Metadata") {
-            continue;
-        }
-        let Some(Value::Array(entries)) = meta.get("metadata") else {
-            continue;
-        };
-        let meta_name = meta
-            .get("props")
-            .and_then(|p| p.get("metadata.name"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        for entry in entries {
-            let key = entry.get("key").and_then(Value::as_str).unwrap_or("");
-            if meta_name == "settings" {
-                let n = to_number(entry.get("value"));
-                if n > 0.0 {
-                    match key {
-                        "clock.rate" => rate = n,
-                        "clock.quantum" => quantum = n,
-                        "clock.force-rate" => force_rate = n,
-                        "clock.force-quantum" => force_quantum = n,
-                        _ => {}
-                    }
-                }
-            } else if meta_name == "default"
-                && key == "default.audio.sink"
-                && let Some(value) = entry.get("value").filter(|v| truthy(Some(v)))
-            {
-                default_sink = value
-                    .get("name")
-                    .filter(|n| truthy(Some(n)))
-                    .map(to_str)
-                    .unwrap_or_default();
-            }
-        }
-    }
-    let rate = if force_rate != 0.0 { force_rate } else { rate };
-    let quantum = if force_quantum != 0.0 {
-        force_quantum
-    } else {
-        quantum
-    };
-
-    let mut graph = LatencyGraph {
-        streams: Vec::new(),
-        sinks: HashMap::new(),
-        latency: HashMap::new(),
-        default_sink,
-    };
-    for o in &objects {
-        let Some(info) = o.get("info").filter(|i| truthy(Some(i))) else {
-            continue;
-        };
-        let props = info.get("props");
-        let prop = |k: &str| props.and_then(|p| p.get(k)).filter(|v| !v.is_null());
-        match o.get("type").and_then(Value::as_str) {
-            Some("PipeWire:Interface:Node") => {
-                let Some(id) = o.get("id").and_then(Value::as_i64) else {
-                    continue;
-                };
-                let class = prop("media.class").map(to_str).unwrap_or_default();
-                if class == "Stream/Output/Audio" {
-                    let key = |k: &str| prop(k).map(to_str);
-                    graph.streams.push(Stream {
-                        id,
-                        keys: [
-                            key("application.name"),
-                            key("application.process.binary"),
-                            key("application.id"),
-                            key("node.name"),
-                        ],
-                    });
-                } else if class == "Audio/Sink"
-                    && let Some(name) = prop("node.name")
-                        .map(to_str)
-                        .filter(|n| !n.is_empty())
-                {
-                    graph.sinks.insert(name, id);
-                }
-            }
-            Some("PipeWire:Interface:Port") => {
-                let params = match info.get("params").and_then(|p| p.get("Latency")) {
-                    Some(Value::Array(a)) => a.as_slice(),
-                    _ => &[],
-                };
-                for l in params {
-                    if l.get("direction").and_then(Value::as_str) != Some("Input") {
-                        continue;
-                    }
-                    let ms = (number_or_zero(l.get("minQuantum")) * quantum / rate
-                        + number_or_zero(l.get("minRate")) / rate)
-                        * 1000.0
-                        + number_or_zero(l.get("minNs")) / 1e6;
-                    let Some(node) = prop("node.id").and_then(Value::as_i64) else {
-                        continue;
-                    };
-                    if graph.latency.get(&node).is_none_or(|&cur| ms > cur) {
-                        graph.latency.insert(node, ms);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    Some(graph)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LatencyVia {
     Stream,
@@ -1168,47 +1013,30 @@ pub struct OutputLatency {
     pub via: LatencyVia,
 }
 
-/// What the ear is behind the player by, for the playback streams `stream_ids`
-/// names (the lyric's player's own, off `latency_graph`'s `streams`), else for
-/// the sink `sink_name`, else the graph's default sink. The streams are read
-/// first because theirs is the whole path to the sink they are actually routed
-/// to; the sink stands in while the player has no stream up (paused past its
-/// own teardown, say).
-pub fn output_latency(
-    graph: Option<&LatencyGraph>,
-    stream_ids: &[i64],
-    sink_name: &str,
-) -> OutputLatency {
-    let none = OutputLatency {
-        ms: 0,
-        via: LatencyVia::None,
-    };
-    let Some(graph) = graph else {
-        return none;
-    };
+/// What the ear is behind the player by: the most any of the player's own
+/// playback streams declares (`streams`, in ms), else what the default sink
+/// declares (`sink`). The streams are read first because theirs is the whole
+/// path to the sink they are actually routed to; the sink stands in while the
+/// player has no stream up (paused past its own teardown, say).
+pub fn output_latency(streams: impl IntoIterator<Item = f64>, sink: Option<f64>) -> OutputLatency {
     let clamp = |ms: f64| round(ms.clamp(0.0, OUTPUT_LATENCY_MAX_MS)) as u32;
-    let best = stream_ids
-        .iter()
-        .filter_map(|id| graph.latency.get(id).copied())
-        .fold(-1.0_f64, f64::max);
+    let best = streams.into_iter().fold(-1.0_f64, f64::max);
     if best >= 0.0 {
         return OutputLatency {
             ms: clamp(best),
             via: LatencyVia::Stream,
         };
     }
-    for name in [sink_name, graph.default_sink.as_str()] {
-        if name.is_empty() {
-            continue;
-        }
-        if let Some(ms) = graph.sinks.get(name).and_then(|id| graph.latency.get(id)) {
-            return OutputLatency {
-                ms: clamp(*ms),
-                via: LatencyVia::Sink,
-            };
-        }
+    match sink {
+        Some(ms) => OutputLatency {
+            ms: clamp(ms),
+            via: LatencyVia::Sink,
+        },
+        None => OutputLatency {
+            ms: 0,
+            via: LatencyVia::None,
+        },
     }
-    none
 }
 
 /// The foreground lines (main_line_indices): every non-background line, or

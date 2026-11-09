@@ -356,14 +356,13 @@ impl State {
     /// stamps on it, a Bluetooth device's by its node name, a player's by
     /// name, "" for an app with no MPRIS.
     fn stream_owner(&self, s: &StreamInfo, mpris: &[PlayerRow]) -> String {
-        if s.keys[0].as_deref() == Some(radio::CLIENT_NAME) {
+        if s.keys.app_name.as_deref() == Some(radio::CLIENT_NAME) {
             return "radio".into();
         }
-        if let Some(r) = self.remotes.iter().find(|r| s.keys[3].as_deref().is_some_and(|n| r.plays_into(n))) {
+        if let Some(r) = self.remotes.iter().find(|r| s.keys.node_name.as_deref().is_some_and(|n| r.plays_into(n))) {
             return r.id.clone();
         }
-        let keys: Vec<Option<&str>> = s.keys.iter().map(|k| k.as_deref()).collect();
-        pick::stream_owner(&keys, mpris)
+        pick::stream_owner(&s.keys, mpris)
     }
 
     fn mpris_rows(&self) -> Vec<PlayerRow> {
@@ -411,23 +410,9 @@ impl State {
             let sink = if name == self.routing.default_sink { "" } else { name };
             return radio::send(radio::Cmd::SetOutput(sink.to_owned()));
         }
-        let ids: Vec<u32> = self.routed_streams().iter().map(|s| s.id).collect();
-        if ids.is_empty() {
-            return;
+        for s in self.routed_streams() {
+            audio::write(fs_audio::Command::MoveStream { stream: s.id, sink: name.to_owned() });
         }
-        let sink = name.to_owned();
-        // pactl addresses a stream by its sink-input index and PipeWire by
-        // its node id: list the sink inputs, then move each one found.
-        std::thread::spawn(move || {
-            let Ok(listed) = crate::services::proc::std_command("pactl").args(["-f", "json", "list", "sink-inputs"]).output() else { return };
-            let text = String::from_utf8_lossy(&listed.stdout);
-            for id in ids {
-                let index = pick::sink_input_index(&text, id);
-                if index >= 0 {
-                    let _ = crate::services::proc::std_command("pactl").args(["move-sink-input", &index.to_string(), &sink]).status();
-                }
-            }
-        });
     }
 
     pub fn players(&self) -> Vec<LabelledRow> {
@@ -830,6 +815,7 @@ async fn run(ctx: Ctx) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fs_media::media::StreamKeys;
 
     fn mpris(id: &str, playing: bool) -> Player {
         Player {
@@ -927,7 +913,7 @@ mod tests {
     fn stream(id: u32, app: &str, target: &str) -> StreamInfo {
         StreamInfo {
             id,
-            keys: [Some(app.into()), None, None, Some("node".into())],
+            keys: StreamKeys { app_name: Some(app.into()), node_name: Some("node".into()), ..StreamKeys::default() },
             label: app.into(),
             title: String::new(),
             volume: Some(Visual::new(0.5)),
@@ -1001,7 +987,7 @@ mod tests {
         s.mpris[0].playing = false;
         s.routing.streams.push(StreamInfo {
             id: 42,
-            keys: [None, None, None, Some("bluez_input.C8_89_F3_45_A7_AA.2".into())],
+            keys: StreamKeys { node_name: Some("bluez_input.C8_89_F3_45_A7_AA.2".into()), ..StreamKeys::default() },
             label: "FormalPad".into(),
             title: String::new(),
             volume: Some(Visual::new(0.8)),

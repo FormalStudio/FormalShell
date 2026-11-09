@@ -1,6 +1,8 @@
 //! Audio over fs-audio's PipeWire thread: the default sink's
 //! volume and mute, and whether a default source exists and is muted. The
-//! graph lives on the service thread; writes go back as commands.
+//! graph lives on the service thread; writes go back as commands. It is the
+//! shell's one read of PipeWire: the media panel's routing, the radio's
+//! outputs and the lyrics' output latency all come off it.
 
 use std::cell::RefCell;
 use std::sync::LazyLock;
@@ -8,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_channel::{Receiver, Sender};
 use fs_audio::{Command, Graph, Node, Visual};
+use fs_media::media::StreamKeys;
 use futures_lite::FutureExt;
 
 use crate::runtime::Ctx;
@@ -18,7 +21,7 @@ pub struct Audio {
     /// None while there is no default sink with an audio interface.
     pub volume: Option<Visual>,
     pub muted: bool,
-    /// The default sink's description, or its node name.
+    /// The default sink's label ([`fs_audio::Node::device_label`]).
     pub name: String,
     /// A default source with an audio interface exists.
     pub source: bool,
@@ -73,9 +76,7 @@ pub struct Routing {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StreamInfo {
     pub id: u32,
-    /// application.name, application.process.binary, application.id and
-    /// node.name, what a player is recognised by.
-    pub keys: [Option<String>; 4],
+    pub keys: StreamKeys,
     pub label: String,
     /// media.name.
     pub title: String,
@@ -84,25 +85,32 @@ pub struct StreamInfo {
     pub target: String,
 }
 
+/// The names a playback stream is matched to its player by.
+pub fn stream_keys(n: &Node) -> StreamKeys {
+    let key = |k: &str| n.props.get(k).cloned();
+    StreamKeys {
+        app_name: key("application.name"),
+        binary: key("application.process.binary"),
+        app_id: key("application.id"),
+        node_name: Some(n.name.clone()),
+    }
+}
+
+/// Node name and label of every sink a stream can move to.
+pub fn sinks(graph: &Graph) -> Vec<(String, String)> {
+    graph.sinks().map(|n| (n.name.clone(), n.device_label())).collect()
+}
+
 fn routing(graph: &Graph, streams: bool) -> Routing {
-    let key = |n: &Node, k: &str| n.props.get(k).cloned();
     Routing {
-        sinks: graph
-            .nodes
-            .values()
-            .filter(|n| !n.is_stream() && n.is_sink() && n.audio.is_some())
-            .map(|n| {
-                let label = [n.description.as_str(), n.nick.as_str(), n.name.as_str()].into_iter().find(|l| !l.is_empty()).unwrap_or("");
-                (n.name.clone(), label.to_owned())
-            })
-            .collect(),
+        sinks: sinks(graph),
         streams: graph
             .nodes
             .values()
             .filter(|n| streams && n.is_stream() && n.is_sink() && n.ready)
             .map(|n| StreamInfo {
                 id: n.id,
-                keys: [key(n, "application.name"), key(n, "application.process.binary"), key(n, "application.id"), Some(n.name.clone())],
+                keys: stream_keys(n),
                 label: n.label().to_owned(),
                 title: n.props.get("media.name").cloned().unwrap_or_default(),
                 volume: n.audio.as_ref().map(|a| a.volume()),
@@ -122,24 +130,20 @@ thread_local! {
     static CLIENT: RefCell<Option<Client>> = const { RefCell::new(None) };
 }
 
-fn row(n: &Node, label: &str) -> Option<Row> {
+fn row(n: &Node, label: String) -> Option<Row> {
     let a = n.audio.as_ref()?;
-    Some(Row { id: n.id, name: n.name.clone(), label: label.to_owned(), volume: a.volume(), muted: a.muted })
-}
-
-fn device_label(n: &Node) -> &str {
-    if n.description.is_empty() { &n.name } else { &n.description }
+    Some(Row { id: n.id, name: n.name.clone(), label, volume: a.volume(), muted: a.muted })
 }
 
 fn lists(graph: &Graph) -> Lists {
     let devices = || graph.nodes.values().filter(|n| n.is_device());
     Lists {
-        outputs: devices().filter(|n| n.is_sink()).filter_map(|n| row(n, device_label(n))).collect(),
-        inputs: devices().filter(|n| !n.is_sink()).filter_map(|n| row(n, device_label(n))).collect(),
+        outputs: devices().filter(|n| n.is_sink()).filter_map(|n| row(n, n.device_label())).collect(),
+        inputs: devices().filter(|n| !n.is_sink()).filter_map(|n| row(n, n.device_label())).collect(),
         // AudioModel.isPlaybackStream: a stream feeding a sink.
-        streams: graph.nodes.values().filter(|n| n.is_stream() && n.is_sink()).filter_map(|n| row(n, n.label())).collect(),
+        streams: graph.nodes.values().filter(|n| n.is_stream() && n.is_sink()).filter_map(|n| row(n, n.label().to_owned())).collect(),
         sink: graph.default_sink().map(|n| n.id),
-        source: graph.default_source().and_then(|n| row(n, device_label(n))),
+        source: graph.default_source().and_then(|n| row(n, n.device_label())),
     }
 }
 
@@ -150,10 +154,7 @@ fn snapshot(graph: &Graph) -> Audio {
     Audio {
         volume: sink.map(|a| a.volume()),
         muted: sink.is_some_and(|a| a.muted),
-        name: node
-            .filter(|_| sink.is_some())
-            .map(|n| if n.description.is_empty() { n.name.clone() } else { n.description.clone() })
-            .unwrap_or_default(),
+        name: node.filter(|_| sink.is_some()).map(Node::device_label).unwrap_or_default(),
         source: source.is_some(),
         source_muted: source.is_some_and(|a| a.muted),
         source_volume: source.map(|a| a.volume()),
@@ -163,7 +164,7 @@ fn snapshot(graph: &Graph) -> Audio {
             .nodes
             .values()
             .filter(|n| n.is_device() && n.audio.is_some())
-            .map(|n| (n.name.clone(), device_label(n).to_owned(), n.is_sink()))
+            .map(|n| (n.name.clone(), n.device_label(), n.is_sink()))
             .collect(),
         default_sink: node.filter(|_| sink.is_some()).map(|n| n.name.clone()).unwrap_or_default(),
         default_source: graph.default_source().filter(|n| n.audio.is_some()).map(|n| n.name.clone()).unwrap_or_default(),
@@ -194,6 +195,12 @@ pub fn panel(open: bool) {
     if PANEL.swap(open, Ordering::Relaxed) != open {
         let _ = POKE.0.try_send(());
     }
+}
+
+/// The graph as the service thread last saw it, `None` with no PipeWire
+/// thread at all.
+pub fn with_graph<R>(f: impl FnOnce(&Graph) -> R) -> Option<R> {
+    CLIENT.with_borrow(|c| c.as_ref().map(|c| f(&c.graph)))
 }
 
 /// A write from the panel, on the service thread.

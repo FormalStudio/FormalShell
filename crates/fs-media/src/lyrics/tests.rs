@@ -1,4 +1,4 @@
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::*;
 
@@ -1129,7 +1129,7 @@ fn the_offset_key_can_hold_a_chunk_back_past_its_stamp() {
     );
 }
 
-// holdSeconds / latencyGraph / outputLatency
+// holdSeconds / outputLatency
 
 #[test]
 fn hold_is_the_latency_plus_the_manual_nudge() {
@@ -1162,47 +1162,10 @@ fn a_hold_moves_the_lit_line_by_the_latency() {
     );
 }
 
-fn port(node: i64, quantum: f64, rate: f64, ns: f64) -> Value {
-    json!({ "id": 900 + node, "type": "PipeWire:Interface:Port",
-        "info": { "direction": "output", "props": { "node.id": node }, "params": { "Latency": [
-            { "direction": "Input", "minQuantum": quantum, "maxQuantum": quantum, "minRate": rate, "maxRate": rate, "minNs": ns, "maxNs": ns },
-            { "direction": "Output", "minQuantum": 0, "maxQuantum": 0, "minRate": 0, "maxRate": 0, "minNs": 5e9, "maxNs": 5e9 }] } } })
-}
-
-fn dump(extra: &[Value]) -> String {
-    let mut objects = vec![
-        json!({ "id": 40, "type": "PipeWire:Interface:Metadata", "props": { "metadata.name": "settings" },
-            "metadata": [{ "key": "clock.rate", "value": 48000 }, { "key": "clock.quantum", "value": 1024 }] }),
-        json!({ "id": 41, "type": "PipeWire:Interface:Metadata", "props": { "metadata.name": "default" },
-            "metadata": [{ "key": "default.audio.sink", "value": { "name": "alsa_output.pci" } }] }),
-        json!({ "id": 33, "type": "PipeWire:Interface:Node", "info": { "props": { "media.class": "Audio/Sink", "node.name": "alsa_output.pci" } } }),
-        json!({ "id": 52, "type": "PipeWire:Interface:Node", "info": { "props": { "media.class": "Audio/Sink", "node.name": "bluez_output.AA" } } }),
-        json!({ "id": 69, "type": "PipeWire:Interface:Node", "info": { "props": { "media.class": "Stream/Output/Audio",
-            "application.name": "mpv", "node.name": "mpv" } } }),
-        port(33, 1.0, 0.0, 0.0),
-        port(52, 0.0, 0.0, 180_000_000.0),
-        port(69, 0.0, 0.0, 180_000_000.0),
-        port(69, 0.0, 0.0, 180_000_000.0),
-    ];
-    objects.extend_from_slice(extra);
-    Value::Array(objects).to_string()
-}
-
 #[test]
-fn latency_graph_lists_streams_with_their_owner_keys() {
-    let g = latency_graph(&dump(&[])).unwrap();
-    assert_eq!(g.streams.len(), 1);
-    assert_eq!(g.streams[0].id, 69);
-    assert_eq!(g.streams[0].keys[0].as_deref(), Some("mpv"));
-    assert_eq!(g.default_sink, "alsa_output.pci");
-    assert_eq!(g.sinks["bluez_output.AA"], 52);
-}
-
-#[test]
-fn a_bluetooth_stream_reads_its_ns_latency() {
-    let g = latency_graph(&dump(&[]));
+fn the_streams_win_over_the_sink() {
     assert_eq!(
-        output_latency(g.as_ref(), &[69], ""),
+        output_latency([180.0, 21.3], Some(21.3)),
         OutputLatency {
             ms: 180,
             via: LatencyVia::Stream
@@ -1211,10 +1174,9 @@ fn a_bluetooth_stream_reads_its_ns_latency() {
 }
 
 #[test]
-fn a_quantum_latency_reads_in_graph_clock_frames() {
-    let g = latency_graph(&dump(&[]));
+fn no_stream_falls_back_to_the_sink() {
     assert_eq!(
-        output_latency(g.as_ref(), &[], "alsa_output.pci"),
+        output_latency([], Some(21.33)),
         OutputLatency {
             ms: 21,
             via: LatencyVia::Sink
@@ -1223,67 +1185,20 @@ fn a_quantum_latency_reads_in_graph_clock_frames() {
 }
 
 #[test]
-fn a_forced_quantum_wins_over_the_default() {
-    let g = latency_graph(
-        &json!([
-            { "id": 40, "type": "PipeWire:Interface:Metadata", "props": { "metadata.name": "settings" },
-              "metadata": [{ "key": "clock.rate", "value": 48000 }, { "key": "clock.quantum", "value": 1024 },
-                  { "key": "clock.force-quantum", "value": 4800 }] },
-            { "id": 33, "type": "PipeWire:Interface:Node", "info": { "props": { "media.class": "Audio/Sink", "node.name": "s" } } },
-            port(33, 1.0, 480.0, 0.0)
-        ])
-        .to_string(),
-    );
+fn nothing_declared_is_no_latency() {
     assert_eq!(
-        output_latency(g.as_ref(), &[], "s"),
+        output_latency([], None),
         OutputLatency {
-            ms: 110,
-            via: LatencyVia::Sink
+            ms: 0,
+            via: LatencyVia::None,
         }
     );
-}
-
-#[test]
-fn no_stream_falls_back_to_the_named_sink_then_the_default() {
-    let g = latency_graph(&dump(&[]));
-    assert_eq!(
-        output_latency(g.as_ref(), &[77], "bluez_output.AA"),
-        OutputLatency {
-            ms: 180,
-            via: LatencyVia::Sink
-        }
-    );
-    assert_eq!(
-        output_latency(g.as_ref(), &[], "gone"),
-        OutputLatency {
-            ms: 21,
-            via: LatencyVia::Sink
-        }
-    );
-}
-
-#[test]
-fn an_unreadable_dump_is_no_latency() {
-    let none = OutputLatency {
-        ms: 0,
-        via: LatencyVia::None,
-    };
-    assert_eq!(latency_graph("not json"), None);
-    assert_eq!(output_latency(None, &[69], "x"), none);
-    assert_eq!(output_latency(latency_graph("[]").as_ref(), &[], ""), none);
 }
 
 #[test]
 fn a_misreported_latency_is_capped() {
-    let g = latency_graph(
-        &json!([
-            { "id": 33, "type": "PipeWire:Interface:Node", "info": { "props": { "media.class": "Audio/Sink", "node.name": "s" } } },
-            port(33, 0.0, 0.0, 9e9)
-        ])
-        .to_string(),
-    );
     assert_eq!(
-        output_latency(g.as_ref(), &[], "s").ms,
+        output_latency([], Some(9000.0)).ms,
         OUTPUT_LATENCY_MAX_MS as u32
     );
 }

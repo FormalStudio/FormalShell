@@ -204,10 +204,66 @@ with wave.open("/tmp/fs-audio-tone.wav", "wb") as w:
     w.writeframes(b"".join(frame(i) for i in range(48000 * 30)))
 play = subprocess.Popen(["pw-play", "/tmp/fs-audio-tone.wav"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 s = json.loads(sh(probe + " wait-stream pw-play 15"))
-play.kill()
 assert s["type"] == "AudioOutStream" and s["is_stream"], s
 assert s["target"] == "fs_b", s
 assert len(s["volumes"]) > 0, s
+
+def linked_into(stream_id):
+    d = json.loads(sh("pw-dump"))
+    names = {o["id"]: o["info"]["props"].get("node.name") for o in d
+             if o["type"] == "PipeWire:Interface:Node" and o.get("info")}
+    return {names.get(o["info"]["input-node-id"]) for o in d
+            if o["type"] == "PipeWire:Interface:Link" and o.get("info")
+            and o["info"]["output-node-id"] == stream_id}
+
+step("move the stream")
+m = json.loads(sh(probe + " move-stream pw-play fs_a"))
+assert m["target"] == "fs_a", m
+until("pw-link -l | grep -q 'fs_a:playback'")
+assert linked_into(m["id"]) == {"fs_a"}, linked_into(m["id"])
+meta = sh("pw-metadata -n default %d" % m["id"])
+assert "key:'target.object' value:'%d' type:'Spa:Id'" % node(dump(), "fs_a")["serial"] in meta, meta
+
+step("latency off the ports, as pw-dump reads it")
+def dump_latency():
+    d = json.loads(sh("pw-dump"))
+    clock = {"clock.rate": 48000.0, "clock.quantum": 1024.0, "clock.force-rate": 0.0, "clock.force-quantum": 0.0}
+    for o in d:
+        if o["type"] == "PipeWire:Interface:Metadata" and o.get("props", {}).get("metadata.name") == "settings":
+            for e in o.get("metadata") or []:
+                if e.get("key") in clock and isinstance(e.get("value"), (int, float)) and e["value"] > 0:
+                    clock[e["key"]] = float(e["value"])
+    rate = clock["clock.force-rate"] or clock["clock.rate"]
+    quantum = clock["clock.force-quantum"] or clock["clock.quantum"]
+    out = {}
+    for o in d:
+        if o["type"] != "PipeWire:Interface:Port" or not o.get("info"):
+            continue
+        node_id = int(o["info"]["props"]["node.id"])
+        for l in (o["info"].get("params") or {}).get("Latency") or []:
+            if l.get("direction") != "Input":
+                continue
+            ms = (l.get("minQuantum", 0) * quantum / rate + l.get("minRate", 0) / rate) * 1000 + l.get("minNs", 0) / 1e6
+            out[node_id] = max(out.get(node_id, ms), ms)
+    return out
+loop = subprocess.Popen(["pw-loopback", "-n", "fs_lat", "-d", "0.25", "-i",
+                         "{ media.class=Audio/Sink node.name=fs_lat node.description=Latency }"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+until("pw-cli ls Node | grep -q 'node.name = \"fs_lat\"'")
+lat = node(dump(), "fs_lat")
+sh("pw-cli set-param %d ProcessLatency '{ ns = 250000000 }'" % lat["id"])
+m = json.loads(sh(probe + " move-stream pw-play fs_lat"))
+assert m["target"] == "fs_lat", m
+time.sleep(1)
+want, d = dump_latency(), dump()
+loop.kill()
+play.kill()
+for n in d["nodes"]:
+    a, b = n["latency_ms"], want.get(n["id"])
+    assert (a is None) == (b is None) and (a is None or abs(a - b) < 0.01), (n["name"], a, b)
+# The loopback's 250ms on top of the stream's own quantum.
+s = next(n for n in d["nodes"] if n["id"] == m["id"])
+assert 250 <= s["latency_ms"] < 300, s
 print("fs-audio: every step passed")
 PY
     ;;

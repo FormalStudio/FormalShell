@@ -21,6 +21,7 @@ use pw::link::{Link as PwLink, LinkListener, LinkState as PwLinkState};
 use pw::main_loop::MainLoopRc;
 use pw::metadata::{Metadata, MetadataListener};
 use pw::node::{Node as PwNode, NodeChangeMask, NodeListener};
+use pw::port::{Port as PwPort, PortChangeMask, PortListener};
 use pw::registry::{GlobalObject, RegistryRc};
 use pw::spa;
 use pw::types::ObjectType;
@@ -33,8 +34,9 @@ use spa::utils::dict::DictRef;
 use spa::utils::result::AsyncSeq;
 
 use crate::{
-    AudioState, Command, DEFAULT_TYPE, Defaults, Event, Graph, KEY_CONFIGURED_SINK,
-    KEY_CONFIGURED_SOURCE, Linear, Link, LinkState, Node, Visual, default_value, scaled_volumes,
+    AudioState, Clock, Command, DEFAULT_TYPE, Defaults, Event, Graph, ID_TYPE,
+    KEY_CONFIGURED_SINK, KEY_CONFIGURED_SOURCE, KEY_TARGET_NODE, KEY_TARGET_OBJECT, Latency,
+    Linear, Link, LinkState, Node, Port, Visual, default_value, scaled_volumes,
 };
 
 const RETRY: Duration = Duration::from_secs(2);
@@ -263,7 +265,9 @@ struct State {
     hw: HashMap<u32, Hw>,
     devices: HashMap<u32, DeviceEntry>,
     links: HashMap<u32, (PwLink, LinkListener)>,
+    ports: HashMap<u32, (PwPort, PortListener)>,
     metadata: Option<(u32, Metadata, MetadataListener)>,
+    settings: Option<(u32, Metadata, MetadataListener)>,
 }
 
 fn readable(params: &[ParamInfo], kind: ParamType) -> bool {
@@ -401,26 +405,100 @@ fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalO
                 .links
                 .insert(global.id, (proxy, listener));
         }
+        ObjectType::Port => {
+            let Some(node) = global
+                .props
+                .and_then(|p| p.get("node.id"))
+                .and_then(|n| n.parse().ok())
+            else {
+                return;
+            };
+            let Ok(proxy) = registry.bind::<PwPort, _>(global) else {
+                return;
+            };
+            let id = global.id;
+            let listener = proxy
+                .add_listener_local()
+                .info({
+                    let weak = weak.clone();
+                    move |info| {
+                        if info.change_mask().contains(PortChangeMask::PARAMS)
+                            && readable(info.params(), ParamType::Latency)
+                        {
+                            with(&weak, |s| {
+                                if let Some((proxy, _)) = s.ports.get(&id) {
+                                    proxy.enum_params(0, Some(ParamType::Latency), 0, u32::MAX);
+                                }
+                            });
+                        }
+                    }
+                })
+                .param(move |_seq, kind, _index, _next, pod| {
+                    if kind == ParamType::Latency
+                        && let Some(latency) = pod.and_then(parse_input_latency)
+                    {
+                        with(&weak, |s| {
+                            s.emit(Event::Port(Port {
+                                id,
+                                node,
+                                latency: Some(latency),
+                            }));
+                        });
+                    }
+                })
+                .register();
+            proxy.subscribe_params(&[ParamType::Latency]);
+            let mut s = state.borrow_mut();
+            s.ports.insert(id, (proxy, listener));
+            s.emit(Event::Port(Port {
+                id,
+                node,
+                latency: None,
+            }));
+        }
         ObjectType::Metadata => {
-            if global.props.and_then(|p| p.get("metadata.name")) != Some("default") {
+            let name = global.props.and_then(|p| p.get("metadata.name"));
+            if !matches!(name, Some("default" | "settings")) {
                 return;
             }
             let Ok(proxy) = registry.bind::<Metadata, _>(global) else {
                 return;
             };
-            let listener = proxy
-                .add_listener_local()
-                .property(move |_subject, key, type_, value| {
-                    with(&weak, |s| {
-                        let mut defaults = s.graph.defaults.clone();
-                        if defaults.apply(key, type_, value) {
-                            s.emit(Event::Defaults(defaults));
+            let listener = if name == Some("default") {
+                proxy
+                    .add_listener_local()
+                    .property(move |_subject, key, type_, value| {
+                        with(&weak, |s| {
+                            let mut defaults = s.graph.defaults.clone();
+                            if defaults.apply(key, type_, value) {
+                                s.emit(Event::Defaults(defaults));
+                            }
+                        });
+                        0
+                    })
+                    .register()
+            } else {
+                proxy
+                    .add_listener_local()
+                    .property(move |subject, key, _type, value| {
+                        if subject == PW_ID_CORE {
+                            with(&weak, |s| {
+                                let mut clock = s.graph.clock;
+                                if clock.apply(key, value) {
+                                    s.emit(Event::Clock(clock));
+                                }
+                            });
                         }
-                    });
-                    0
-                })
-                .register();
-            state.borrow_mut().metadata = Some((global.id, proxy, listener));
+                        0
+                    })
+                    .register()
+            };
+            let entry = Some((global.id, proxy, listener));
+            if name == Some("default") {
+                state.borrow_mut().metadata = entry;
+            } else {
+                state.borrow_mut().settings = entry;
+            }
         }
         _ => {}
     }
@@ -443,7 +521,9 @@ impl State {
             hw: HashMap::new(),
             devices: HashMap::new(),
             links: HashMap::new(),
+            ports: HashMap::new(),
             metadata: None,
+            settings: None,
         }
     }
 
@@ -492,11 +572,16 @@ impl State {
             self.emit(Event::NodeRemoved(id));
         } else if self.links.remove(&id).is_some() {
             self.emit(Event::LinkRemoved(id));
-        } else if self.devices.remove(&id).is_none()
-            && self.metadata.as_ref().is_some_and(|m| m.0 == id)
-        {
-            self.metadata = None;
-            self.emit(Event::Defaults(Defaults::default()));
+        } else if self.ports.remove(&id).is_some() {
+            self.emit(Event::PortRemoved(id));
+        } else if self.devices.remove(&id).is_none() {
+            if self.metadata.as_ref().is_some_and(|m| m.0 == id) {
+                self.metadata = None;
+                self.emit(Event::Defaults(Defaults::default()));
+            } else if self.settings.as_ref().is_some_and(|m| m.0 == id) {
+                self.settings = None;
+                self.emit(Event::Clock(Clock::default()));
+            }
         }
     }
 
@@ -606,7 +691,25 @@ impl State {
             Command::SetMuted { node, muted } => self.set_muted(node, muted),
             Command::SetDefaultSink(name) => self.set_default(KEY_CONFIGURED_SINK, name, true),
             Command::SetDefaultSource(name) => self.set_default(KEY_CONFIGURED_SOURCE, name, false),
+            Command::MoveStream { stream, sink } => self.move_stream(stream, &sink),
         }
+    }
+
+    /// What pipewire-pulse writes for `pactl move-sink-input`: the sink's id
+    /// and serial on the stream's own subject, which the session manager
+    /// relinks it by.
+    fn move_stream(&self, stream: u32, sink: &str) {
+        if !self.graph.nodes.get(&stream).is_some_and(Node::is_stream) {
+            return;
+        }
+        let Some(target) = self.graph.sinks().find(|n| n.name == sink) else {
+            return;
+        };
+        let (Some(serial), Some((_, proxy, _))) = (target.serial, &self.metadata) else {
+            return;
+        };
+        proxy.set_property(stream, KEY_TARGET_NODE, Some(ID_TYPE), Some(&target.id.to_string()));
+        proxy.set_property(stream, KEY_TARGET_OBJECT, Some(ID_TYPE), Some(&serial.to_string()));
     }
 
     fn set_volumes(&mut self, id: u32, volumes: Vec<Visual>) {
@@ -776,6 +879,8 @@ impl State {
     /// Drops every proxy while the core they belong to is still alive.
     fn release(&mut self) {
         self.metadata = None;
+        self.settings = None;
+        self.ports.clear();
         self.links.clear();
         self.nodes.clear();
         self.devices.clear();
@@ -866,6 +971,30 @@ fn default_layout(n: usize) -> Vec<u32> {
     }
 }
 
+/// The Input direction's minimum out of a port's `Latency` param; the
+/// Output direction's is `None`.
+fn parse_input_latency(pod: &Pod) -> Option<Latency> {
+    input_latency(&value_of(pod)?)
+}
+
+fn input_latency(value: &Value) -> Option<Latency> {
+    let Value::Object(object) = value else {
+        return None;
+    };
+    let mut out = Latency::default();
+    let mut input = false;
+    for prop in &object.properties {
+        match (prop.key, &prop.value) {
+            (ss::SPA_PARAM_LATENCY_direction, Value::Id(d)) => input = d.0 == ss::SPA_DIRECTION_INPUT,
+            (ss::SPA_PARAM_LATENCY_minQuantum, Value::Float(q)) => out.quantum = *q,
+            (ss::SPA_PARAM_LATENCY_minRate, Value::Int(r)) => out.rate = *r,
+            (ss::SPA_PARAM_LATENCY_minNs, Value::Long(ns)) => out.ns = *ns,
+            _ => {}
+        }
+    }
+    input.then_some(out)
+}
+
 fn parse_route(pod: &Pod) -> Option<(i32, i32, VolumeProps)> {
     let Value::Object(object) = value_of(pod)? else {
         return None;
@@ -932,6 +1061,34 @@ mod tests {
         assert_eq!((device, index), (3, 7));
         assert!((props.volumes[0].get() - 0.5).abs() < 1e-6);
         assert_eq!(props.channels, vec![ss::SPA_AUDIO_CHANNEL_MONO]);
+    }
+
+    fn latency(direction: u32, quantum: f32, rate: i32, ns: i64) -> Value {
+        Value::Object(Object {
+            type_: ss::SPA_TYPE_OBJECT_ParamLatency,
+            id: ss::SPA_PARAM_Latency,
+            properties: vec![
+                Property::new(ss::SPA_PARAM_LATENCY_direction, Value::Id(spa::utils::Id(direction))),
+                Property::new(ss::SPA_PARAM_LATENCY_minQuantum, Value::Float(quantum)),
+                Property::new(ss::SPA_PARAM_LATENCY_maxQuantum, Value::Float(quantum)),
+                Property::new(ss::SPA_PARAM_LATENCY_minRate, Value::Int(rate)),
+                Property::new(ss::SPA_PARAM_LATENCY_maxRate, Value::Int(rate)),
+                Property::new(ss::SPA_PARAM_LATENCY_minNs, Value::Long(ns)),
+                Property::new(ss::SPA_PARAM_LATENCY_maxNs, Value::Long(ns)),
+            ],
+        })
+    }
+
+    #[test]
+    fn latency_pod_reads_the_input_direction_alone() {
+        let input = latency(ss::SPA_DIRECTION_INPUT, 1.0, 480, 180_000_000);
+        let pod = serialize(&input).unwrap();
+        assert_eq!(
+            parse_input_latency(Pod::from_bytes(&pod).unwrap()),
+            Some(Latency { quantum: 1.0, rate: 480, ns: 180_000_000 })
+        );
+        let output = serialize(&latency(ss::SPA_DIRECTION_OUTPUT, 0.0, 0, 5_000_000_000)).unwrap();
+        assert_eq!(parse_input_latency(Pod::from_bytes(&output).unwrap()), None);
     }
 
     #[test]

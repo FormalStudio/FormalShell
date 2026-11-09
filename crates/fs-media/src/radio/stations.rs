@@ -18,7 +18,7 @@ use regex::Regex;
 use serde::Serialize;
 use serde_json::Value;
 
-use fs_js::{parse_number, slice_utf16, to_str, utf16_len};
+use fs_js::{parse_number, slice_utf16, utf16_len};
 
 pub const API_FALLBACK: &str = "https://all.api.radio-browser.info";
 pub const SERVERS_URL: &str = "https://all.api.radio-browser.info/json/servers";
@@ -30,8 +30,6 @@ pub(crate) const CACHE_MAX_AGE_MS: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
 
 static UUID_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9A-Fa-f-]{20,64}$").unwrap());
-static SINK_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9._:+-]{1,160}$").unwrap());
 static OUTPUT_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z0-9._:+-]{0,160}$").unwrap());
 static MIRROR_PATTERN: LazyLock<Regex> =
@@ -52,10 +50,6 @@ const CLIAMP_EXCLUDED: [&str; 1] = ["omarchy"];
 
 pub fn is_uuid(s: &str) -> bool {
     UUID_PATTERN.is_match(s)
-}
-
-pub fn is_sink(s: &str) -> bool {
-    SINK_PATTERN.is_match(s)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -557,45 +551,6 @@ pub fn parse_cliamp(text: &str) -> Option<Vec<Station>> {
     Some(out)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Sink {
-    pub id: String,
-    pub label: String,
-}
-
-/// `pactl -f json list sinks` to [{ id, label }]; AirPlay sinks share one
-/// description, so theirs carries the address out of the sink name.
-pub fn parse_sinks(text: &str) -> Option<Vec<Sink>> {
-    let Ok(Value::Array(rows)) = serde_json::from_str::<Value>(text) else {
-        return None;
-    };
-    let mut out = Vec::new();
-    for row in &rows {
-        let Some(name) = row.get("name").and_then(Value::as_str) else {
-            continue;
-        };
-        if !SINK_PATTERN.is_match(name) {
-            continue;
-        }
-        let mut label = match or(row.get("description"), row.get("name")) {
-            Some(v) => to_str(v),
-            None => "undefined".into(),
-        };
-        if name.starts_with("raop_sink.") {
-            let parts: Vec<&str> = name.split('.').collect();
-            let end = parts.len().saturating_sub(1);
-            let start = parts.len().saturating_sub(5);
-            label.push_str(" \u{b7} ");
-            label.push_str(&parts[start..end].join("."));
-        }
-        out.push(Sink {
-            id: name.to_string(),
-            label: clean_str(&label, 160),
-        });
-    }
-    Some(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -655,13 +610,5 @@ mod tests {
             serde_json::json!([row, row, { "stationuuid": "x", "url": "ftp://x" }]).to_string();
         assert_eq!(parse_response(&body, 500).unwrap().len(), 1);
         assert_eq!(parse_response(&body, 2), None);
-    }
-
-    #[test]
-    fn sinks_label_airplay_addresses() {
-        let text = r#"[{"name":"raop_sink.Kitchen.local.192.168.1.5.7000","description":"AirPlay"},{"name":"bad name"}]"#;
-        let sinks = parse_sinks(text).unwrap();
-        assert_eq!(sinks.len(), 1);
-        assert_eq!(sinks[0].label, "AirPlay \u{b7} 192.168.1.5");
     }
 }

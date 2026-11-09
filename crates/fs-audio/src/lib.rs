@@ -1,6 +1,7 @@
 //! The PipeWire graph the shell reads:
-//! nodes with their volume and mute, links, and the `default` metadata
-//! object's four default names. The model here is pure; the `pipewire`
+//! nodes with their volume and mute, links, ports with the latency they
+//! declare, the `default` metadata object's four default names and the
+//! `settings` object's graph clock. The model here is pure; the `pipewire`
 //! feature adds the client thread that feeds it ([`spawn`]).
 //!
 //! Volumes are [`Visual`]: the cube root of the [`Linear`] `channelVolumes`
@@ -20,6 +21,12 @@ pub const KEY_DEFAULT_SOURCE: &str = "default.audio.source";
 pub const KEY_CONFIGURED_SINK: &str = "default.configured.audio.sink";
 pub const KEY_CONFIGURED_SOURCE: &str = "default.configured.audio.source";
 pub const DEFAULT_TYPE: &str = "Spa:String:JSON";
+/// The `default` metadata keys a stream is moved by, set on the stream's own
+/// id: the sink's node id and its serial, both typed `Spa:Id`, as
+/// pipewire-pulse writes them for `pactl move-sink-input`.
+pub const KEY_TARGET_NODE: &str = "target.node";
+pub const KEY_TARGET_OBJECT: &str = "target.object";
+pub const ID_TYPE: &str = "Spa:Id";
 
 /// A volume on the visual scale: the cube root of the server's linear
 /// channel volume, where 1.0 is full and above it is overdrive. What every
@@ -262,13 +269,31 @@ impl Node {
         .find_map(|k| self.prop(k))
     }
 
-    /// The audio panel's label chain: application.name, node.description,
-    /// media.name, node.name.
+    /// A stream's label: application.name, node.description, media.name,
+    /// node.name.
     pub fn label(&self) -> &str {
         self.prop("application.name")
             .or(Some(self.description.as_str()).filter(|s| !s.is_empty()))
             .or_else(|| self.prop("media.name"))
             .unwrap_or(&self.name)
+    }
+
+    /// A device's label: node.description, node.nick, node.name. AirPlay
+    /// sinks all describe themselves the same, so theirs carries the address
+    /// out of the node name (`raop_sink.<host>.<a>.<b>.<c>.<d>.<port>`).
+    pub fn device_label(&self) -> String {
+        let mut label = [&self.description, &self.nick, &self.name]
+            .into_iter()
+            .find(|l| !l.is_empty())
+            .cloned()
+            .unwrap_or_default();
+        if self.name.starts_with("raop_sink.") {
+            let parts: Vec<&str> = self.name.split('.').collect();
+            let end = parts.len().saturating_sub(1);
+            label.push_str(" \u{b7} ");
+            label.push_str(&parts[end.saturating_sub(4)..end].join("."));
+        }
+        label
     }
 }
 
@@ -312,6 +337,90 @@ pub struct LinkGroup {
     pub input_node: u32,
     /// The state of the group's lowest-id link.
     pub state: LinkState,
+}
+
+/// The graph clock out of the `settings` metadata object, which a port's
+/// latency in quantums and rate frames is counted in. A forced value wins,
+/// as it does in the graph itself.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Clock {
+    pub rate: f64,
+    pub quantum: f64,
+    pub force_rate: f64,
+    pub force_quantum: f64,
+}
+
+impl Default for Clock {
+    fn default() -> Self {
+        Self {
+            rate: 48000.0,
+            quantum: 1024.0,
+            force_rate: 0.0,
+            force_quantum: 0.0,
+        }
+    }
+}
+
+impl Clock {
+    /// One `settings` property; a value that is not a positive number puts
+    /// the field back to its default. Returns whether a field changed.
+    pub fn apply(&mut self, key: Option<&str>, value: Option<&str>) -> bool {
+        let n = value
+            .and_then(|v| v.trim().parse::<f64>().ok())
+            .filter(|n| *n > 0.0);
+        let base = Self::default();
+        let (slot, fallback) = match key {
+            Some("clock.rate") => (&mut self.rate, base.rate),
+            Some("clock.quantum") => (&mut self.quantum, base.quantum),
+            Some("clock.force-rate") => (&mut self.force_rate, base.force_rate),
+            Some("clock.force-quantum") => (&mut self.force_quantum, base.force_quantum),
+            _ => return false,
+        };
+        let next = n.unwrap_or(fallback);
+        if *slot == next {
+            return false;
+        }
+        *slot = next;
+        true
+    }
+
+    fn rate(&self) -> f64 {
+        if self.force_rate != 0.0 { self.force_rate } else { self.rate }
+    }
+
+    fn quantum(&self) -> f64 {
+        if self.force_quantum != 0.0 { self.force_quantum } else { self.quantum }
+    }
+}
+
+/// A port's `Latency` param in the Input direction: the latency from that
+/// port to the ear, PipeWire's own sum over everything downstream of it. A
+/// bluez5 sink puts its packet, codec and transport delay there, and a link
+/// carries it up to the stream feeding it, through any loopback or filter
+/// chain in between. Its minimum: quantums and rate frames of the graph
+/// clock, plus nanoseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Latency {
+    pub quantum: f32,
+    pub rate: i32,
+    pub ns: i64,
+}
+
+impl Latency {
+    pub fn ms(self, clock: &Clock) -> f64 {
+        let rate = clock.rate();
+        (f64::from(self.quantum) * clock.quantum() / rate + f64::from(self.rate) / rate) * 1000.0
+            + self.ns as f64 / 1e6
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Port {
+    pub id: u32,
+    /// The node it belongs to (`node.id`).
+    pub node: u32,
+    /// `None` until its Latency param arrives, and for a port with none.
+    pub latency: Option<Latency>,
 }
 
 /// The four names the `default` metadata object carries. `sink` and
@@ -369,7 +478,10 @@ pub enum Event {
     NodeRemoved(u32),
     Link(Link),
     LinkRemoved(u32),
+    Port(Port),
+    PortRemoved(u32),
     Defaults(Defaults),
+    Clock(Clock),
     /// The initial burst has landed: every node bound so far has its props
     /// and volumes.
     Ready,
@@ -392,6 +504,8 @@ pub enum Change {
     },
     NodeRemoved(u32),
     Links,
+    /// A port's latency or the graph clock moved.
+    Latency,
     Defaults {
         sink: bool,
         source: bool,
@@ -419,6 +533,12 @@ pub enum Command {
     /// By `node.name`; `None` clears the configured default. What `pactl set-default-sink` writes.
     SetDefaultSink(Option<String>),
     SetDefaultSource(Option<String>),
+    /// A playback stream moved onto the sink of this `node.name`, as
+    /// `pactl move-sink-input` moves it.
+    MoveStream {
+        stream: u32,
+        sink: String,
+    },
 }
 
 /// The graph as the shell sees it.
@@ -426,7 +546,9 @@ pub enum Command {
 pub struct Graph {
     pub nodes: BTreeMap<u32, Node>,
     pub links: BTreeMap<u32, Link>,
+    pub ports: BTreeMap<u32, Port>,
     pub defaults: Defaults,
+    pub clock: Clock,
     pub ready: bool,
 }
 
@@ -474,6 +596,24 @@ impl Graph {
                 Some(_) => Change::Links,
                 None => Change::Nothing,
             },
+            Event::Port(port) => {
+                if self.ports.get(&port.id) == Some(&port) {
+                    return Change::Nothing;
+                }
+                self.ports.insert(port.id, port);
+                Change::Latency
+            }
+            Event::PortRemoved(id) => match self.ports.remove(&id) {
+                Some(_) => Change::Latency,
+                None => Change::Nothing,
+            },
+            Event::Clock(clock) => {
+                if clock == self.clock {
+                    return Change::Nothing;
+                }
+                self.clock = clock;
+                Change::Latency
+            }
             Event::Defaults(defaults) => {
                 let sink = defaults.sink != self.defaults.sink;
                 let source = defaults.source != self.defaults.source;
@@ -519,6 +659,24 @@ impl Graph {
         self.nodes
             .values()
             .find(|n| n.name == name && n.is_device())
+    }
+
+    /// Every sink a stream can be moved to.
+    pub fn sinks(&self) -> impl Iterator<Item = &Node> {
+        self.nodes
+            .values()
+            .filter(|n| !n.is_stream() && n.is_sink() && n.audio.is_some())
+    }
+
+    /// What the ear is behind a node by, in ms: the most any of its ports
+    /// declares. `None` while no port of it has declared any.
+    pub fn latency_ms(&self, node: u32) -> Option<f64> {
+        self.ports
+            .values()
+            .filter(|p| p.node == node)
+            .filter_map(|p| p.latency)
+            .map(|l| l.ms(&self.clock))
+            .reduce(f64::max)
     }
 
     pub fn link_groups(&self) -> Vec<LinkGroup> {
@@ -724,6 +882,69 @@ mod tests {
         assert_eq!(n.label(), "a");
         let bare = Node::from_props(1, props(&[("node.name", "n")]));
         assert_eq!(bare.label(), "n");
+    }
+
+    #[test]
+    fn device_label_chain() {
+        let mut n = Node::from_props(1, props(&[("node.name", "n"), ("node.nick", "k")]));
+        assert_eq!(n.device_label(), "k");
+        n.description = "d".into();
+        assert_eq!(n.device_label(), "d");
+        let bare = Node::from_props(1, props(&[("node.name", "n")]));
+        assert_eq!(bare.device_label(), "n");
+        let airplay = Node::from_props(
+            2,
+            props(&[
+                ("node.name", "raop_sink.Kitchen.local.192.168.1.5.7000"),
+                ("node.description", "AirPlay"),
+            ]),
+        );
+        assert_eq!(airplay.device_label(), "AirPlay \u{b7} 192.168.1.5");
+    }
+
+    fn port(id: u32, node: u32, quantum: f32, rate: i32, ns: i64) -> Event {
+        Event::Port(Port {
+            id,
+            node,
+            latency: Some(Latency { quantum, rate, ns }),
+        })
+    }
+
+    #[test]
+    fn latency_is_the_most_any_port_of_the_node_declares() {
+        let mut g = Graph::default();
+        assert_eq!(g.apply(port(70, 69, 0.0, 0, 180_000_000)), Change::Latency);
+        assert_eq!(g.apply(port(70, 69, 0.0, 0, 180_000_000)), Change::Nothing);
+        g.apply(port(71, 69, 0.0, 0, 120_000_000));
+        g.apply(Event::Port(Port { id: 72, node: 69, latency: None }));
+        assert!((g.latency_ms(69).unwrap() - 180.0).abs() < 1e-9);
+        assert_eq!(g.latency_ms(5), None);
+        g.apply(Event::PortRemoved(70));
+        assert!((g.latency_ms(69).unwrap() - 120.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_quantum_latency_reads_in_graph_clock_frames() {
+        let mut g = Graph::default();
+        g.apply(port(40, 33, 1.0, 0, 0));
+        assert!((g.latency_ms(33).unwrap() - 1024.0 / 48.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_forced_quantum_wins_over_the_default() {
+        let mut clock = Clock::default();
+        assert!(clock.apply(Some("clock.force-quantum"), Some("4800")));
+        assert!(!clock.apply(Some("clock.force-quantum"), Some("4800")));
+        assert!(!clock.apply(Some("log.level"), Some("2")));
+        let mut g = Graph::default();
+        assert_eq!(g.apply(Event::Clock(clock)), Change::Latency);
+        g.apply(port(40, 33, 1.0, 480, 0));
+        assert!((g.latency_ms(33).unwrap() - 110.0).abs() < 1e-9);
+        assert!(clock.apply(Some("clock.force-quantum"), Some("0")));
+        assert_eq!(clock, Clock::default());
+        assert!(clock.apply(Some("clock.rate"), Some("44100")));
+        assert!(clock.apply(Some("clock.rate"), None));
+        assert_eq!(clock.rate, 48000.0);
     }
 
     #[test]

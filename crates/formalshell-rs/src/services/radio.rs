@@ -20,6 +20,7 @@ use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
 
+use super::devices::audio;
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -81,10 +82,10 @@ pub struct State {
     /// The launcher's station search: the query
     /// the answer is for, and the stations, `None` when every mirror failed.
     pub search: Option<(String, Option<Vec<Station>>)>,
-    /// `pactl`'s sinks, for the atlas's output picker.
-    pub outputs: Vec<stations::Sink>,
+    /// The audio graph's sinks, node name and label, for the atlas's output
+    /// picker.
+    pub outputs: Vec<(String, String)>,
     pub outputs_error: String,
-    pub outputs_loading: bool,
 }
 
 impl Default for State {
@@ -106,7 +107,6 @@ impl Default for State {
             search: None,
             outputs: Vec::new(),
             outputs_error: String::new(),
-            outputs_loading: false,
         }
     }
 }
@@ -151,7 +151,7 @@ impl State {
     }
 
     pub fn output_label(&self, id: &str) -> String {
-        self.outputs.iter().find(|o| o.id == id).map_or_else(|| id.to_owned(), |o| o.label.clone())
+        self.outputs.iter().find(|(name, _)| name == id).map_or_else(|| id.to_owned(), |(_, label)| label.clone())
     }
 
     pub fn status(&self) -> Value {
@@ -208,7 +208,6 @@ pub enum Cmd {
     RefreshOutputs,
     Atlas(u64, Ask),
     Answered(Reply),
-    OutputsRead(Option<Vec<stations::Sink>>),
     /// A world (None) or country refresh, answering `token` when it has one.
     Refresh(Option<String>, Option<u64>),
     RefreshDone(Option<String>),
@@ -909,19 +908,9 @@ impl Radio {
     }
 
     fn refresh_outputs(&mut self) {
-        if self.st.outputs_loading {
-            return;
-        }
-        self.st.outputs_loading = true;
-        let follow = self.follow.clone();
-        self.ctx.spawn(async move {
-            let argv: Vec<String> = ["pactl", "-f", "json", "list", "sinks"].map(String::from).to_vec();
-            let sinks = curl(&argv)
-                .await
-                .filter(|t| t.encode_utf16().count() <= stations::MAX_RESPONSE_CHARS)
-                .and_then(|t| stations::parse_sinks(&t));
-            let _ = follow.try_send(Cmd::OutputsRead(sinks));
-        });
+        let sinks = audio::with_graph(audio::sinks);
+        self.st.outputs_error = if sinks.is_none() { "Audio outputs are unavailable".into() } else { String::new() };
+        self.st.outputs = sinks.unwrap_or_default();
     }
 
     async fn handle(&mut self, cmd: Cmd) {
@@ -934,11 +923,6 @@ impl Radio {
             }
             Cmd::ClearLocalError => self.st.local_error.clear(),
             Cmd::RefreshOutputs => self.refresh_outputs(),
-            Cmd::OutputsRead(sinks) => {
-                self.st.outputs_loading = false;
-                self.st.outputs_error = if sinks.is_none() { "Audio outputs are unavailable".into() } else { String::new() };
-                self.st.outputs = sinks.unwrap_or_default();
-            }
             Cmd::Atlas(token, ask) => self.atlas(token, ask),
             Cmd::Answered(reply) => self.answer(reply),
             Cmd::Refresh(country, token) => self.refresh(country, token),
@@ -1011,7 +995,7 @@ impl Radio {
             Cmd::Stop => self.stop().await,
             Cmd::Random => self.tune_random(),
             Cmd::SetOutput(sink) => {
-                if !sink.is_empty() && !fs_media::radio::stations::is_sink(&sink) {
+                if !sink.is_empty() && audio::with_graph(|g| g.sinks().any(|n| n.name == sink)) != Some(true) {
                     self.st.player_error = "Unknown audio output".into();
                     return;
                 }

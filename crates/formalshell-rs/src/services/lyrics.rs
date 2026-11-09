@@ -13,9 +13,9 @@
 //! provider erred, so a weaker answer from an outage is kept for the session
 //! alone. Every URL, parser and the line model are fs-media's.
 //!
-//! The output latency is read off `pw-dump` while a synced track has the
-//! automatic hold on: what the player's stream (or the sink) declares
-//! between the decoder and the ear.
+//! The output latency is read off the audio service's PipeWire graph while a
+//! synced track has the automatic hold on: what the player's stream (or the
+//! default sink) declares between the decoder and the ear.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +28,7 @@ use fs_media::media::PlayerRow;
 use futures_lite::future;
 use serde_json::{Value, json};
 
+use super::devices::audio;
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -461,27 +462,19 @@ async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
     }
 }
 
-async fn read_latency(ctx: &Ctx) {
-    let out = crate::services::proc::command("pw-dump").stdin(async_process::Stdio::null()).stderr(async_process::Stdio::null()).kill_on_drop(true).output().await;
-    let text = match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
-        _ => String::new(),
-    };
-    let graph = if text.is_empty() { None } else { model::latency_graph(&text) };
+fn read_latency(ctx: &Ctx) {
     let row = PLAYER.lock().ok().and_then(|p| p.clone());
-    let ids: Vec<i64> = match (&graph, &row) {
-        (Some(g), Some(r)) => g
-            .streams
-            .iter()
-            .filter(|s| {
-                let keys: Vec<Option<&str>> = s.keys.iter().map(|k| k.as_deref()).collect();
-                !fs_media::media::stream_owner(&keys, std::slice::from_ref(r)).is_empty()
-            })
-            .map(|s| s.id)
-            .collect(),
-        _ => Vec::new(),
-    };
-    ctx.publish(store::Diff::Lyrics(Diff::Latency(model::output_latency(graph.as_ref(), &ids, ""))));
+    let latency = audio::with_graph(|g| {
+        let streams = g
+            .nodes
+            .values()
+            .filter(|n| n.is_stream() && n.is_sink())
+            .filter(|n| row.as_ref().is_some_and(|r| !fs_media::media::stream_owner(&audio::stream_keys(n), std::slice::from_ref(r)).is_empty()))
+            .filter_map(|n| g.latency_ms(n.id));
+        let sink = g.nodes.values().find(|n| n.media_class == "Audio/Sink" && !n.name.is_empty() && n.name == g.defaults.sink).and_then(|n| g.latency_ms(n.id));
+        model::output_latency(streams, sink)
+    });
+    ctx.publish(store::Diff::Lyrics(Diff::Latency(latency.unwrap_or_else(|| model::output_latency([], None)))));
 }
 
 async fn latency(ctx: Ctx) {
@@ -506,7 +499,7 @@ async fn latency(ctx: Ctx) {
             while rx.try_recv().is_ok() {}
         }
         if LATENCY_WANTED.load(Ordering::Relaxed) {
-            read_latency(&ctx).await;
+            read_latency(&ctx);
         }
     }
 }

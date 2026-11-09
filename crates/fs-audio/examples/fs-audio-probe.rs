@@ -5,6 +5,7 @@
 //! fs-audio-probe mute <node.name> <true|false>
 //! fs-audio-probe set-default-sink <node.name>
 //! fs-audio-probe wait-stream <app or node name part> <seconds>
+//! fs-audio-probe move-stream <app or node name part> <sink node.name>
 
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
@@ -34,6 +35,7 @@ fn node_json(graph: &Graph, n: &Node) -> Value {
     let audio = n.audio.clone().unwrap_or_default();
     json!({
         "id": n.id,
+        "serial": n.serial,
         "name": n.name,
         "description": n.description,
         "media_class": n.media_class,
@@ -50,6 +52,8 @@ fn node_json(graph: &Graph, n: &Node) -> Value {
         "channels": audio.channels,
         "muted": audio.muted,
         "target": graph.stream_target(n.id).map(|t| t.name.clone()),
+        "label_device": n.device_label(),
+        "latency_ms": graph.latency_ms(n.id),
     })
 }
 
@@ -65,6 +69,26 @@ fn dump(graph: &Graph) -> Value {
         "default_sink": graph.default_sink().map(|n| n.id),
         "link_groups": graph.link_groups().iter().map(|g| json!([g.output_node, g.input_node])).collect::<Vec<_>>(),
     })
+}
+
+/// A playback stream linked into a sink with its volumes in, by a part of
+/// its app or node name.
+fn stream(g: &Graph, app: &str) -> Option<u32> {
+    g.nodes
+        .values()
+        .find(|n| {
+            let a = n.app();
+            let names = [
+                a.name.unwrap_or_default(),
+                a.binary.unwrap_or_default(),
+                n.name.clone(),
+            ];
+            n.is_stream()
+                && names.iter().any(|s| s.contains(app))
+                && g.stream_target(n.id).is_some()
+                && n.audio.as_ref().is_some_and(|a| !a.volumes.is_empty())
+        })
+        .map(|n| n.id)
 }
 
 fn main() -> ExitCode {
@@ -127,32 +151,30 @@ fn main() -> ExitCode {
         }
         ["wait-stream", app, secs] => {
             let until = Instant::now() + Duration::from_secs(secs.parse().expect("seconds"));
-            let hit = |g: &Graph| {
-                g.nodes
-                    .values()
-                    .find(|n| {
-                        let a = n.app();
-                        let names = [
-                            a.name.unwrap_or_default(),
-                            a.binary.unwrap_or_default(),
-                            n.name.clone(),
-                        ];
-                        n.is_stream()
-                            && names.iter().any(|s| s.contains(*app))
-                            && g.stream_target(n.id).is_some()
-                            && n.audio.as_ref().is_some_and(|a| !a.volumes.is_empty())
-                    })
-                    .map(|n| n.id)
-            };
-            if !pump(&rx, &mut graph, until, |g| hit(g).is_some()) {
+            if !pump(&rx, &mut graph, until, |g| stream(g, app).is_some()) {
                 println!("{}", dump(&graph));
                 return ExitCode::FAILURE;
             }
-            let id = hit(&graph).unwrap();
+            let id = stream(&graph, app).unwrap();
+            println!("{}", node_json(&graph, &graph.nodes[&id]));
+        }
+        ["move-stream", app, sink] => {
+            let Some(id) = stream(&graph, app) else {
+                return ExitCode::FAILURE;
+            };
+            audio.send(Command::MoveStream {
+                stream: id,
+                sink: sink.to_string(),
+            });
+            let moved = |g: &Graph| g.stream_target(id).is_some_and(|t| t.name == *sink);
+            if !pump(&rx, &mut graph, Instant::now() + Duration::from_secs(5), moved) {
+                println!("{}", dump(&graph));
+                return ExitCode::FAILURE;
+            }
             println!("{}", node_json(&graph, &graph.nodes[&id]));
         }
         _ => {
-            eprintln!("usage: fs-audio-probe dump|set-volume|mute|set-default-sink|wait-stream");
+            eprintln!("usage: fs-audio-probe dump|set-volume|mute|set-default-sink|wait-stream|move-stream");
             return ExitCode::FAILURE;
         }
     }
