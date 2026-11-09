@@ -42,9 +42,7 @@ notify_icon_file="$notify_icon_dir/formalshell-notify-fixture.png"
 notify_icon_theme_name="dialog-information"
 
 leg_notify_timing() {
-  # notify-drive.sh's `expand off` lands at 12; this run's generic smoke.png
-  # is taken after it, showing the collapsed pile again.
-  leg_timing 14 45
+  leg_timing 45
 }
 
 leg_notify_fixture() {
@@ -76,7 +74,6 @@ leg_notify_drive() {
   local script="$shot_dir/notify-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 "$notify_send_bin" -u normal -i "$notify_icon_file" 'Fixture PNG' 'Icon from a path'
 sleep 1
 "$notify_send_bin" -u normal -i "$notify_icon_theme_name" 'Themed icon' 'Icon from the theme'

@@ -17,7 +17,7 @@ leg_base_fixture_window=keep
 rs_ipc_path="$shot_dir/rs-ipc.txt"
 
 leg_base_timing() {
-  leg_timing "$drive_cap"
+  leg_timing 52
 }
 
 leg_base_drive() {
@@ -27,7 +27,6 @@ leg_base_drive() {
 call() { $ipc call "\$@" >> "$shot_dir/rs-calls.log" 2>&1; }
 reply() { echo "> \$*"; $ipc call "\$@" 2>&1; echo "exit \$?"; }
 shot() { "$grim_bin" "$shot_dir/rs-\$1.png" >> "$shot_dir/grim.log" 2>&1; }
-sleep 5
 {
   reply debug dump
   reply debug join top 100 200

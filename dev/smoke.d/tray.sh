@@ -44,13 +44,9 @@ leg_tray_fixture() {
 }
 
 leg_tray_timing() {
-  # tray-drive.sh's own last step lands around its internal sleep sum (~19s)
-  # plus a second apiece for eleven `ipc call` spawns on llvmpipe. The run's own
-  # frame is taken past that, so it shows the ordinary bar with all six items
-  # as their own cells and the route closed again. Getting this wrong is not a
-  # slow run but a false failure: the kill script takes the stubs down right
-  # after that frame, so a drive step landing later reads an empty item list.
-  if leg_on sidebar; then leg_timing 40 64; else leg_timing 26 50; fi
+  # The drive's sleeps (~19s) plus a second apiece for eleven `ipc call`
+  # spawns on llvmpipe.
+  if leg_on sidebar; then leg_timing 64; else leg_timing 50; fi
 }
 
 leg_tray_drive() {
@@ -112,7 +108,6 @@ STEPS
   fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 1
 "$python3_bin" "$stub" --id tray-fixture-1 --title "Tray Fixture 1" --color c0392b --activate-file "$tray_activate_path" & echo \$! >> "$tray_pids_path"
 "$python3_bin" "$stub" --id tray-fixture-2 --title "Tray Fixture 2" --color 27ae60 --activate-file "$tray_activate_path" --menu & echo \$! >> "$tray_pids_path"
 "$python3_bin" "$stub" --id tray-fixture-3 --title "Tray Fixture 3" --color 2980b9 --activate-file "$tray_activate_path" & echo \$! >> "$tray_pids_path"

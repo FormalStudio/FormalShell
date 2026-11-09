@@ -27,7 +27,7 @@ power_unit="fs-power-other-session"
 power_p="$shot_dir/power"
 
 leg_power_timing() {
-  leg_timing 55 90
+  leg_timing 90
 }
 
 leg_power_drive() {

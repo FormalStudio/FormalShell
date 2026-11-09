@@ -40,7 +40,7 @@ leg_overview_fixture() {
 }
 
 leg_overview_timing() {
-  leg_timing 55 140
+  leg_timing 140
 }
 
 leg_overview_drive() {

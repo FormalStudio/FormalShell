@@ -25,7 +25,7 @@ leg_lock_restore_fixture() {
 }
 
 leg_lock_restore_timing() {
-  leg_timing 40 70
+  leg_timing 70
 }
 
 leg_lock_restore_drive() {
@@ -34,7 +34,6 @@ leg_lock_restore_drive() {
   launch="$PWD/result/bin/formalshell"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 $ipc call lock lock > /dev/null 2>&1
 for _ in \$(seq 1 20); do
   $ipc call lock status 2>/dev/null | grep -q '"secure":true' && break

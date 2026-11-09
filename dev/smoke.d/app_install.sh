@@ -9,8 +9,7 @@
 # as fspec leaves it. With the launcher open on a query for the app, `menu
 # status` lists its row with its picture a second after the links land,
 # and not a second after the entry's link goes; closed, the next summon
-# reads the same. It summons and closes the launcher on its own clock from
-# t=3, so it does not ride another launcher leg: run it on its own.
+# reads the same.
 leg_app_install_flag="--app-install"
 leg_app_install_order=28
 leg_app_install_needs="convert jq"
@@ -40,7 +39,7 @@ EOF
 }
 
 leg_app_install_timing() {
-  leg_timing 24 60
+  leg_timing 60
 }
 
 leg_app_install_drive() {
@@ -50,7 +49,6 @@ leg_app_install_drive() {
   local link_both="mkdir -p '$app_install_share/applications' '$app_install_share/icons/hicolor/48x48/apps'; ln -sfn '$app_install_store/applications/formalshell-latecomer.desktop' '$entry'; ln -sfn '$app_install_store/icons/hicolor/48x48/apps/formalshell-latecomer.png' '$icon'"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call menu summon "" > /dev/null 2>&1
 sleep 1
 $ipc call menu filter "latecomer" > /dev/null 2>&1

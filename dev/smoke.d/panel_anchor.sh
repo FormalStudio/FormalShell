@@ -42,14 +42,13 @@ leg_panel_anchor_fixture() {
 }
 
 leg_panel_anchor_timing() {
-  leg_timing 16 45
+  leg_timing 45
 }
 
 leg_panel_anchor_drive() {
   local script="$shot_dir/panel-anchor-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 $ipc call panel toggle audio > "$panel_anchor_toggle_reply_path" 2>&1
 sleep 2
 $ipc call panel state > "$panel_anchor_toggle_state_path" 2>&1

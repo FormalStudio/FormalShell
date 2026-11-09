@@ -28,14 +28,13 @@ panel_keys_mute_before_path="$shot_dir/panel-keys-mute-before.txt"
 panel_keys_mute_after_path="$shot_dir/panel-keys-mute-after.txt"
 
 leg_panel_keys_timing() {
-  leg_timing 14 45
+  leg_timing 45
 }
 
 leg_panel_keys_drive() {
   local script="$shot_dir/panel-keys-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 # pipewire outlives the session, so an earlier run of this leg leaves the
 # sink muted and the keystrokes would flip it the other way. Pinned unmuted
 # first, which makes the assertion below one direction every run.

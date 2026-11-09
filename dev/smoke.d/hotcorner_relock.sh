@@ -89,7 +89,7 @@ hotcorner_relock_saver_parked_shot_path="$shot_dir/hotcorner-relock-saver-parked
 hotcorner_relock_overview_path="$shot_dir/hotcorner-relock-13-overview-layers.json"
 
 leg_hotcorner_relock_timing() {
-  leg_timing 70 105
+  leg_timing 105
 }
 
 leg_hotcorner_relock_drive() {
@@ -112,7 +112,6 @@ saver_corner() {
   sleep 1
   "$wlrctl_bin" pointer move 2 $hotcorner_relock_y >> "$hotcorner_relock_moves_path" 2>&1
 }
-sleep 6
 corners true
 sleep 2
 corner

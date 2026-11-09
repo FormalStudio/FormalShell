@@ -33,7 +33,6 @@ leg_r0_measure_claims="session"
 r0_shim_dir="$shot_dir/r0-shim"
 r0_marks_path="$shot_dir/r0-marks.txt"
 r0_results_path="$shot_dir/r0-results.txt"
-r0_done_path="$shot_dir/r0-done"
 r0_start_path="$shot_dir/shell-start.ns"
 
 leg_r0_measure_validate() {
@@ -136,13 +135,11 @@ while [ \$(( (\$(date +%s%N) - start) / 1000000000 )) -lt $(leg_arg r0_measure) 
 mark rss
 echo "rss \$(awk '/^(VmRSS|VmHWM|Threads):/{printf "%s=%s ", \$1, \$2}' "/proc/\$pid/status")" >> "$r0_results_path"
 awk '/^[0-9a-f]+-[0-9a-f]+ /{n=(NF>=6)?\$6:"[anon]"} /^Size:/{sz=\$2} /^Rss:/{if (n ~ /^\/memfd:/) printf "smaps %s size=%d rss=%d\n", n, sz, \$2; else r[n]+=\$2} END{for(k in r) if(r[k]>=256) printf "smaps %s rss=%d\n", k, r[k]}' "/proc/\$pid/smaps" >> "$r0_results_path"
-touch "$r0_done_path"
 EOF
   hypr_exec_once "bash $script"
 }
 
 leg_r0_measure_assert() {
-  [ -f "$r0_done_path" ] || fail "--r0-measure: the drive never reached its RSS sample"
   # The panel and scrim steps off the shell's own log: per open, the call
   # reaching the shell to the surface's first commit, and the slowest render
   # of any commit before the next call. The first ten panel opens are the

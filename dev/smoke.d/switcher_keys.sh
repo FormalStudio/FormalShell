@@ -115,7 +115,7 @@ leg_switcher_keys_fixture() {
 }
 
 leg_switcher_keys_timing() {
-  leg_timing 90 170
+  leg_timing 170
 }
 
 leg_switcher_keys_drive() {
@@ -156,7 +156,6 @@ EOS
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 mkdir -p "$switcher_keys_probe_dir"
-sleep 4
 "$hyprctl_bin" binds > "$switcher_keys_binds_path" 2>&1
 # Two more windows of the same app id as the base fixture's, spawned through
 # the compositor so they are tracked from the moment they map.

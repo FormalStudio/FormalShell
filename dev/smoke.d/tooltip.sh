@@ -27,11 +27,6 @@ leg_tooltip_validate() {
   fi
 }
 
-leg_tooltip_timing() {
-  # The tooltip frame lands at 12, a beat past the card's 400ms delay.
-  leg_timing 0 0 8
-}
-
 leg_tooltip_drive() {
   # 34 in from the right and 74 down, in logical pixels, is the panel
   # header's close button, and it is the same point whatever the panel's
@@ -51,7 +46,6 @@ leg_tooltip_drive() {
   local script="$shot_dir/tooltip-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 9
 "$hyprctl_bin" -j layers > "$tooltip_layers_before_path" 2>&1
 park > "$tooltip_dispatch_path" 2>&1
 sleep 1

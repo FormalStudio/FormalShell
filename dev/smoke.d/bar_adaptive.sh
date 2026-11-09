@@ -68,7 +68,7 @@ leg_bar_adaptive_fixture() {
 }
 
 leg_bar_adaptive_timing() {
-  leg_timing 40 100
+  leg_timing 100
 }
 
 leg_bar_adaptive_drive() {
@@ -77,7 +77,6 @@ leg_bar_adaptive_drive() {
 #!/usr/bin/env bash
 # One case per block: set the wallpaper, let the retheme and the sampler
 # settle, then read the shell's own answer and photograph the band.
-sleep 5
 $ipc call wallpaper set "$bar_adaptive_bright_wp" > /dev/null 2>&1
 sleep 6
 $ipc call bar paint > "$bar_adaptive_bright_json" 2>&1

@@ -79,7 +79,7 @@ workspaces_crop_path() {
 }
 
 leg_workspaces_timing() {
-  leg_timing 16 50
+  leg_timing 50
 }
 
 leg_workspaces_drive() {
@@ -93,7 +93,6 @@ leg_workspaces_drive() {
   done
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 "$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 2 })" > "$workspaces_dispatch_path" 2>&1
 sleep 1
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-workspace --title='formalshell workspace two' sh -c 'sleep 300']==])" >> "$workspaces_dispatch_path" 2>&1

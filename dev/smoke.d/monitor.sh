@@ -11,16 +11,11 @@
 #
 # The cell is also read off `bar room`, whole on the
 # strip.
-#
-# monitor_done_path is this leg's own finish marker: --processes types into
-# the same launcher route and waits on it rather than summoning over this
-# leg's frames.
 leg_monitor_flag="--monitor"
 leg_monitor_order=140
 leg_monitor_needs="jq"
 leg_monitor_claims="launcher=shared bar.layout.right"
 
-monitor_done_path="$shot_dir/monitor-drive.done"
 monitor_status_path="$shot_dir/monitor-status.json"
 monitor_gpu_path="$shot_dir/monitor-gpu.json"
 monitor_panel_reply_path="$shot_dir/monitor-panel-reply.txt"
@@ -44,7 +39,7 @@ leg_monitor_fixture() {
 }
 
 leg_monitor_timing() {
-  leg_timing 18 50
+  leg_timing 50
 }
 
 leg_monitor_drive() {
@@ -56,8 +51,8 @@ $ipc call menu status > \"$monitor_menu_status_path\" 2>&1
 \"$grim_bin\" \"$monitor_view_png\" > /dev/null 2>&1"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 6
-$ipc call monitor status > "$monitor_status_path" 2>&1
+# CPU is a delta: the aggregate is null until the second sample.
+until_jq 15 "$monitor_status_path" '.cpu.aggregate != null' call monitor status
 $ipc call monitor gpu > "$monitor_gpu_path" 2>&1
 $ipc call bar room > "$monitor_room_path" 2>&1
 $ipc call debug dump > "$monitor_dump_path" 2>&1
@@ -70,7 +65,6 @@ $ipc call panel state > "$monitor_panel_state_path" 2>&1
 sleep 1
 $ipc call panel close > /dev/null 2>&1
 $menu_lines
-touch "$monitor_done_path"
 EOF
   hypr_exec_once "bash $script"
 }

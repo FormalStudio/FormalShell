@@ -66,7 +66,7 @@ leg_bar_position_fixture() {
 leg_bar_position_timing() {
   # The drive's last step (the panel open) lands ~12s in; the run's own
   # frame is taken past that, so it shows the panel hanging off the bar.
-  leg_timing 16 40
+  leg_timing 40
 }
 
 leg_bar_position_drive() {

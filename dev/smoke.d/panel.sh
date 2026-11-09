@@ -49,12 +49,12 @@ leg_panel_drive() {
   # virtual source beside the session's own, where pactl reaches PipeWire.
   if [ "$panel_name" = audio ] && command -v pactl > /dev/null; then
     stage="pw_load_module module-null-sink sink_name=fs_smoke_speakers sink_properties=device.description=Speakers > /dev/null
-pw_load_module module-null-sink sink_name=fs_smoke_mic media.class=Audio/Source/Virtual sink_properties=device.description=Microphone > /dev/null"
+pw_load_module module-null-sink sink_name=fs_smoke_mic media.class=Audio/Source/Virtual sink_properties=device.description=Microphone > /dev/null
+sleep 3"
   fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $stage
-sleep 3
 $ipc call panel open "$panel_name" > "$panel_open_path" 2>&1
 sleep 2
 $ipc call panel state > "$panel_state_path" 2>&1

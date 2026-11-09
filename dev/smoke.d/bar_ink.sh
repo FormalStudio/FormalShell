@@ -31,14 +31,13 @@ leg_bar_ink_fixture() {
 }
 
 leg_bar_ink_timing() {
-  leg_timing 20 60
+  leg_timing 60
 }
 
 leg_bar_ink_drive() {
   local script="$shot_dir/bar-ink-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-sleep 5
 $ipc call wallpaper set "$bar_ink_wp" > /dev/null 2>&1
 sleep 6
 $ipc call bar paint > "$bar_ink_json" 2>&1

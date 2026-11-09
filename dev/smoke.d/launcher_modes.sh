@@ -66,7 +66,7 @@ EOF
 }
 
 leg_launcher_modes_timing() {
-  leg_timing 84 134
+  leg_timing 134
 }
 
 leg_launcher_modes_drive() {
@@ -75,7 +75,6 @@ leg_launcher_modes_drive() {
 #!/usr/bin/env bash
 root() { call menu summon "" > /dev/null 2>&1; sleep 0.3; }
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
-sleep 4
 while IFS='|' read -r id label; do
   root
   call menu filter "\$label" > /dev/null 2>&1

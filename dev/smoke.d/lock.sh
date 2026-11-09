@@ -32,13 +32,6 @@ lock_call_rc_path="$shot_dir/lock-call-rc.txt"
 lock_keyring_path="$shot_dir/lock-keyring.txt"
 lock_unlock_ms_path="$shot_dir/lock-unlock-ms.txt"
 
-# This leg's own clock. It starts late under --wallpaper so the two
-# wallpaper frames land first, which puts a real matugen-recoloured gradient
-# behind the lock plate in the bargain.
-lock_t0() {
-  cover_t0 5
-}
-
 leg_lock_fixture() {
   # A profile picture at the default `avatar.path`, one flat colour nothing
   # else on the lock screen paints, so the locked frame can be searched for it.
@@ -46,17 +39,13 @@ leg_lock_fixture() {
 }
 
 leg_lock_timing() {
-  local t0
-  t0=$(lock_t0)
-  leg_timing $((t0 + 21)) $((t0 + 45))
+  leg_timing 50
 }
 
 leg_lock_drive() {
-  local t0 script="$shot_dir/lock-drive.sh"
-  t0=$(lock_t0)
+  local script="$shot_dir/lock-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 $ipc call lock lock > /dev/null 2>&1
 echo \$? > "$lock_call_rc_path"
 sleep 1

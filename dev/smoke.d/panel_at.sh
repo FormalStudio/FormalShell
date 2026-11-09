@@ -42,7 +42,6 @@ leg_panel_at_drive() {
   n=$(leg_arg panel_at)
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call panel toggleAt $n > "$panel_at_toggle_path" 2>&1
 sleep 2
 $ipc call panel state > "$panel_at_state_path" 2>&1

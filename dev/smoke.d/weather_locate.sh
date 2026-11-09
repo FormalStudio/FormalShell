@@ -46,7 +46,7 @@ EOF
 }
 
 leg_weather_locate_timing() {
-  leg_timing 60 90
+  leg_timing 90
 }
 
 leg_weather_locate_drive() {

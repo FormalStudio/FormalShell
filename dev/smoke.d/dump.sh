@@ -17,7 +17,6 @@ leg_dump_drive() {
   local script="$shot_dir/dump.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 $ipc call debug dump > "$dump_path" 2>&1
 EOF
   hypr_exec_once "bash $script"

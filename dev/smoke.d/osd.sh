@@ -12,16 +12,14 @@
 #
 # Then, back at full speed, the three kinds off the original timeline: a
 # manual `osd volume` (osd-manual.png), a real `wpctl set-volume` (the
-# AudioService.changed auto-show trigger, this run's own SMOKE_OK frame),
-# then `osd brightness` (osd-brightness.png). The VM has a pipewire null
+# AudioService.changed auto-show trigger), then `osd brightness`
+# (osd-brightness.png). The VM has a pipewire null
 # sink but no backlight device, so the brightness frame proves the surface
 # renders that kind honestly (0%, empty track), not that hardware exists.
 # The sink is set to a second value first, because pipewire outlives the
 # session: re-setting an already-30% sink changes nothing, `changed` never
-# fires, and the auto-show leg would photograph an empty screen. That half of
-# the timeline is anchored 26s into the drive rather than run straight off
-# the entrance, so its own spacing is what it always was however long the
-# sampling took.
+# fires, and the auto-show leg would photograph an empty screen. That half
+# starts once the slowed pill has closed (`osd state`).
 #
 # The band ends on the bottom line, read off `debug dump`'s
 # `theme.edgeInset.bottom`: the output's last row on a bare edge, else the
@@ -36,8 +34,6 @@
 # read against the same resting pose.
 leg_osd_flag="--osd"
 leg_osd_order=50
-# The brightness frame, the last of the desktop with the pill on it.
-leg_osd_desktop_until=37
 leg_osd_needs="wpctl convert jq"
 leg_osd_claims="screen=shared"
 
@@ -54,23 +50,16 @@ osd_dump_path="$shot_dir/osd-dump.json"
 # last row are read off the frame itself.
 osd_frames=12
 
-leg_osd_timing() {
-  # The auto-show trigger lands at 31, and this run's own SMOKE_OK frame is
-  # the one it produces. The brightness frame lands at 36.
-  leg_timing 32 0 6
-}
-
 leg_osd_drive() {
   # The entrance first, at a tenth speed, then the three kinds at full speed
-  # from the 26s anchor. Each of those is screenshotted a second later, well
-  # inside the pill's 1.6s auto-hide window, with enough gap between them that
-  # the previous card is long gone before the next fires. The 29s set is not
-  # photographed: it exists so the 31s one is always a real change.
+  # once the pill has closed. Each of those is screenshotted a second later,
+  # well inside the pill's 1.6s auto-hide window, with enough gap between
+  # them that the previous card is long gone before the next fires. The 80%
+  # set is not photographed: it exists so the 30% one is always a real
+  # change.
   local script="$shot_dir/osd-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-start=\$SECONDS
-sleep 4
 $ipc call debug dump > "$osd_dump_path" 2>&1
 inset=\$("$jq_bin" -r '.theme.edgeInset.bottom // 0' "$osd_dump_path" 2>/dev/null)
 line=\$(($logical_h - \${inset:-0} - 1))
@@ -90,7 +79,7 @@ sleep 0.6
 "$grim_bin" -g "\$osd_region" "$osd_rest_path" > /dev/null 2>&1
 call debug motionScale 100
 call osd close
-while [ \$((SECONDS - start)) -lt 26 ]; do sleep 0.2; done
+until_jq 10 "$shot_dir/osd-closed.json" '.visible == false' call osd state
 call osd volume
 sleep 1
 "$grim_bin" "$osd_manual_path" > /dev/null 2>&1

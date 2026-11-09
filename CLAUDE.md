@@ -243,13 +243,12 @@ How a run works:
   CPU quota in a scope of its own, the stand-in for e1504g in power saver
   (its launcher and cold start numbers land in the same range). Every
   budget leg (`--menu-budget`, `--idle`) is read under it.
-- Flags combine into one session: `leg_<n>_order` sets the order, timings are
-  max-merged so a combination outlives its slowest half, and a leg that
-  cannot share the session takes the run over (`--screensaver-gif`).
-- Legs sharing a surface wait on the owner's marker (`picker_done_path`), and
-  a leg covering the whole output starts at its own `<leg>_t0`, past any
-  desktop sampler, which is why `--wallpaper` pushes `--menu` and `--lock`
-  back and leaves a matugen-recoloured desktop behind them.
+- Flags combine into one session, the legs taking turns in `leg_<n>_order`
+  (`drives.sh`): each leg's drive starts once the previous one has exited
+  and the desktop has arrived, so no leg waits on another's clock, and the
+  session's timeout is the sum of the turns. A leg that cannot share the
+  session takes the run over (`--screensaver-gif`). Each turn prints
+  `drive <leg> start|end <s>`.
 - Every run prints `SMOKE_OK <path>` for its own frame and `SMOKE_<NAME>
   <path>` for each named artifact; `dev/remote.sh smoke` pulls all of them
   plus the run's stdout JSON into `./artifacts/` on the mac.
@@ -495,9 +494,10 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
 - `deform.sh` `--deform`: a burst through one open ending on the card's
   resting box exactly three clocks later, the springs unwound. The table's
   curves never overshoot, so no frame past rest is asked for.
-- `depth.sh` `--depth`: rides `--lock`; a seeded wallpaper with a
-  `.depth/` map beside it marking an orange band through the clock digits
-  as the subject: `lock status` reporting `depth` true and the band drawn
+- `depth.sh` `--depth`: a lock of its own, lifted by the real password,
+  over a seeded wallpaper with a `.depth/` map beside it marking an orange
+  band through the clock digits as the subject: `lock status` reporting
+  `depth` true and the band drawn
   over the digits, then settings.json retargeted to `lock.depth: false`,
   `depth` false and the digits back over the band. `FS_DEPTH_GENERATE=1`
   swaps the band for the mountains photograph and has the result's own

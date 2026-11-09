@@ -70,7 +70,7 @@ done
 deform_band_top=41
 
 leg_deform_timing() {
-  leg_timing 14 46
+  leg_timing 46
 }
 
 leg_deform_drive() {
@@ -80,7 +80,6 @@ leg_deform_drive() {
   done
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 # The card at rest, and the same output without it: between them they say
 # where the card is and what the desktop under it looks like.
 $ipc call panel open network > "$deform_open_path" 2>&1

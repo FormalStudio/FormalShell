@@ -82,7 +82,7 @@ leg_tray_overflow_timing() {
   # The drive's last step lands ~26s in (~30s under --sidebar, with the
   # toast case); the run's own frame is taken past it, with the second bar
   # closed.
-  leg_timing 48 80
+  leg_timing 80
 }
 
 leg_tray_overflow_drive() {
@@ -141,7 +141,6 @@ STEPS
   fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 1
 "$python3_bin" "$stub" --id overflow-fixture-1 --title "Overflow Fixture 1" --color c0392b & echo \$! >> "$tray_overflow_pids_path"
 "$python3_bin" "$stub" --id overflow-fixture-2 --title "Overflow Fixture 2" --color 27ae60 --menu & echo \$! >> "$tray_overflow_pids_path"
 "$python3_bin" "$stub" --id overflow-fixture-3 --title "Overflow Fixture 3" --color 2980b9 & echo \$! >> "$tray_overflow_pids_path"

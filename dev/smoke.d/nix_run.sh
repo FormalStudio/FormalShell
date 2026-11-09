@@ -31,14 +31,13 @@ EOF
 }
 
 leg_nix_run_timing() {
-  leg_timing 16 45
+  leg_timing 45
 }
 
 leg_nix_run_drive() {
   local script="$shot_dir/nix-run-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 $ipc call menu summon "" > /dev/null 2>&1
 sleep 1
 $ipc call menu filter "Nix Run Fixture" > /dev/null 2>&1

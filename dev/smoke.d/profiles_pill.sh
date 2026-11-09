@@ -21,7 +21,7 @@ leg_profiles_pill_fixture() {
 }
 
 leg_profiles_pill_timing() {
-  leg_timing 30 70
+  leg_timing 70
 }
 
 leg_profiles_pill_drive() {

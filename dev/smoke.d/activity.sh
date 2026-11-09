@@ -80,7 +80,7 @@ EOF
 }
 
 leg_activity_timing() {
-  leg_timing 75 130
+  leg_timing 130
 }
 
 leg_activity_drive() {

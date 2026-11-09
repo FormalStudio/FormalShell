@@ -37,7 +37,7 @@ EOF
 }
 
 leg_launcher_send_timing() {
-  leg_timing 90 130
+  leg_timing 130
 }
 
 leg_launcher_send_drive() {
@@ -52,7 +52,6 @@ clip_send() {
   call menu runAction 0 send-to > /dev/null 2>&1
   until_jq 20 "$shot_dir/launcher-send-\$1.json" "\$2" call menu status
 }
-sleep 4
 "$wl_copy_bin" -- "$launcher_send_text"
 sleep 1.5
 

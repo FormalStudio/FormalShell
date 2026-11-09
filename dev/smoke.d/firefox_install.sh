@@ -39,7 +39,7 @@ leg_firefox_install_fixture() {
 }
 
 leg_firefox_install_timing() {
-  leg_timing 30 900 0 840
+  leg_timing 900
 }
 
 leg_firefox_install_drive() {
@@ -47,7 +47,6 @@ leg_firefox_install_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 group='[.groups[] | select(.source == "fspec:install:$fi_pkg")] | first'
-sleep 4
 call menu summon install > /dev/null 2>&1
 sleep 1
 "$wtype_bin" firefox

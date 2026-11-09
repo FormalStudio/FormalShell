@@ -37,7 +37,7 @@ media_progress_artist="FormalShell Progress Artist"
 
 leg_media_progress_timing() {
   # The switch phase's last sample lands ~105s in.
-  leg_timing 112 200 2
+  leg_timing 200
 }
 
 # Lyrics.cacheKey (shell/Lyrics/model.js) for one of these fixtures: artist,
@@ -115,7 +115,6 @@ leg_media_progress_drive() {
 
   write_script "$play_script" <<EOF
 #!/usr/bin/env bash
-sleep 2
 echo \$\$ > "$media_progress_pid1_path"
 exec "$mpv_bin" --no-video --really-quiet \\
   --input-ipc-server="$media_progress_sock_path" "$media_progress_track_a"
@@ -125,7 +124,7 @@ EOF
 #!/usr/bin/env bash
 . "$media_progress_lib_path"
 
-sleep 7
+sleep 5
 # The bare desktop, for the pixel diff that finds the panel's own rect.
 "$grim_bin" "$shot_dir/progress-bare.png" > /dev/null 2>&1
 sleep 1

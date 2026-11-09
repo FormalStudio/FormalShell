@@ -38,7 +38,7 @@ leg_screensaver_inhibit_fixture() {
 }
 
 leg_screensaver_inhibit_timing() {
-  leg_timing 36 60
+  leg_timing 60
 }
 
 leg_screensaver_inhibit_drive() {

@@ -47,14 +47,13 @@ EOF
 }
 
 leg_launcher_density_timing() {
-  leg_timing 20 45
+  leg_timing 45
 }
 
 leg_launcher_density_drive() {
   local script="$shot_dir/launcher-density-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 width=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
 "$hyprctl_bin" output create headless "$launcher_density_second" > "$launcher_density_log" 2>&1
 "$hyprctl_bin" eval "hl.monitor({ output = \\"$launcher_density_second\\", mode = \\"1600x1000@60\\", position = \\"\${width}x0\\", scale = 1.25 })" >> "$launcher_density_log" 2>&1

@@ -38,7 +38,6 @@ installed_islocked1_path="$shot_dir/installed-islocked-1.txt"
 installed_islocked2_path="$shot_dir/installed-islocked-2.txt"
 installed_wrong_path="$shot_dir/installed-lock-wrong.json"
 installed_status_path="$shot_dir/installed-lock-status.json"
-installed_done_path="$shot_dir/installed-done"
 installed_bar_png="$shot_dir/installed-bar.png"
 installed_menu_png="$shot_dir/installed-menu.png"
 installed_locked_png="$shot_dir/installed-locked.png"
@@ -136,7 +135,7 @@ EOF
 }
 
 leg_installed_timing() {
-  leg_timing 95 140
+  leg_timing 140
 }
 
 leg_installed_drive() {
@@ -174,7 +173,6 @@ sleep 3
 "$grim_bin" "$installed_unlocked_png" > /dev/null 2>&1
 ipc lock isLocked > "$installed_islocked2_path" 2>&1
 ipc lock status > "$installed_status_path" 2>&1
-touch "$installed_done_path"
 EOF
   write_script "$stop" <<EOF
 #!/usr/bin/env bash
@@ -187,7 +185,6 @@ EOF
 
 leg_installed_assert() {
   local f top_sd
-  [ -f "$installed_done_path" ] || fail "installed: the drive script never finished"
   for f in "$installed_bar_png" "$installed_menu_png" "$installed_locked_png" "$installed_error_png" "$installed_unlocked_png"; do
     [ -f "$f" ] || fail "installed: no screenshot at $f"
   done

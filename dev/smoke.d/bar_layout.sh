@@ -85,7 +85,7 @@ EOF
 }
 
 leg_bar_layout_timing() {
-  leg_timing 12 40
+  leg_timing 40
 }
 
 leg_bar_layout_drive() {
@@ -96,7 +96,6 @@ leg_bar_layout_drive() {
   # smoke.png so nobody has to remember which run produced that one.
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 "$grim_bin" "$bar_layout_path" > /dev/null 2>&1
 $ipc call bar room > "$bar_layout_room_path" 2>&1
 EOF

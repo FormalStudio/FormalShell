@@ -72,14 +72,13 @@ leg_multi_output_fixture() {
 }
 
 leg_multi_output_timing() {
-  leg_timing 100 140
+  leg_timing 140
 }
 
 leg_multi_output_drive() {
   local script="$shot_dir/multi-output-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 "$hyprctl_bin" -j layers > "$multi_output_layers_one" 2>&1
 $ipc call debug dump > "$multi_output_dump" 2>&1
 first=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].name')

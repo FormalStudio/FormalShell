@@ -27,25 +27,14 @@ leg_nightlight_fixture() {
   settings_pin ".nightlight.schedule = \"sun\" | .location = {\"latitude\": 0, \"longitude\": $longitude}"
 }
 
-# This leg's own clock. A gamma shift repaints every pixel on the output, so
-# under --wallpaper it starts after that leg's last frame rather than warming
-# the exact colours its dither assertions read back.
-nightlight_t0() {
-  cover_t0 3
-}
-
 leg_nightlight_timing() {
-  local t0
-  t0=$(nightlight_t0)
-  leg_timing $((t0 + 25)) $((t0 + 54))
+  leg_timing 57
 }
 
 leg_nightlight_drive() {
-  local t0 script="$shot_dir/nightlight-drive.sh"
-  t0=$(nightlight_t0)
+  local script="$shot_dir/nightlight-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 SECONDS=0
 while [ "\$SECONDS" -lt 12 ]; do
   $ipc call nightlight status > "$nightlight_status0_path" 2>&1

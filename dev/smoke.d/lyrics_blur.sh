@@ -45,7 +45,7 @@ lyrics_blur_track_artist="FormalShell Lyrics Blur Artist"
 lyrics_blur_track_album="FormalShell Lyrics Blur Album"
 
 leg_lyrics_blur_timing() {
-  leg_timing 50 110 2
+  leg_timing 110
 }
 
 leg_lyrics_blur_fixture() {
@@ -135,7 +135,6 @@ leg_lyrics_blur_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 . "$lyrics_blur_lib_path"
-sleep 2
 "$mpv_bin" --no-video --really-quiet "$lyrics_blur_track_path" &
 disown
 echo \$! > "$lyrics_blur_pid_path"

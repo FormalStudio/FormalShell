@@ -30,7 +30,7 @@ display_panel_png="$shot_dir/display-panel.png"
 display_second="FS-DISPLAY"
 
 leg_display_timing() {
-  leg_timing 24 50
+  leg_timing 50
 }
 
 leg_display_drive() {
@@ -38,7 +38,6 @@ leg_display_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 mon() { "$hyprctl_bin" monitors all -j > "\$1" 2>&1; }
-sleep 5
 mon "$display_monitors_base"
 out=\$("$jq_bin" -r '.[0].name' "$display_monitors_base")
 call display scale "\$out" 1.5 > "$display_scale_path" 2>&1

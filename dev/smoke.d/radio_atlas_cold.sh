@@ -20,14 +20,13 @@ radio_atlas_cold_png="$shot_dir/radio-atlas-cold.png"
 radio_atlas_cold_status_path="$shot_dir/radio-atlas-cold.json"
 
 leg_radio_atlas_cold_timing() {
-  leg_timing 35 60
+  leg_timing 60
 }
 
 leg_radio_atlas_cold_drive() {
   local script="$shot_dir/radio-atlas-cold-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 $ipc call panel open radio > /dev/null 2>&1
 sleep 1
 "$grim_bin" "$radio_atlas_cold_early_png" > /dev/null 2>&1

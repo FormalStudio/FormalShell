@@ -114,7 +114,7 @@ SHIM
 }
 
 leg_sidebar_software_timing() {
-  leg_timing 35 70
+  leg_timing 70
 }
 
 leg_sidebar_software_drive() {

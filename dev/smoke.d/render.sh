@@ -31,7 +31,7 @@ leg_render_fixture() {
 render_scenes="desktop panel toast lock"
 
 leg_render_timing() {
-  leg_timing 60 100
+  leg_timing 100
 }
 
 leg_render_drive() {
@@ -83,7 +83,6 @@ turn() {
     sleep 0.25
   done
 }
-sleep 4
 turn gpu gpu
 settings_retarget '.render.backend = "cpu"'
 "$launch" > "$shot_dir/render-cpu.log" 2>&1 &

@@ -221,16 +221,13 @@ EOF
 }
 
 leg_plugins_timing() {
-  # A 5s startup wait plus two dumps and one grim; 12 leaves llvmpipe real
-  # margin on the capture rather than racing the default 8s frame.
-  leg_timing 12 136
+  leg_timing 136
 }
 
 leg_plugins_drive() {
   local script="$shot_dir/plugins-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 $ipc call plugins list > "$plugins_list_path" 2>&1
 $ipc call bar room > "$plugins_room_path" 2>&1
 rect=\$(jq -r '.[].cells[] | select(.name == "plugin:smoke-bar") | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "$plugins_room_path")

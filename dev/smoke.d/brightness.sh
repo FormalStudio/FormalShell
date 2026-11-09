@@ -141,14 +141,13 @@ EOF
 }
 
 leg_brightness_timing() {
-  leg_timing 75 115
+  leg_timing 115
 }
 
 leg_brightness_drive() {
   local script="$shot_dir/brightness-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 # 1. The keybind path, sampled.
 ( end=\$((SECONDS + 4)); while [ \$SECONDS -lt \$end ]; do
     call osd state | "$jq_bin" -r '.brightness // "none"' 2>/dev/null

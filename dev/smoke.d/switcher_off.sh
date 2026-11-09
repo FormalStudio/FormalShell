@@ -22,7 +22,7 @@ leg_switcher_off_fixture() {
 }
 
 leg_switcher_off_timing() {
-  leg_timing 16 50
+  leg_timing 50
 }
 
 leg_switcher_off_drive() {
@@ -30,7 +30,6 @@ leg_switcher_off_drive() {
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 mkdir -p "$switcher_off_dir"
-sleep 5
 for verb in next prev commit cancel state; do
   $ipc call switcher "\$verb" > "$switcher_off_dir/\$verb.txt" 2>&1
 done

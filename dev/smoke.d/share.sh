@@ -27,36 +27,16 @@ share_menu_path="$shot_dir/share-menu.png"
 share_scan_reply_path="$shot_dir/share-scan-reply.txt"
 share_peers_path="$shot_dir/share-peers.json"
 
-# This leg's own clock: the menu covers the whole output, so under
-# --wallpaper it starts past that leg's last frame.
-share_t0() {
-  cover_t0 2
-}
-
 leg_share_timing() {
-  local t0
-  t0=$(share_t0)
   # `scan -t 4`'s own four-second wait plus a comfortable round-trip margin
   # either side.
-  leg_timing $((12 + t0 - 2)) $((40 + t0 - 2))
-  # Sharing the launcher surface with --menu costs this leg that leg's whole
-  # timeline before it may touch the route at all.
-  if leg_on menu; then leg_timing 42 65 3; fi
+  leg_timing 40
 }
 
 leg_share_drive() {
-  local t0 script="$shot_dir/share-drive.sh" menu_wait=""
-  t0=$(share_t0)
-  if leg_on menu; then
-    # menu-finish.sh's own last action writes the selection file, and its
-    # pending select() would otherwise still be armed when this leg's own
-    # `menu summon share` lands here.
-    menu_wait="for _ in \$(seq 1 90); do [ -f \"$selection_path\" ] && break; sleep 0.5; done"
-  fi
+  local script="$shot_dir/share-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-$menu_wait
-sleep $t0
 $ipc call localsend status > "$share_status_path" 2>&1
 $ipc call menu summon share > /dev/null 2>&1
 sleep 1

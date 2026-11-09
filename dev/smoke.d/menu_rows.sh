@@ -35,7 +35,7 @@ leg_menu_rows_fixture() {
 }
 
 leg_menu_rows_timing() {
-  leg_timing 45 110
+  leg_timing 110
 }
 
 leg_menu_rows_drive() {
@@ -44,7 +44,6 @@ leg_menu_rows_drive() {
 #!/usr/bin/env bash
 d="$shot_dir/menu-rows"
 mkdir -p "\$d"
-sleep 4
 park 120 1000
 call menu summon "" > /dev/null 2>&1
 sleep 2

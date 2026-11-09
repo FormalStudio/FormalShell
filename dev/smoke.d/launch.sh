@@ -37,7 +37,7 @@ EOF
 }
 
 leg_launch_timing() {
-  leg_timing 45 75
+  leg_timing 75
 }
 
 leg_launch_drive() {
@@ -45,7 +45,6 @@ leg_launch_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 snap() { status activity "$shot_dir/launch-\$1.json"; call bar room > "$shot_dir/launch-room-\$1.json" 2>&1; }
-sleep 4
 snap idle
 call activity launch $launch_probe > "$shot_dir/launch-reply-ipc.txt" 2>&1
 sleep 0.5

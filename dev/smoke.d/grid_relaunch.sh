@@ -12,9 +12,7 @@
 # reused the pooled cells still holding the query's ids, in reverse, over a
 # `cells` that read right: another app's name in a cell, or with a real
 # app list, whose query results mostly sit outside the root's eight, no
-# name and the placeholder icon. It summons and closes the launcher on its
-# own clock from t=3, so it does not ride another launcher leg
-# (`--app-grid`, `--menu`): run it on its own.
+# name and the placeholder icon.
 leg_grid_relaunch_flag="--grid-relaunch"
 leg_grid_relaunch_order=27
 leg_grid_relaunch_needs="jq"
@@ -60,14 +58,13 @@ EOF
 }
 
 leg_grid_relaunch_timing() {
-  leg_timing 48 84
+  leg_timing 84
 }
 
 leg_grid_relaunch_drive() {
   local script="$shot_dir/grid-relaunch-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call menu summon "" > /dev/null 2>&1
 sleep 2
 $ipc call menu status > "$grid_relaunch_open_path" 2>&1

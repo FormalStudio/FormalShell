@@ -38,7 +38,7 @@ leg_settings_ui_fixture() {
 }
 
 leg_settings_ui_timing() {
-  leg_timing 80 140
+  leg_timing 140
 }
 
 leg_settings_ui_drive() {
@@ -65,7 +65,6 @@ shot() {
   "$grim_bin" "\$d/settings-ui-\$1.png" > /dev/null 2>&1
   $ipc call menu status > "\$d/box-\$1.json" 2>&1
 }
-sleep 3
 sha256sum "$settings_ui_settings" | cut -d' ' -f1 > "\$d/sha-before"
 $ipc call panel open settings > /dev/null 2>&1
 sleep 1.5

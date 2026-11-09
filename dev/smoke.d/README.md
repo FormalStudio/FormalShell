@@ -43,8 +43,9 @@ frame, teardown) and sources every file here. A leg defines:
   `vm_only` leg claims `bus.system=real`.
 - `leg_<n>_fixture` `settings_pin '<jq>'` (an assignment or a `. * {...}`
   merge) over the base settings.json, in leg order, and staged files;
-  `leg_<n>_timing` `leg_timing <delay> <timeout> [tail_gap] [drive_cap]`, max-merged.
-- `leg_<n>_drive` writes the drive scripts, echoes their autostart lines (`hypr_exec_once`),
+  `leg_<n>_timing` `leg_timing <seconds>`, how long its turn may take
+  (45 at least); the session's timeout is their sum.
+- `leg_<n>_drive` writes the drive scripts and lists them (`hypr_exec_once`),
   may `add_cleanup '<line>'`; `leg_<n>_assert` prints `SMOKE_*`, calls `fail`.
   A mid-run settings change is `settings_retarget <jq>` from a drive: the
   current file with the jq applied, written beside it and the symlink moved
@@ -74,7 +75,7 @@ run's paths and resolved `*_bin`, then `call <target> <fn> [args...]`,
 <frames> [gap] [grim args]`, `park [x y]`, `click [button]`, `row_index
 <path> <id>`, `until_jq <seconds> <path> <claim> <command...>`, `walk_to
 <target> <cursor jq> <id> <trace> [key jq]`, `spawn_foot <app id> [rules]
-[title]`, `settings_retarget <jq assignment>`, `pw_load_module <module>
+[title]`, `until_window <app id> [seconds]`, `settings_retarget <jq assignment>`, `pw_load_module <module>
 [args]` (unloaded at teardown and on exit), `pixel` and `patch_mean`. Each
 one's header in `dev/smoke.sh` is its contract. A leg's assert has
 `expect_jq <path> <claim> <what failed> [excerpt]`, `pixel <png> <x> <y>`
@@ -99,9 +100,17 @@ Exported: `shot_dir`, `iso_home`, `settings_path`, `rig_password` (the
 password PAM takes on the rig), `drive_lib`, `shell_bin`, `shell_log_path`,
 `*_bin`, `ipc`, `write_script`, `leg_on <n>`,
 `host_notifications_owner_after`. A session that runs past its timeout
-fails the run. Legs sharing a surface wait
-on the owner's marker (`picker_done_path`); one covering the whole output
-starts at its `<n>_t0`, `cover_t0 <own start>`, past every desktop sampler in
-the run: a leg photographing the bare desktop declares
-`leg_<n>_desktop_until`, the second of its last such frame (`--wallpaper` 16,
-`--osd` 37).
+fails the run.
+
+The legs take turns, in leg order (`drives.sh`): a leg's drive scripts start
+together once the previous leg's have exited and the desktop has arrived
+(the bar mapped, the arrival veil gone, and in a run that keeps it the
+fixture window mapped), so a drive starts on its first action with no
+leading sleep, and the run's own frame is taken after the last turn. A
+script that execs a long-lived child (a player, a fixture window) has ended
+its part of the turn. A drive waits on the shell's state, never on another
+leg's clock: what the previous turn left (a panel open, a toast up) is
+there when its turn starts, and a leg that needs something of its own (the
+lock, a player, a window) makes it and waits for it (`until_jq`,
+`until_window`). Each turn's start and end, in seconds into the session,
+are printed as `drive <leg> start|end <s>`.

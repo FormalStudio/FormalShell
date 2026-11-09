@@ -13,10 +13,8 @@
 #
 # No screenshot.directory in the settings fixture on purpose: the capture
 # landing under the isolated HOME's Pictures/Screenshots is what proves the
-# documented default resolves. The run's own smoke.png, taken at the usual
-# 8s, additionally carries the SCREENSHOT CANCELLED and SCREENSHOT SAVED
-# toasts. Slurp's overlay look and a real drag stay host-trial: this rig has
-# no synthetic pointer.
+# documented default resolves. Slurp's overlay look and a real drag stay
+# host-trial: this rig has no synthetic pointer.
 leg_screenshot_flag="--screenshot"
 leg_screenshot_order=205
 leg_screenshot_needs="wl-paste file"
@@ -32,17 +30,13 @@ screenshot_slurp_before_path="$shot_dir/screenshot-slurp-before.txt"
 screenshot_slurp_after_path="$shot_dir/screenshot-slurp-after.txt"
 
 leg_screenshot_timing() {
-  # The shot stays at the scaffold's own 8s, where the two toasts are still
-  # up; the tail is what the drive script's poll ceiling needs, so the
-  # session cannot tear down between the capture and the type dump.
-  leg_timing 8 45 8
+  leg_timing 45
 }
 
 leg_screenshot_drive() {
   local script="$shot_dir/screenshot-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call screenshot region "" > "$screenshot_region_reply_path" 2>&1
 sleep 1
 pgrep -x slurp > "$screenshot_slurp_before_path" 2>&1

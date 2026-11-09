@@ -46,7 +46,7 @@ leg_reactive_rims_fixture() {
 }
 
 leg_reactive_rims_timing() {
-  leg_timing 40 90
+  leg_timing 90
 }
 
 leg_reactive_rims_drive() {
@@ -55,7 +55,6 @@ leg_reactive_rims_drive() {
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 commits() { grep -c '^commit surface=panel ' "$shell_log_path"; }
-sleep 4
 # The window first, floated well clear of both cards, so nothing later
 # takes focus from an open panel.
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-rims sh -c 'sleep 300']==])" >> "$reactive_rims_dispatch_path" 2>&1

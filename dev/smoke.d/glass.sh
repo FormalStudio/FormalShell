@@ -27,14 +27,13 @@ leg_glass_fixture() {
 }
 
 leg_glass_timing() {
-  leg_timing 30 60
+  leg_timing 60
 }
 
 leg_glass_drive() {
   local script="$shot_dir/glass-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 wp="$glass_bright"
 $ipc call theme status 2>/dev/null | jq -e '.mode == "light"' > /dev/null && wp="$glass_dark"
 $ipc call wallpaper set "\$wp" > /dev/null 2>&1

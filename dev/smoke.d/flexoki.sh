@@ -73,14 +73,13 @@ EOF
 leg_flexoki_timing() {
   # The wallpaper lands 3s in and the retheme is two file reads, a rewrite of
   # every template and one matugen run behind it.
-  leg_timing 16 55
+  leg_timing 55
 }
 
 leg_flexoki_drive() {
   local script="$shot_dir/flexoki-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call wallpaper set "$flexoki_wall_path" > /dev/null 2>&1
 sleep 7
 $ipc call theme status > "$flexoki_status_path" 2>&1

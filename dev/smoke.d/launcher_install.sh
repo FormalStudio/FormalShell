@@ -114,7 +114,7 @@ EOF
 }
 
 leg_launcher_install_timing() {
-  leg_timing 95 140
+  leg_timing 140
 }
 
 leg_launcher_install_drive() {

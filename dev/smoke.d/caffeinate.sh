@@ -23,15 +23,15 @@ leg_caffeinate_fixture() {
 }
 
 leg_caffeinate_timing() {
-  leg_timing 24 50
+  leg_timing 50
 }
 
 leg_caffeinate_drive() {
   local script="$shot_dir/caffeinate-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
-$ipc call caffeinate status > "$caffeinate_on_path" 2>&1
+# The inhibitor is held once its surface maps, a beat after the toggle.
+until_jq 10 "$caffeinate_on_path" '.active and .inhibiting' call caffeinate status
 "$hyprctl_bin" -j layers > "$caffeinate_on_layers" 2>&1
 # Three timeouts' worth of no input at all.
 sleep 9

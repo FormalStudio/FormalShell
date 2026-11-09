@@ -60,14 +60,13 @@ leg_switcher_fixture() {
 }
 
 leg_switcher_timing() {
-  leg_timing 40 100
+  leg_timing 100
 }
 
 leg_switcher_drive() {
   local script="$shot_dir/switcher-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-sleep 4
 # Two more windows of the same app id as the base fixture's, spawned through
 # the compositor so they are tracked from the moment they map.
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke two' sh -c 'sleep 300']==])"

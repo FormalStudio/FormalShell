@@ -66,7 +66,7 @@ leg_login_lock_cleanup() {
 }
 
 leg_login_lock_timing() {
-  leg_timing 60 100
+  leg_timing 100
 }
 
 leg_login_lock_drive() {

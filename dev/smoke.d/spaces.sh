@@ -67,7 +67,6 @@ spaces_ssh_calls_path="$shot_dir/spaces-ssh-calls.txt"
 spaces_remote_state_path="$shot_dir/spaces-remote-state"
 spaces_dispatch_path="$shot_dir/spaces-dispatch.txt"
 spaces_foot_socket="$shot_dir/formalshell-spaces-foot.sock"
-spaces_done_path="$shot_dir/spaces-done"
 spaces_status_one_path="$shot_dir/spaces-status-one.json"
 spaces_status_two_path="$shot_dir/spaces-status-two.json"
 spaces_status_peek_path="$shot_dir/spaces-status-peek.json"
@@ -170,7 +169,7 @@ EOF
 }
 
 leg_spaces_timing() {
-  leg_timing 80 120
+  leg_timing 120
 }
 
 leg_spaces_drive() {
@@ -181,7 +180,6 @@ centre() { "$jq_bin" -r ".slots[\$1].rect | \"\\(.x + (.width / 2) | floor) \\(.
 card_centre() { "$jq_bin" -r ".preview.rect | \"\\(.x + (.width / 2) | floor) \\(.y + (.height / 2) | floor)\"" "\$1"; }
 # Home first and let the hover see the pointer leave before it lands.
 park_slow() { park; sleep 0.5; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
-sleep 4
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --server=$spaces_foot_socket]==])" > "$spaces_dispatch_path" 2>&1
 sleep 1
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[${foot_bin%/*}/footclient --server-socket=$spaces_foot_socket --app-id=com.t3tools.T3Code sh -c 'sleep 300']==])" >> "$spaces_dispatch_path" 2>&1
@@ -271,7 +269,6 @@ park_slow 960 900
 sleep 2
 call workspaces status > "$spaces_status_left_path" 2>&1
 "$grim_bin" "$spaces_left_png" > /dev/null 2>&1
-touch "$spaces_done_path"
 EOF
   add_cleanup "pkill -f formalshell-spaces- 2>/dev/null || true"
   hypr_exec_once "bash $script"
@@ -331,7 +328,6 @@ spaces_badge_damage() {
 
 leg_spaces_assert() {
   local f blocked other plain sibling blocked_id sibling_id pids slot_one slot_bare
-  [ -f "$spaces_done_path" ] || fail "the spaces drive never finished; last dispatch output: $(tail -n 5 "$spaces_dispatch_path" 2>/dev/null)"
   for f in "$spaces_status_one_path" "$spaces_dump_path" "$spaces_dump_idle_path" "$spaces_status_quiet_path" \
     "$spaces_status_two_path" "$spaces_status_peek_path" "$spaces_status_hover_path" \
     "$spaces_status_moved_path" "$spaces_status_left_path" \

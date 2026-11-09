@@ -26,14 +26,13 @@ hdr_state_path="$shot_dir/hdr-state.json"
 hdr_panel_png="$shot_dir/hdr-display-panel.png"
 
 leg_hdr_timing() {
-  leg_timing 20 44
+  leg_timing 44
 }
 
 leg_hdr_drive() {
   local script="$shot_dir/hdr-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 "$hyprctl_bin" monitors all -j > "$hdr_monitors_path" 2>&1
 out=\$("$jq_bin" -r '.[0].name' "$hdr_monitors_path")
 SECONDS=0

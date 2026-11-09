@@ -55,18 +55,15 @@ leg_localsend_fixture() {
 }
 
 leg_localsend_timing() {
-  # screenshot_delay has to clear this leg's own last action (the send, the
-  # up-to-30s poll for the file landing, and the notify status check),
-  # since the base run's teardown (shot.sh) fires at that mark and tears
-  # the session down under whatever the drive script is still doing.
-  leg_timing 50 80
+  # The send, the up-to-30s poll for the file landing, and the notify
+  # status check.
+  leg_timing 80
 }
 
 leg_localsend_drive() {
   local script="$shot_dir/localsend-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call localsend status > "$localsend_status_before_path" 2>&1
 $ipc call notifications status > "$localsend_notify_before_path" 2>&1
 

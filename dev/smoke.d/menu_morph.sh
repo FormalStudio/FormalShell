@@ -44,16 +44,14 @@ leg_menu_morph_fixture() {
 }
 
 leg_menu_morph_timing() {
-  # Four bursts of frames: the drive runs past the default 52s cap where
-  # grim is slow, so the session waits it out.
-  leg_timing 60 140 0 110
+  # Four bursts of frames, slow where grim is.
+  leg_timing 140
 }
 
 leg_menu_morph_drive() {
   local script="$shot_dir/menu-morph-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 "$wl_copy_bin" "menu morph preview text"
 sleep 1
 call debug motionScale 1000 > /dev/null 2>&1

@@ -61,14 +61,13 @@ notify_emerge_frame_gap=0.09
 notify_emerge_body_top=60
 
 leg_notify_emerge_timing() {
-  leg_timing 28 76
+  leg_timing 76
 }
 
 leg_notify_emerge_drive() {
   local script="$shot_dir/notify-emerge-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 call debug motionScale $notify_emerge_scale > "$notify_emerge_scale_path" 2>&1
 sleep 1
 # The same output with nothing in the corner: what every probe below reads as

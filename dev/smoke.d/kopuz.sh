@@ -59,7 +59,7 @@ kopuz_status() { printf '%s/status-%s.json' "$kopuz_dir" "$1"; }
 kopuz_png() { printf '%s/kopuz-%s.png' "$shot_dir" "$1"; }
 
 leg_kopuz_timing() {
-  leg_timing 90 150
+  leg_timing 150
 }
 
 leg_kopuz_fixture() {

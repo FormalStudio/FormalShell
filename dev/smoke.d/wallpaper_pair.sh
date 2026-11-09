@@ -39,14 +39,13 @@ leg_wallpaper_pair_fixture() {
 }
 
 leg_wallpaper_pair_timing() {
-  leg_timing 70 110
+  leg_timing 110
 }
 
 leg_wallpaper_pair_drive() {
   local script="$shot_dir/wallpaper-pair-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 call wallpaper pair "$wallpaper_pair_light" "$wallpaper_pair_dark" > "$shot_dir/pair-call.txt" 2>&1
 sleep 5
 call theme status > "$shot_dir/pair-status-dark.json" 2>&1

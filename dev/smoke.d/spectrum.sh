@@ -44,7 +44,7 @@ leg_spectrum_fixture() {
 leg_spectrum_timing() {
   # A tag-match poll (up to 8s), the two pgrep checks either side of
   # panel open/close with a 2s settle each: worst case lands ~22s in.
-  leg_timing 26 50
+  leg_timing 50
 }
 
 leg_spectrum_drive() {
@@ -53,7 +53,6 @@ leg_spectrum_drive() {
 
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 2
 "$mpv_bin" --no-video --really-quiet "$spectrum_track_path" &
 mpv_pid=\$!
 echo "\$mpv_pid" > "$spectrum_pid_path"

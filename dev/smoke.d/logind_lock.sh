@@ -24,7 +24,7 @@ leg_logind_lock_fixture() {
 }
 
 leg_logind_lock_timing() {
-  leg_timing 50 80
+  leg_timing 80
 }
 
 leg_logind_lock_drive() {
@@ -33,7 +33,6 @@ leg_logind_lock_drive() {
 #!/usr/bin/env bash
 p="$logind_lock_p"
 hint() { loginctl show-session "\$1" -p LockedHint --value 2>&1; }
-sleep 5
 $ipc call lock status > "\$p-status-0.json" 2>&1
 sid=\$("$jq_bin" -r '.logindSession // empty' "\$p-status-0.json")
 echo "\$sid" > "\$p-sid.txt"

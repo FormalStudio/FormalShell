@@ -49,7 +49,7 @@ EOF
 }
 
 leg_launcher_abbrev_timing() {
-  leg_timing 30 100
+  leg_timing 100
 }
 
 leg_launcher_abbrev_drive() {

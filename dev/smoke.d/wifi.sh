@@ -54,14 +54,13 @@ wifi_eap_permissions_path="$shot_dir/wifi-eap-permissions.txt"
 leg_wifi_timing() {
   # Every ceiling below is a poll that breaks the moment the state settles;
   # the sum is the worst case NetworkManager and hostapd can genuinely take.
-  leg_timing 205 230
+  leg_timing 230
 }
 
 leg_wifi_drive() {
   local script="$shot_dir/wifi-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 
 # Self-heal, part one: wpa_supplicant's internal scan-request queue can wedge
 # across runs independently of anything NetworkManager persists ("Reject scan

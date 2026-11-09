@@ -18,7 +18,6 @@ leg_shots_needs="wtype convert mpv ffmpeg notify-send"
 leg_shots_fixture_window=none
 
 shots_dir="$shot_dir/shots"
-shots_done="$shot_dir/shots-done"
 shots_track="$shot_dir/shots-demo.flac"
 shots_title="Midnight Drive"
 shots_artist="Demo Artist"
@@ -41,7 +40,7 @@ leg_shots_fixture() {
 }
 
 leg_shots_timing() {
-  leg_timing 420 500
+  leg_timing 500
 }
 
 leg_shots_drive() {
@@ -61,7 +60,6 @@ burst() {
   done
 }
 slow() { $ipc call debug motionScale "\$1" > /dev/null 2>&1; }
-sleep 4
 "$mpv_bin" --no-video --really-quiet --loop "$shots_track" &
 echo \$! > "$shot_dir/shots-mpv.pid"
 for _ in \$(seq 10); do
@@ -156,7 +154,6 @@ for ((i = 0; i < \${convergence:-0}; i += stride)); do
   idx=\$((idx + 1))
 done
 $ipc call screensaver stop > /dev/null 2>&1
-touch "$shots_done"
 EOF
   write_script "$kill_script" <<EOF
 #!/usr/bin/env bash
@@ -194,7 +191,6 @@ _shots_clip() {
 }
 
 leg_shots_assert() {
-  [ -f "$shots_done" ] || fail "the shots drive never finished"
   local out="$PWD/docs/shots" f made=0 want ids=() last stride delay
   mkdir -p "$out"
   cp "$shots_dir/launcher.png" "$out/" 2>/dev/null && made=$((made + 1))

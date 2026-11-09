@@ -112,7 +112,7 @@ leg_chevron_quiet_fixture() {
 leg_chevron_quiet_timing() {
   # The drive below runs about twenty seconds; the run's own frame is taken
   # past it, on the card left open.
-  leg_timing 25 70
+  leg_timing 70
 }
 
 leg_chevron_quiet_drive() {
@@ -120,7 +120,6 @@ leg_chevron_quiet_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 mkdir -p "$chevron_quiet_burst_dir"
-sleep 5
 $ipc call debug dump > "$chevron_quiet_dump_path" 2>&1
 "$grim_bin" -g "$chevron_quiet_band_region" "$chevron_quiet_shut_path" > /dev/null 2>&1
 # The card's own rect, off one open before the cycles.

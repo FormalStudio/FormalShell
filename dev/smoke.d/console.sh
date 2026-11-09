@@ -27,14 +27,13 @@ leg_console_fixture() {
 }
 
 leg_console_timing() {
-  leg_timing 24 60
+  leg_timing 60
 }
 
 leg_console_drive() {
   local script="$shot_dir/console-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 $ipc call console toggle > /dev/null 2>&1
 sleep 4
 $ipc call console status > "$console_status_open_path" 2>&1

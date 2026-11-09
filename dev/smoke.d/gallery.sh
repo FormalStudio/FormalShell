@@ -15,25 +15,14 @@ leg_gallery_claims="screen=shared"
 
 gallery_log_path="$shot_dir/gallery.log"
 
-# This leg's own clock: the sheet covers the whole output, so under
-# --wallpaper it starts past that leg's last frame, the same rule menu_t0
-# draws.
-gallery_t0() {
-  cover_t0 3
-}
-
 leg_gallery_timing() {
-  local t0
-  t0=$(gallery_t0)
-  leg_timing $((8 + t0 - 3)) $((40 + t0 - 3))
+  leg_timing 40
 }
 
 leg_gallery_drive() {
-  local t0 script="$shot_dir/gallery-drive.sh"
-  t0=$(gallery_t0)
+  local script="$shot_dir/gallery-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 $ipc call gallery open > "$gallery_log_path" 2>&1
 $ipc call gallery status >> "$gallery_log_path" 2>&1
 EOF

@@ -45,7 +45,7 @@ leg_glass_behind_fixture() {
 }
 
 leg_glass_behind_timing() {
-  leg_timing 30 90
+  leg_timing 90
 }
 
 leg_glass_behind_drive() {
@@ -92,7 +92,6 @@ shoot() {
   $ipc call notifications clear > /dev/null 2>&1
   sleep 1.5
 }
-sleep 2
 wp="$glass_behind_bright"
 $ipc call theme status 2>/dev/null | jq -e '.mode == "light"' > /dev/null && wp="$glass_behind_dark"
 $ipc call wallpaper set "\$wp" > /dev/null 2>&1

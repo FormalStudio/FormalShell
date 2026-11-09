@@ -39,14 +39,13 @@ EOF
 }
 
 leg_menu_budget_timing() {
-  leg_timing 65 95
+  leg_timing 95
 }
 
 leg_menu_budget_drive() {
   local script="$shot_dir/menu-budget-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 $ipc call debug r0Spinner true > /dev/null 2>&1
 sleep 1
 for i in 1 2 3 4 5; do

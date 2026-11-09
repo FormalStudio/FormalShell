@@ -44,7 +44,7 @@ leg_desktop_clock_fixture() {
 }
 
 leg_desktop_clock_timing() {
-  leg_timing 145 185
+  leg_timing 185
 }
 
 leg_desktop_clock_drive() {
@@ -70,7 +70,6 @@ retarget() {
   settings_retarget "\$1"
   sleep 2
 }
-sleep 5
 snap on
 quiet rest 3
 

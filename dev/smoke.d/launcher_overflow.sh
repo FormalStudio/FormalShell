@@ -68,7 +68,7 @@ EOF
 }
 
 leg_launcher_overflow_timing() {
-  leg_timing 45 105
+  leg_timing 105
 }
 
 leg_launcher_overflow_drive() {
@@ -76,7 +76,6 @@ leg_launcher_overflow_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 focus() { "$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '\${1:-$launcher_overflow_output}' })" > /dev/null 2>&1; sleep 0.4; }
-sleep 4
 width=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
 "$hyprctl_bin" output create headless "$launcher_overflow_output" > /dev/null 2>&1
 # A theme change reloads the compositor's config, which drops this rule.

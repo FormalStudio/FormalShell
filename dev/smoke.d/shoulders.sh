@@ -78,7 +78,7 @@ leg_shoulders_validate() {
 }
 
 leg_shoulders_timing() {
-  leg_timing 14 45
+  leg_timing 45
 }
 
 leg_shoulders_drive() {
@@ -86,7 +86,6 @@ leg_shoulders_drive() {
   shoulders_join_x=$((logical_w / 2 - shoulders_join_width / 2))
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 # Closed: the line whole, and the desktop where the card is about to hang.
 $ipc call debug dump > "$shoulders_dump_closed_path" 2>&1
 "$grim_bin" "$shoulders_closed_path" > /dev/null 2>&1

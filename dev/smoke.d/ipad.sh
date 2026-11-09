@@ -34,7 +34,7 @@ ipad_pid="$ipad_dir/stub.pid"
 ipad_png() { printf '%s/ipad-%s.png' "$shot_dir" "$1"; }
 
 leg_ipad_timing() {
-  leg_timing 80 170 0 140
+  leg_timing 170
 }
 
 leg_ipad_fixture() {
@@ -66,7 +66,6 @@ press() {
   sleep "\${1:-1}"
 }
 
-sleep 3
 call ipad status > "\$d/status-absent.json" 2>&1
 call panel open quicksettings > /dev/null 2>&1
 sleep 1.5

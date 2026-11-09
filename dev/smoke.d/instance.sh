@@ -40,7 +40,7 @@ leg_instance_timing() {
   # instance-drive.sh's worst case (3s initial sleep plus a 15s poll ceiling)
   # lands ~18s in; the run's own frame is taken past that, showing the session
   # with the takeover already resolved to a single bar.
-  leg_timing 21 45
+  leg_timing 45
 }
 
 leg_instance_drive() {
@@ -54,7 +54,6 @@ leg_instance_drive() {
   launch="$PWD/result/bin/formalshell"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 find_daemon_pids() {
   $find_daemons
 }

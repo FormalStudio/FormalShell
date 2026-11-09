@@ -34,14 +34,13 @@ leg_sky_fixture() {
 }
 
 leg_sky_timing() {
-  leg_timing 55 120
+  leg_timing 120
 }
 
 leg_sky_drive() {
   local script="$shot_dir/sky-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-sleep 5
 $ipc call debug dump > "$shot_dir/sky-dump-start.json" 2>&1
 $ipc call wallpaper set "$sky_picture" > /dev/null 2>&1
 sleep 3

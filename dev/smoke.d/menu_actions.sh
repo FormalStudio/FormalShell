@@ -16,14 +16,13 @@ leg_menu_actions_needs="jq wtype"
 leg_menu_actions_claims="launcher=shared"
 
 leg_menu_actions_timing() {
-  leg_timing 30 60
+  leg_timing 60
 }
 
 leg_menu_actions_drive() {
   local script="$shot_dir/menu-actions-drive.sh" p="$shot_dir/menu-actions"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 call notifications dndState > "$p-dnd-before.txt" 2>&1
 call caffeinate status > "$p-caffeinate-before.json" 2>&1
 call overnight status > "$p-overnight-before.json" 2>&1

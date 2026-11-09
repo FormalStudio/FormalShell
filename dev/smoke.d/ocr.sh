@@ -44,7 +44,7 @@ ocr_pid_path="$shot_dir/ocr-foot.pid"
 leg_ocr_timing() {
   # 5s startup plus two slurp/cancel round trips plus the two selection-free
   # verbs, each polled to settled.
-  leg_timing 26 55
+  leg_timing 55
 }
 
 leg_ocr_drive() {
@@ -54,7 +54,6 @@ leg_ocr_drive() {
   # window before the compositor exits.
   write_script "$fixture_script" <<EOF
 #!/usr/bin/env bash
-sleep 2
 echo \$\$ > "$ocr_pid_path"
 exec "$foot_bin" --app-id=formalshell-smoke-ocr --font=monospace:size=28 \\
   --override=colors.background=3fae2a --override=colors.foreground=101010 \\
@@ -63,7 +62,8 @@ EOF
 
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
+until_window formalshell-smoke-ocr
+sleep 1
 # The sentinel is what makes "the cancel copied nothing" an assertion rather
 # than an absence: an empty clipboard would read the same whether the
 # capture wrote nothing or wrote an empty string.

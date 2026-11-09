@@ -35,14 +35,13 @@ leg_systemupdate_fixture() {
 }
 
 leg_systemupdate_timing() {
-  leg_timing 30 60
+  leg_timing 60
 }
 
 leg_systemupdate_drive() {
   local script="$shot_dir/systemupdate-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 $ipc call panel open systemupdate > "$systemupdate_open_reply_path" 2>&1
 sleep 1
 $ipc call panel state > "$systemupdate_state_path" 2>&1

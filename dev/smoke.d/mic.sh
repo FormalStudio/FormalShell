@@ -27,14 +27,13 @@ leg_mic_fixture() {
 }
 
 leg_mic_timing() {
-  leg_timing 12 45
+  leg_timing 45
 }
 
 leg_mic_drive() {
   local script="$shot_dir/mic-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 $ipc call debug dump > "$mic_dump_path" 2>&1
 "$grim_bin" "$mic_bar_png" > /dev/null 2>&1
 EOF

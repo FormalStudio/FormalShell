@@ -28,14 +28,13 @@ menu_hover_frames=24
 menu_hover_target=20
 
 leg_menu_hover_timing() {
-  leg_timing 40 90
+  leg_timing 90
 }
 
 leg_menu_hover_drive() {
   local script="$shot_dir/menu-hover-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 park
 call debug motionScale 1000 > /dev/null 2>&1
 call menu summon emoji > /dev/null 2>&1

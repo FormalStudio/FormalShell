@@ -38,14 +38,13 @@ leg_frame_fixture() {
 }
 
 leg_frame_timing() {
-  leg_timing 8 30
+  leg_timing 30
 }
 
 leg_frame_drive() {
   local script="$shot_dir/frame-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-sleep 5
 "$hyprctl_bin" -j layers > "$frame_layers_path" 2>&1
 "$hyprctl_bin" -j monitors > "$frame_monitors_path" 2>&1
 $ipc call debug dump > "$frame_dump_path" 2>&1

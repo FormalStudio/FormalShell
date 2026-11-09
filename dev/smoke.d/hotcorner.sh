@@ -36,7 +36,6 @@ leg_hotcorner_drive() {
   local script="$shot_dir/hotcorner-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 "$hyprctl_bin" -j layers > "$hotcorner_layers_path" 2>&1
 # Hyprland lays outputs out in logical pixels: the first one's width over
 # its scale.

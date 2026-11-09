@@ -85,17 +85,13 @@ EOF
 }
 
 leg_clipssh_timing() {
-  # The frame script's last grim lands at 26s; this run's own smoke.png comes
-  # after all four, on a session with nothing in flight and the indicator
-  # gone again.
-  leg_timing 34 75
+  leg_timing 75
 }
 
 leg_clipssh_drive() {
   local script="$shot_dir/clipssh-drive.sh" frames="$shot_dir/clipssh-frames.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call menu summon clipssh > "$clipssh_summon_reply_path" 2>&1
 sleep 3
 $ipc call menu activate 0 > "$clipssh_send_reply_path" 2>&1
@@ -113,12 +109,13 @@ sleep 4
 $ipc call notifications status > "$clipssh_notify_status_path" 2>&1
 $ipc call debug dump > "$clipssh_dump_path" 2>&1
 EOF
-  # Frames on their own clock rather than interleaved with the calls above:
-  # each `ipc call` spawn costs about a second on llvmpipe, and both toast
-  # windows the middle two frames aim at are only six seconds wide.
+  # Frames on their own clock, started with the calls above rather than
+  # interleaved with them: each `ipc call` spawn costs about a second on
+  # llvmpipe, and both toast windows the middle two frames aim at are only
+  # six seconds wide.
   write_script "$frames" <<EOF
 #!/usr/bin/env bash
-sleep 6
+sleep 3
 "$grim_bin" "$clipssh_route_png" > /dev/null 2>&1
 sleep 5
 "$grim_bin" "$clipssh_sending_png" > /dev/null 2>&1

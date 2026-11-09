@@ -59,16 +59,14 @@ menu_resize_monitor_run=""
 menu_resize_patches="80,150,100,100 1740,700,100,100"
 
 leg_menu_resize_timing() {
-  # 72 grims at a 1080p frame each: on the mac rig's vkms the drive runs
-  # past the 52s default cap, which ended the session before its last dump.
-  leg_timing 36 110 0 100
+  # 72 grims at a 1080p frame each, slow on the mac rig's vkms.
+  leg_timing 110
 }
 
 leg_menu_resize_drive() {
   local script="$shot_dir/menu-resize-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 call debug motionScale 500 > /dev/null 2>&1
 call menu toggle > /dev/null 2>&1
 sleep 6

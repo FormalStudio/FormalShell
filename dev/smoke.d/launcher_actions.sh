@@ -60,7 +60,7 @@ EOF
 }
 
 leg_launcher_actions_timing() {
-  leg_timing 100 150
+  leg_timing 150
 }
 
 leg_launcher_actions_drive() {
@@ -70,7 +70,6 @@ leg_launcher_actions_drive() {
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
 clients() { "$hyprctl_bin" clients -j > "$shot_dir/launcher-actions-clients-\$1.json" 2>&1; }
 probe() { call menu summon "" > /dev/null 2>&1; sleep 0.4; call menu filter "Actions Probe" > /dev/null 2>&1; sleep 0.6; }
-sleep 4
 for verb in "actions 0" "runAction 0 open" "into 0"; do
   call menu \$verb >> "$shot_dir/launcher-actions-closed.txt" 2>&1
 done

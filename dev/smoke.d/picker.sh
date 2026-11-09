@@ -34,24 +34,12 @@
 # empty Your wallpapers state says so, and `picker select` lists the
 # directory's files flat with no pairing. The cursor's walk on real keys
 # runs under the stale audit.
-#
-# picker_done_path is this leg's own finish marker: the picker and the
-# clipboard routes are the same launcher surface, so a run carrying both has
-# the clipboard leg wait on this file rather than summoning over the grid.
 leg_picker_flag="--picker"
 leg_picker_env="PICKER_INCLUDED"
 leg_picker_order=120
 leg_picker_needs="convert jq wtype python3"
 leg_picker_claims="launcher=shared picker.directory"
 
-# This leg's own clock, the same rule menu_t0 and lock_t0 draw: the grid
-# covers the whole output, so under --wallpaper it starts after that leg's
-# last frame (t=14).
-picker_t0() {
-  cover_t0 4
-}
-
-picker_done_path="$shot_dir/picker-drive.done"
 picker_dir="$iso_home/.local/share/formalshell/pictures"
 picker_included_dir="$iso_home/.local/share/formalshell/included"
 picker_state="$iso_home/.local/state/formalshell/state.json"
@@ -151,18 +139,14 @@ EOF
 leg_picker_timing() {
   # Past the drive's last step, which leaves the grid up, so the run's own
   # frame is the grid.
-  local t0
-  t0=$(picker_t0)
-  leg_timing $((66 + t0)) $((100 + t0))
+  leg_timing 104
 }
 
 leg_picker_drive() {
-  local t0 script="$shot_dir/picker-drive.sh"
-  t0=$(picker_t0)
+  local script="$shot_dir/picker-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 index() { "$jq_bin" -r --arg id "\$1" '.items | map(.id) | index(\$id)' "$picker_grid_status"; }
-sleep $t0
 $ipc call picker summon > /dev/null 2>&1
 sleep 2.5
 "$grim_bin" "$picker_grid_png" > /dev/null 2>&1
@@ -274,7 +258,6 @@ $ipc call picker summon > /dev/null 2>&1
 sleep 3
 $ipc call picker status > "$picker_cached_status" 2>&1
 ls -1 "$iso_home/.cache/formalshell/thumbnails" > "$picker_cache_listing" 2>&1
-touch "$picker_done_path"
 EOF
   hypr_exec_once "bash $script"
 }

@@ -44,7 +44,7 @@ toast_swipe_dispatch_path="$shot_dir/toast-swipe-dispatch.txt"
 toast_swipe_dump_path="$shot_dir/toast-swipe-dump.json"
 
 leg_toast_swipe_timing() {
-  leg_timing 30 70
+  leg_timing 70
 }
 
 leg_toast_swipe_drive() {
@@ -59,7 +59,6 @@ nudge() {
   "$wlrctl_bin" pointer move 0 300 >> "$toast_swipe_dispatch_path" 2>&1
   sleep 0.5
 }
-sleep 4
 "$grim_bin" "$toast_swipe_bare_path" > /dev/null 2>&1
 "$notify_send_bin" -u critical 'Swipe me' 'slow, then long'
 sleep 3

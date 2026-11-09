@@ -24,14 +24,13 @@ reminder_pending_png="$shot_dir/reminder-pending.png"
 reminder_fired_png="$shot_dir/reminder-fired.png"
 
 leg_reminder_timing() {
-  leg_timing 24 55
+  leg_timing 55
 }
 
 leg_reminder_drive() {
   local script="$shot_dir/reminder-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 $ipc call notifications setDnd true > "$reminder_dnd_path" 2>&1
 $ipc call reminder set 12s "SMOKE REMINDER FIXTURE" > "$reminder_set_reply_path" 2>&1
 sleep 2

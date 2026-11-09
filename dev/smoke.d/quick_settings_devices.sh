@@ -30,7 +30,7 @@ quick_settings_devices_dir="$shot_dir/quick-settings-devices"
 leg_quick_settings_devices_timing() {
   # Every wait below is a poll that breaks once its state settles; the sum
   # is what NetworkManager and hostapd can take at worst.
-  leg_timing 150 190
+  leg_timing 190
 }
 
 leg_quick_settings_devices_drive() {
@@ -57,7 +57,6 @@ active_profile() {
   busctl --system get-property org.freedesktop.UPower.PowerProfiles /org/freedesktop/UPower/PowerProfiles \\
     org.freedesktop.UPower.PowerProfiles ActiveProfile 2>&1 | sed 's/^s "\\(.*\\)"\$/\\1/'
 }
-sleep 3
 nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device > "\$d/nmcli-devices.txt" 2>&1
 
 # Both SSIDs in a scan, then FORMALTEST saved and down.

@@ -45,7 +45,7 @@ bluez_player_dump() { printf '%s/dump-%s.json' "$bluez_player_dir" "$1"; }
 bluez_player_png() { printf '%s/bluez-player-%s.png' "$shot_dir" "$1"; }
 
 leg_bluez_player_timing() {
-  leg_timing 80 140
+  leg_timing 140
 }
 
 leg_bluez_player_fixture() {
@@ -103,7 +103,6 @@ shot() {
   shoot "$shot_dir/bluez-player-\$1.png"
 }
 
-sleep 2
 until_jq 15 "\$dir/status-playing.json" '.kind == "bluetooth" and .isPlaying' call media status
 $ipc call panel open media > /dev/null 2>&1
 # The panel open is what lists the audio graph's streams.

@@ -100,7 +100,7 @@ leg_headset_card_fixture() {
 }
 
 leg_headset_card_timing() {
-  leg_timing 86 120
+  leg_timing 120
 }
 
 leg_headset_card_drive() {
@@ -124,7 +124,6 @@ hover() {
 leave() { park 400 600; }
 : > "$headset_log_marks"
 : > "$headset_escape_marks"
-sleep 6
 mark startup
 list true true false
 sleep 2

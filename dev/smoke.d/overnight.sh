@@ -17,14 +17,13 @@ overnight_status2_path="$shot_dir/overnight-status-2.json"
 overnight_state_path="$shot_dir/overnight-state.json"
 
 leg_overnight_timing() {
-  leg_timing 16 40
+  leg_timing 40
 }
 
 leg_overnight_drive() {
   local script="$shot_dir/overnight-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call overnight enable > /dev/null 2>&1
 # The LED listing and the asusctl probe are Processes; both have to land in
 # the record before it is read.

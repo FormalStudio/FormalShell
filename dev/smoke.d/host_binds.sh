@@ -16,7 +16,7 @@ leg_host_binds_fixture_window=keep
 host_binds_out="$shot_dir/host-binds.txt"
 
 leg_host_binds_timing() {
-  leg_timing 14 50
+  leg_timing 50
 }
 
 leg_host_binds_drive() {
@@ -25,7 +25,6 @@ leg_host_binds_drive() {
   printf -v fs '%q' "$PWD/result/bin/formalshell"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 out="$host_binds_out"
 : > "\$out"
 run() {

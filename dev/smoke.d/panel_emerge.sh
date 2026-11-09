@@ -108,7 +108,7 @@ panel_emerge_body_top=60
 panel_emerge_bar_inset=380
 
 leg_panel_emerge_timing() {
-  leg_timing 14 46
+  leg_timing 46
 }
 
 leg_panel_emerge_drive() {
@@ -119,7 +119,6 @@ leg_panel_emerge_drive() {
   done
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 # The card's resting place, and then the same output without it: between them
 # they say where the card is and what the desktop under it looks like.
 $ipc call panel open network > "$panel_emerge_open_path" 2>&1

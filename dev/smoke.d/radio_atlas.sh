@@ -85,7 +85,7 @@ radio_atlas_name="FormalShell Atlas Radio"
 radio_atlas_port=18098
 
 leg_radio_atlas_timing() {
-  leg_timing 110 140
+  leg_timing 140
 }
 
 leg_radio_atlas_fixture() {

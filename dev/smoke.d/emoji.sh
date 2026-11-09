@@ -43,12 +43,6 @@ leg_emoji_needs="wl-paste jq wtype convert"
 leg_emoji_claims="launcher=shared"
 emoji_stops="open Down Page_Down End"
 
-# This leg's own clock: the launcher covers the whole output, so under
-# --wallpaper it starts after that leg's last frame, the rule menu_t0 draws.
-emoji_t0() {
-  cover_t0 3
-}
-
 emoji_keyword_path="$shot_dir/emoji-keyword-query.json"
 emoji_before_path="$shot_dir/emoji-rank-before.json"
 emoji_after_path="$shot_dir/emoji-rank-after.json"
@@ -68,17 +62,13 @@ leg_emoji_fixture() {
 }
 
 leg_emoji_timing() {
-  local t0
-  t0=$(emoji_t0)
-  leg_timing $((t0 + 13)) $((t0 + 76))
+  leg_timing 79
 }
 
 leg_emoji_drive() {
-  local t0 script="$shot_dir/emoji-drive.sh"
-  t0=$(emoji_t0)
+  local script="$shot_dir/emoji-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 $ipc call debug query ':e sob' > "$emoji_keyword_path" 2>&1
 $ipc call debug query ':e cry' > "$emoji_before_path" 2>&1
 $ipc call menu summon emoji > /dev/null 2>&1

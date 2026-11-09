@@ -44,7 +44,7 @@ leg_config_reload_timing() {
   # Config lands a few seconds in, the rewrite follows, and the shell has up
   # to 15s to notice it. The run's own frame is taken past all of that, so it
   # shows the strip on the edge the rewrite asked for.
-  leg_timing 26 55
+  leg_timing 55
 }
 
 leg_config_reload_drive() {

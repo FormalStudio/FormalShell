@@ -18,7 +18,6 @@ leg_idle_needs=""
 
 idle_results_path="$shot_dir/idle-results.txt"
 idle_start_path="$shot_dir/shell-start.ns"
-idle_done_path="$shot_dir/idle-done"
 
 # perf for a profile of the spin, where the host has it; the run goes on
 # without one.
@@ -40,7 +39,7 @@ EOF
 }
 
 leg_idle_timing() {
-  leg_timing 180 215
+  leg_timing 215
 }
 
 leg_idle_drive() {
@@ -138,13 +137,11 @@ r1=\$(rss)
 $ipc call screensaver stop > /dev/null 2>&1
 sleep 4
 echo "rss_kb before_saver=\$r0 saver=\$r1 after_saver=\$(rss)" >> "$idle_results_path"
-touch "$idle_done_path"
 EOF
   hypr_exec_once "bash $script"
 }
 
 leg_idle_assert() {
-  [ -f "$idle_done_path" ] || fail "--idle: the drive never finished its sample"
   local start first
   start=$(cat "$idle_start_path")
   first=$(awk '/^commit surface=bar n=1 /{match($0, /t=[0-9]+ms/); print substr($0, RSTART + 2, RLENGTH - 4); exit}' "$shell_log_path")

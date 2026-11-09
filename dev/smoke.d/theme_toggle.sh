@@ -25,31 +25,18 @@ theme_json_dump2_path="$shot_dir/theme-json-2.json"
 theme_json_dump3_path="$shot_dir/theme-json-3.json"
 theme_toggle_json="$iso_home/.local/state/formalshell/theme.json"
 
-# This leg's own clock. Both frames repaint the whole output, so under
-# --wallpaper it starts after that leg's last read, which also puts a real
-# matugen-derived palette under the round trip instead of the fallback. That
-# read is its `hyprctl getoption general:col.active_border` at 16s, not its
-# last frame at 14s: a toggle landing on the same second re-runs matugen for
-# the other mode and the border answers in that mode's primary instead.
-theme_toggle_t0() {
-  cover_t0 4 2
-}
-
 leg_theme_toggle_timing() {
-  local t0
-  t0=$(theme_toggle_t0)
   if leg_on wallpaper; then
     # Each toggle gets 4s for a full matugen rerun rather than 2s for a
     # fallback write.
-    leg_timing $((t0 + 12)) $((t0 + 45))
+    leg_timing 49
   else
-    leg_timing $((t0 + 8)) $((t0 + 40))
+    leg_timing 44
   fi
 }
 
 leg_theme_toggle_drive() {
-  local t0 gap="2" dump_pre="" dump_mid="" dump_post="" script="$shot_dir/theme-toggle-drive.sh"
-  t0=$(theme_toggle_t0)
+  local gap="2" dump_pre="" dump_mid="" dump_post="" script="$shot_dir/theme-toggle-drive.sh"
   if leg_on wallpaper; then
     gap="4"
     dump_pre="cat \"$theme_toggle_json\" > \"$theme_json_dump1_path\" 2>&1"
@@ -58,7 +45,6 @@ leg_theme_toggle_drive() {
   fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 $dump_pre
 "$grim_bin" "$theme_dark_png" > /dev/null 2>&1
 $ipc call theme mode toggle > /dev/null 2>&1

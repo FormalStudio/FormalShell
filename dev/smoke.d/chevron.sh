@@ -100,7 +100,7 @@ leg_chevron_timing() {
   # taken past that, so it shows the bar left with the group's card shut.
   # The wallpaper set and the retheme behind it push every step of that ~9s
   # later.
-  leg_timing 76 106
+  leg_timing 106
 }
 
 leg_chevron_drive() {
@@ -120,7 +120,6 @@ sleep 8
 $ipc call bar paint > \"$chevron_paint_path\" 2>&1"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 $paint_step
 $ipc call bar chevron status > "$chevron_status_shut_path" 2>&1
 sleep 1

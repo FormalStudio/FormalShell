@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --menu: the launcher summoned at root, its fuzzy ranking against the live
-# tree (`debug query`), a root query as one list in score order, the emoji route's grid, and the select round trip. The run's own
-# smoke.png lands in select mode; menu-root.png is the root at rest on a
+# tree (`debug query`), a root query as one list in score order, the emoji
+# route's grid, and the select round trip, photographed in select mode
+# (menu-select.png) before the close cancels it; menu-root.png is the root at rest on a
 # profile with too few picks, menu-recent.png the same root once a third
 # pick lands, menu-search.png is the same field with a query in it under no
 # heading, and menu-emoji.png is the grid.
@@ -32,13 +33,6 @@ leg_menu_flag="--menu"
 leg_menu_order=20
 leg_menu_needs="jq wtype convert tesseract"
 leg_menu_claims="launcher=shared"
-
-# This leg's own clock. The launcher covers the whole output, so under
-# --wallpaper it starts after that leg's last frame (t=14) rather than
-# sampling the desktop through a scrim, the same rule lock_t0 draws.
-menu_t0() {
-  cover_t0 3
-}
 
 query_path="$shot_dir/query.json"
 selection_path="$shot_dir/menu-selection.txt"
@@ -80,11 +74,7 @@ leg_menu_fixture() {
 }
 
 leg_menu_timing() {
-  # menu-finish.sh's own read-back lands 25s after menu_t0, so the session
-  # has to outlive that, not just the screenshot.
-  local t0
-  t0=$(menu_t0)
-  leg_timing $((31 + t0 - 3)) $((63 + t0 - 3)) 4
+  leg_timing 63
 }
 
 leg_menu_drive() {
@@ -92,13 +82,11 @@ leg_menu_drive() {
   # with "[" and ends with "]" into several comma-joined arguments (its
   # vector-literal shorthand), so the select list carries a leading space to
   # defeat that check. JSON.parse tolerates the whitespace.
-  local t0 menu_script="$shot_dir/menu-drive.sh"
-  t0=$(menu_t0)
+  local menu_script="$shot_dir/menu-drive.sh"
   write_script "$menu_script" <<EOF
 #!/usr/bin/env bash
 # Every wtype is a new virtual keyboard whose first keys reach nobody until
 # the shell binds it (lock.sh's drive has the detail), so each waits first.
-sleep $t0
 $ipc call menu summon "" > /dev/null 2>&1
 sleep 2
 $ipc call debug query 'e' > "$query_path" 2>&1
@@ -161,26 +149,16 @@ sleep 2
 "$grim_bin" "$menu_emoji_path" > /dev/null 2>&1
 $ipc call menu status > "$menu_status_emoji_path" 2>&1
 sleep 1
+# The close cancels the pending select, and the state file is what proves
+# the {cancelled:true} write happened.
 $ipc call menu select "Pick" ' ["a","b","c"]' tok1 > /dev/null 2>&1
-touch "$shot_dir/menu-drive.done"
-EOF
-
-  # Runs after the screenshot, never before: closing the surface first would
-  # leave nothing to photograph. The close cancels the still-pending select,
-  # and the state file is what proves the {cancelled:true} write happened.
-  local menu_finish_script="$shot_dir/menu-finish.sh"
-  write_script "$menu_finish_script" <<EOF
-#!/usr/bin/env bash
-sleep $((t0 + 29))
-# The mac rig's software compositor runs the drive past 24s; the select it
-# ends on has to be pending before the close.
-for _ in \$(seq 80); do [ -e "$shot_dir/menu-drive.done" ] && break; sleep 0.25; done
+sleep 2
+"$grim_bin" "$shot_dir/menu-select.png" > /dev/null 2>&1
 $ipc call menu close > /dev/null 2>&1
 sleep 1
 cat "$iso_home/.local/state/formalshell/menu-selection.txt" > "$selection_path" 2>&1
 EOF
   hypr_exec_once "bash $menu_script"
-  hypr_exec_once "bash $menu_finish_script"
 }
 
 menu_field() {

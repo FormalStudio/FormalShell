@@ -57,20 +57,15 @@ center_dismiss_one_path="$shot_dir/center-dismiss-one.txt"
 center_scroll_path="$shot_dir/center-scroll.txt"
 
 leg_center_timing() {
-  # center-drive.sh's own last frame lands around 45s, and thirty
-  # notify-sends are thirty processes on a software-rendered VM, so the
-  # margin is deliberately wide: an earlier 48 put the last leg past the
-  # session's own teardown. This run's generic smoke.png is taken after all
-  # of it, showing the session with the centre closed again and the front
-  # toast gone. The slow-motion entrance at the end costs another ~13s.
-  leg_timing 70 150
+  # Thirty notify-sends are thirty processes on a software-rendered VM, and
+  # the slow-motion entrance at the end costs another ~13s.
+  leg_timing 150
 }
 
 leg_center_drive() {
   local script="$shot_dir/center-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 2
 "$notify_send_bin" -u normal 'Second' 'World'
 sleep 15
 $ipc call notifications status > "$center_status_before_path" 2>&1

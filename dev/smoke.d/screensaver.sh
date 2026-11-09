@@ -19,14 +19,6 @@ leg_screensaver_order=230
 leg_screensaver_needs="mpv ffmpeg jq convert wtype"
 leg_screensaver_claims="screen=shared"
 
-# This leg's own clock, the same rule menu_t0 and lock_t0 draw: the screensaver
-# covers the whole output, so under --wallpaper it starts after that leg's last
-# frame (t=14). The guard holds until this clock runs out either way, since the
-# fixture track is still playing.
-screensaver_t0() {
-  cover_t0 4
-}
-
 ss_pid_path="$shot_dir/ss-mpv.pid"
 ss_track_path="$shot_dir/ss-track.flac"
 ss_guard_status_path="$shot_dir/screensaver-guard-status.json"
@@ -80,21 +72,17 @@ leg_screensaver_timing() {
   # session with the screensaver dismissed for good. The solidity capture
   # after the poll costs another seven seconds of pinning before the final
   # stop, which is where the extra ten come from.
-  local t0
-  t0=$(screensaver_t0)
   # The lock chain after it adds about fifteen more.
-  leg_timing $((105 + t0 - 4)) $((125 + t0 - 4))
+  leg_timing 125
 }
 
 leg_screensaver_drive() {
-  local t0 play_script="$shot_dir/ss-media-play.sh" script="$shot_dir/ss-drive.sh"
-  t0=$(screensaver_t0)
+  local play_script="$shot_dir/ss-media-play.sh" script="$shot_dir/ss-drive.sh"
   # The pid is recorded before the exec: exec replaces this shell's process
   # image without forking, so $$ here is exactly mpv's eventual pid and the
   # drive script below can end playback precisely.
   write_script "$play_script" <<EOF
 #!/usr/bin/env bash
-sleep 1
 echo \$\$ > "$ss_pid_path"
 exec "$mpv_bin" --no-video --really-quiet "$ss_track_path"
 EOF
@@ -106,7 +94,10 @@ EOF
   # rides the manual activation because its start time is deterministic.
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $((t0 + 4))
+# The guard holds only once the player is on the bus, and its proof is the
+# 3s idle timeout passing while it plays.
+until_jq 15 "$shot_dir/screensaver-media.json" '.isPlaying' call media status
+sleep 4
 $ipc call screensaver status > "$ss_guard_status_path" 2>&1
 if [ -f "$ss_pid_path" ]; then
   kill "\$(cat "$ss_pid_path")" 2>/dev/null || true
@@ -121,7 +112,7 @@ $ipc call screensaver start > /dev/null 2>&1
 sleep 1
 "$grim_bin" "$ss_manual_path" > /dev/null 2>&1
 $ipc call screensaver frameInfo > "$ss_cycle_info1_path" 2>&1
-while [ "\$SECONDS" -lt $((t0 + 71)) ]; do
+while [ "\$SECONDS" -lt 71 ]; do
   $ipc call screensaver frameInfo > "$ss_cycle_info2_path" 2>&1
   grep -q '"cycles":0}' "$ss_cycle_info2_path" || break
   sleep 1

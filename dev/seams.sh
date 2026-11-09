@@ -64,7 +64,7 @@ until_guest() {
 }
 greeter_up() { until_guest "the greeter" "$1" 'sudo sh -c "ls /run/formalshell-greeter/wayland-? >/dev/null" && pgrep -u greeter -f formalshell-rs'; sleep 3; }
 lock_up() { until_guest "the boot lock" "$1" '/opt/fspec/current/bin/formalshell ipc --any-display call lock status | grep "\"boot\":true" | grep -q "\"secure\":true"'; sleep 3; }
-desktop_up() { until_guest "the desktop's bar" "$1" 'hyprctl -j layers -i 0 | grep -q "\"namespace\": *\"formalshell:bar\""'; sleep 3; }
+desktop_up() { until_guest "the desktop's bar" "$1" 'hyprctl -j layers -i 0 | grep -q "\"namespace\": *\"formalshell:bar\"" && /opt/fspec/current/bin/formalshell ipc --any-display call debug dump | grep -Eq "\"veil\": *null"'; }
 
 rm -rf "$out"
 mkdir -p "$out"

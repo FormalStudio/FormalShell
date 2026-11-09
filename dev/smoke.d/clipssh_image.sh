@@ -84,7 +84,7 @@ EOF
 }
 
 leg_clipssh_image_timing() {
-  leg_timing 32 70
+  leg_timing 70
 }
 
 leg_clipssh_image_drive() {
@@ -96,7 +96,6 @@ leg_clipssh_image_drive() {
   # delay raced that close and photographed an empty desktop.
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 # The auto-send's own trigger: nothing here calls clipssh, or the shell. The
 # image landing in history is the whole event.
 "$wl_copy_bin" --type image/png < "$clipssh_image_fixture_path"

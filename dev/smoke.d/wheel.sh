@@ -98,21 +98,12 @@ leg_wheel_fixture() {
   shell_env="${shell_env:+$shell_env }FS_WALLPAPERS=$wheel_dir-none"
 }
 
-# The grid covers the whole output, so under --wallpaper this starts past
-# that leg's own last frame, the same clock picker_t0 keeps.
-wheel_t0() {
-  cover_t0 4
-}
-
 leg_wheel_timing() {
-  local t0
-  t0=$(wheel_t0)
-  leg_timing $((32 + t0)) $((73 + t0))
+  leg_timing 77
 }
 
 leg_wheel_drive() {
-  local t0 script="$shot_dir/wheel-drive.sh"
-  t0=$(wheel_t0)
+  local script="$shot_dir/wheel-drive.sh"
   # The middle of a THUMBNAIL, second row, second column, off `menu
   # status`'s rowBoxes once the grid is up. The middle of the grid is not
   # good enough: it can land in the gutter between two cells, where the wheel
@@ -124,7 +115,6 @@ leg_wheel_drive() {
   # pixels, the space wlrctl's moves are in.
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 $ipc call picker summon > /dev/null 2>&1
 sleep 2
 park > "$wheel_dispatch_path" 2>&1

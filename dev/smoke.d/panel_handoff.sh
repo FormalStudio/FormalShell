@@ -94,7 +94,7 @@ leg_panel_handoff_fixture() {
 }
 
 leg_panel_handoff_timing() {
-  leg_timing 16 50
+  leg_timing 50
 }
 
 leg_panel_handoff_drive() {
@@ -104,7 +104,6 @@ leg_panel_handoff_drive() {
   done
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 # The audio card's own resting place, captured before anything hands over,
 # so the settled frame at the end has something to be equal to.
 $ipc call panel toggle audio > "$panel_handoff_audio_open_path" 2>&1

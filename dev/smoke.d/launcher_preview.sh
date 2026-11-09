@@ -55,7 +55,7 @@ EOF
 }
 
 leg_launcher_preview_timing() {
-  leg_timing 80 130
+  leg_timing 130
 }
 
 leg_launcher_preview_drive() {
@@ -85,7 +85,6 @@ run() {
   call menu close > /dev/null 2>&1
   sleep 1
 }
-sleep 4
 for i in 1 2; do
   spawn_foot formalshell-preview-probe
 done

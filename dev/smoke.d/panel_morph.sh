@@ -112,7 +112,7 @@ leg_panel_morph_timing() {
   # which the fixture below has already seen to; the ceilings are there so a
   # station that never scans fails the claim instead of eating the run's own
   # frame.
-  leg_timing 175 235
+  leg_timing 235
 }
 
 leg_panel_morph_fixture() {
@@ -173,7 +173,6 @@ scanned() {
   done
   return 1
 }
-sleep 6
 call debug motionScale 1000
 "$grim_bin" "$panel_morph_bare_path" > /dev/null 2>&1
 

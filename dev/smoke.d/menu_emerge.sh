@@ -70,10 +70,6 @@ leg_menu_emerge_claims="screen launcher"
 menu_emerge_scale_path="$shot_dir/menu-emerge-scale.txt"
 menu_emerge_summon_path="$shot_dir/menu-emerge-summon.txt"
 menu_emerge_close_path="$shot_dir/menu-emerge-close.txt"
-# Touched once the open and the close are photographed and the clock is
-# back at full speed, for a leg sharing the session that drives a card of
-# its own (--join) to start after.
-menu_emerge_done_path="$shot_dir/menu-emerge-done"
 menu_emerge_status_path="$shot_dir/menu-emerge-status.json"
 menu_emerge_dump_path="$shot_dir/menu-emerge-dump.json"
 menu_emerge_rest_dump_path="$shot_dir/menu-emerge-rest-dump.json"
@@ -129,14 +125,13 @@ menu_emerge_black_band() {
 # claim: 40 rows off the output's bottom, cut in the assert.
 
 leg_menu_emerge_timing() {
-  leg_timing 48 100
+  leg_timing 100
 }
 
 leg_menu_emerge_drive() {
   local script="$shot_dir/menu-emerge-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 call debug motionScale $menu_emerge_scale > "$menu_emerge_scale_path" 2>&1
 call debug dump > "$menu_emerge_dump_path" 2>&1
 sleep 1
@@ -163,7 +158,6 @@ for i in \$(seq 1 $menu_emerge_close_frames); do
 done
 call debug motionScale 100 > /dev/null 2>&1
 sleep 1
-touch "$menu_emerge_done_path"
 EOF
   hypr_exec_once "bash $script"
 }

@@ -50,14 +50,13 @@ leg_capture_edit_timing() {
   # 3s startup, the full()/status poll (fast: real grim and wl-copy against a
   # small screen), a 3s settle for the toast's image slot to finish its
   # asynchronous decode, then the edit() call.
-  leg_timing 16 50
+  leg_timing 50
 }
 
 leg_capture_edit_drive() {
   local fixture_script="$shot_dir/capture-edit-fixture.sh" script="$shot_dir/capture-edit-drive.sh"
   write_script "$fixture_script" <<EOF
 #!/usr/bin/env bash
-sleep 1
 echo \$\$ > "$capture_edit_fixture_pid_path"
 exec "$foot_bin" --app-id=formalshell-smoke-capture-edit \\
   --override=colors.background=e6a23c --override=colors.foreground=101010 \\
@@ -66,7 +65,8 @@ EOF
 
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
+until_window formalshell-smoke-capture-edit
+sleep 1
 $ipc call screenshot full "" > "$capture_edit_reply_path" 2>&1
 for _ in \$(seq 1 20); do
   $ipc call screenshot status > "$capture_edit_status_path" 2>&1

@@ -28,7 +28,7 @@ hypr_motion_chrome="$shot_dir/hypr-motion-chrome.lua"
 hypr_motion_settled="$shot_dir/hypr-motion-settled.png"
 
 leg_hypr_motion_timing() {
-  leg_timing 30 80
+  leg_timing 80
 }
 
 leg_hypr_motion_drive() {
@@ -39,7 +39,6 @@ leg_hypr_motion_drive() {
   local script="$shot_dir/hypr-motion-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-sleep 6
 cp "$published" "$hypr_motion_chrome" 2>/dev/null
 "$hyprctl_bin" -j animations > "$hypr_motion_on" 2>&1
 "$hyprctl_bin" -j getoption animations:enabled > "$hypr_motion_enabled_on" 2>&1

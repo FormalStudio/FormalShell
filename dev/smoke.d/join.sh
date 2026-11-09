@@ -81,20 +81,11 @@ leg_join_fixture() {
 }
 
 leg_join_timing() {
-  if leg_on menu_emerge; then
-    leg_timing 150 230
-  else
-    leg_timing 110 180
-  fi
+  leg_timing 180
 }
 
 leg_join_drive() {
-  local script="$shot_dir/join-drive.sh" wait_menu=""
-  if leg_on menu_emerge; then
-    # Its launcher and scrim would otherwise sit over these cases, and its
-    # motionScale fight this one's.
-    wait_menu="for _ in \$(seq 1 120); do [ -e \"$menu_emerge_done_path\" ] && break; sleep 0.5; done"
-  fi
+  local script="$shot_dir/join-drive.sh"
   if join_whole_output; then
     # A crop cut for the top bar's right end holds nothing at all on a left
     # bar: the whole output is taken, and turned and cut in the assert.
@@ -112,8 +103,6 @@ sample() {
     "$grim_bin" -g "$join_region" "$shot_dir/join-\$name-\$i.png" > /dev/null 2>&1
   done
 }
-sleep 5
-$wait_menu
 call debug motionScale 1000
 # Not through call(), whose own redirect would swallow the dump into the
 # reply log.

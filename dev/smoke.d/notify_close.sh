@@ -36,14 +36,13 @@ notify_close_status_after_path="$shot_dir/notify-close-status-after.txt"
 notify_close_button_inset=28
 
 leg_notify_close_timing() {
-  leg_timing 16 40
+  leg_timing 40
 }
 
 leg_notify_close_drive() {
   local script="$shot_dir/notify-close-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 "$notify_send_bin" -u critical 'Command failed' 'exit status 1'
 sleep 3
 "$grim_bin" "$notify_close_settled_path" > /dev/null 2>&1

@@ -31,7 +31,7 @@ leg_sidebar_join_fixture() {
 }
 
 leg_sidebar_join_timing() {
-  leg_timing 30 70
+  leg_timing 70
 }
 
 # One target's drive: `open` and `close` are the ipc calls, `name` the

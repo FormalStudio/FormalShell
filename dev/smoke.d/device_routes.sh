@@ -48,7 +48,7 @@ EOF
 }
 
 leg_device_routes_timing() {
-  leg_timing 210 245
+  leg_timing 245
 }
 
 leg_device_routes_drive() {

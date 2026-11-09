@@ -188,12 +188,9 @@ EOF
 }
 
 leg_iphone_timing() {
-  # This leg's own drive script runs to just past 30s of sleeps plus
-  # roughly a dozen `ipc call` round trips at ~1s each on llvmpipe (notify.sh's
-  # own header note on that cost): screenshot_delay has to clear all of it,
-  # since the base run's own teardown (shot.sh) fires at that mark and tears
-  # the session down under whatever this leg is still doing.
-  leg_timing 75 115
+  # Just past 30s of sleeps plus roughly a dozen `ipc call` round trips at
+  # ~1s each on llvmpipe (notify.sh's own header note on that cost).
+  leg_timing 115
 }
 
 leg_iphone_drive() {
@@ -206,7 +203,6 @@ append() { printf '%s\n' "\$1" >> "$iphone_bridge_events_path"; }
 # script, stdbuf into tail) rather than the single binary most other legs'
 # shims are, so it earns a longer startup margin before the first check
 # that depends on it.
-sleep 8
 $ipc call iphone status > "$iphone_status_connected_path" 2>&1
 cp "$iphone_status_connected_path" "$iphone_status_ams_error_path"
 

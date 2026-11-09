@@ -40,7 +40,7 @@ leg_visualizer_timing() {
   # a 2s settle, the frame, the kill, a 6s cava-gone poll) lands ~20s in; the
   # run's own frame is taken past that, showing the widget hidden again with
   # no player, the same way nowPlaying goes.
-  leg_timing 23 50
+  leg_timing 50
 }
 
 leg_visualizer_drive() {
@@ -52,7 +52,6 @@ leg_visualizer_drive() {
   # probe) plus MediaService.isPlaying flipping true.
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 2
 "$mpv_bin" --no-video --really-quiet "$visualizer_track_path" &
 mpv_pid=\$!
 echo "\$mpv_pid" > "$visualizer_pid_path"

@@ -16,7 +16,7 @@ leg_quick_settings_power_needs="jq wtype grim"
 quick_settings_power_p="$shot_dir/quick-settings-power"
 
 leg_quick_settings_power_timing() {
-  leg_timing 30 70
+  leg_timing 70
 }
 
 leg_quick_settings_power_drive() {
@@ -24,7 +24,6 @@ leg_quick_settings_power_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 p="$quick_settings_power_p"
-sleep 3
 for m in CanSuspend CanReboot CanPowerOff; do
   busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager "\$m" > "\$p-\$m.txt" 2>&1
 done

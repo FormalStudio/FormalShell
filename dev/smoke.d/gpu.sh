@@ -136,14 +136,13 @@ leg_gpu_timing() {
   # gpu-drive.sh's last step lands around 21s (15s of sleeps plus five IPC
   # calls and two grims on llvmpipe), with the offload launch 6s before
   # it so the probe has long since written its file.
-  leg_timing 26 60
+  leg_timing 60
 }
 
 leg_gpu_drive() {
   local script="$shot_dir/gpu-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 6
 $ipc call monitor gpu > "$gpu_cards_path" 2>&1
 $ipc call menu summon gpu > "$gpu_route_reply_path" 2>&1
 sleep 2

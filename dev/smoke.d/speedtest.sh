@@ -17,14 +17,13 @@ speedtest_panel_path="$shot_dir/speedtest-panel.png"
 speedtest_status_path="$shot_dir/speedtest-status.json"
 
 leg_speedtest_timing() {
-  leg_timing 32 60
+  leg_timing 60
 }
 
 leg_speedtest_drive() {
   local script="$shot_dir/speedtest-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call panel open network > /dev/null 2>&1
 sleep 1
 $ipc call network speedtest > /dev/null 2>&1

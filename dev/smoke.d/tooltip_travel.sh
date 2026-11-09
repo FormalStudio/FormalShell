@@ -40,12 +40,6 @@ leg_tooltip_travel_validate() {
   fi
 }
 
-leg_tooltip_travel_timing() {
-  # One second more tail than --tooltip's own: the drive script waits the
-  # card's travel out between the layer dump and the frame.
-  leg_timing 0 0 9
-}
-
 leg_tooltip_travel_drive() {
   # 34 in from the right and 74 down is the panel header's close button and
   # 40 left of it the rescan button; --tooltip's own header carries where those come from and why
@@ -56,7 +50,6 @@ leg_tooltip_travel_drive() {
   local script="$shot_dir/tooltip-travel-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 9
 park > "$tooltip_travel_dispatch_path" 2>&1
 sleep 1
 "$wlrctl_bin" pointer move $((logical_w - 34)) 74 >> "$tooltip_travel_dispatch_path" 2>&1

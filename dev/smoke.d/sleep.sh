@@ -44,7 +44,7 @@ leg_sleep_fixture() {
 }
 
 leg_sleep_timing() {
-  leg_timing 46 80
+  leg_timing 80
 }
 
 leg_sleep_drive() {

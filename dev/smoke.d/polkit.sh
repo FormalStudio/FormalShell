@@ -32,12 +32,6 @@ polkit_rc_path="$shot_dir/polkit-rc.txt"
 polkit_stderr_path="$shot_dir/polkit-stderr.txt"
 polkit_debug_path="$shot_dir/polkit-debug.log"
 
-# The dialog covers the whole output, so under --wallpaper this starts after
-# that leg's last frame rather than sampling the desktop through a scrim.
-polkit_t0() {
-  cover_t0 3
-}
-
 # How many frames the open is photographed across, and at what fraction of
 # speed. The consent card buds off the top line like every other
 # centre-floating card (M57 D5) and is gone into its resting place inside one
@@ -54,23 +48,19 @@ leg_polkit_fixture() {
 }
 
 leg_polkit_timing() {
-  local t0
-  t0=$(polkit_t0)
-  # The script's own sleeps sum to t0+29; the `wait` past that blocks for
-  # however long the socket-activated polkit-agent-helper conversation takes
-  # to resolve, and a first-ever activation in this session is the slow path.
-  leg_timing $((t0 + 35)) $((t0 + 66))
+  # The `wait` past the drive's own sleeps blocks for however long the
+  # socket-activated polkit-agent-helper conversation takes to resolve, and
+  # a first-ever activation in this session is the slow path.
+  leg_timing 69
 }
 
 leg_polkit_drive() {
-  local t0 script="$shot_dir/polkit-drive.sh"
-  t0=$(polkit_t0)
+  local script="$shot_dir/polkit-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 : > "$polkit_debug_path"
 log() { echo "\$(date +%s.%N) \$1" >> "$polkit_debug_path"; }
 log start
-sleep $t0
 $ipc call debug motionScale 1000 >> "$polkit_debug_path" 2>&1
 "$pkexec_bin" "$polkit_true_bin" 2> "$polkit_stderr_path" &
 polkit_pid=\$!

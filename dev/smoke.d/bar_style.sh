@@ -56,7 +56,7 @@ leg_bar_style_fixture() {
 }
 
 leg_bar_style_timing() {
-  if bar_style_alone; then leg_timing 16 40; fi
+  if bar_style_alone; then leg_timing 40; fi
 }
 
 leg_bar_style_drive() {

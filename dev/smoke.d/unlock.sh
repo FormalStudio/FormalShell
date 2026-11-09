@@ -36,14 +36,13 @@ leg_unlock_fixture() {
 }
 
 leg_unlock_timing() {
-  leg_timing 40 70
+  leg_timing 70
 }
 
 leg_unlock_drive() {
   local script="$shot_dir/unlock-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 call wallpaper set "$unlock_wallpaper" > /dev/null 2>&1
 sleep 8
 call lock lock > /dev/null 2>&1

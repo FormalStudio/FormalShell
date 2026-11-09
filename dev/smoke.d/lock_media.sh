@@ -48,10 +48,6 @@ lock_media_light_json="$shot_dir/lock-media-light-status.json"
 lock_media_light_png="$shot_dir/lock-media-light-frame.png"
 lock_media_unlocked_txt="$shot_dir/lock-media-unlocked.txt"
 
-lock_media_t0() {
-  if leg_on lock; then echo $(($(lock_t0) + 26)); else echo 5; fi
-}
-
 leg_lock_media_fixture() {
   $convert_bin -size 64x64 "xc:#E03131" -size 64x64 "xc:#F08C00" -size 64x64 "xc:#FFD700" \
     -size 64x64 "xc:#2F9E44" -size 64x64 "xc:#1971C2" -size 64x64 "xc:#9C36B5" \
@@ -65,17 +61,13 @@ leg_lock_media_fixture() {
 }
 
 leg_lock_media_timing() {
-  local t0
-  t0=$(lock_media_t0)
-  leg_timing $((t0 + 50)) $((t0 + 80))
+  leg_timing 85
 }
 
 leg_lock_media_drive() {
-  local t0 script="$shot_dir/lock-media-drive.sh" kill_script="$shot_dir/lock-media-kill.sh"
-  t0=$(lock_media_t0)
+  local script="$shot_dir/lock-media-drive.sh" kill_script="$shot_dir/lock-media-kill.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 "$mpv_bin" --no-video --really-quiet --loop-file=inf "$lock_media_track" &
 echo \$! > "$lock_media_pid"
 $ipc call theme mode dark > /dev/null 2>&1

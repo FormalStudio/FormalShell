@@ -36,14 +36,13 @@ leg_theme_auto_fixture() {
 }
 
 leg_theme_auto_timing() {
-  leg_timing 14 45
+  leg_timing 45
 }
 
 leg_theme_auto_drive() {
   local script="$shot_dir/theme-auto-drive.sh"
   write_script "$script" <<DRIVE
 #!/usr/bin/env bash
-sleep 5
 date +%H:%M > "$theme_auto_clock_path"
 $ipc call theme status > "$theme_auto_status1_path" 2>&1
 "$grim_bin" "$theme_auto_before_png" > /dev/null 2>&1

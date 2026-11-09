@@ -48,14 +48,13 @@ leg_record_timing() {
   # recording, 2s, a 15s stop-settle ceiling and a 40s transcode ceiling.
   # The typical path is closer to 20s, since both ceilings are polls that break the moment the
   # state settles.
-  leg_timing 85 110
+  leg_timing 110
 }
 
 leg_record_drive() {
   local script="$shot_dir/record-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 $ipc call record start screen desktop > "$record_start_reply_path" 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 15 ]; do

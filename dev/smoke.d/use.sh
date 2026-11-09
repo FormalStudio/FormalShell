@@ -58,7 +58,7 @@ leg_use_fixture() {
 }
 
 leg_use_timing() {
-  leg_timing 155 200
+  leg_timing 200
 }
 
 leg_use_drive() {
@@ -113,7 +113,6 @@ flip() {
   echo "\$name \$(( \$(now) - t0 ))" >> "\$d/flip-ms.txt"
   sleep 0.5
 }
-sleep 6
 $ipc call bar room > "\$d/room.json" 2>&1
 # The pointer starts off every surface.
 bare

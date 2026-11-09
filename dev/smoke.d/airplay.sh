@@ -80,17 +80,13 @@ EOF
 }
 
 leg_airplay_timing() {
-  # screenshot_delay has to clear this leg's own last action, since the
-  # base run's teardown (shot.sh) fires at that mark and tears the session
-  # down under whatever the drive script is still doing.
-  leg_timing 25 50
+  leg_timing 50
 }
 
 leg_airplay_drive() {
   local script="$shot_dir/airplay-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 $ipc call airplay status > "$airplay_status_connected_path" 2>&1
 $ipc call media status > "$airplay_media_connected_path" 2>&1
 $ipc call panel open media > /dev/null 2>&1

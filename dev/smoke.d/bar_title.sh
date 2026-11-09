@@ -65,7 +65,7 @@ EOF
 }
 
 leg_bar_title_timing() {
-  leg_timing 42 75
+  leg_timing 75
 }
 
 leg_bar_title_drive() {
@@ -73,7 +73,6 @@ leg_bar_title_drive() {
   local kill_script="$shot_dir/bar-title-kill.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 2
 "$mpv_bin" --no-video --really-quiet --loop-file=inf "$bar_title_track_path" &
 echo \$! > "$bar_title_pid_path"
 for _ in \$(seq 1 16); do

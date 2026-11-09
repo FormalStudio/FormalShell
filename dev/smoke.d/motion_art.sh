@@ -44,7 +44,7 @@ motion_art_sidebar="$shot_dir/motion-art-sidebar.json"
 motion_art_rail="$shot_dir/motion-art-rail.json"
 
 leg_motion_art_timing() {
-  leg_timing 70 110
+  leg_timing 110
 }
 
 leg_motion_art_fixture() {
@@ -64,7 +64,6 @@ leg_motion_art_drive() {
   local play="$shot_dir/motion-art-play.sh" drive="$shot_dir/motion-art-drive.sh"
   write_script "$play" <<EOF
 #!/usr/bin/env bash
-sleep 2
 exec "$mpv_bin" --no-video --really-quiet --loop-file=inf "$motion_art_track_path"
 EOF
   write_script "$drive" <<EOF
@@ -80,7 +79,7 @@ commits() {
   note "commits_\$1" "\$((c1 - c0))"
 }
 : > "$motion_art_results"
-sleep 6
+sleep 4
 call bar room > "$motion_art_room" 2>&1
 burst "$shot_dir/motion-art-bar" $motion_art_frames 0.15
 decoders bar

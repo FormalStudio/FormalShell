@@ -64,7 +64,7 @@ leg_bar_room_timing() {
   # A tag-match poll (up to 8s) plus a 3s settle for NowPlaying's own
   # refit timer (Theme.motion.spatial + 32ms, well under a second): worst
   # case lands ~13s in.
-  leg_timing 16 40
+  leg_timing 40
 }
 
 leg_bar_room_drive() {
@@ -72,7 +72,6 @@ leg_bar_room_drive() {
   local kill_script="$shot_dir/bar-room-kill.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 2
 "$mpv_bin" --no-video --really-quiet "$bar_room_track_path" &
 echo \$! > "$bar_room_pid_path"
 SECONDS=0

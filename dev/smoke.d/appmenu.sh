@@ -15,7 +15,7 @@ appmenu_state_path="$shot_dir/appmenu-state.txt"
 appmenu_png="$shot_dir/appmenu-populated.png"
 
 leg_appmenu_timing() {
-  leg_timing 10 40
+  leg_timing 40
 }
 
 leg_appmenu_drive() {
@@ -24,7 +24,6 @@ leg_appmenu_drive() {
 #!/usr/bin/env bash
 # The fixture window is spawned two seconds in and needs a moment to map and
 # take focus before the held-focus window the menu reads is it.
-sleep 7
 $ipc call panel open appmenu > "$appmenu_open_path" 2>&1
 sleep 2
 $ipc call panel state > "$appmenu_state_path" 2>&1

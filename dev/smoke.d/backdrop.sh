@@ -23,14 +23,13 @@ leg_backdrop_order=212
 leg_backdrop_needs="convert jq foot"
 
 backdrop_results="$shot_dir/backdrop-results.txt"
-backdrop_done="$shot_dir/backdrop-done"
 
 leg_backdrop_fixture() {
   settings_pin '.wallpaper.animate = true'
 }
 
 leg_backdrop_timing() {
-  leg_timing 84 120
+  leg_timing 120
 }
 
 leg_backdrop_drive() {
@@ -90,7 +89,6 @@ quiet resumed 5
 dump resumed
 "$grim_bin" "$shot_dir/backdrop-resumed-1.png"; sleep 1
 "$grim_bin" "$shot_dir/backdrop-resumed-2.png"
-touch "$backdrop_done"
 EOF
   hypr_exec_once "bash $script"
 }
@@ -114,7 +112,6 @@ _backdrop_commits() {
 
 leg_backdrop_assert() {
   echo "SMOKE_BACKDROP_LOG $shell_log_path"
-  [ -f "$backdrop_done" ] || fail "--backdrop: the drive never finished"
   sed 's/^/SMOKE_BACKDROP /' "$backdrop_results"
   local phase
   for phase in running budget slowed modal fullscreen covered resumed; do

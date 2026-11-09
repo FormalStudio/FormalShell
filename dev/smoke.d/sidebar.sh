@@ -114,7 +114,7 @@ leg_sidebar_fixture() {
 }
 
 leg_sidebar_timing() {
-  leg_timing 30 200 0 190
+  leg_timing 200
 }
 
 leg_sidebar_drive() {

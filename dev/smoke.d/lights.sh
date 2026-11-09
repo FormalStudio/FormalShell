@@ -76,7 +76,7 @@ EOF
 }
 
 leg_lights_timing() {
-  leg_timing 22 50
+  leg_timing 50
 }
 
 leg_lights_drive() {
@@ -86,7 +86,6 @@ leg_lights_drive() {
 ipc() { $ipc call lights "\$@"; }
 st() { ipc status > "$shot_dir/lights-status-\$1.json" 2>&1; }
 # Past the probe and the palette's own settle timer.
-sleep 5
 st 1
 ipc effect breathe > /dev/null 2>&1
 ipc speed high > /dev/null 2>&1

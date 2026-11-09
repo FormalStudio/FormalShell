@@ -44,7 +44,7 @@ leg_visualizer_styles_timing() {
   # for the three rect-finding frames, ~31 styles at ~1s each including the
   # IPC round trip and the crop, then the volume-100 phase (~4s): worst case
   # lands ~52s in (sand's own dwell included).
-  leg_timing 60 110 3
+  leg_timing 110
 }
 
 leg_visualizer_styles_drive() {
@@ -54,7 +54,6 @@ leg_visualizer_styles_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 set -u
-sleep 2
 "$mpv_bin" --no-video --really-quiet "$visualizer_styles_track_path" &
 mpv_pid=\$!
 echo "\$mpv_pid" > "$visualizer_styles_pid_path"

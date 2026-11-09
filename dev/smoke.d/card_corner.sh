@@ -38,7 +38,7 @@ leg_card_corner_fixture() {
 }
 
 leg_card_corner_timing() {
-  leg_timing 20 50
+  leg_timing 50
 }
 
 leg_card_corner_drive() {

@@ -37,21 +37,12 @@ keybinds_query2_path="$shot_dir/keybinds-query-2.json"
 keybinds_menu_status_path="$shot_dir/keybinds-menu-status.json"
 keybinds_menu_png="$shot_dir/keybinds-menu.png"
 
-# This leg's own clock: the launcher covers the whole output, so under
-# --wallpaper it starts after that leg's last frame.
-keybinds_t0() {
-  cover_t0 4
-}
-
 leg_keybinds_timing() {
-  local t0
-  t0=$(keybinds_t0)
-  leg_timing $((t0 + 8)) $((t0 + 38))
+  leg_timing 42
 }
 
 leg_keybinds_drive() {
-  local t0 script="$shot_dir/keybinds-drive.sh"
-  t0=$(keybinds_t0)
+  local script="$shot_dir/keybinds-drive.sh"
   # The fixture itself. hyprland reads this config, so these are real binds in
   # a real bind table, not a file the shell is pointed at.
   echo 'hl.bind("SUPER + SHIFT + slash", hl.dsp.exec_cmd("hyprctl version"), { description = "exec hyprctl version" })'
@@ -62,7 +53,6 @@ leg_keybinds_drive() {
   echo '-- hl.bind("SUPER + Z", hl.dsp.exit())'
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 "$hyprctl_bin" binds > "$keybinds_hyprctl_plain_path" 2>&1
 $ipc call debug query ":k " > /dev/null 2>&1
 sleep 1

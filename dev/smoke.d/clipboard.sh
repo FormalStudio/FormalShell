@@ -81,17 +81,11 @@ leg_clipboard_timing() {
   # The head costs a fixed 4s and every frame after it stacks on top. The
   # end state (the route summoned over the image entry) is stable, so a
   # generous delay only ever lands on it.
-  leg_timing 54 82
-  # Sharing the launcher surface with --picker costs this leg the whole
-  # picker timeline before its own route can be summoned.
-  if leg_on picker; then leg_timing 62 97; fi
+  leg_timing 82
 }
 
 leg_clipboard_drive() {
-  local script="$shot_dir/clipboard-drive.sh" picker_wait=""
-  if leg_on picker; then
-    picker_wait="for _ in \$(seq 1 60); do [ -f \"$picker_done_path\" ] && break; sleep 1; done"
-  fi
+  local script="$shot_dir/clipboard-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 "$wl_copy_bin" "clipboard smoke warmup"
@@ -123,7 +117,6 @@ sleep 1
 $ipc call clipboard list > "$clip_burst_path" 2>&1
 "$wl_copy_bin" "clipboard smoke sentinel"
 sleep 1
-$picker_wait
 $ipc call menu summon clipboard > /dev/null 2>&1
 sleep 1
 $ipc call menu filter "clipboard smoke one" > /dev/null 2>&1

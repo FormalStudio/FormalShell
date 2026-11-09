@@ -48,7 +48,7 @@ leg_launcher_mouse_fixture() {
 }
 
 leg_launcher_mouse_timing() {
-  leg_timing 60 110
+  leg_timing 110
 }
 
 leg_launcher_mouse_drive() {
@@ -64,7 +64,6 @@ hint() { "$jq_bin" -r --arg on "\$2" '.footHints[] | select(.on == \$on) | "\(.x
 rows_from() { read -r top bottom < <("$jq_bin" -r '[.viewCursor.top, .viewCursor.bottom] | @tsv' "$p-\$1.json"); }
 row_y() { echo \$((by + top + \$1 * pitch + (bottom - top) / 2)); }
 index() { "$jq_bin" -r --arg id "\$2" '.ids | index(\$id) // -1' "$p-\$1.json"; }
-sleep 4
 park
 call menu summon "" > /dev/null 2>&1
 sleep 1.5

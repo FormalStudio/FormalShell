@@ -59,31 +59,17 @@ capture_rec_reply_path="$shot_dir/capture-rec-reply.txt"
 capture_rec_status_path="$shot_dir/capture-rec-status.json"
 capture_rec_stopped_path="$shot_dir/capture-rec-stopped.json"
 
-# This leg's own clock: the picker covers the whole output, so under
-# --wallpaper it starts past that leg's last frame, the same rule menu_t0
-# and lock_t0 draw.
-capture_t0() {
-  cover_t0 5
-}
-
 leg_capture_timing() {
-  local t0
-  t0=$(capture_t0)
   # Open and cycle (4s), up to 10s polling `capturing` back to false, the
   # toolbar pass, then the region-and-escape pass, plus spawn overhead
   # per call on llvmpipe.
-  leg_timing $((32 + t0 - 5)) $((58 + t0 - 5))
-  # Sharing wf-recorder with --record costs this leg that leg's whole
-  # recording before its own toolbar half can commit one.
-  if leg_on record; then leg_timing $((80 + t0 - 5)) $((110 + t0 - 5)); fi
+  leg_timing 58
 }
 
 leg_capture_drive() {
-  local t0 script="$shot_dir/capture-drive.sh"
-  t0=$(capture_t0)
+  local script="$shot_dir/capture-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 # The compositor's own view of the output, so the captured PNG's real pixel
 # dimensions can be checked against it rather than merely existing.
 "$hyprctl_bin" -j monitors > "$capture_outputs_path" 2>&1

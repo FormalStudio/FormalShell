@@ -27,7 +27,7 @@ leg_zen_fixture() {
 }
 
 leg_zen_timing() {
-  leg_timing 30 80 0 40
+  leg_timing 80
 }
 
 leg_zen_drive() {

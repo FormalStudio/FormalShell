@@ -49,12 +49,6 @@ leg_app_grid_order=26
 leg_app_grid_needs="convert wtype jq"
 leg_app_grid_claims="launcher=shared"
 
-# This leg's own clock: the launcher covers the whole output, so under
-# --wallpaper it starts after that leg's last frame, the rule menu_t0 draws.
-app_grid_t0() {
-  cover_t0 3
-}
-
 app_grid_dir="$iso_home/.local/share/applications"
 app_grid_icon_dir="$iso_home/.local/share/icons/hicolor"
 app_grid_marker="$shot_dir/app-grid-launched.txt"
@@ -163,17 +157,13 @@ EOF
 }
 
 leg_app_grid_timing() {
-  local t0
-  t0=$(app_grid_t0)
-  leg_timing $((t0 + 37)) $((t0 + 72))
+  leg_timing 75
 }
 
 leg_app_grid_drive() {
-  local t0 script="$shot_dir/app-grid-drive.sh"
-  t0=$(app_grid_t0)
+  local script="$shot_dir/app-grid-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 $ipc call menu summon apps > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$app_grid_png" > /dev/null 2>&1

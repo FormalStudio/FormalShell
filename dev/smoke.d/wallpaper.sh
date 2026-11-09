@@ -19,7 +19,6 @@
 leg_wallpaper_flag="--wallpaper"
 leg_wallpaper_env="SMOKE_WALLPAPER_DITHER"
 leg_wallpaper_order=100
-leg_wallpaper_desktop_until=16
 leg_wallpaper_needs="convert"
 leg_wallpaper_claims="screen=shared wallpaper=shared"
 
@@ -83,14 +82,13 @@ EOF
 }
 
 leg_wallpaper_timing() {
-  leg_timing 18 55
+  leg_timing 55
 }
 
 leg_wallpaper_drive() {
   local script="$shot_dir/wallpaper-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 3
 $ipc call wallpaper set "$wp_path" > /dev/null 2>&1
 sleep 3
 $ipc call theme status > "$theme_status_path" 2>&1

@@ -40,31 +40,23 @@ processes_actions_png="$shot_dir/processes-actions.png"
 processes_actions_status_path="$shot_dir/processes-actions.json"
 
 leg_processes_timing() {
-  leg_timing 35 73
-  # --monitor owns the same launcher route, and this leg waits out its whole
-  # timeline before summoning.
-  if leg_on monitor; then leg_timing 55 98; fi
+  leg_timing 73
 }
 
 leg_processes_drive() {
-  local script="$shot_dir/processes-drive.sh" monitor_wait=""
+  local script="$shot_dir/processes-drive.sh"
   local processes_victim_bin="$shot_dir/smokevictim"
   local processes_restart_bin="$shot_dir/smokerestart"
   cp "$(readlink -f "$(command -v bash)")" "$processes_victim_bin"
   cp "$(readlink -f "$(command -v bash)")" "$processes_restart_bin"
   chmod +x "$processes_victim_bin" "$processes_restart_bin"
-  if leg_on monitor; then
-    monitor_wait="for _ in \$(seq 1 60); do [ -f \"$monitor_done_path\" ] && break; sleep 1; done"
-  fi
   # The fixtures are bash copies this script started itself, so they are
   # killed by name before the session goes away rather than left behind.
   add_cleanup "pkill -f \"$shot_dir/smoke\" 2>/dev/null || true"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 5
 "$processes_victim_bin" -c 'while :; do :; done' & echo \$! > "$processes_victim_pid_path"
 "$processes_restart_bin" -c 'while :; do :; done' & echo \$! > "$processes_restart_pid_path"
-$monitor_wait
 $ipc call menu summon monitor > "$processes_menu_reply_path" 2>&1
 # Two poll ticks with the route open: the service polls only while something
 # is subscribed, and the first tick after a subscribe has nothing to

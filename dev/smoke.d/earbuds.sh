@@ -240,7 +240,7 @@ EOF
 leg_earbuds_timing() {
   # Five phases of sleeps (~135s, a spot check's wait up to 30s more) plus
   # some thirty `ipc call` round trips at about a second each on llvmpipe.
-  leg_timing 230 280
+  leg_timing 280
 }
 
 leg_earbuds_drive() {
@@ -252,7 +252,6 @@ nothing_list() { printf '%s\n' "\$1" > "$earbuds_nothing_list"; }
 scq_paired() { cp "\$1" "$earbuds_scq_paired"; }
 none='[]'
 
-sleep 3
 call panel open earbuds > /dev/null 2>&1
 sleep 3
 call earbuds devices > "$earbuds_devices_b175" 2>&1

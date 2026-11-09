@@ -40,7 +40,7 @@ radio_station_name="FormalShell Smoke Radio"
 radio_port=18099
 
 leg_radio_timing() {
-  leg_timing 24 45
+  leg_timing 45
 }
 
 leg_radio_fixture() {

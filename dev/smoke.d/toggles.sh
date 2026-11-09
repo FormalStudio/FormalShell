@@ -31,25 +31,14 @@ toggles_dnd_query2_path="$shot_dir/toggles-dnd-query-2.json"
 toggles_hub_png="$shot_dir/toggles-hub.png"
 toggles_toggled_png="$shot_dir/toggles-toggled.png"
 
-# This leg's own clock: the launcher covers the whole output, so under
-# --wallpaper it starts after that leg's last frame, the same rule menu_t0
-# draws.
-toggles_t0() {
-  cover_t0 4
-}
-
 leg_toggles_timing() {
-  local t0
-  t0=$(toggles_t0)
-  leg_timing $((t0 + 10)) $((t0 + 40))
+  leg_timing 44
 }
 
 leg_toggles_drive() {
-  local t0 script="$shot_dir/toggles-drive.sh"
-  t0=$(toggles_t0)
+  local script="$shot_dir/toggles-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
 $ipc call menu summon toggles > /dev/null 2>&1
 sleep 2
 $ipc call menu status > "$toggles_menu_status1_path" 2>&1

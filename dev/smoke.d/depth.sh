@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
-# --depth rides --lock: a wallpaper with a depth map beside it, the way
+# --depth locks the session over a wallpaper with a depth map beside it, the way
 # formalshell-depth writes one (`.depth/<name>.png`, not older than the
 # picture), seeded into state.json before the shell starts. The picture is a
 # dark field with an orange band down the screen through the default
@@ -9,7 +9,8 @@
 # centred, so at another scale the band and every probe across it sit as
 # far off the output's centre column times the scale (`depth_x`).
 #
-# Two frames of the same lock: the first under the defaults, the band drawn
+# Two frames of one lock, which the real password then lifts: the first
+# under the defaults, the band drawn
 # over the clock's digits; the second after settings.json is retargeted to
 # `lock.depth: false`, the digits back over the band. `lock status` has to
 # say `depth` true then false. The foreground carries the card's own fill,
@@ -30,14 +31,10 @@
 leg_depth_flag="--depth"
 leg_depth_env="FS_DEPTH_PICTURE FS_DEPTH_GENERATE"
 leg_depth_order=111
-leg_depth_needs="convert jq"
+leg_depth_needs="convert jq wtype"
 leg_depth_claims="wallpaper"
 
 leg_depth_validate() {
-  if ! leg_on lock; then
-    echo "usage: $0 --depth rides --lock, which locks the session it photographs" >&2
-    exit 1
-  fi
   if [ -n "${FS_DEPTH_GENERATE:-}" ] && [ -n "${FS_DEPTH_PICTURE:-}" ]; then
     echo "usage: $0 --depth takes FS_DEPTH_GENERATE or FS_DEPTH_PICTURE, not both" >&2
     exit 1
@@ -100,13 +97,12 @@ leg_depth_fixture() {
   printf '{"wallpaper": "%s"}\n' "$depth_picture_path" > "$iso_home/.local/state/formalshell/state.json"
 }
 
-# Inside --lock's own window: locked at t0+1, typing from t0+6.
 leg_depth_drive() {
-  local t0 script="$shot_dir/depth-drive.sh"
-  t0=$(lock_t0)
+  local script="$shot_dir/depth-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep $t0
+$ipc call lock lock > /dev/null 2>&1
+until_jq 10 "$shot_dir/depth-locked.txt" '. == true' call lock isLocked
 sleep 2
 $ipc call lock status > "$depth_status_on_path" 2>&1
 "$grim_bin" "$depth_on_path" > /dev/null 2>&1
@@ -114,6 +110,9 @@ settings_retarget '.lock.depth = false'
 sleep 1.5
 $ipc call lock status > "$depth_status_off_path" 2>&1
 "$grim_bin" "$depth_off_path" > /dev/null 2>&1
+"$wtype_bin" -s 300 "$rig_password"
+"$wtype_bin" -s 300 -k Return
+until_jq 20 "$shot_dir/depth-unlocked.txt" '. == false' call lock isLocked
 EOF
   hypr_exec_once "bash $script"
 }

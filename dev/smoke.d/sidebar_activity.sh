@@ -26,7 +26,7 @@ leg_sidebar_activity_fixture() {
 }
 
 leg_sidebar_activity_timing() {
-  leg_timing 20 60
+  leg_timing 60
 }
 
 leg_sidebar_activity_drive() {

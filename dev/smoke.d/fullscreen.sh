@@ -96,7 +96,7 @@ leg_fullscreen_fixture() {
 }
 
 leg_fullscreen_timing() {
-  leg_timing 155 200
+  leg_timing 200
 }
 
 leg_fullscreen_drive() {

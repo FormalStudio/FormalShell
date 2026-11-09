@@ -76,26 +76,10 @@ legs=()
 active_legs=()
 fixture_cleanup=""
 shell_env=""
-screenshot_delay=8
-tail_gap=1
 
 leg_on() {
   local v="leg_${1}_on"
   [ "${!v:-false}" = true ]
-}
-
-# A leg photographing the bare desktop declares leg_<n>_desktop_until, the
-# second its last such frame is taken. A leg covering the whole output
-# starts at cover_t0 <its own start> [<seconds past the samplers>]: past
-# every sampler in the run, or its own start with none.
-cover_t0() {
-  local v n until=0
-  for v in $(compgen -v | grep '^leg_.*_desktop_until$'); do
-    n=${v#leg_}; n=${n%_desktop_until}
-    if leg_on "$n" && [ "${!v}" -gt "$until" ]; then until=${!v}; fi
-  done
-  [ "$until" -eq 0 ] || until=$((until + ${2:-0}))
-  echo $((until > $1 ? until : $1))
 }
 
 leg_arg() {
@@ -103,14 +87,12 @@ leg_arg() {
   printf '%s' "${!v:-}"
 }
 
-# Merged by max across the active legs, so a combination always outlives its
-# slowest half. The fourth is how long the shot may wait on a drive still
-# running, for a drive whose length the leg cannot know (a real install).
+# leg_timing <seconds>: how long a leg's turn may take, from its drive's
+# start to its end. The drives run one after another, so the session's
+# timeout is the sum over the legs that drive, each at least
+# leg_default_seconds, past the session's own start.
 leg_timing() {
-  if [ "${1:-0}" -gt "$screenshot_delay" ]; then screenshot_delay="$1"; fi
-  if [ "${2:-0}" -gt "$session_timeout" ]; then session_timeout="$2"; fi
-  if [ "${3:-0}" -gt "$tail_gap" ]; then tail_gap="$3"; fi
-  if [ "${4:-0}" -gt "$drive_cap" ]; then drive_cap="$4"; fi
+  leg_seconds=$1
 }
 
 # Every settings fixture is a jq assignment over the base file, applied in
@@ -289,12 +271,10 @@ echo "output scale: $FS_SMOKE_SCALE"
 logical_w=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1920 / s + 0.5 }')
 logical_h=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1080 / s + 0.5 }')
 
-# Long enough for the base run's drive below and ten seconds of rest after
-# it. Only the base run has that drive; a leg's shot comes at its own delay
-# (leg_timing) from the scaffold's 8s, or once its drive scripts are done,
-# up to this 52s every leg's shot sat at before (shot.sh).
-drive_cap=52
-session_timeout=75
+# The session's own start (the shell up, the desktop arrived, the fixture
+# window mapped) and its teardown, then each leg's turn (leg_timing).
+session_timeout=30
+leg_default_seconds=45
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_validate" >/dev/null; then "leg_${leg_name}_validate"; fi
@@ -497,7 +477,7 @@ need_localsend_cli() {
   [ -x "$localsend_cli_bin" ] || { echo "SMOKE_FAIL: no localsend-cli in the result's helpers ($localsend_cli_bin)" >&2; exit 1; }
 }
 
-need_bin hyprland hyprctl grim
+need_bin hyprland hyprctl grim jq
 if $fixture_window_mode; then
   need_bin foot convert
 fi
@@ -570,7 +550,7 @@ restore_host_env() {
 }
 # pw_load_module <module> [args...]: a PipeWire module loaded through pactl
 # for the run, its id printed and listed. The slot's PipeWire outlives the
-# session, so pw_unload_modules runs at the session's teardown (shot.sh) and
+# session, so pw_unload_modules runs at the session's teardown (drives.sh) and
 # again on exit, for a run that never reached it. Both reach a drive through
 # the drive library.
 pw_load_module() {
@@ -736,17 +716,16 @@ host_notifications_owner() {
 }
 host_notifications_owner_before=$(host_notifications_owner)
 
-# The rig boots from a Lua config, the only format Hyprland is supported on.
-# Legs append to it through this helper, one autostart line per drive script.
-# A drive's bash sources the drive library through BASH_ENV, and so does
-# every bash it starts.
+# The rig boots from a Lua config, the only format Hyprland is supported on,
+# and starts its own processes through this helper, one autostart line each.
+# A leg's drive scripts go through it too, but land in drives.list under the
+# leg's name instead, for drives.sh to start in leg order.
 hypr_exec_once() {
-  local cmd="$1"
   if [ "${recording_drives:-}" = 1 ]; then
-    printf '%s\n' "$1" >> "$shot_dir/drives.list"
-    cmd="bash $arrived_script; BASH_ENV=$drive_lib $1"
+    printf '%s\t%s\n' "$leg_name" "$1" >> "$drives_list"
+    return
   fi
-  printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[%s]==]) end)\n' "$cmd"
+  printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[%s]==]) end)\n' "$1"
 }
 
 # The session shape every run boots with, shared with --screensaver-gif's
@@ -946,31 +925,14 @@ wait
 EOF
 fi
 
-if $fixture_window_mode; then
-  # Spawned through the compositor (hl.dsp.exec_cmd), so the window is
-  # tracked from the moment it maps and dies with the session.
-  fixture_script="$shot_dir/fixture-window.sh"
-  write_script "$fixture_script" <<EOF
-#!/usr/bin/env bash
-sleep 2
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke session' sh -c 'sleep 300']==])"
-EOF
-fi
-
 # The output the session really got. The monitor rule above is a request: a
 # nested Hyprland's output follows the size its parent gives the window, so
-# a leg cropping frames reads these rather than 1920x1080. Sampled a few
-# seconds in, once the parent has configured the window, and again at
-# teardown: a parent that resized the window mid-run leaves frames of two
-# sizes, which no crop can read.
+# a leg cropping frames reads these rather than 1920x1080. Sampled once the
+# desktop has arrived, the parent having configured the window by then, and
+# again at teardown: a parent that resized the window mid-run leaves frames
+# of two sizes, which no crop can read.
 output_json_path="$shot_dir/output.json"
 output_end_json_path="$shot_dir/output-end.json"
-output_script="$shot_dir/output.sh"
-write_script "$output_script" <<EOF
-#!/usr/bin/env bash
-sleep 3
-"$hyprctl_bin" monitors -j > "$output_json_path" 2>&1
-EOF
 
 {
   hypr_base_config
@@ -982,10 +944,6 @@ EOF
     hypr_exec_once "python3 $script_dir/vpointer.py wait 86400000"
   fi
   hypr_exec_once "bash $shell_start_script"
-  hypr_exec_once "bash $output_script"
-  if $fixture_window_mode; then
-    hypr_exec_once "bash $fixture_script"
-  fi
 } > "$cfg"
 
 # No stale pixels (`debug staleAudit`, surface/audit.rs): every frame any
@@ -1011,10 +969,10 @@ stale_audit_assert() {
   fi
 }
 
-# Every drive starts on an arrived desktop: the bar mapped and the shell's
-# arrival veil (wayland/veil.rs) lifted off it, so no frame a leg takes is
-# the veil's black. Bounded, so a run whose shell never maps a bar still
-# reaches its own assertions.
+# Every leg's turn starts on an arrived desktop: the bar mapped and the
+# shell's arrival veil (wayland/veil.rs) lifted off it, so no frame a leg
+# takes is the veil's black. Bounded, so a run whose shell never maps a bar
+# still reaches its own assertions.
 arrived_script="$shot_dir/arrived.sh"
 write_script "$arrived_script" <<EOF
 #!/usr/bin/env bash
@@ -1122,6 +1080,15 @@ spawn_foot() {
   [ -z "${3:-}" ] || title=" --title='$3'"
   "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=$1$title sh -c 'sleep 300']==]$rules)" > /dev/null 2>&1
 }
+# until_window <app id> [seconds]: waits for a window of that app id to map
+# (10s by default); fails once the time is up.
+until_window() {
+  local end=$((SECONDS + ${2:-10}))
+  until "$hyprctl_bin" -j clients 2>/dev/null | "$jq_bin" -e --arg c "$1" 'any(.[]; .class == $c)' > /dev/null 2>&1; do
+    [ "$SECONDS" -lt "$end" ] || return 1
+    sleep 0.1
+  done
+}
 # settings_retarget <jq assignment>: settings.json as a symlink onto a new
 # generation carrying the change, which home-manager's activation does and
 # a write in place does not.
@@ -1134,27 +1101,64 @@ settings_retarget() {
 LIB
 } > "$drive_lib"
 
-# Not a subshell: a drive function writes its own scripts, echoes its
-# autostart lines onto the config, and may register a teardown line. The
-# scripts it starts land in drives.list for shot.sh to wait on.
+# Not a subshell: a drive function writes its own scripts, lists them
+# (hypr_exec_once), may register a teardown line, and prints any config
+# lines (binds) it needs.
+drives_list="$shot_dir/drives.list"
+: > "$drives_list"
 recording_drives=1
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_drive" >/dev/null; then "leg_${leg_name}_drive" >> "$cfg"; fi
 done
 recording_drives=""
-drive_pattern=$(grep -oE "$shot_dir/[^ ]+\.(sh|py)" "$shot_dir/drives.list" 2>/dev/null | sort -u | paste -sd '|' - || true)
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
+  grep -q "^$leg_name"$'\t' "$drives_list" || continue
+  leg_seconds=$leg_default_seconds
   if declare -F "leg_${leg_name}_timing" >/dev/null; then "leg_${leg_name}_timing"; fi
+  session_timeout=$((session_timeout + (leg_seconds > leg_default_seconds ? leg_seconds : leg_default_seconds)))
 done
 
-shot_script="$shot_dir/shot.sh"
+# One leg's turn at a time, in leg order: the desktop arrived, then the
+# leg's drive scripts started together, and the turn over once none of them
+# is still running as itself. A script that execs a long-lived child (a
+# player, a fixture window) has handed its process over and counts as done.
+# Then the run's own frame and the teardown.
+drives_log="$shot_dir/drives.log"
+shot_script="$shot_dir/drives.sh"
 write_script "$shot_script" <<EOF
 #!/usr/bin/env bash
-sleep $screenshot_delay
-while [ -n "$drive_pattern" ] && [ \$SECONDS -lt $drive_cap ] && pgrep -f -- '$drive_pattern' > /dev/null; do sleep 0.5; done
+. "$drive_lib"
+bash "$arrived_script"
+"$hyprctl_bin" monitors -j > "$output_json_path" 2>&1
+if $fixture_window_mode; then
+  spawn_foot formalshell-smoke-iconic "" "formalshell smoke session"
+  until_window formalshell-smoke-iconic
+fi
+running=()
+turn_end() {
+  local entry pid script
+  for entry in \${running[@]+"\${running[@]}"}; do
+    pid=\${entry%%:*}; script=\${entry#*:}
+    while tr '\\0' ' ' < "/proc/\$pid/cmdline" 2>/dev/null | grep -qF -- "\$script"; do sleep 0.2; done
+  done
+  running=()
+}
+turn=""
+while IFS=\$'\\t' read -r leg cmd; do
+  if [ "\$leg" != "\$turn" ]; then
+    turn_end
+    [ -z "\$turn" ] || echo "drive \$turn end \$SECONDS" >> "$drives_log"
+    bash "$arrived_script"
+    echo "drive \$leg start \$SECONDS" >> "$drives_log"
+    turn=\$leg
+  fi
+  BASH_ENV="$drive_lib" \$cmd &
+  running+=("\$!:\$(grep -oE '[^ ]+\\.(sh|py)' <<< "\$cmd" | tail -1)")
+done < "$drives_list"
+turn_end
+[ -z "\$turn" ] || echo "drive \$turn end \$SECONDS" >> "$drives_log"
 "$grim_bin" "$shot_path" > "$shot_dir/grim.log" 2>&1
-sleep $tail_gap
 # The host user manager's environment while the session is still up, for
 # the check after it that nothing in the run wrote to it.
 systemctl --user show-environment > "$host_env_mid_path" 2>/dev/null
@@ -1173,7 +1177,6 @@ if shell_pid=\$(cat "$shot_dir/shell.pid" 2>/dev/null) && [ -r "/proc/\$shell_pi
 fi
 "$hyprctl_bin" monitors -j > "$output_end_json_path" 2>&1
 $fixture_cleanup
-. "$drive_lib"
 pw_unload_modules
 "$hyprctl_bin" dispatch "hl.dsp.exit()"
 EOF
@@ -1353,7 +1356,7 @@ panel_language_verdict() {
 }
 
 # timeout's own exit (137 once its SIGKILL went too): the session never
-# reached shot.sh's exit, so every drive still running was cut short.
+# reached drives.sh's exit, so the drive still running was cut short.
 case $hypr_status in
   124 | 137) fail "the session ran past its ${session_timeout}s and was killed (exit $hypr_status)" ;;
   0) ;;
@@ -1365,10 +1368,12 @@ if [ -n "$orphans" ]; then
 fi
 
 # Printed ahead of the asserts so a failing leg still reports what the
-# shell weighed at the end of its run.
+# shell weighed at the end of its run, and when each leg's turn ran (seconds
+# into the session's own start).
 if [ -f "$shot_dir/mem.txt" ]; then
   cat "$shot_dir/mem.txt"
 fi
+[ -s "$drives_log" ] && cat "$drives_log"
 
 # out_w and out_h are the output's size in the pixels grim captures,
 # out_scale its scale; every crop and probe a leg takes is cut from them.

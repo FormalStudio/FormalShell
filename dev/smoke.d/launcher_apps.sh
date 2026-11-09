@@ -53,14 +53,13 @@ EOF
 }
 
 leg_launcher_apps_timing() {
-  leg_timing 16 50
+  leg_timing 50
 }
 
 leg_launcher_apps_drive() {
   local script="$shot_dir/launcher-apps-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-sleep 4
 $ipc call menu summon apps > /dev/null 2>&1
 sleep 2.5
 "$grim_bin" "$shot_dir/launcher-apps.png" > /dev/null 2>&1

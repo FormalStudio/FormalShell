@@ -63,7 +63,7 @@ EOF
 
 leg_quick_settings_timing() {
   # Two opens of the card past the first, one of them at a tenth speed.
-  leg_timing 60 240 0 210
+  leg_timing 240
 }
 
 leg_quick_settings_drive() {
@@ -99,7 +99,6 @@ press() {
   "$wtype_bin" -k Return
   sleep "\${1:-0.8}"
 }
-sleep 3
 sha256sum "$quick_settings_settings" | cut -d' ' -f1 > "\$d/sha-before"
 $ipc call panel open quicksettings > "\$d/open.txt" 2>&1
 sleep 1.5

@@ -34,7 +34,7 @@ mirror_dir="$shot_dir/mirror"
 mirror_ir_filter="format=gray,geq=lum='if(mod(N,2),lum(X,Y)*0.35+20,lum(X,Y)*0.04)'"
 
 leg_mirror_timing() {
-  leg_timing 48 76
+  leg_timing 76
 }
 
 leg_mirror_drive() {
@@ -60,7 +60,6 @@ snap() {
   held > "$mirror_dir/held-\$1.txt"
   "$grim_bin" "$mirror_dir/\$1.png" > /dev/null 2>&1
 }
-sleep 6
 ls /dev/video* > "$mirror_dir/nodes-before.txt" 2>&1
 call menu summon mirror > /dev/null 2>&1
 sleep 3

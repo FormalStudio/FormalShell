@@ -41,7 +41,7 @@ leg_media_timing() {
   # media-marquee.sh's worst case (7s static shot, kill/respawn, up to 8s
   # retitle poll, 5s into the scroll) lands ~21s in, and media-controls.sh's
   # last step (second player at 21, its select and status at 25-27) ~28s in.
-  leg_timing 32 55
+  leg_timing 55
 }
 
 leg_media_fixture() {
@@ -83,14 +83,13 @@ leg_media_drive() {
   # own invoking shell.
   write_script "$play_script" <<EOF
 #!/usr/bin/env bash
-sleep 2
 echo \$\$ > "$media_pid_path"
 exec "$mpv_bin" --no-video --really-quiet "$media_track_path"
 EOF
 
   write_script "$open_script" <<EOF
 #!/usr/bin/env bash
-sleep 5
+sleep 3
 $ipc call panel open media > /dev/null 2>&1
 sleep 1
 $ipc call media status > "$media_status_path" 2>&1
@@ -102,7 +101,7 @@ EOF
   # wait past the marquee's hold and well into its scroll.
   write_script "$marquee_script" <<EOF
 #!/usr/bin/env bash
-sleep 7
+sleep 5
 "$grim_bin" "$media_marquee_static_path" > /dev/null 2>&1
 if [ -f "$media_pid_path" ]; then
   kill "\$(cat "$media_pid_path")" 2>/dev/null || true
@@ -120,14 +119,14 @@ sleep 5
 "$grim_bin" "$media_marquee_scroll_path" > /dev/null 2>&1
 EOF
 
-  # Starts at 16, after the marquee's own kill/respawn has settled on the
+  # Starts at 14, after the marquee's own kill/respawn has settled on the
   # long-title track, so these act on the player still there at the end.
   # `select` is handed the id that is NOT the one status just reported
   # active, read out of the two-entry players dump rather than assumed from
   # mpv's bus naming.
   write_script "$controls_script" <<EOF
 #!/usr/bin/env bash
-sleep 16
+sleep 14
 $ipc call media shuffle on > /dev/null 2>&1
 $ipc call media loop track > /dev/null 2>&1
 $ipc call media volume 30 > /dev/null 2>&1

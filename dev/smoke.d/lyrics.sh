@@ -196,10 +196,8 @@ leg_lyrics_timing() {
   # off MPRIS the moment a track ends), hence its file being far longer
   # than the session that plays it. The reopen check and the two line-change
   # bursts add about a minute on the tail, and track2's three waits are each
-  # for a window inside one 26s turn of its own pattern. The first number is
-  # when the run's own frame is taken, which is also when the session is torn
-  # down, so it has to outlast everything the chain below drives.
-  leg_timing 300 700 2
+  # for a window inside one 26s turn of its own pattern.
+  leg_timing 700
 }
 
 leg_lyrics_fixture() {
@@ -386,7 +384,6 @@ leg_lyrics_drive() {
 
   write_script "$play_all" <<EOF
 #!/usr/bin/env bash
-sleep 2
 "$mpv_bin" --no-video --really-quiet --input-ipc-server="$lyrics_sock1_path" "$lyrics_track1_path" &
 disown
 echo \$! > "$lyrics_pid1_path"
