@@ -245,7 +245,7 @@ impl App {
         if i >= self.bars.heads.len() || i == self.bars.live || self.bar_busy() {
             return false;
         }
-        if let Some(sb) = live!(self).bar.sidebar.as_mut() {
+        if let Some(sb) = live!(self).bar.sidebar_mut() {
             sb.map.cursor = None;
         }
         self.sync_sidebar_keys();
@@ -343,7 +343,7 @@ impl App {
             };
             // Under the sidebar only its cards and controls, offset by the
             // band's own place on the output.
-            let holes = match s.bar.input_rects().filter(|_| s.bar.sidebar.is_some()) {
+            let holes = match s.bar.input_rects().filter(|_| s.bar.sidebar().is_some()) {
                 Some(rects) => rects.into_iter().map(|r| IRect::new(r.x + band.x, r.y + band.y, r.w, r.h)).collect(),
                 None => vec![band],
             };

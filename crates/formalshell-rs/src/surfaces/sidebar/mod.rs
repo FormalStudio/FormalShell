@@ -3,8 +3,9 @@
 //! body under `layout: sidebar`. The bar keeps its window, its edge, its
 //! zone and its joins; instead of cells it draws a column of cards through
 //! the ui kit, the status card pinned to its foot, or the rail while
-//! collapsed. Every input lands as a cell [`Action`], so the bar's own
-//! routing opens what a cell would.
+//! collapsed. An input that opens something lands as a cell [`Action`], so
+//! the bar's own routing opens what a cell would; folding the column and
+//! the Software card's buttons run here.
 //!
 //! The composition and its lengths are Pond's sidebar (`Theme.qml`,
 //! `Sidebar.qml`, `calendar/Clock.qml`); [`Geo`] carries them. What the
@@ -28,7 +29,7 @@ use vello_cpu::kurbo::Rect;
 
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::compositor::Command;
-use crate::services::motion_art;
+use crate::services::{motion_art, packages};
 use crate::services::state::{self, Field};
 use crate::store::Store;
 use crate::surfaces::bar::cells::clock::clock_format;
@@ -547,7 +548,7 @@ impl Sidebar {
     }
 }
 
-/// What a click on `on` asks for.
+/// What a click on `on` asks for, run here when it is the column's own.
 fn action(on: &str, map: &minimap::Map) -> Action {
     let (verb, arg) = on.split_once(':').unwrap_or((on, ""));
     match verb {
@@ -565,17 +566,25 @@ fn action(on: &str, map: &minimap::Map) -> Action {
         },
         // An Activity row: the panel holds its actions.
         "open" => Action::Panel("activity"),
-        "software" => match arg {
-            "apply" => Action::Software(crate::services::packages::Change::Apply),
-            "undo" => Action::Software(crate::services::packages::Change::Undo),
-            _ => Action::None,
-        },
+        "software" => {
+            let change = match arg {
+                "apply" => Some(packages::Change::Apply),
+                "undo" => Some(packages::Change::Undo),
+                _ => None,
+            };
+            if let Some(change) = change {
+                packages::send(packages::Cmd::Change(change));
+            }
+            Action::None
+        }
         // The column's chevron: the quick settings card the top bar's
         // chevron opens, the right region's cells it has no card for as
         // info tiles.
         "overflow" => Action::Overflow(fs_types::Region::Right),
-        "collapse" => Action::Sidebar(true),
-        "expand" => Action::Sidebar(false),
+        "collapse" | "expand" => {
+            set_collapsed(verb == "collapse");
+            Action::None
+        }
         _ => map.action(on),
     }
 }

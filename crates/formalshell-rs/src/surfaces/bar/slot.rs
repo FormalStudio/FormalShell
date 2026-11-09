@@ -1,24 +1,74 @@
 //! One placed cell (a region's delegate): the cell, its measure, its
 //! presence along the strip and fade, its open mark, its marquee clock and
-//! the nodes it last drew. The strip holds its cells as slots, and quick
-//! settings holds the ones its info tiles read.
+//! the nodes it last drew. The strip holds its cells as slots.
 
+use std::any::Any;
 use std::time::{Duration, Instant};
 
-use fs_chrome::bar::layout::Entry;
+use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
 use fs_types::{Edge, Region};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 
 use crate::motion::{Animated, Kind};
+use crate::paint::{Ink, Kit, Look, Painter};
 use crate::scene::{IRect, NodeId, Scene};
-use crate::surfaces::bar::cell::{Cell, Env, Frame, Limits, Measured, Part, View};
-use crate::paint::{Ink, Kit, Painter};
-use crate::surfaces::bar::cells;
+use crate::surfaces::bar::cell::{Cell, Env, FreeLabel, Frame, Limits, Measured, Part, View};
+use crate::surfaces::bar::cells::{self, chevron::Chevron};
+
+/// What one pass over the strip's cells reads them against, built once
+/// for the pass.
+pub struct Pass<'a> {
+    pub env: Env<'a>,
+    /// The strip wears the wingpanel band.
+    pub band: bool,
+    /// The presence clocks run (held off until the strip has arrived).
+    pub animate: bool,
+    /// The strip's length.
+    pub along: f64,
+    pub now: Instant,
+}
+
+/// A slot's clocks: its extent along the strip, its presence, the open
+/// mark's scale and fade, and a swapped text's crossfade.
+struct Clocks {
+    along: Animated,
+    fade: Animated,
+    mark: Animated,
+    mark_fade: Animated,
+    cross: Animated,
+}
+
+impl Clocks {
+    fn new() -> Self {
+        Self {
+            along: Animated::new(0.0, Kind::Spatial.curve()),
+            fade: Animated::new(0.0, Kind::Effects.curve()),
+            mark: Animated::new(0.0, Kind::SpatialFast.curve()),
+            mark_fade: Animated::new(0.0, Kind::Effects.curve()),
+            cross: Animated::new(1.0, Kind::Effects.curve()),
+        }
+    }
+
+    /// Whether any of them moves this frame; the crossfade counts only
+    /// while it carries an outgoing text (`crossing`).
+    fn running(&self, crossing: bool, now: Instant) -> bool {
+        self.along.running(now) || self.fade.running(now) || self.mark.running(now) || self.mark_fade.running(now) || crossing && self.cross.running(now)
+    }
+}
+
+/// How far into its cycle (the hold, then one loop of the text) a
+/// marquee started at `start` is at `now`, in milliseconds, and the hold.
+fn marquee_at(free: &FreeLabel, look: &Look, start: Instant, now: Instant) -> (f64, f64) {
+    let cycle = look.marquee_hold + free.loop_width / look.marquee_px * 1000.0;
+    (now.saturating_duration_since(start).as_secs_f64() * 1000.0 % cycle, look.marquee_hold)
+}
 
 pub struct Slot {
     /// The name `bar.layout` gave it.
     pub name: String,
+    /// The builtin it is, none for a module or a plugin.
+    pub builtin: Option<Builtin>,
     pub region: Region,
     /// The entry it came from: a rail's cells share one, and the region
     /// keeps or hides them together.
@@ -28,17 +78,13 @@ pub struct Slot {
     pub measured: Measured,
     /// What the slot measures to, 0 while its cell is not shown.
     pub natural: f64,
-    pub along: Animated,
-    fade: Animated,
+    clocks: Clocks,
     /// The free label's budget (`labelBudget`).
     pub budget: f64,
     pub limits: Option<Limits>,
     pub open: bool,
-    mark: Animated,
-    mark_fade: Animated,
-    /// A text part's outgoing string and the clock that fades it out.
+    /// A text part's outgoing string, faded out by the crossfade clock.
     ghost: Option<(usize, Part)>,
-    cross: Animated,
     /// When the marquee's current cycle started, while it overflows.
     marquee: Option<Instant>,
     /// The scroll the free label was last painted at, so the frame the
@@ -61,32 +107,28 @@ impl Slot {
     /// The slots one `bar.layout` entry places: one, or a rail of cells
     /// that share the entry's place along the strip as one `unit`.
     pub fn rail(entry: &Entry, region_entries: &[Entry], unit: usize) -> Vec<Self> {
-        cells::build(entry, region_entries)
-            .into_iter()
-            .map(|cell| Self { unit, ..Self::of(entry.name(), entry.region, cell) })
-            .collect()
+        let builtin = match entry.kind {
+            EntryKind::Builtin(b) => Some(b),
+            _ => None,
+        };
+        cells::build(entry, region_entries).into_iter().map(|cell| Self::new(entry.name(), builtin, entry.region, unit, cell)).collect()
     }
 
-    /// A slot around a cell built by its owner, for a surface that holds
-    /// one cell no `bar.layout` entry names.
-    pub fn of(name: String, region: Region, cell: Box<dyn Cell>) -> Self {
+    fn new(name: String, builtin: Option<Builtin>, region: Region, unit: usize, cell: Box<dyn Cell>) -> Self {
         Self {
             name,
+            builtin,
             region,
-            unit: 0,
+            unit,
             cell,
             view: View::hidden(),
             measured: Measured::default(),
             natural: 0.0,
-            along: Animated::new(0.0, Kind::Spatial.curve()),
-            fade: Animated::new(0.0, Kind::Effects.curve()),
+            clocks: Clocks::new(),
             budget: f64::INFINITY,
             limits: None,
             open: false,
-            mark: Animated::new(0.0, Kind::SpatialFast.curve()),
-            mark_fade: Animated::new(0.0, Kind::Effects.curve()),
             ghost: None,
-            cross: Animated::new(1.0, Kind::Effects.curve()),
             marquee: None,
             painted_scroll: None,
             held: false,
@@ -98,19 +140,29 @@ impl Slot {
         }
     }
 
-    /// Re-reads the cell and measures it again. `animate` arms the
-    /// presence clocks (held off until the strip has arrived).
-    pub fn refresh(&mut self, kit: &mut Kit, env: &Env, band: bool, animate: bool, along_strip: f64, now: Instant) {
-        if self.cell.read(env) {
+    /// The cell as `T`, when it is the builtin `b`: the hooks only one
+    /// cell has are reached this way.
+    pub fn builtin<T: Cell>(&self, b: Builtin) -> Option<&T> {
+        (self.builtin == Some(b)).then(|| (self.cell.as_ref() as &dyn Any).downcast_ref()).flatten()
+    }
+
+    pub fn builtin_mut<T: Cell>(&mut self, b: Builtin) -> Option<&mut T> {
+        (self.builtin == Some(b)).then(|| (self.cell.as_mut() as &mut dyn Any).downcast_mut()).flatten()
+    }
+
+    /// Re-reads the cell and measures it again.
+    pub fn refresh(&mut self, kit: &mut Kit, pass: &Pass) {
+        let (band, animate, now) = (pass.band, pass.animate, pass.now);
+        if self.cell.read(&pass.env) {
             self.dirty = true;
         }
-        let vertical = env.edge.is_vertical();
+        let vertical = pass.env.edge.is_vertical();
         let old_view = std::mem::replace(&mut self.view, self.cell.view(&kit.look));
         if animate && kit.look.motion {
             if let Some(changed) = swapped_text(&old_view, &self.view) {
                 self.ghost = Some(changed);
-                self.cross.jump(0.0);
-                self.cross.set(now, 1.0, kit.look.effects * kit.motion_scale);
+                self.clocks.cross.jump(0.0);
+                self.clocks.cross.set(now, 1.0, kit.look.effects * kit.motion_scale);
             }
         }
         let natural = match self.cell.custom() {
@@ -119,7 +171,7 @@ impl Slot {
                 self.measured = kit.measure(&self.view, vertical, self.budget, band);
                 if let Some(free) = &self.measured.free {
                     let rest = self.measured.along - free.extent;
-                    self.limits = self.cell.limits(&kit.look, along_strip, rest);
+                    self.limits = self.cell.limits(&kit.look, pass.along, rest);
                 }
                 if self.view.shown { self.measured.along } else { 0.0 }
             }
@@ -129,24 +181,31 @@ impl Slot {
         if natural != self.natural || !animate {
             self.natural = natural;
             if animate && look.motion {
-                self.along.set(now, natural, look.spatial * scale);
+                self.clocks.along.set(now, natural, look.spatial * scale);
             } else {
-                self.along.jump(natural);
+                self.clocks.along.jump(natural);
             }
         }
         let fade = if self.view.shown { 1.0 } else { 0.0 };
         if animate && look.motion {
-            self.fade.set(now, fade, look.effects * scale);
+            self.clocks.fade.set(now, fade, look.effects * scale);
         } else {
-            self.fade.jump(fade);
+            self.clocks.fade.jump(fade);
         }
         self.dirty = true;
     }
 
-    pub fn set_open(&mut self, open: bool, kit: &Kit, now: Instant) {
-        if self.cell.set_open(open) {
-            self.view = self.cell.view(&kit.look);
-            self.dirty = true;
+    /// The open mark: on while the panel this cell opens is up, and on a
+    /// chevron while the quick settings card it opened is.
+    pub fn set_open(&mut self, panel: Option<&str>, overflow: Option<Region>, kit: &Kit, now: Instant) {
+        let mut open = self.view.panel.is_some_and(|p| panel == Some(p));
+        if let Some(chevron) = self.builtin_mut::<Chevron>(Builtin::Chevron) {
+            let turned = chevron.set_open(overflow);
+            open = chevron.open;
+            if turned {
+                self.view = self.cell.view(&kit.look);
+                self.dirty = true;
+            }
         }
         if open == self.open {
             return;
@@ -154,14 +213,14 @@ impl Slot {
         self.open = open;
         let t = if open { 1.0 } else { 0.0 };
         let scale = kit.motion_scale;
-        self.mark.set(now, t, kit.look.spatial_fast * scale);
-        self.mark_fade.set(now, t, kit.look.effects * scale);
+        self.clocks.mark.set(now, t, kit.look.spatial_fast * scale);
+        self.clocks.mark_fade.set(now, t, kit.look.effects * scale);
         self.dirty = true;
     }
 
     /// The extent the strip lays this slot out at this frame.
     pub fn extent(&self, now: Instant) -> f64 {
-        self.along.value(now).max(0.0)
+        self.clocks.along.value(now).max(0.0)
     }
 
     pub fn present(&self) -> bool {
@@ -188,12 +247,8 @@ impl Slot {
             return None;
         }
         let start = *self.marquee.get_or_insert(now);
-        let free = self.measured.free.as_ref()?;
-        let look = &kit.look;
-        let run = free.loop_width / look.marquee_px * 1000.0;
-        let cycle = look.marquee_hold + run;
-        let t = now.saturating_duration_since(start).as_secs_f64() * 1000.0 % cycle;
-        (t >= look.marquee_hold).then(|| (t - look.marquee_hold) / 1000.0 * look.marquee_px)
+        let (t, hold) = marquee_at(self.measured.free.as_ref()?, &kit.look, start, now);
+        (t >= hold).then(|| (t - hold) / 1000.0 * kit.look.marquee_px)
     }
 
     /// The marquee moved (or started or stopped) since the label was last
@@ -206,11 +261,8 @@ impl Slot {
     /// whichever comes first.
     pub fn wake(&self, kit: &Kit, visible: bool, now: Instant) -> Option<Instant> {
         let marquee = self.marquee.filter(|_| self.scrolling(kit, visible)).and_then(|start| {
-            let free = self.measured.free.as_ref()?;
-            let look = &kit.look;
-            let cycle = look.marquee_hold + free.loop_width / look.marquee_px * 1000.0;
-            let t = now.saturating_duration_since(start).as_secs_f64() * 1000.0 % cycle;
-            (t < look.marquee_hold).then(|| now + Duration::from_secs_f64((look.marquee_hold - t) / 1000.0))
+            let (t, hold) = marquee_at(self.measured.free.as_ref()?, &kit.look, start, now);
+            (t < hold).then(|| now + Duration::from_secs_f64((hold - t) / 1000.0))
         });
         [marquee, self.cell.wake()].into_iter().flatten().min()
     }
@@ -219,14 +271,7 @@ impl Slot {
     /// moves by the clock at the output's own refresh rate.
     pub fn animating(&mut self, kit: &Kit, visible: bool, now: Instant) -> bool {
         let custom = self.cell.custom().is_some_and(|c| c.animating(now));
-        custom
-            || self.view.turning(&kit.look)
-            || self.along.running(now)
-            || self.fade.running(now)
-            || self.mark.running(now)
-            || self.mark_fade.running(now)
-            || self.ghost.is_some() && self.cross.running(now)
-            || self.scroll(kit, visible, now).is_some()
+        custom || self.view.turning(&kit.look) || self.clocks.running(self.ghost.is_some(), now) || self.scroll(kit, visible, now).is_some()
     }
 
     /// Whether only the cell's own drawing moves this frame: nothing about
@@ -234,11 +279,7 @@ impl Slot {
     /// it measured. A scrolling marquee moves in place. False sends the
     /// frame to a whole layout.
     pub fn moves_in_place(&mut self, kit: &mut Kit, vertical: bool, band: bool, now: Instant) -> bool {
-        let still = !(self.along.running(now)
-            || self.fade.running(now)
-            || self.mark.running(now)
-            || self.mark_fade.running(now)
-            || self.ghost.is_some() && self.cross.running(now));
+        let still = !self.clocks.running(self.ghost.is_some(), now);
         let shown = self.view.shown;
         let natural = self.natural;
         still
@@ -275,9 +316,9 @@ impl Slot {
     ) {
         self.cell.visible(visible);
         let rect = self.rect;
-        let fade = self.fade.value(now).clamp(0.0, 1.0) as f32 * alpha * self.view.opacity;
+        let fade = self.clocks.fade.value(now).clamp(0.0, 1.0) as f32 * alpha * self.view.opacity;
         let scroll = self.scroll(kit, visible, now);
-        if !self.cross.running(now) {
+        if !self.clocks.cross.running(now) {
             self.ghost = None;
         }
         let own_hover = self.cell.custom().is_some_and(|c| c.own_hover());
@@ -291,11 +332,11 @@ impl Slot {
             rect,
             edge,
             hovered: hovered && self.view.interactive && !own_hover,
-            open: (self.mark.value(now), self.mark_fade.value(now).clamp(0.0, 1.0)),
+            open: (self.clocks.mark.value(now), self.clocks.mark_fade.value(now).clamp(0.0, 1.0)),
             alpha: fade,
             band,
             scroll,
-            ghost: self.ghost.as_ref().map(|(i, part)| (*i, part, self.cross.value(now).clamp(0.0, 1.0) as f32)),
+            ghost: self.ghost.as_ref().map(|(i, part)| (*i, part, self.clocks.cross.value(now).clamp(0.0, 1.0) as f32)),
             now,
         };
         match self.cell.custom() {

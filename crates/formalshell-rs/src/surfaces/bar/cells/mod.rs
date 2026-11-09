@@ -9,7 +9,7 @@ mod audio;
 pub mod battery;
 mod bell;
 mod bluetooth;
-mod chevron;
+pub mod chevron;
 pub(crate) mod clock;
 mod display;
 mod dualsense;

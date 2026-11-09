@@ -7,7 +7,10 @@
 //! the bar's own window). With the screen frame on, the window is the whole
 //! output and paints the ring, strip included, under its cells.
 //!
-//! Cells are [`cell::Cell`]s in `cells/`, placed as [`slot::Slot`]s.
+//! The bar is the host: the window, its edge and zone, the joins, the
+//! band's paint, the input region and the resolved layout. What it carries
+//! is its [`Body`]: the strip of cells, or the sidebar's column. Cells are
+//! [`cell::Cell`]s in `cells/`, placed as [`slot::Slot`]s.
 
 pub mod cell;
 pub mod cells;
@@ -15,7 +18,8 @@ pub mod slot;
 
 use std::time::{Duration, Instant};
 
-use fs_chrome::bar::layout::{self, Entry, Label, Rails, Resolved};
+use fs_chrome::bar::layout::{self, Builtin, Entry, Label, Rails, Resolved};
+use fs_chrome::bar::panels;
 use fs_chrome::frame::{self, Gaps};
 use fs_types::{Edge, Insets, Region};
 use fs_theme::palette::ColorRole;
@@ -34,10 +38,11 @@ use crate::surfaces::card::Join;
 use crate::surfaces::sidebar::Sidebar;
 use crate::paint::{Kit, Painter};
 use cell::{Action, Button, Env};
-use slot::Slot;
+use cells::{tray::Tray, workspaces::Workspaces};
+use slot::{Pass, Slot};
 
 /// The two cells whose text runs free, in the order they keep their room.
-const LABELS: [&str; 2] = ["nowPlaying", "activeWindow"];
+const LABELS: [Builtin; 2] = [Builtin::NowPlaying, Builtin::ActiveWindow];
 /// Nodes held behind every cell for the strip's own paint.
 const STRIP_NODES: usize = 6;
 /// How long after it maps the strip holds its cells' size clocks off, so a
@@ -87,22 +92,52 @@ pub struct PaintState {
     pub fullscreen: bool,
 }
 
+/// The band's and the ring's paint, none of it before the first.
+#[derive(Clone, PartialEq)]
+struct Paints {
+    state: Option<PaintState>,
+    /// The wingpanel band's ink and glow for its cells.
+    band: Option<(Rgba, Vec<Glow<Rgba>>)>,
+    /// The two inks a cell on a bare band picks between off its own stretch
+    /// of wallpaper: the `light` paint's and the `dark` paint's.
+    bare: Option<[(Rgba, Vec<Glow<Rgba>>); 2]>,
+    fill: Option<Rgba>,
+    /// The band's line facing the desktop, drawn round any join's gap.
+    line: Option<(Rgba, f64)>,
+    /// The ring's fill, line width and line colour.
+    ring: (Rgba, f64, Rgba),
+}
+
+impl Paints {
+    fn none() -> Self {
+        Self { state: None, band: None, bare: None, fill: None, line: None, ring: (Rgba::TRANSPARENT, 0.0, Rgba::TRANSPARENT) }
+    }
+}
+
+/// What the bar carries.
+pub enum Body {
+    Strip(Strip),
+    /// `layout: sidebar`: the card column drawn instead of cells.
+    Sidebar(Box<Sidebar>),
+}
+
+/// The cells along the strip and the room it last gave them.
+pub struct Strip {
+    pub slots: Vec<Slot>,
+    room: Room,
+    /// Cells built (a new theme or layout) and not yet read in full: that
+    /// read places them where they were rather than growing every one of
+    /// them out of nothing, which blanked the strip on each wallpaper change.
+    rebuilt: bool,
+}
+
 pub struct Bar {
     pub scene: Scene,
     style: Style,
     edge: Edge,
-    /// The wingpanel band's ink and glow for its cells, and its fill.
-    band_box: Option<(Rgba, Vec<Glow<Rgba>>)>,
-    /// The two inks a cell on a bare band picks between off its own stretch
-    /// of wallpaper: the `light` paint's and the `dark` paint's.
-    bare_inks: Option<[(Rgba, Vec<Glow<Rgba>>); 2]>,
-    band_fill: Option<Rgba>,
-    /// The band's line facing the desktop, drawn round any join's gap.
-    band_edge: Option<(Rgba, f64)>,
-    /// The ring's fill, line width and line colour.
-    ring_box: (Rgba, f64, Rgba),
+    paints: Paints,
     pub resolved: Resolved,
-    pub slots: Vec<Slot>,
+    pub body: Body,
     strip_nodes: Vec<NodeId>,
     strip_key: Option<String>,
     /// The gaps joined cards open in the lines, `[start, end)` along each:
@@ -113,7 +148,6 @@ pub struct Bar {
     /// The scale the bar's surface draws at, which its cells' pictures are
     /// made at.
     pub raster: f64,
-    pub paint: Option<PaintState>,
     pub hover: Option<usize>,
     /// The bar is off screen (a fullscreen window over it): nothing runs a
     /// clock.
@@ -125,20 +159,13 @@ pub struct Bar {
     /// The compositor's outer gap on the bar's own edge.
     gap_out: i32,
     born: Instant,
-    /// Cells rebuilt (a new theme or layout) and not yet read in full: that
-    /// read places them where they were rather than growing every one of
-    /// them out of nothing, which blanked the strip on each wallpaper change.
-    rebuilt: bool,
-    /// Strip room as last laid out, for `bar room`.
-    room: Room,
-    /// The card column drawn instead of cells under `layout: sidebar`.
-    pub sidebar: Option<Sidebar>,
     /// The sidebar folded to its rail (state.json's `sidebarCollapsed`).
     collapsed: bool,
     /// The input region the window was last given.
     pub input_sent: Option<Vec<IRect>>,
 }
 
+/// Strip room as last laid out, for `bar room`.
 #[derive(Default, Clone)]
 struct Room {
     slack: f64,
@@ -153,29 +180,21 @@ impl Bar {
             scene: Scene::new(1, 1),
             style,
             edge,
-            band_box: None,
-            bare_inks: None,
-            band_fill: None,
-            band_edge: None,
-            ring_box: (Rgba::TRANSPARENT, 0.0, Rgba::TRANSPARENT),
+            paints: Paints::none(),
             resolved: layout::resolve(None, &[]),
-            slots: Vec::new(),
+            body: Body::Strip(Strip { slots: Vec::new(), room: Room::default(), rebuilt: true }),
             strip_nodes: Vec::new(),
             strip_key: None,
             gaps: Vec::new(),
             line_rects: Vec::new(),
             output: String::new(),
             raster: 1.0,
-            paint: None,
             hover: None,
             hidden: false,
             idle: false,
             reserved: 0,
             gap_out: 0,
             born: Instant::now(),
-            rebuilt: false,
-            room: Room::default(),
-            sidebar: None,
             collapsed: false,
             input_sent: None,
         };
@@ -197,11 +216,36 @@ impl Bar {
     /// once, since no paint reaches them while the bar has no window.
     pub fn set_hidden(&mut self, hidden: bool) {
         self.hidden = hidden;
-        for slot in &mut self.slots {
-            slot.cell.visible(!hidden);
+        match &mut self.body {
+            Body::Strip(strip) => {
+                for slot in &mut strip.slots {
+                    slot.cell.visible(!hidden);
+                }
+            }
+            Body::Sidebar(sb) => sb.visible(!hidden),
         }
-        if let Some(sb) = &mut self.sidebar {
-            sb.visible(!hidden);
+    }
+
+    /// The sidebar's column, under `layout: sidebar`.
+    pub fn sidebar(&self) -> Option<&Sidebar> {
+        match &self.body {
+            Body::Sidebar(sb) => Some(sb),
+            Body::Strip(_) => None,
+        }
+    }
+
+    pub fn sidebar_mut(&mut self) -> Option<&mut Sidebar> {
+        match &mut self.body {
+            Body::Sidebar(sb) => Some(sb),
+            Body::Strip(_) => None,
+        }
+    }
+
+    /// The strip's slots, none under the sidebar.
+    fn slots(&self) -> &[Slot] {
+        match &self.body {
+            Body::Strip(strip) => &strip.slots,
+            Body::Sidebar(_) => &[],
         }
     }
 
@@ -215,7 +259,7 @@ impl Bar {
         self.collapsed = collapsed;
         self.strip_key = None;
         // The rail's rows are not walked by the keys (`sidebar focus` refuses it).
-        if let Some(sb) = self.sidebar.as_mut().filter(|_| collapsed) {
+        if let Some(sb) = self.sidebar_mut().filter(|_| collapsed) {
             sb.map.cursor = None;
         }
         before != self.thickness()
@@ -223,7 +267,7 @@ impl Bar {
 
     /// `sidebar status`, none under the bar layout.
     pub fn sidebar_status(&self) -> Option<Value> {
-        let sb = self.sidebar.as_ref()?;
+        let sb = self.sidebar()?;
         Some(sb.status(self.collapsed, self.edge, self.thickness()))
     }
 
@@ -231,7 +275,7 @@ impl Bar {
     /// True when the press is on a minimap icon, whose long press needs a
     /// pass to schedule its wake.
     pub fn sidebar_press(&mut self, i: usize, at: (f64, f64)) -> bool {
-        let Some(sb) = &mut self.sidebar else { return false };
+        let Some(sb) = self.sidebar_mut() else { return false };
         sb.press(i, at);
         sb.map.drag.is_some()
     }
@@ -239,22 +283,22 @@ impl Bar {
     /// The pointer moved with a button held; true when the column needs a
     /// pass.
     pub fn sidebar_motion(&mut self, at: (f64, f64)) -> bool {
-        self.sidebar.as_mut().is_some_and(|sb| sb.map.motion(at))
+        self.sidebar_mut().is_some_and(|sb| sb.map.motion(at))
     }
 
     /// The button let go over the sidebar: a drop's commands, or `None`
     /// when the press is a click.
     pub fn sidebar_release(&mut self, at: (f64, f64)) -> Option<Vec<crate::services::compositor::Command>> {
-        self.sidebar.as_mut()?.release(at, Instant::now())
+        self.sidebar_mut()?.release(at, Instant::now())
     }
 
     /// Whether hit `i` takes a click: a cell that is interactive, any
     /// control the sidebar drew.
     pub fn clickable(&self, i: usize) -> bool {
-        if self.sidebar.is_some() {
-            return true;
+        match &self.body {
+            Body::Sidebar(_) => true,
+            Body::Strip(strip) => strip.slots.get(i).is_some_and(|s| s.view.interactive),
         }
-        self.slots.get(i).is_some_and(|s| s.view.interactive)
     }
 
     /// The layout the strip was last styled for.
@@ -294,7 +338,7 @@ impl Bar {
     /// and sits as far off the cards as the cards sit off the screen's.
     pub fn zone(&self) -> i32 {
         let t = self.thickness();
-        if self.sidebar.is_some() {
+        if self.sidebar().is_some() {
             (t - self.gap_out).max(0)
         } else if self.floating() {
             t - self.style.margin as i32
@@ -304,11 +348,11 @@ impl Bar {
     }
 
     fn floating(&self) -> bool {
-        if self.sidebar.is_some() {
+        if self.sidebar().is_some() {
             return false;
         }
-        let fill = self.band_fill.unwrap_or(Rgba::TRANSPARENT);
-        let line = self.band_edge.is_some_and(|(c, w)| c.a > 0.0 && w > 0.0);
+        let fill = self.paints.fill.unwrap_or(Rgba::TRANSPARENT);
+        let line = self.paints.line.is_some_and(|(c, w)| c.a > 0.0 && w > 0.0);
         !self.framed() && fill.a <= 0.0 && !line
     }
 
@@ -333,10 +377,10 @@ impl Bar {
     /// cards and controls alone, else the strip; `None` for the whole
     /// window.
     pub fn input_rects(&self) -> Option<Vec<IRect>> {
-        match &self.sidebar {
-            Some(sb) => Some(sb.input_rects()),
-            None if self.strip_only() => None,
-            None => Some(vec![self.strip()]),
+        match &self.body {
+            Body::Sidebar(sb) => Some(sb.input_rects()),
+            Body::Strip(_) if self.strip_only() => None,
+            Body::Strip(_) => Some(vec![self.strip()]),
         }
     }
 
@@ -435,16 +479,24 @@ impl Bar {
             self.strip_nodes.push(id);
         }
         self.hover = None;
-        self.rebuilt = true;
-        self.slots.clear();
-        self.sidebar = self.style.sidebar.map(|_| Sidebar::new());
-        for region in Region::ALL.into_iter().filter(|_| self.sidebar.is_none()) {
-            let entries = self.resolved.regions.get(region).to_vec();
-            for e in entries.iter().filter(|e| !e.collapsible) {
-                let unit = self.slots.last().map_or(0, |s| s.unit + 1);
-                self.slots.extend(Slot::rail(e, &entries, unit));
+        self.body = match self.style.sidebar {
+            Some(_) => Body::Sidebar(Box::new(Sidebar::new())),
+            None => {
+                let mut slots: Vec<Slot> = Vec::new();
+                for region in Region::ALL {
+                    let entries = self.resolved.regions.get(region).to_vec();
+                    for e in entries.iter().filter(|e| !e.collapsible) {
+                        let unit = slots.last().map_or(0, |s| s.unit + 1);
+                        slots.extend(Slot::rail(e, &entries, unit));
+                    }
+                }
+                let room = match &self.body {
+                    Body::Strip(strip) => strip.room.clone(),
+                    Body::Sidebar(_) => Room::default(),
+                };
+                Body::Strip(Strip { slots, room, rebuilt: true })
             }
-        }
+        };
         if self.hidden {
             self.set_hidden(true);
         }
@@ -455,53 +507,75 @@ impl Bar {
     /// Under the sidebar the one chevron is the column's foot button, and
     /// its entries the right region's cells the column has no room for.
     pub fn overflow_entries(&self, region: Region) -> Vec<Entry> {
-        if self.sidebar.is_some() {
+        if self.sidebar().is_some() {
             return layout::sidebar_overflow_entries(self.resolved.regions.get(Region::Right));
         }
         layout::overflow_entries(self.resolved.regions.get(region))
     }
 
+    /// The entries quick settings opened off `region`'s chevron shows as
+    /// info tiles: what that chevron governs, less what the card draws
+    /// itself.
+    pub fn quick_extras(&self, region: Region) -> Vec<Entry> {
+        if self.sidebar().is_some() {
+            return layout::sidebar_quick_extras(self.resolved.regions.get(Region::Right));
+        }
+        layout::quick_extras(self.resolved.regions.get(region))
+    }
+
+    /// The panel of the right region's nth panel-bearing cell, 1-based
+    /// (`panel toggleAt`).
+    pub fn panel_at(&self, n: i64) -> Option<&'static str> {
+        panels::panel_at(&self.resolved, n)
+    }
+
     /// Where the sidebar's control whose click is `on` sits along it.
     pub fn sidebar_anchor(&self, on: &str) -> Option<f64> {
-        self.sidebar.as_ref()?.anchor_of(on)
+        self.sidebar()?.anchor_of(on)
+    }
+
+    /// Where `region`'s chevron sits along the strip.
+    pub fn chevron_anchor(&self, region: Region) -> Option<f64> {
+        let i = self.slots().iter().position(|s| s.builtin == Some(Builtin::Chevron) && s.region == region)?;
+        Some(self.slot_anchor(i))
     }
 
     pub fn has_chevron(&self, region: Region) -> bool {
-        if self.sidebar.is_some() {
+        if self.sidebar().is_some() {
             return region == Region::Right;
         }
         layout::has_chevron(self.resolved.regions.get(region))
     }
 
-    fn animate(&self, now: Instant) -> bool {
-        !self.rebuilt && now.saturating_duration_since(self.born) > REVEAL
+    /// The strip with the pass its cells are read against, none under the
+    /// sidebar.
+    fn strip_pass<'a>(&'a mut self, store: &'a Store, now: Instant) -> Option<(&'a mut Strip, Pass<'a>)> {
+        let along = self.length() as f64;
+        let Body::Strip(strip) = &mut self.body else { return None };
+        let animate = !strip.rebuilt && now.saturating_duration_since(self.born) > REVEAL;
+        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
+        Some((strip, Pass { env, band: self.paints.band.is_some(), animate, along, now }))
     }
 
     /// Re-reads the cells that read `topic` (all of them with `None`).
     pub fn read(&mut self, kit: &mut Kit, store: &Store, topic: Option<Topic>, now: Instant) {
-        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
-        let band = self.band().is_some();
-        let animate = self.animate(now);
-        let along = self.length() as f64;
-        for slot in &mut self.slots {
+        let Some((strip, pass)) = self.strip_pass(store, now) else { return };
+        for slot in &mut strip.slots {
             if topic.is_none_or(|t| slot.cell.reads().contains(&t)) {
-                slot.refresh(kit, &env, band, animate, along, now);
+                slot.refresh(kit, &pass);
             }
         }
         if topic.is_none() {
-            self.rebuilt = false;
+            strip.rebuilt = false;
         }
     }
 
     /// Reads the cells whose own timer ran out.
     pub fn tick(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
-        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
-        let band = self.band().is_some();
-        let animate = self.animate(now);
-        let along = self.length() as f64;
-        for slot in &mut self.slots {
+        let Some((strip, pass)) = self.strip_pass(store, now) else { return };
+        for slot in &mut strip.slots {
             if slot.cell.wake().is_some_and(|t| t <= now) {
-                slot.refresh(kit, &env, band, animate, along, now);
+                slot.refresh(kit, &pass);
             }
         }
     }
@@ -509,11 +583,12 @@ impl Bar {
     /// The pointer over the strip, handed to each cell that washes its own
     /// parts in the cell's own coordinates; true when the strip needs a pass.
     pub fn pointer(&mut self, kit: &mut Kit, over: Option<usize>, at: (f64, f64), store: &Store, now: Instant) -> bool {
-        if let Some(sb) = &mut self.sidebar {
-            return sb.hover(over);
-        }
+        let strip = match &mut self.body {
+            Body::Sidebar(sb) => return sb.hover(over),
+            Body::Strip(strip) => strip,
+        };
         let (mut redraw, mut relayout) = (false, false);
-        for (i, s) in self.slots.iter_mut().enumerate() {
+        for (i, s) in strip.slots.iter_mut().enumerate() {
             let local = (Some(i) == over).then(|| (at.0 - s.rect.x as f64, at.1 - s.rect.y as f64));
             if let Some(c) = s.cell.custom() {
                 let (r, l) = c.pointer(local);
@@ -527,26 +602,43 @@ impl Bar {
         redraw
     }
 
+    /// The slot under the pointer; true when it moved, which repaints
+    /// every slot.
+    pub fn set_hover(&mut self, hover: Option<usize>) -> bool {
+        if hover == self.hover {
+            return false;
+        }
+        self.hover = hover;
+        if let Body::Strip(strip) = &mut self.body {
+            for s in &mut strip.slots {
+                s.dirty = true;
+            }
+        }
+        true
+    }
+
     /// `workspaces status`'s cell, when the strip carries one.
     pub fn workspaces_status(&self) -> Option<Value> {
-        self.slots.iter().find_map(|s| s.cell.status())
+        self.slots().iter().find_map(|s| s.builtin::<Workspaces>(Builtin::Workspaces)).map(Workspaces::status)
+    }
+
+    /// `debug r0Spinner`: the agent badge on the workspaces cell.
+    pub fn spinner(&mut self, on: bool, now: Instant) {
+        if let Body::Strip(strip) = &mut self.body {
+            for ws in strip.slots.iter_mut().filter_map(|s| s.builtin_mut::<Workspaces>(Builtin::Workspaces)) {
+                ws.spinner(on, now);
+            }
+        }
     }
 
     /// Which panel each cell has open; a chevron reads as open while the
     /// quick settings card it opened is up.
     pub fn set_open(&mut self, kit: &Kit, panel: Option<&str>, overflow: Option<Region>, now: Instant) {
-        for slot in &mut self.slots {
-            let open = match &slot.view.panel {
-                Some(p) => panel == Some(*p),
-                None => slot.name == "chevron" && overflow == Some(slot.region),
-            };
-            slot.set_open(open, kit, now);
+        if let Body::Strip(strip) = &mut self.body {
+            for slot in &mut strip.slots {
+                slot.set_open(panel, overflow, kit, now);
+            }
         }
-    }
-
-    /// The band's ink and glow, none before its first paint.
-    fn band(&self) -> Option<(Rgba, Vec<Glow<Rgba>>)> {
-        self.band_box.clone()
     }
 
     /// The band's paint off `bar.style`, the shared wallpaper reading and
@@ -581,20 +673,11 @@ impl Bar {
         let band_fill = paint.as_ref().map(|_| bar.fill);
         let band_edge = paint.as_ref().and_then(|_| bar.edge.as_ref().map(|l| (l.color, l.width)));
         let ring_box = (ring.fill, line.width, line.color);
-        let changed = paint != self.paint
-            || band_box != self.band_box
-            || bare_inks != self.bare_inks
-            || band_fill != self.band_fill
-            || band_edge != self.band_edge
-            || ring_box != self.ring_box;
+        let next = Paints { state: paint, band: band_box, bare: bare_inks, fill: band_fill, line: band_edge, ring: ring_box };
+        let changed = next != self.paints;
         if changed {
-            let ink_changed = band_box != self.band_box;
-            self.paint = paint;
-            self.band_box = band_box;
-            self.bare_inks = bare_inks;
-            self.band_fill = band_fill;
-            self.band_edge = band_edge;
-            self.ring_box = ring_box;
+            let ink_changed = next.band != self.paints.band;
+            self.paints = next;
             self.strip_key = None;
             if ink_changed {
                 // Labels go semibold on a band.
@@ -608,10 +691,10 @@ impl Bar {
     /// ink each placed cell wears, the band's own unless its stretch of a
     /// bare band read otherwise.
     pub fn paint_state(&self, store: &Store) -> Value {
-        let Some(p) = &self.paint else { return Value::Null };
+        let Some(p) = &self.paints.state else { return Value::Null };
         let s = store.bar_paint.numbers();
         let cells: Vec<Value> = self
-            .slots
+            .slots()
             .iter()
             .filter(|s| !s.rect.is_empty())
             .map(|s| json!({"name": s.name, "paint": s.ink.unwrap_or(p.paint).as_str()}))
@@ -659,11 +742,11 @@ impl Bar {
     /// One pass: budgets, positions and paint. Cheap enough per frame;
     /// unchanged nodes damage nothing.
     pub fn layout(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
-        if self.sidebar.is_some() {
+        if self.sidebar().is_some() {
             self.paint_strip();
             let anchor = self.strip_nodes.last().copied();
             let (strip, edge, collapsed, raster) = (self.strip(), self.edge, self.collapsed, self.raster);
-            if let Some(sb) = &mut self.sidebar {
+            if let Body::Sidebar(sb) = &mut self.body {
                 sb.draw(store, &self.output, collapsed, edge, strip, raster, kit, &mut self.scene, anchor, now);
             }
             return;
@@ -677,8 +760,9 @@ impl Bar {
         self.paint_strip();
         let visible = !self.hidden;
         let edge = self.edge;
-        let (band, bare) = (&self.band_box, &self.bare_inks);
-        for (i, slot) in self.slots.iter_mut().enumerate() {
+        let (band, bare) = (&self.paints.band, &self.paints.bare);
+        let Body::Strip(strip) = &mut self.body else { return };
+        for (i, slot) in strip.slots.iter_mut().enumerate() {
             if slot.rect.is_empty() {
                 slot.hide(&mut self.scene);
                 continue;
@@ -692,23 +776,24 @@ impl Bar {
     /// (`barpaint::cell`), read where the cell stands now, so a cell
     /// gliding across a bright-to-dark seam flips as it crosses.
     fn ink_cells(&mut self, store: &Store) {
-        let Some(p) = &self.paint else {
-            for slot in &mut self.slots {
+        let bounds = self.strip();
+        let vertical = self.edge.is_vertical();
+        let Body::Strip(strip) = &mut self.body else { return };
+        let Some(p) = &self.paints.state else {
+            for slot in &mut strip.slots {
                 slot.ink = None;
             }
             return;
         };
-        let strip = self.strip();
-        let vertical = self.edge.is_vertical();
         let profile = store.bar_paint.profile.as_ref();
-        for slot in &mut self.slots {
+        for slot in &mut strip.slots {
             let r = slot.rect;
             slot.ink = match profile {
                 Some(profile) if !r.is_empty() => {
                     let (from, to) = if vertical {
-                        ((r.y - strip.y) as f64 / strip.h.max(1) as f64, (r.bottom() - strip.y) as f64 / strip.h.max(1) as f64)
+                        ((r.y - bounds.y) as f64 / bounds.h.max(1) as f64, (r.bottom() - bounds.y) as f64 / bounds.h.max(1) as f64)
                     } else {
-                        ((r.x - strip.x) as f64 / strip.w.max(1) as f64, (r.right() - strip.x) as f64 / strip.w.max(1) as f64)
+                        ((r.x - bounds.x) as f64 / bounds.w.max(1) as f64, (r.right() - bounds.x) as f64 / bounds.w.max(1) as f64)
                     };
                     Some(barpaint::cell(p.paint, p.pin, &profile.span(from, to)))
                 }
@@ -724,16 +809,13 @@ impl Bar {
         if self.length() <= 1 {
             return false;
         }
-        let slack = self.room.slack;
-        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
-        let band = self.band_box.is_some();
-        let animate = self.animate(now);
-        let along = self.length() as f64;
+        let Some((strip, pass)) = self.strip_pass(store, now) else { return false };
+        let slack = strip.room.slack;
         let mut moved = false;
-        for slot in &mut self.slots {
+        for slot in &mut strip.slots {
             let own = slot.extent(now);
-            if slot.cell.custom().is_some_and(|c| c.room(own + slack)) {
-                slot.refresh(kit, &env, band, animate, along, now);
+            if slot.builtin_mut::<Tray>(Builtin::Tray).is_some_and(|t| t.room(own + slack)) {
+                slot.refresh(kit, &pass);
                 moved = true;
             }
         }
@@ -743,25 +825,22 @@ impl Bar {
     /// The two free labels share the room the cells leave
     /// (layout.js's labelBudgets); a moved budget measures its cell again.
     fn refit(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
-        let along = self.length() as f64;
-        let rail = |slots: &[Slot], r: Region, gap: f64| {
+        let (inset, gap) = (self.style.inset, self.style.gap);
+        let Some((strip, pass)) = self.strip_pass(store, now) else { return };
+        let slots = &mut strip.slots;
+        let rail = |slots: &[Slot], r: Region| {
             let exts: Vec<f64> = slots.iter().filter(|s| s.region == r && s.present()).map(|s| s.natural).collect();
             exts.iter().sum::<f64>() + gap * exts.len().saturating_sub(1) as f64
         };
-        let gap = self.style.gap;
-        let rails = Rails {
-            left: rail(&self.slots, Region::Left, gap),
-            center: rail(&self.slots, Region::Center, gap),
-            right: rail(&self.slots, Region::Right, gap),
-        };
+        let rails = Rails { left: rail(slots, Region::Left), center: rail(slots, Region::Center), right: rail(slots, Region::Right) };
         let mut at = Vec::new();
         let mut labels = Vec::new();
         // Any other free label (Activity's title) first, so the window
         // title and the track stay last, the ones that take what is left.
-        let named = LABELS.iter().filter_map(|n| self.slots.iter().position(|s| s.name == *n && s.present()));
-        let others = (0..self.slots.len()).filter(|&i| !LABELS.contains(&self.slots[i].name.as_str()) && self.slots[i].present());
+        let named = LABELS.iter().filter_map(|b| slots.iter().position(|s| s.builtin == Some(*b) && s.present()));
+        let others = (0..slots.len()).filter(|&i| !slots[i].builtin.is_some_and(|b| LABELS.contains(&b)) && slots[i].present());
         for i in others.chain(named).collect::<Vec<_>>() {
-            let s = &self.slots[i];
+            let s = &slots[i];
             let Some(limits) = s.limits else { continue };
             labels.push(Label { region: s.region, extent: s.free_extent(), natural: s.free_natural(), cap: limits.cap, min: limits.min });
             at.push(i);
@@ -769,14 +848,11 @@ impl Bar {
         if labels.is_empty() {
             return;
         }
-        let budgets = layout::label_budgets(along, self.style.inset, gap, rails, &labels);
-        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
-        let band = self.band_box.is_some();
-        let animate = self.animate(now);
+        let budgets = layout::label_budgets(pass.along, inset, gap, rails, &labels);
         for (i, budget) in at.into_iter().zip(budgets) {
-            if (self.slots[i].budget - budget).abs() > 0.25 {
-                self.slots[i].budget = budget;
-                self.slots[i].refresh(kit, &env, band, animate, along, now);
+            if (slots[i].budget - budget).abs() > 0.25 {
+                slots[i].budget = budget;
+                slots[i].refresh(kit, &pass);
             }
         }
     }
@@ -786,11 +862,16 @@ impl Bar {
     fn place(&mut self, now: Instant) {
         let along = self.length() as f64;
         let (inset, gap) = (self.style.inset, self.style.gap);
+        let bounds = self.strip();
+        let across = if self.vertical() { self.style.cell_width } else { self.style.thickness };
+        let margin = self.style.margin;
+        let vertical = self.vertical();
+        let Body::Strip(strip) = &mut self.body else { return };
         let exts = |slots: &[Slot], r: Region| -> Vec<(usize, f64)> {
             slots.iter().enumerate().filter(|(_, s)| s.region == r).map(|(i, s)| (i, s.extent(now))).filter(|(_, e)| *e > 0.0).collect()
         };
         let implicit = |e: &[(usize, f64)]| e.iter().map(|x| x.1).sum::<f64>() + gap * e.len().saturating_sub(1) as f64;
-        let (left, center, right) = (exts(&self.slots, Region::Left), exts(&self.slots, Region::Center), exts(&self.slots, Region::Right));
+        let (left, center, right) = (exts(&strip.slots, Region::Left), exts(&strip.slots, Region::Center), exts(&strip.slots, Region::Right));
         let (li, ci, ri) = (implicit(&left), implicit(&center), implicit(&right));
         let floor = inset + gap + li;
         let ceiling = along - inset - gap - ri - ci;
@@ -809,30 +890,25 @@ impl Bar {
             }
             out.into_iter().map(|u| u.1).collect()
         };
-        let (left_units, center_units, mut right_rev) = (units(&left, &self.slots), units(&center, &self.slots), units(&right, &self.slots));
+        let (left_units, center_units, mut right_rev) = (units(&left, &strip.slots), units(&center, &strip.slots), units(&right, &strip.slots));
         right_rev.reverse();
         let left_fit = layout::fit_extent(&left_units, gap, left_room);
         let right_fit = layout::fit_extent(&right_rev, gap, right_room);
-        self.room = Room {
+        strip.room = Room {
             slack: along - inset * 2.0 - gap * 2.0 - li - ci - ri,
             cells: [left_units.len(), center_units.len(), right_rev.len()],
             hidden: [left_units.len() - left_fit.count, 0, right_rev.len() - right_fit.count],
         };
 
-        let strip = self.strip();
-        let across = if self.vertical() { self.style.cell_width } else { self.style.thickness };
-        let margin = self.style.margin;
-        let vertical = self.vertical();
         let rect = |from: f64, extent: f64| -> IRect {
             let (a0, a1) = (from.round() as i32, (from + extent).round() as i32);
             if vertical {
-                IRect::new(strip.x + margin as i32, strip.y + a0, across as i32, a1 - a0)
+                IRect::new(bounds.x + margin as i32, bounds.y + a0, across as i32, a1 - a0)
             } else {
-                IRect::new(strip.x + a0, strip.y + margin as i32, a1 - a0, across as i32)
+                IRect::new(bounds.x + a0, bounds.y + margin as i32, a1 - a0, across as i32)
             }
         };
-        let whole_strip = strip;
-        for s in &mut self.slots {
+        for s in &mut strip.slots {
             s.rect = IRect::default();
         }
         let lay = |items: &[(usize, f64)], start: f64, clip: IRect, slots: &mut [Slot]| {
@@ -845,10 +921,10 @@ impl Bar {
         };
         let left_box = rect(inset, left_fit.extent);
         let right_box = rect(along - inset - right_fit.extent, right_fit.extent);
-        lay(&left, inset, left_box, &mut self.slots);
-        lay(&center, c_at, whole_strip, &mut self.slots);
-        lay(&right, along - inset - ri, right_box, &mut self.slots);
-        for s in &mut self.slots {
+        lay(&left, inset, left_box, &mut strip.slots);
+        lay(&center, c_at, bounds, &mut strip.slots);
+        lay(&right, along - inset - ri, right_box, &mut strip.slots);
+        for s in &mut strip.slots {
             if !s.rect.intersects(&s.clip) {
                 s.rect = IRect::default();
             }
@@ -858,7 +934,7 @@ impl Bar {
     /// The strip's own paint: the band's fill with its own line and
     /// `corners`' fillets, or the frame's ring with its line.
     fn paint_strip(&mut self) {
-        let key = format!("{:?} {:?} {:?} {:?} {:?}", self.scene.size, self.gaps, self.edge, self.paint, self.ring_box);
+        let key = format!("{:?} {:?} {:?} {:?} {:?}", self.scene.size, self.gaps, self.edge, self.paints.state, self.paints.ring);
         if self.strip_key.as_deref() == Some(key.as_str()) {
             return;
         }
@@ -869,10 +945,10 @@ impl Bar {
         let mut lines = Vec::new();
         let t = self.thickness() as f64;
         let edge = self.edge;
-        let ring = self.ring_box;
+        let ring = self.paints.ring;
         let gap = self.gap();
         let all_gaps = self.gaps.clone();
-        let band_fill = self.band_fill;
+        let band_fill = self.paints.fill;
         let mut p = Painter::new(&mut self.scene, &mut self.strip_nodes, None);
         if self.style.frame.0 {
             let (_, ft, fr) = self.style.frame;
@@ -914,7 +990,7 @@ impl Bar {
             }
             p.shape(size, Paint::Shape { fill: Some((band, ring.0)), strokes: vec![(path, ring.2, ring.1)] });
         } else {
-            let (fill, line) = (band_fill.unwrap_or(Rgba::TRANSPARENT), self.band_edge);
+            let (fill, line) = (band_fill.unwrap_or(Rgba::TRANSPARENT), self.paints.line);
             p.rect(strip, fill, 0.0);
             if let Some((color, width)) = line.filter(|(c, w)| c.a > 0.0 && *w > 0.0) {
                 let t = width.round().max(1.0) as i32;
@@ -949,18 +1025,15 @@ impl Bar {
     /// those slots repainted where they are, with no layout of the strip.
     /// False when anything along it changes, for a whole layout instead.
     pub fn step_in_place(&mut self, kit: &mut Kit, now: Instant) -> bool {
-        if self.sidebar.is_some() {
-            return false;
-        }
         let visible = !self.hidden;
         let vertical = self.edge.is_vertical();
-        let band = self.band_box.is_some();
-        if !self.slots.iter_mut().all(|s| s.moves_in_place(kit, vertical, band, now)) {
+        let edge = self.edge;
+        let (band, bare) = (&self.paints.band, &self.paints.bare);
+        let Body::Strip(strip) = &mut self.body else { return false };
+        if !strip.slots.iter_mut().all(|s| s.moves_in_place(kit, vertical, band.is_some(), now)) {
             return false;
         }
-        let edge = self.edge;
-        let (band, bare) = (&self.band_box, &self.bare_inks);
-        for (i, slot) in self.slots.iter_mut().enumerate() {
+        for (i, slot) in strip.slots.iter_mut().enumerate() {
             if slot.rect.is_empty() || !(slot.drawing(kit, now) || slot.marquee_due(kit, visible, now)) {
                 continue;
             }
@@ -973,79 +1046,91 @@ impl Bar {
     /// A clock wanting a frame every vsync.
     pub fn animating(&mut self, kit: &Kit, now: Instant) -> bool {
         let visible = !self.hidden;
-        if let Some(sb) = &self.sidebar {
-            return visible && sb.animating;
+        match &mut self.body {
+            Body::Sidebar(sb) => visible && sb.animating,
+            Body::Strip(strip) => strip.slots.iter_mut().any(|s| s.animating(kit, visible, now)),
         }
-        self.slots.iter_mut().any(|s| s.animating(kit, visible, now))
     }
 
     /// A marquee has moved since it was painted.
     pub fn marquee_due(&mut self, kit: &Kit, now: Instant) -> bool {
         let visible = !self.hidden;
-        self.slots.iter_mut().any(|s| s.marquee_due(kit, visible, now))
+        let Body::Strip(strip) = &mut self.body else { return false };
+        strip.slots.iter_mut().any(|s| s.marquee_due(kit, visible, now))
     }
 
     /// The next time something holding still starts to move again (a
     /// marquee ending its hold).
     pub fn wake(&self, kit: &Kit, now: Instant) -> Option<Instant> {
         let visible = !self.hidden;
-        if let Some(sb) = &self.sidebar {
-            return sb.wake.filter(|_| visible);
+        match &self.body {
+            Body::Sidebar(sb) => sb.wake.filter(|_| visible),
+            Body::Strip(strip) => strip.slots.iter().filter_map(|s| s.wake(kit, visible, now)).min(),
         }
-        self.slots.iter().filter_map(|s| s.wake(kit, visible, now)).min()
     }
 
     /// The output went idle (screensaver or lock) or came back: an idle
     /// bar's marquees hold still.
     pub fn set_idle(&mut self, idle: bool) {
         self.idle = idle;
-        for slot in &mut self.slots {
-            slot.held = idle;
+        if let Body::Strip(strip) = &mut self.body {
+            for slot in &mut strip.slots {
+                slot.held = idle;
+            }
         }
     }
 
     /// The slot under a point of the window, if it is the strip's.
     pub fn hit(&self, x: f64, y: f64) -> Option<usize> {
-        if let Some(sb) = &self.sidebar {
-            return sb.hit(x, y);
-        }
+        let strip = match &self.body {
+            Body::Sidebar(sb) => return sb.hit(x, y),
+            Body::Strip(strip) => strip,
+        };
         let (x, y) = (x.floor() as i32, y.floor() as i32);
-        self.slots.iter().position(|s| {
+        strip.slots.iter().position(|s| {
             let r = s.rect.intersect(&s.clip);
             !r.is_empty() && x >= r.x && x < r.right() && y >= r.y && y < r.bottom()
         })
     }
 
     pub fn click(&mut self, i: usize, button: Button, x: f64, y: f64, store: &Store) -> Action {
-        if let Some(sb) = &mut self.sidebar {
-            return if button == Button::Left { sb.clicked(x, y) } else { Action::None };
-        }
+        let s = match &mut self.body {
+            Body::Sidebar(sb) => return if button == Button::Left { sb.clicked(x, y) } else { Action::None },
+            Body::Strip(strip) => &mut strip.slots[i],
+        };
         let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
-        let s = &mut self.slots[i];
         if !s.view.interactive {
             return Action::None;
         }
         s.cell.click(button, (x - s.rect.x as f64, y - s.rect.y as f64), &env)
     }
 
+    /// One axis event over hit `i`: the workspaces cell sums a touchpad's
+    /// fractions to a notch, every other cell steps once per event.
     pub fn wheel(&mut self, i: usize, vertical: f64, sideways: f64, store: &Store) -> Action {
-        if let Some(sb) = &mut self.sidebar {
-            sb.wheel(i, vertical);
-            return Action::None;
-        }
+        let s = match &mut self.body {
+            Body::Sidebar(sb) => {
+                sb.wheel(i, vertical);
+                return Action::None;
+            }
+            Body::Strip(strip) => &mut strip.slots[i],
+        };
         let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
-        self.slots[i].cell.wheel_by(vertical, sideways, &env)
+        if let Some(ws) = s.builtin_mut::<Workspaces>(Builtin::Workspaces) {
+            return ws.wheel_by(vertical, sideways, &env);
+        }
+        if vertical == 0.0 { Action::None } else { s.cell.wheel(vertical < 0.0, &env) }
     }
 
     /// The anchor a tooltip hangs off (the tooltip surface is the
     /// panels'): the hovered cell's text, its rect in the window and the
     /// edge the card opens away from.
     pub fn tooltip(&self) -> Option<(String, IRect, Edge)> {
-        if let Some(sb) = &self.sidebar {
-            return sb.tip(self.hover?).map(|(text, rect)| (text, rect, self.edge));
-        }
-        let s = self.slots.get(self.hover?)?;
-        if let Some((text, start, extent)) = s.cell.tip_at() {
+        let s = match &self.body {
+            Body::Sidebar(sb) => return sb.tip(self.hover?).map(|(text, rect)| (text, rect, self.edge)),
+            Body::Strip(strip) => strip.slots.get(self.hover?)?,
+        };
+        if let Some((text, start, extent)) = s.builtin::<Tray>(Builtin::Tray).and_then(Tray::tip_at) {
             let (start, extent) = (start.round() as i32, extent.round() as i32);
             let r = s.rect;
             let part = if self.vertical() { IRect::new(r.x, r.y + start, r.w, extent) } else { IRect::new(r.x + start, r.y, extent, r.h) };
@@ -1057,27 +1142,30 @@ impl Bar {
     /// Where a panel's own cell sits along the strip, for an open with no
     /// click to read one off.
     pub fn panel_anchor(&self, name: &str) -> Option<f64> {
-        if let Some(sb) = &self.sidebar {
-            return sb.panel_anchor(name);
-        }
-        let s = self.slots.iter().find(|s| s.view.panel == Some(name) && !s.rect.is_empty())?;
+        let strip = match &self.body {
+            Body::Sidebar(sb) => return sb.panel_anchor(name),
+            Body::Strip(strip) => strip,
+        };
+        let s = strip.slots.iter().find(|s| s.view.panel == Some(name) && !s.rect.is_empty())?;
         let r = s.rect;
         Some(if self.vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 })
     }
 
     pub fn slot_anchor(&self, i: usize) -> f64 {
-        if let Some(sb) = &self.sidebar {
-            return sb.anchor(i);
-        }
-        let r = self.slots[i].rect;
+        let strip = match &self.body {
+            Body::Sidebar(sb) => return sb.anchor(i),
+            Body::Strip(strip) => strip,
+        };
+        let r = strip.slots[i].rect;
         if self.vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 }
     }
 
     /// `bar room`'s answer for this bar.
     pub fn room(&self, kit: &Kit) -> Value {
         let strip = self.strip();
-        let label = |name: &str| {
-            let Some(s) = self.slots.iter().find(|s| s.name == name && s.present()) else {
+        let slots = self.slots();
+        let label = |b: Builtin| {
+            let Some(s) = slots.iter().find(|s| s.builtin == Some(b) && s.present()) else {
                 return json!({"budget": -1, "natural": 0, "extent": 0, "cap": 0, "min": 0, "scrolling": false});
             };
             let limits = s.limits.unwrap_or(cell::Limits { cap: 0.0, min: 0.0 });
@@ -1090,8 +1178,7 @@ impl Bar {
                 "scrolling": s.scrolling(kit, !self.hidden),
             })
         };
-        let cells: Vec<Value> = self
-            .slots
+        let cells: Vec<Value> = slots
             .iter()
             .filter_map(|s| {
                 let r = s.rect.intersect(&s.clip).intersect(&strip);
@@ -1108,7 +1195,10 @@ impl Bar {
                 })
             })
             .collect();
-        let room = &self.room;
+        let room = match &self.body {
+            Body::Strip(s) => s.room.clone(),
+            Body::Sidebar(_) => Room::default(),
+        };
         json!({
             "screen": self.output,
             "edge": self.edge.as_str(),
@@ -1121,8 +1211,8 @@ impl Bar {
                 "center": {"cells": room.cells[1], "hidden": 0},
                 "right": {"cells": room.cells[2], "hidden": room.hidden[2]},
             },
-            "nowPlaying": label("nowPlaying"),
-            "activeWindow": label("activeWindow"),
+            "nowPlaying": label(Builtin::NowPlaying),
+            "activeWindow": label(Builtin::ActiveWindow),
             "cells": cells,
         })
     }

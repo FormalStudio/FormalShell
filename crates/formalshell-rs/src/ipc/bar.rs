@@ -38,7 +38,7 @@ fn act(app: &mut App, action: &str, region: &str) -> Reply {
         return Err(format!("no chevron in bar.layout.{region}"));
     }
     let open = app.overflow_open() == Some(r);
-    let origin = if live!(app).bar.sidebar.is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(r) };
+    let origin = if live!(app).bar.sidebar().is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(r) };
     match action {
         "toggle" => app.set_quick(origin, !open),
         "expand" => app.set_quick(origin, true),

@@ -14,7 +14,7 @@ impl App {
     /// False under the bar layout. Taking it closes the launcher and the
     /// panels, which would otherwise keep the keys.
     pub fn sidebar_focus(&mut self, on: bool) -> bool {
-        if live!(self).bar.sidebar.is_none() {
+        if live!(self).bar.sidebar().is_none() {
             return false;
         }
         if on {
@@ -23,7 +23,7 @@ impl App {
             }
             self.close_panels();
         }
-        let Some(sb) = live!(self).bar.sidebar.as_mut() else { return false };
+        let Some(sb) = live!(self).bar.sidebar_mut() else { return false };
         if on {
             sb.map.take_keyboard();
         } else {
@@ -42,11 +42,11 @@ impl App {
     pub(super) fn sync_sidebar_keys(&mut self) {
         let current = live!(self).surface.as_ref().map(|s| s.layer.wl_surface().clone());
         if current.is_none()
-            && let Some(sb) = live!(self).bar.sidebar.as_mut()
+            && let Some(sb) = live!(self).bar.sidebar_mut()
         {
             sb.map.cursor = None;
         }
-        let want = current.is_some() && live!(self).bar.sidebar.as_ref().is_some_and(|sb| sb.map.cursor.is_some());
+        let want = current.is_some() && live!(self).bar.sidebar().is_some_and(|sb| sb.map.cursor.is_some());
         let have = self.sidebar_keys.is_some() && self.sidebar_keys == current;
         if want != have
             && let Some(s) = &live!(self).surface
@@ -59,7 +59,7 @@ impl App {
 
     /// A key while the sidebar holds the keyboard; false when it does not.
     pub(super) fn sidebar_key(&mut self, event: &KeyEvent) -> bool {
-        let Some(sb) = live!(self).bar.sidebar.as_mut().filter(|sb| sb.map.cursor.is_some()) else { return false };
+        let Some(sb) = live!(self).bar.sidebar_mut().filter(|sb| sb.map.cursor.is_some()) else { return false };
         let carry = self.mods.shift;
         let (dx, dy) = match event.keysym {
             Keysym::Left => (-1, 0),

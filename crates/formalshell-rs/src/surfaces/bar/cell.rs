@@ -9,6 +9,7 @@
 //! implements [`Custom`] instead. `cells::build` is where a cell is
 //! registered against its `bar.layout` name.
 
+use std::any::Any;
 use std::time::Instant;
 
 use fs_types::{Edge, Region, WindowId, WorkspaceId};
@@ -69,10 +70,6 @@ pub enum Action {
     Dnd(bool),
     /// The launcher, open or shut.
     Launcher,
-    /// The sidebar folded to its rail, or opened out of it.
-    Sidebar(bool),
-    /// The Software card's Apply or Undo.
-    Software(crate::services::packages::Change),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -232,8 +229,10 @@ pub struct Limits {
 }
 
 /// One bar cell. `reads` names the store slices whose change calls `read`
-/// again; `read` returns whether what the cell shows changed.
-pub trait Cell {
+/// again; `read` returns whether what the cell shows changed. A hook only
+/// one cell has is a method of that cell, which the strip reaches through
+/// its slot's `Builtin`.
+pub trait Cell: Any {
     fn reads(&self) -> &'static [Topic];
     fn read(&mut self, env: &Env) -> bool;
     fn view(&self, look: &Look) -> View;
@@ -246,39 +245,20 @@ pub trait Cell {
     fn click(&mut self, _button: Button, _at: (f64, f64), _env: &Env) -> Action {
         Action::None
     }
-    /// The tooltip of the part under the pointer, with where that part sits
-    /// along the cell (start, extent): a cell whose icons each have words.
-    fn tip_at(&self) -> Option<(String, f64, f64)> {
-        None
-    }
     /// The next instant the cell has something to change on its own (a
     /// countdown's next second), so it is read again then.
     fn wake(&self) -> Option<Instant> {
         None
     }
+    /// One vertical axis event, a notch or a touchpad's fraction of one.
     fn wheel(&mut self, _up: bool, _env: &Env) -> Action {
         Action::None
-    }
-    /// One axis event in notches (a touchpad's fractions included), the
-    /// vertical and the sideways axis; a cell that wants the magnitude
-    /// overrides this, the rest step once per event.
-    fn wheel_by(&mut self, vertical: f64, _sideways: f64, env: &Env) -> Action {
-        if vertical == 0.0 { Action::None } else { self.wheel(vertical < 0.0, env) }
     }
     /// Whether the window this cell is on is on screen, told on every paint
     /// (a cell running a child process only while it is seen).
     fn visible(&mut self, _on: bool) {}
-    /// Whether the panel this cell opens is up; true when
-    /// the view changed with it.
-    fn set_open(&mut self, _open: bool) -> bool {
-        false
-    }
     /// A cell that draws itself rather than through its view.
     fn custom(&mut self) -> Option<&mut dyn Custom> {
-        None
-    }
-    /// What `workspaces status` reads off the cell that carries it.
-    fn status(&self) -> Option<serde_json::Value> {
         None
     }
     /// The cell as a quick settings info tile, read after `read`; none
@@ -294,8 +274,6 @@ pub trait Custom {
     fn measure(&mut self, kit: &mut Kit, vertical: bool, band: bool) -> f64;
     fn draw(&mut self, kit: &mut Kit, p: &mut Painter, rect: IRect, ink: &Ink, now: Instant);
     fn animating(&self, now: Instant) -> bool;
-    /// `debug r0Spinner`: the agent badge on the first chip.
-    fn spinner(&mut self, _on: bool, _now: Instant) {}
     /// The cell washes its own children under the pointer, so the kit keeps
     /// its whole-box wash off.
     fn own_hover(&self) -> bool {
@@ -306,12 +284,6 @@ pub trait Custom {
     /// the cell measures.
     fn pointer(&mut self, _at: Option<(f64, f64)>) -> (bool, bool) {
         (false, false)
-    }
-    /// The room the strip has for this cell (its own extent plus what the
-    /// strip has left over); true when the cell's answer to it changed, which
-    /// measures it again.
-    fn room(&mut self, _budget: f64) -> bool {
-        false
     }
 }
 

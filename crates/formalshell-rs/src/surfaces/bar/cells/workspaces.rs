@@ -316,6 +316,76 @@ impl Workspaces {
         let ink = badge_ink(state, &look);
         p.text_in(&shaped, badge, spin * shift, p.clip, ink.with_alpha(ink.a * a), &[]);
     }
+
+    /// A touchpad reports a notch as many small deltas, so they sum to a
+    /// notch before the cell steps.
+    pub fn wheel_by(&mut self, vertical: f64, sideways: f64, env: &Env) -> Action {
+        let delta = if vertical != 0.0 { vertical } else { sideways };
+        if delta == 0.0 {
+            return Action::None;
+        }
+        self.wheel_sum += delta;
+        if self.wheel_sum.abs() < 1.0 {
+            return Action::None;
+        }
+        let up = self.wheel_sum < 0.0;
+        self.wheel_sum = 0.0;
+        self.wheel(up, env)
+    }
+
+    /// `workspaces status`: the chips as resolved, with each icon's agent
+    /// state and every chip's settled length, in the bar window's own
+    /// coordinates.
+    pub fn status(&self) -> Value {
+        let rect = |r: IRect| r.to_json();
+        let slots: Vec<Value> = self
+            .slots
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let chip = self.chips.get(i).cloned().unwrap_or_default();
+                let (_, at, _) = self.parts(&chip);
+                let icons: Vec<Value> = s
+                    .windows
+                    .iter()
+                    .enumerate()
+                    .map(|(n, w)| {
+                        let drawn = chip.shows_apps && n < at.len();
+                        let r = if drawn { self.icon_rect(&chip, at[n], self.origin) } else { IRect::default() };
+                        json!({
+                            "id": w.id,
+                            "appId": w.app_id,
+                            "focused": w.is_focused,
+                            "icon": self.icons.get(w.id.as_str()).is_some_and(|i| !i.source.is_empty()),
+                            "agent": self.agent(&w.id),
+                            "rect": rect(r),
+                        })
+                    })
+                    .collect();
+                json!({
+                    "id": s.id().map_or("", WorkspaceId::as_str),
+                    "idx": s.idx(),
+                    "label": s.label,
+                    "active": s.current,
+                    "focused": s.is_focused(),
+                    "urgent": s.is_urgent,
+                    "placeholder": s.id().is_none(),
+                    "appsShown": chip.shows_apps,
+                    "extent": fs_js::json_number(chip.extent),
+                    "rect": rect(self.chip_rect(&chip, self.origin)),
+                    "overflow": s.overflow,
+                    "icons": icons,
+                })
+            })
+            .collect();
+        json!({"output": self.output, "slots": slots})
+    }
+
+    /// `debug r0Spinner`: the agent badge on the first chip.
+    pub fn spinner(&mut self, on: bool, now: Instant) {
+        self.forced_spinner = on;
+        self.clock = now;
+    }
 }
 
 impl Cell for Workspaces {
@@ -440,72 +510,8 @@ impl Cell for Workspaces {
         }
     }
 
-    /// A touchpad reports a notch as many small deltas, so they sum to a
-    /// notch before the cell steps.
-    fn wheel_by(&mut self, vertical: f64, sideways: f64, env: &Env) -> Action {
-        let delta = if vertical != 0.0 { vertical } else { sideways };
-        if delta == 0.0 {
-            return Action::None;
-        }
-        self.wheel_sum += delta;
-        if self.wheel_sum.abs() < 1.0 {
-            return Action::None;
-        }
-        let up = self.wheel_sum < 0.0;
-        self.wheel_sum = 0.0;
-        self.wheel(up, env)
-    }
-
     fn custom(&mut self) -> Option<&mut dyn Custom> {
         Some(self)
-    }
-
-    /// `workspaces status`: the chips as resolved, with each icon's agent
-    /// state and every chip's settled length, in the bar window's own
-    /// coordinates.
-    fn status(&self) -> Option<Value> {
-        let rect = |r: IRect| r.to_json();
-        let slots: Vec<Value> = self
-            .slots
-            .iter()
-            .enumerate()
-            .map(|(i, s)| {
-                let chip = self.chips.get(i).cloned().unwrap_or_default();
-                let (_, at, _) = self.parts(&chip);
-                let icons: Vec<Value> = s
-                    .windows
-                    .iter()
-                    .enumerate()
-                    .map(|(n, w)| {
-                        let drawn = chip.shows_apps && n < at.len();
-                        let r = if drawn { self.icon_rect(&chip, at[n], self.origin) } else { IRect::default() };
-                        json!({
-                            "id": w.id,
-                            "appId": w.app_id,
-                            "focused": w.is_focused,
-                            "icon": self.icons.get(w.id.as_str()).is_some_and(|i| !i.source.is_empty()),
-                            "agent": self.agent(&w.id),
-                            "rect": rect(r),
-                        })
-                    })
-                    .collect();
-                json!({
-                    "id": s.id().map_or("", WorkspaceId::as_str),
-                    "idx": s.idx(),
-                    "label": s.label,
-                    "active": s.current,
-                    "focused": s.is_focused(),
-                    "urgent": s.is_urgent,
-                    "placeholder": s.id().is_none(),
-                    "appsShown": chip.shows_apps,
-                    "extent": fs_js::json_number(chip.extent),
-                    "rect": rect(self.chip_rect(&chip, self.origin)),
-                    "overflow": s.overflow,
-                    "icons": icons,
-                })
-            })
-            .collect();
-        Some(json!({"output": self.output, "slots": slots}))
     }
 }
 
@@ -705,11 +711,6 @@ impl Custom for Workspaces {
         let fx = self.fx.values().any(|f| f.dim.running(now) || f.arrive.running(now));
         let ink = self.label_ink.values().any(|l| l.t.running(now));
         self.forced_spinner || badges || waiting || urgent || fx || ink || self.pill.running(now)
-    }
-
-    fn spinner(&mut self, on: bool, now: Instant) {
-        self.forced_spinner = on;
-        self.clock = now;
     }
 
     fn own_hover(&self) -> bool {

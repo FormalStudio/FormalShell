@@ -20,6 +20,15 @@ impl Chevron {
     pub fn new(region: Region, entries: &[Entry]) -> Self {
         Self { region, count: layout::collapsed_names(entries).len(), edge: Edge::Top, open: false }
     }
+
+    /// Open while the quick settings card its region's chevron opened is
+    /// up (`overflow`); true when the view turned with it.
+    pub fn set_open(&mut self, overflow: Option<Region>) -> bool {
+        let open = overflow == Some(self.region);
+        let changed = open != self.open;
+        self.open = open;
+        changed
+    }
 }
 
 impl Cell for Chevron {
@@ -45,11 +54,5 @@ impl Cell for Chevron {
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
         Action::Overflow(self.region)
-    }
-
-    fn set_open(&mut self, open: bool) -> bool {
-        let changed = open != self.open;
-        self.open = open;
-        changed
     }
 }

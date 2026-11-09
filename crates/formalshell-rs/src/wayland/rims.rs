@@ -44,14 +44,14 @@ impl App {
         let origin = self.bar_origin();
         let lit = self.rims.lit.clone().map(|l| (l, origin));
         let key = lit.as_ref().map(|(l, o)| (l.generation, o.0.to_bits(), o.1.to_bits()));
-        if let Some(sb) = &mut live!(self).bar.sidebar
+        if let Some(sb) = live!(self).bar.sidebar_mut()
             && self.rims.sidebar != key
         {
             self.rims.sidebar = key;
             sb.set_lit(lit);
             live!(self).dirty = true;
         }
-        if live!(self).bar.sidebar.is_none() {
+        if live!(self).bar.sidebar().is_none() {
             self.rims.sidebar = None;
         }
     }

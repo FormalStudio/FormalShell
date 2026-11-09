@@ -2,7 +2,6 @@
 //! card under its cell when the strip has one; `open` hangs it at the
 //! strip's end.
 
-use fs_chrome::bar::{layout, panels};
 use fs_chrome::plugins::Kind;
 
 use super::registry::{Function, Reply, Target, Type, Value, ok, text};
@@ -74,9 +73,7 @@ fn toggle(app: &mut App, args: &[Value]) -> Reply {
 
 fn toggle_at(app: &mut App, args: &[Value]) -> Reply {
     let n = args[0].int();
-    let bar = app.store.config.get("bar").cloned();
-    let resolved = layout::resolve(bar.as_ref(), &[]);
-    match panels::panel_at(&resolved, n as i64) {
+    match live!(app).bar.panel_at(n as i64) {
         Some(name) => toggle(app, &[Value::Str(name.into())]),
         None => text(format!("no panel at {n}")),
     }

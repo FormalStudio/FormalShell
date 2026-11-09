@@ -10,13 +10,12 @@ pub mod piece;
 use std::cell::RefCell;
 
 use fs_audio::{Command, Visual};
-use fs_chrome::bar::layout::{self, Builtin, Entry, EntryKind};
+use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
 use fs_chrome::bar::panels::widget_panel;
 use fs_types::{BtAddress, Edge, Region};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
 use fs_system::power::model::{battery_icon, charge_threshold_active};
-use crate::settings::Layout;
 use fs_upower::Profile;
 use serde_json::{Value as Json, json};
 
@@ -30,8 +29,8 @@ use crate::services::ipad::Link;
 use crate::services::{display, theme};
 use crate::store::{Store, Topic};
 use crate::surfaces::activity;
-use crate::surfaces::bar::cell::{Action as CellAction, Button, Env, Summary};
-use crate::surfaces::bar::slot::Slot;
+use crate::surfaces::bar::cell::{Action as CellAction, Button, Cell, Env, Summary};
+use crate::surfaces::bar::cells;
 use crate::ui::el::Ring;
 use crate::ui::{El, Event, Ink, Size, What, w};
 
@@ -58,7 +57,7 @@ impl Origin {
 
     /// The region whose governed cells become info tiles; with no chevron,
     /// the right region's.
-    fn region(self) -> Region {
+    pub fn region(self) -> Region {
         match self {
             Origin::Chevron(r) => r,
             Origin::Sidebar | Origin::Ipc => Region::Right,
@@ -301,18 +300,6 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
 }
 
 pub const BACKGROUND: &str = "background";
-
-/// The entries the card shows as info tiles (§7): what `region`'s chevron
-/// governs less what the card draws itself, or under the sidebar the right
-/// region's entries the column has no card for.
-pub fn extra_entries(store: &Store, region: Region) -> Vec<Entry> {
-    let resolved = layout::resolve(store.config.get("bar"), &store.plugins.bar_plugins());
-    if crate::settings::layout(&store.config) == Layout::Sidebar {
-        layout::sidebar_quick_extras(&resolved.regions.right)
-    } else {
-        layout::quick_extras(resolved.regions.get(region))
-    }
-}
 
 /// An info tile as its cell reads now.
 #[derive(Clone, Debug, PartialEq)]
@@ -757,9 +744,13 @@ pub struct QuickSettings {
     /// NetworkManager scans while Wi-Fi's menu is open, as the network
     /// panel has it scan while it is.
     scan: RefCell<Option<net::Hold>>,
+    /// The entries the card shows as info tiles (§7), as the bar that
+    /// opened it resolved them, and that bar's edge, which their cells read.
+    entries: Vec<Entry>,
+    edge: Edge,
     /// Each info tile's entry and its cell, built as the card opens and
     /// held seen while it is open, so the cell's own wants run.
-    extras: RefCell<Vec<(Entry, Slot)>>,
+    extras: RefCell<Vec<(Entry, Box<dyn Cell>)>>,
     /// The tiles as last drawn, for `quicksettings status`.
     drawn: RefCell<Vec<Extra>>,
 }
@@ -773,6 +764,8 @@ impl Default for QuickSettings {
             sections: RefCell::new(Vec::new()),
             menu: RefCell::new(MenuState::default()),
             scan: RefCell::new(None),
+            entries: Vec::new(),
+            edge: Edge::Top,
             extras: RefCell::new(Vec::new()),
             drawn: RefCell::new(Vec::new()),
         }
@@ -1008,12 +1001,11 @@ impl Panel for QuickSettings {
         }
         self.start = tiles(fx.store).into_iter().find(|t| matches!(t.kind, Kind::Toggle | Kind::Split) && t.available()).map(|t| t.id.to_owned());
         fx.service(power::ask);
-        let entries = extra_entries(fx.store, self.origin.region());
         let extras = self.extras.get_mut();
-        for (n, e) in entries.iter().enumerate() {
-            for mut slot in Slot::rail(e, &entries, n) {
-                slot.cell.visible(true);
-                extras.push((e.clone(), slot));
+        for e in &self.entries {
+            for mut cell in cells::build(e, &self.entries) {
+                cell.visible(true);
+                extras.push((e.clone(), cell));
             }
         }
     }
@@ -1125,25 +1117,27 @@ impl Panel for QuickSettings {
 }
 
 impl QuickSettings {
-    pub fn opened_by(origin: Origin) -> Self {
-        Self { origin, ..Self::default() }
+    /// The card `origin` opened, its info tiles `entries` off a bar on
+    /// `edge`.
+    pub fn opened_by(origin: Origin, entries: Vec<Entry>, edge: Edge) -> Self {
+        Self { origin, entries, edge, ..Self::default() }
     }
 
     /// Every info tile as its cell reads now, in `bar.layout` order; a cell
     /// whose view is hidden has none.
     fn extras_now(&self, store: &Store, raster: f64) -> Vec<Extra> {
         let output = focused_output(store);
-        let env = Env { store, edge: Edge::Top, output: &output, raster };
+        let env = Env { store, edge: self.edge, output: &output, raster };
         let mut held = self.extras.borrow_mut();
         let out: Vec<Extra> = held
             .iter_mut()
-            .filter_map(|(entry, slot)| {
-                slot.cell.read(&env);
+            .filter_map(|(entry, cell)| {
+                cell.read(&env);
                 let panel = match tap(entry) {
                     Tap::Panel(p) => Some(p),
                     _ => None,
                 };
-                slot.cell.summary().map(|summary| Extra { id: slot.name.clone(), summary, panel })
+                cell.summary().map(|summary| Extra { id: entry.name(), summary, panel })
             })
             .collect();
         *self.drawn.borrow_mut() = out.clone();
@@ -1154,10 +1148,10 @@ impl QuickSettings {
     /// or the cell's own click runs. False when `id` is no tile now.
     fn open_extra(&mut self, id: &str, fx: &mut Effect) -> bool {
         let output = focused_output(fx.store);
-        let env = Env { store: fx.store, edge: Edge::Top, output: &output, raster: fx.store.display.scales.primary() };
-        let Some((entry, slot)) = self.extras.get_mut().iter_mut().find(|(_, s)| s.name == id) else { return false };
-        slot.cell.read(&env);
-        if slot.cell.summary().is_none() {
+        let env = Env { store: fx.store, edge: self.edge, output: &output, raster: fx.store.display.scales.primary() };
+        let Some((entry, cell)) = self.extras.get_mut().iter_mut().find(|(e, _)| e.name() == id) else { return false };
+        cell.read(&env);
+        if cell.summary().is_none() {
             return false;
         }
         match tap(entry) {
@@ -1166,7 +1160,7 @@ impl QuickSettings {
                 fx.close = true;
                 fx.ipc(argv);
             }
-            Tap::Cell => match slot.cell.click(Button::Left, (0.0, 0.0), &env) {
+            Tap::Cell => match cell.click(Button::Left, (0.0, 0.0), &env) {
                 CellAction::None => {}
                 CellAction::Panel(p) => fx.panel = Some(p),
                 action => fx.act = Some(action),

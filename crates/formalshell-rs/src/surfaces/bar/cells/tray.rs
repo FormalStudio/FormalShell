@@ -103,6 +103,28 @@ impl Tray {
         self.bitmaps = self.items.iter().map(|i| i.icon.as_ref().and_then(|r| r.bitmap(size, scale))).collect();
         self.bitmap_size = (size, scale);
     }
+
+    /// The hovered item's own words, else its title, else its id, with
+    /// where its box sits along the cell (start, extent).
+    pub fn tip_at(&self) -> Option<(String, f64, f64)> {
+        let i = self.hover.filter(|_| self.icons())?;
+        let item = &self.items[i];
+        let text = [&item.tooltip, &item.title, &item.id].into_iter().find(|t| !t.is_empty())?.clone();
+        let (start, e) = *self.boxes().get(i)?;
+        Some((text, start, e))
+    }
+
+    /// The room the strip has for the tray (its own extent plus what the
+    /// strip has left over); true when the answer to it changed, which
+    /// measures it again.
+    pub fn room(&mut self, budget: f64) -> bool {
+        let fit = fits(self.items.len(), budget, self.unit, self.gap, self.max_visible);
+        let was = self.inline();
+        self.fit = fit;
+        self.decided = true;
+        self.publish();
+        self.inline() != was
+    }
 }
 
 impl Cell for Tray {
@@ -162,19 +184,6 @@ impl Cell for Tray {
         };
         let (start, e) = self.boxes()[i];
         Action::Tray { key: item.key.clone(), click, offset: start + e / 2.0 - self.along / 2.0 }
-    }
-
-    fn set_open(&mut self, _: bool) -> bool {
-        false
-    }
-
-    /// The item's own words, else its title, else its id.
-    fn tip_at(&self) -> Option<(String, f64, f64)> {
-        let i = self.hover.filter(|_| self.icons())?;
-        let item = &self.items[i];
-        let text = [&item.tooltip, &item.title, &item.id].into_iter().find(|t| !t.is_empty())?.clone();
-        let (start, e) = *self.boxes().get(i)?;
-        Some((text, start, e))
     }
 
     fn custom(&mut self) -> Option<&mut dyn Custom> {
@@ -243,15 +252,6 @@ impl Custom for Tray {
         let changed = hover != self.hover;
         self.hover = hover;
         (changed, false)
-    }
-
-    fn room(&mut self, budget: f64) -> bool {
-        let fit = fits(self.items.len(), budget, self.unit, self.gap, self.max_visible);
-        let was = self.inline();
-        self.fit = fit;
-        self.decided = true;
-        self.publish();
-        self.inline() != was
     }
 }
 

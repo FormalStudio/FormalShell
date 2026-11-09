@@ -612,7 +612,7 @@ impl App {
     /// What of the live output the bar takes the pointer over, in the
     /// output's own coordinates.
     fn bar_input(&self) -> Vec<IRect> {
-        match live!(self).bar.input_rects().filter(|_| live!(self).bar.sidebar.is_some()) {
+        match live!(self).bar.input_rects().filter(|_| live!(self).bar.sidebar().is_some()) {
             Some(rects) => {
                 let chrome = self.chrome();
                 let (ox, oy) = chrome.origin(live!(self).bar.thickness());
@@ -1001,7 +1001,7 @@ impl App {
             self.close_panels();
         }
         let anchor = match from {
-            quick::Origin::Chevron(region) => live!(self).bar.slots.iter().position(|s| s.name == "chevron" && s.region == region).map(|i| live!(self).bar.slot_anchor(i)),
+            quick::Origin::Chevron(region) => live!(self).bar.chevron_anchor(region),
             quick::Origin::Sidebar => live!(self).bar.sidebar_anchor("overflow"),
             quick::Origin::Ipc => None,
         };
@@ -1038,7 +1038,8 @@ impl App {
         self.overlay_close();
         let module = if name == quick::ID {
             self.quick_from = from;
-            Some(Box::new(quick::QuickSettings::opened_by(from)) as Box<dyn panel::Panel>)
+            let bar = &live!(self).bar;
+            Some(Box::new(quick::QuickSettings::opened_by(from, bar.quick_extras(from.region()), bar.edge())) as Box<dyn panel::Panel>)
         } else {
             panel::build(name)
         };
@@ -1307,12 +1308,7 @@ impl App {
     }
 
     pub fn set_spinner(&mut self, on: bool) {
-        let now = Instant::now();
-        for s in &mut live!(self).bar.slots {
-            if let Some(c) = s.cell.custom() {
-                c.spinner(on, now);
-            }
-        }
+        live!(self).bar.spinner(on, Instant::now());
         live!(self).dirty = true;
     }
 
@@ -1379,7 +1375,7 @@ impl App {
             }
             Action::Overflow(region) => {
                 let open = self.panel_open() != Some(quick::ID);
-                let from = if live!(self).bar.sidebar.is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(region) };
+                let from = if live!(self).bar.sidebar().is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(region) };
                 self.set_panel_from(quick::ID, open, Some(anchor), from);
             }
             Action::Workspace(id) => compositor::focus_workspace(&id),
@@ -1427,8 +1423,6 @@ impl App {
                 self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::SetDnd(on))));
             }
             Action::Launcher => self.menu_toggle(),
-            Action::Sidebar(collapsed) => surfaces::sidebar::set_collapsed(collapsed),
-            Action::Software(change) => crate::services::packages::send(crate::services::packages::Cmd::Change(change)),
         }
     }
 
@@ -1609,11 +1603,7 @@ impl App {
     fn hover(&mut self, owner: Option<Target>, at: (f64, f64)) {
         let now = Instant::now();
         let bar_hover = (owner == Some(Target::Bar)).then(|| live!(self).bar.hit(at.0, at.1)).flatten();
-        if bar_hover != live!(self).bar.hover {
-            live!(self).bar.hover = bar_hover;
-            for s in &mut live!(self).bar.slots {
-                s.dirty = true;
-            }
+        if live!(self).bar.set_hover(bar_hover) {
             live!(self).dirty = true;
         }
         if live!(self).bar.pointer(&mut self.kit, bar_hover, at, &self.store, Instant::now()) {
@@ -1795,7 +1785,7 @@ impl App {
                     let action = live!(self).bar.wheel(i, v, h, &self.store);
                     let anchor = live!(self).bar.slot_anchor(i);
                     self.act(action, anchor);
-                    if live!(self).bar.sidebar.is_some() {
+                    if live!(self).bar.sidebar().is_some() {
                         live!(self).dirty = true;
                         self.request_paint();
                     }
