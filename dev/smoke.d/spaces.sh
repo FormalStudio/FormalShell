@@ -188,6 +188,8 @@ leg_spaces_drive() {
 #!/usr/bin/env bash
 centre() { "$jq_bin" -r ".slots[\$1].rect | \"\\(.x + (.width / 2) | floor) \\(.y + (.height / 2) | floor)\"" "\$2"; }
 card_centre() { "$jq_bin" -r ".preview.rect | \"\\(.x + (.width / 2) | floor) \\(.y + (.height / 2) | floor)\"" "\$1"; }
+# Home first and let the hover see the pointer leave before it lands.
+park_slow() { park; sleep 0.5; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
 sleep 4
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --server=$spaces_foot_socket]==])" > "$spaces_dispatch_path" 2>&1
 sleep 1
@@ -224,7 +226,7 @@ call debug query spaces-quiet-start
 sleep 3
 call debug query spaces-quiet-end
 call workspaces status > "$spaces_status_quiet_path" 2>&1
-park \$(centre 0 "$spaces_status_one_path")
+park_slow \$(centre 0 "$spaces_status_one_path")
 sleep 1
 "$wlrctl_bin" pointer scroll 15 0 >> "$spaces_dispatch_path" 2>&1
 sleep 2
@@ -234,13 +236,13 @@ call workspaces status > "$spaces_status_two_path" 2>&1
 "$wlrctl_bin" pointer scroll -15 0 >> "$spaces_dispatch_path" 2>&1
 sleep 2
 "$hyprctl_bin" activeworkspace -j > "$spaces_ws_up_path" 2>&1
-park 960 900
+park_slow 960 900
 sleep 1
 call workspaces peek 2 > "$spaces_peek_reply_path" 2>&1
 sleep 2
 call workspaces status > "$spaces_status_peek_path" 2>&1
 "$grim_bin" "$spaces_peek_png" > /dev/null 2>&1
-park \$(card_centre "$spaces_status_peek_path")
+park_slow \$(card_centre "$spaces_status_peek_path")
 sleep 1
 "$wlrctl_bin" pointer scroll 15 0 >> "$spaces_dispatch_path" 2>&1
 sleep 1
@@ -251,7 +253,7 @@ sleep 1
 call workspaces status > "$spaces_status_wheel_back_path" 2>&1
 call workspaces close >> "$spaces_peek_reply_path" 2>&1
 sleep 2
-park \$(centre 1 "$spaces_status_one_path")
+park_slow \$(centre 1 "$spaces_status_one_path")
 sleep 2
 call workspaces status > "$spaces_status_hover_path" 2>&1
 "$grim_bin" "$spaces_hover_png" > /dev/null 2>&1
@@ -274,7 +276,7 @@ call workspaces status > "$spaces_status_pad_path" 2>&1
 "$wlrctl_bin" pointer scroll 0 -15 >> "$spaces_dispatch_path" 2>&1
 sleep 1
 call workspaces status > "$spaces_status_pad_back_path" 2>&1
-park 960 900
+park_slow 960 900
 sleep 2
 call workspaces status > "$spaces_status_left_path" 2>&1
 "$grim_bin" "$spaces_left_png" > /dev/null 2>&1

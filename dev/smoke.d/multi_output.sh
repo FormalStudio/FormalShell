@@ -93,7 +93,6 @@ sleep 4
 "$grim_bin" -o "\$first" "$multi_output_first_png" > /dev/null 2>&1
 "$grim_bin" -o "$multi_output_second" "$multi_output_second_png" > /dev/null 2>&1
 sleep 6
-call() { $ipc call "\$@"; }
 park_at() {
   park "\$1" "\$2" >> "$multi_output_click" 2>&1
   sleep 1
