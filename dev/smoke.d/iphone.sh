@@ -30,6 +30,12 @@
 #    local arrives after).
 #  - the panel (`panel open iphone`), recent list and Now playing populated
 #    from the ams shim's own now-playing line.
+#  - both ams line formats as the media source (`media status`): the
+#    patched bridge's PlaybackInfo line (`update: playback`,
+#    packaging/iphone-ams-update.patch) read as the position, then an
+#    unpatched bridge's lines, which name no update: a track change
+#    repeating the old elapsed, the next line's moved elapsed read as the
+#    new track's position, and a seek after it.
 #  - the ams shim's first run failing its subscribe the way a phone that is
 #    not GATT-ready does (error line, then a non-zero exit): the error shows
 #    in `iphone status`, the service starts ams again on its backoff, and
@@ -105,6 +111,9 @@ iphone_stale_png="$shot_dir/iphone-stale-bond.png"
 iphone_pairing_png="$shot_dir/iphone-pairing.png"
 iphone_visualizer_a_path="$shot_dir/iphone-visualizer-a.json"
 iphone_visualizer_b_path="$shot_dir/iphone-visualizer-b.json"
+iphone_media_patched_path="$shot_dir/iphone-media-patched.json"
+iphone_media_legacy_path="$shot_dir/iphone-media-legacy.json"
+iphone_media_legacy_seek_path="$shot_dir/iphone-media-legacy-seek.json"
 
 leg_iphone_fixture() {
   settings_pin '.iphone.notifications.focus = "respect"'
@@ -188,9 +197,9 @@ EOF
 }
 
 leg_iphone_timing() {
-  # Just past 30s of sleeps plus roughly a dozen `ipc call` round trips at
+  # Just past 33s of sleeps plus roughly a dozen `ipc call` round trips at
   # ~1s each on llvmpipe (notify.sh's own header note on that cost).
-  leg_timing 115
+  leg_timing 122
 }
 
 leg_iphone_drive() {
@@ -198,6 +207,7 @@ leg_iphone_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 append() { printf '%s\n' "\$1" >> "$iphone_bridge_events_path"; }
+ams() { printf '%s\n' "\$1" >> "$iphone_ams_events_path"; }
 
 # The bridge chain is three nested execs deep (sh -c's own probe, the shim
 # script, stdbuf into tail) rather than the single binary most other legs'
@@ -277,6 +287,17 @@ $ipc call visualizer status > "$iphone_visualizer_a_path" 2>&1
 sleep 0.3
 $ipc call visualizer status > "$iphone_visualizer_b_path" 2>&1
 "$grim_bin" "$iphone_media_png" > /dev/null 2>&1
+$ipc call media status > "$iphone_media_patched_path" 2>&1
+
+# An unpatched bridge names no line's update: the title line repeats the
+# last track's elapsed, the next line moves it.
+ams '{"type":"nowplaying","title":"Tides","artist":"Fixture Band","album":"Fixture Album","duration":240,"elapsed":12,"playback":"playing","volume":0.6}'
+ams '{"type":"nowplaying","title":"Tides","artist":"Fixture Band","album":"Fixture Album","duration":240,"elapsed":95,"playback":"paused","volume":0.6}'
+sleep 2
+$ipc call media status > "$iphone_media_legacy_path" 2>&1
+ams '{"type":"nowplaying","title":"Tides","artist":"Fixture Band","album":"Fixture Album","duration":240,"elapsed":140,"playback":"paused","volume":0.6}'
+sleep 1
+$ipc call media status > "$iphone_media_legacy_seek_path" 2>&1
 
 # The phone forgot this laptop: BlueZ still holds the bond, LE is down.
 append '{"type":"status","observer":true,"connected":false,"paired":true,"deviceName":"$iphone_device_name","address":"$iphone_device_address","battery":-1}'
@@ -365,6 +386,18 @@ leg_iphone_assert() {
     fail "the tempo frame did not move between two reads"
   fi
   if pgrep -x cava > /dev/null; then fail "cava running with the phone as the source"; fi
+
+  cat "$iphone_media_patched_path"; echo
+  if [ "$("$jq_bin" -r '.kind == "iphone" and .title == "Waves" and .isPlaying and .position >= 12' "$iphone_media_patched_path")" != "true" ]; then
+    fail "the patched bridge's PlaybackInfo line was not read as the phone's position: $(cat "$iphone_media_patched_path")"
+  fi
+  cat "$iphone_media_legacy_path"; echo
+  if [ "$("$jq_bin" -r '.kind == "iphone" and .title == "Tides" and (.isPlaying | not) and .position == 95' "$iphone_media_legacy_path")" != "true" ]; then
+    fail "an unpatched bridge's moved elapsed after a track change was not read as its position: $(cat "$iphone_media_legacy_path")"
+  fi
+  if [ "$("$jq_bin" -r '.title == "Tides" and .position == 140' "$iphone_media_legacy_seek_path")" != "true" ]; then
+    fail "an unpatched bridge's seek was not read: $(cat "$iphone_media_legacy_seek_path")"
+  fi
 
   cat "$iphone_status_stale_path"; echo
   if [ "$("$jq_bin" -r '(.connected | not) and .bonded and .bondAddress == "'"$iphone_device_address"'" and .lastError == "" and (.mediaAvailable | not)' "$iphone_status_stale_path")" != "true" ]; then

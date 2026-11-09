@@ -186,7 +186,9 @@ fn apply(state: &mut State, event: AmsEvent) {
 /// the whole state. New names make a new track, its position stale until the
 /// first PlaybackInfo line after them, whatever elapsed that line repeats; a
 /// duration alone is the same track refined. Only a PlaybackInfo line moves
-/// the extrapolation base.
+/// the extrapolation base. A bridge that names no line's update (the hosts'
+/// pinned package before `packaging/iphone-ams-update.patch`) is read the
+/// old way: a line whose elapsed or playback moved is a reading.
 fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
     match event {
         AmsEvent::Status { available } => {
@@ -202,7 +204,7 @@ fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
                 state.position_stale = true;
                 state.changed_at = Some(now);
             }
-            if reading {
+            if reading.unwrap_or_else(|| (elapsed, &playback) != (state.elapsed, &state.playback)) {
                 (state.elapsed, state.at) = (elapsed, now);
                 state.position_stale = false;
                 state.changed_at = None;
@@ -399,6 +401,15 @@ mod tests {
     /// A line the bridge writes for a track attribute (`reading` false) or
     /// for the phone's PlaybackInfo (`reading` true).
     fn line(title: &str, duration: f64, elapsed: f64, playback: &str, reading: bool) -> AmsEvent {
+        now_playing(title, duration, elapsed, playback, Some(reading))
+    }
+
+    /// The same line from a bridge that names no update.
+    fn legacy(title: &str, duration: f64, elapsed: f64, playback: &str) -> AmsEvent {
+        now_playing(title, duration, elapsed, playback, None)
+    }
+
+    fn now_playing(title: &str, duration: f64, elapsed: f64, playback: &str, reading: Option<bool>) -> AmsEvent {
         AmsEvent::NowPlaying {
             title: title.into(),
             artist: "A".into(),
@@ -409,6 +420,46 @@ mod tests {
             volume: -1.0,
             reading,
         }
+    }
+
+    #[test]
+    fn a_legacy_bridge_reads_a_moved_elapsed_after_a_change() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, legacy("One", 200.0, 150.0, "playing"), t0);
+        assert!(!s.position_stale && s.elapsed == 150.0);
+
+        let change = t0 + Duration::from_secs(40);
+        apply_at(&mut s, legacy("Two", 200.0, 150.0, "playing"), change);
+        assert!(s.position_stale, "the title line repeats the old elapsed");
+        assert_eq!(s.at, t0);
+        apply_at(&mut s, legacy("Two", 200.0, 0.3, "playing"), change + Duration::from_millis(80));
+        assert!(!s.position_stale && s.reading_wait().is_none() && s.elapsed == 0.3);
+    }
+
+    #[test]
+    fn a_legacy_bridge_honours_seeks_and_a_title_line_keeps_the_base() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, legacy("One", 200.0, 10.0, "playing"), t0);
+        apply_at(&mut s, legacy("One", 200.0, 90.0, "playing"), t0 + Duration::from_secs(5));
+        assert_eq!(s.position(t0 + Duration::from_secs(6)), 91.0, "a seek moves the base");
+        apply_at(&mut s, legacy("One", 200.0, 90.0, "paused"), t0 + Duration::from_secs(7));
+        assert_eq!(s.position(t0 + Duration::from_secs(30)), 90.0, "a pause is a reading");
+        apply_at(&mut s, legacy("One", 181.0, 90.0, "paused"), t0 + Duration::from_secs(8));
+        assert_eq!(s.at, t0 + Duration::from_secs(7), "a line moving nothing is no reading");
+    }
+
+    #[test]
+    fn a_legacy_bridge_starts_a_silent_track_at_zero_once_the_wait_runs_out() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, legacy("One", 200.0, 150.0, "playing"), t0);
+        let change = t0 + Duration::from_secs(30);
+        apply_at(&mut s, legacy("Two", 200.0, 150.0, "playing"), change);
+        s.expire_reading(s.reading_wait().unwrap());
+        assert!(!s.position_stale);
+        assert_eq!(s.position(change + Duration::from_secs(2)), 2.0);
     }
 
     #[test]
@@ -488,7 +539,7 @@ mod tests {
         assert!(!s.listed());
         apply(
             &mut s,
-            AmsEvent::NowPlaying { title: "T".into(), artist: "A".into(), album: String::new(), duration: 0.0, elapsed: 0.0, playback: "playing".into(), volume: -1.0, reading: true },
+            AmsEvent::NowPlaying { title: "T".into(), artist: "A".into(), album: String::new(), duration: 0.0, elapsed: 0.0, playback: "playing".into(), volume: -1.0, reading: Some(true) },
         );
         assert!(s.listed());
         assert_eq!(s.volume, -1.0);

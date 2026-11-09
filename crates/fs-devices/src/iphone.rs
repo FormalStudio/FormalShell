@@ -511,13 +511,14 @@ pub fn to_notification(entry: &Notification) -> Notif {
 /// listen that then exits non-zero), and every `NowPlaying` line carries the
 /// player's *whole* known state, not a diff, so a title-only change still
 /// repeats the last `elapsed`/`playback` the caller already had. `reading`
-/// is set on the line the phone's PlaybackInfo update wrote
-/// (`packaging/iphone-ams-update.patch` names each line's update), the one
-/// whose `elapsed` is a fresh reading.
+/// is `Some(true)` on the line the phone's PlaybackInfo update wrote, the one
+/// whose `elapsed` is a fresh reading, and `Some(false)` on any other
+/// (`packaging/iphone-ams-update.patch` names each line's update). `None` is
+/// a bridge without that patch, which names none.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AmsEvent {
     Status { available: bool },
-    NowPlaying { title: String, artist: String, album: String, duration: f64, elapsed: f64, playback: String, volume: f64, reading: bool },
+    NowPlaying { title: String, artist: String, album: String, duration: f64, elapsed: f64, playback: String, volume: f64, reading: Option<bool> },
     Error { message: String },
 }
 
@@ -546,7 +547,7 @@ pub fn parse_ams_line(line: &str) -> Option<AmsEvent> {
                 elapsed: if elapsed.is_finite() && elapsed >= 0.0 { elapsed } else { 0.0 },
                 playback: s(&raw, "playback"),
                 volume: if volume.is_finite() && volume >= 0.0 { volume } else { -1.0 },
-                reading: s(&raw, "update") == "playback",
+                reading: js::field(&raw, "update").and_then(Json::as_str).map(|update| update == "playback"),
             })
         }
         "error" => Some(AmsEvent::Error { message: explain_error(&s(&raw, "message")) }),
@@ -773,9 +774,11 @@ mod tests {
                 elapsed: 41.2,
                 playback: "playing".into(),
                 volume: 0.6,
-                reading: true,
+                reading: Some(true),
             })
         );
+        let track = parse_ams_line(r#"{"type": "nowplaying", "update": "track", "title": "Talk", "artist": "", "album": "", "duration": 0, "player": "", "playback": "", "elapsed": 0, "volume": -1}"#);
+        assert!(matches!(track, Some(AmsEvent::NowPlaying { reading: Some(false), .. })));
     }
 
     #[test]
@@ -783,7 +786,7 @@ mod tests {
         let e = parse_ams_line(r#"{"type": "nowplaying", "title": "", "artist": "", "album": "", "duration": 0.0, "player": "", "playback": "", "elapsed": 0.0, "volume": -1.0}"#);
         match e {
             Some(AmsEvent::NowPlaying { title, duration, playback, volume, reading, .. }) => {
-                assert!(!reading, "a line naming no update is no reading");
+                assert_eq!(reading, None, "an unpatched bridge names no update");
                 assert_eq!(title, "");
                 assert_eq!(duration, 0.0);
                 assert_eq!(playback, "");
