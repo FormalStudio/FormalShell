@@ -101,8 +101,8 @@ impl App {
         card.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         card.commit();
         let mut surface = match &self.bar_wl {
-            Some(output) => Surface::on(names[0], Backend::Gpu, card, &self.shm, self.started, output),
-            None => Surface::new(names[0], Backend::Gpu, card, &self.shm, self.started),
+            Some(output) => Surface::new(names[0], Backend::Gpu, card, &self.shm, self.started, self.store.display.scales.on(output)),
+            None => Surface::new(names[0], Backend::Gpu, card, &self.shm, self.started, self.store.display.scales.primary()),
         };
         surface.wait_map = true;
         Modal::new(theme, surface, band, dim, namespace, output, edge, inset, ends, self.motion_scale, self.cast, deform_amount)
@@ -131,7 +131,7 @@ impl App {
                     surface.set_input_region(Some(region.wl_region()));
                 }
                 let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-                let mut s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport).under(card);
+                let mut s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.started, self.store.display.scales.primary()).with_viewport(viewport).under(card);
                 s.raster_budget = Some(LAUNCHER_SLICE);
                 s
             })
@@ -183,7 +183,7 @@ impl App {
         }
         let (w, h) = self.output_size();
         let size = (w as i32, h as i32);
-        self.launch_kept = crate::surface::Kept::prefaulted(&self.shm, size, runtime.pool());
+        self.launch_kept = crate::surface::Kept::prefaulted(&self.shm, size, self.store.display.scales.primary(), runtime.pool());
         self.release_kept_later();
     }
 
@@ -197,7 +197,7 @@ impl App {
             surface.set_input_region(Some(region.wl_region()));
         }
         let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-        let s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport).under(card);
+        let s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.started, self.store.display.scales.primary()).with_viewport(viewport).under(card);
         crate::surfaces::modal::Layer::new(s)
     }
 
@@ -1100,7 +1100,7 @@ impl App {
     /// The scale the launcher's pictures are made at: its card's, else the
     /// bar's output's, where it opens.
     fn launcher_scale(&self) -> f64 {
-        self.launch.as_ref().map_or_else(crate::scene::raster_scale, |w| w.shown.modal.surface.scale())
+        self.launch.as_ref().map_or_else(|| self.store.display.scales.primary(), |w| w.shown.modal.surface.scale())
     }
 
     pub(super) fn present_launcher(&mut self, now: Instant) {
@@ -1150,7 +1150,6 @@ impl App {
             self.launcher.dirty = true;
         }
         if !rastering && wants {
-            let _raster = crate::scene::raster_at(w.shown.modal.surface.scale());
             w.shown.modal.sync_region(&self.compositor);
             self.kit.seen = Some(std::mem::take(&mut self.launcher_styles));
             w.shown.layout(&mut self.launcher, &self.store, theme, &mut self.kit, now);

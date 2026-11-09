@@ -245,7 +245,7 @@ impl Shown {
         a.globe.active_country = a.active_code.clone();
         let c = |n: &str| theme.colors.get(n);
         let ink = GlobeInk { sphere: c("background"), land: c("muted"), grid: c("border"), outline: c("mutedForeground"), signal: c("primary"), accent: c("primary"), radius: theme.radii.lg };
-        let ops = a.globe.paint(&ink, alpha);
+        let ops = a.globe.paint(&ink, alpha, self.modal.surface.scale());
         let (gx, gy, gw, gh) = a.globe.rect;
         let bounds = IRect::new(gx.floor() as i32, gy.floor() as i32, gw.ceil() as i32 + 1, gh.ceil() as i32 + 1);
         scene.update_with(self.globe_node, bounds, Paint::Vector(ops), true, Affine::IDENTITY, Some(bounds.intersect(&clip)));

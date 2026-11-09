@@ -280,8 +280,10 @@ impl Menu {
         changed
     }
 
-    /// Draws the header and the rows into the card's content rect.
-    pub fn layout(&mut self, kit: &mut Kit, scene: &mut Scene, rect: IRect, alpha: f32, clip: IRect) {
+    /// Draws the header and the rows into the card's content rect, the
+    /// rows' icons made at `scale`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn layout(&mut self, kit: &mut Kit, scene: &mut Scene, rect: IRect, alpha: f32, clip: IRect, scale: f64) {
         let look = &self.look;
         let k = kit.look.clone();
         let (pad, ch, bw) = (look.padding as i32, look.control_height as i32, look.border_width.round().max(1.0) as i32);
@@ -357,7 +359,6 @@ impl Menu {
                 right -= look.icon_gap as i32;
             }
             if let Some(raw) = &row.node.icon {
-                let scale = crate::scene::raster_scale();
                 let entry = self.icons.entry(row.node.id).or_insert(((0, 0.0), None));
                 if entry.0 != (size, scale) {
                     *entry = ((size, scale), raw.bitmap(size, scale));

@@ -187,7 +187,7 @@ impl App {
         card.ends = Ends { along: out_w, inset_start: ft, inset_end: ft, radius: if self.bar.framed() { theme.frame_radius } else { 0.0 } };
         card.deform_amount = DEFORM;
         let layer = self.overlay("formalshell:osd", Layer::Overlay, Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT, (0, band as u32), -1);
-        let surface = Surface::new("osd", Backend::Gpu, layer, &self.shm, self.started);
+        let surface = Surface::new("osd", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
         let mut popup = Popup::new(surface, card);
         popup.set_open(Instant::now(), true);
         self.osd.pill = Some(popup);

@@ -584,7 +584,7 @@ impl App {
         let outputs: Vec<WlOutput> = self.outputs.outputs().collect();
         for output in outputs {
             if let Some(o) = self.lock.outs.iter_mut().find(|o| o.output == output) {
-                if crate::surface::output_scale(&output).is_some_and(|k| o.surface.take_scale(k)) {
+                if self.store.display.scales.of(&output).is_some_and(|k| o.surface.take_scale(k)) {
                     self.lock.dirty = true;
                 }
                 continue;
@@ -592,7 +592,7 @@ impl App {
             let name = self.outputs.info(&output).and_then(|i| i.name).unwrap_or_default();
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
-            let surface = Surface::on("lock", Backend::Gpu, ls, &self.shm, self.started, &output);
+            let surface = Surface::new("lock", Backend::Gpu, ls, &self.shm, self.started, self.store.display.scales.on(&output));
             if self.lock.login && self.lock.outs.is_empty() {
                 crate::trace::phase("login lock surface");
             }
@@ -614,7 +614,7 @@ impl App {
         let size = crate::surfaces::login::avatar_size(&self.store.theme.theme);
         self.lock.avatar.clear();
         self.lock.shards.clear();
-        for scale in crate::surface::output_scales() {
+        for scale in self.store.display.scales.all() {
             let (path, tx) = (path.clone(), tx.clone());
             rt.pool().submit(move || {
                 let _ = tx.send(LockMsg::Avatar(view::avatar(&path, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale))));
@@ -1042,7 +1042,7 @@ impl App {
         }
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
         let size = self.store.theme.theme.space.control_height * 2.0;
-        for scale in crate::surface::output_scales() {
+        for scale in self.store.display.scales.all() {
             let (url, tx) = (url.clone(), tx.clone());
             rt.pool().submit(move || {
                 let art = view::cover(&url, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale));
@@ -1328,7 +1328,6 @@ impl App {
                 if o.dissolve.is_none() && (shared.backdrop.is_some() || (self.store.state.loaded && !has_wallpaper) || waited)
                     && let Some(from) = o.surface.canvas_pixmap().or_else(|| o.splashed.then(|| dissolve::picture(&o.view.scene, k)))
                 {
-                    let _raster = crate::scene::raster_at(k);
                     let to = dissolve::picture(&view::backdrop_scene(&shared, theme, (size.w, size.h)), k);
                     o.dissolve = Some(Dissolve::new(from, Some(to), boot_ms, now));
                 }
@@ -1363,7 +1362,6 @@ impl App {
                 o.surface.present(scene, damaged, &qh);
                 continue;
             }
-            let _raster = crate::scene::raster_at(k);
             o.view.ui.motion_scale = self.motion_scale;
             let moving = o.view.draw(&shared, theme, &mut self.kit, now) || entering;
             if std::mem::replace(&mut o.saver, false) {

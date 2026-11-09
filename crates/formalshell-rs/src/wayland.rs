@@ -98,7 +98,7 @@ impl Popout {
         let (rect, alpha) = self.card.content;
         let clip = self.card.content_clip();
         if let Some(menu) = &mut self.menu {
-            menu.layout(kit, &mut self.card.scene, rect, alpha, clip);
+            menu.layout(kit, &mut self.card.scene, rect, alpha, clip, self.surface.scale());
         }
     }
 
@@ -503,7 +503,7 @@ impl App {
             layer.set_exclusive_zone(bar.zone());
         }
         layer.commit();
-        let mut surface = Surface::on("bar", Backend::Gpu, layer, &self.shm, self.started, output);
+        let mut surface = Surface::new("bar", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.on(output));
         surface.presize(bar.scene.size.w, bar.scene.size.h);
         let mut zones = Vec::new();
         if framed {
@@ -819,7 +819,7 @@ impl App {
         if self.preview.is_none() {
             let (w, h) = self.output_size();
             let layer = self.overlay("formalshell:debug-join", Layer::Overlay, Anchor::all(), (0, 0), -1);
-            let surface = Surface::new("debug-join", Backend::Gpu, layer, &self.shm, self.started);
+            let surface = Surface::new("debug-join", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
             self.preview = Some((surface, crate::scene::Scene::clear(w as i32, h as i32), Vec::new()));
         }
         let edge = self.bar.edge();
@@ -873,7 +873,7 @@ impl App {
             layer.set_input_region(Some(region.wl_region()));
             layer.commit();
         }
-        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started);
+        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
         surface.wait_map = true;
         surface
     }
@@ -989,7 +989,7 @@ impl App {
         let keyboard = if module.takes_keyboard() { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
         layer.set_keyboard_interactivity(keyboard);
         layer.commit();
-        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started);
+        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
         surface.wait_map = true;
         let mut host = Host::new(module, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
         host.start(&self.store, self.runtime.as_ref());
@@ -1058,9 +1058,9 @@ impl App {
         if let Some(p) = &self.menu {
             self.set_popout_input(p);
         }
-        let key = item.key;
+        let (key, largest) = (item.key, self.store.display.scales.largest());
         if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| tray::open_menu(ctx, key));
+            rt.service(move |ctx| tray::open_menu(ctx, key, largest));
         }
         self.log("tray menu mapped");
         Ok(())
@@ -1151,7 +1151,8 @@ impl App {
             }
             Outcome::Toggled(id, opened) => {
                 if let (true, Some(rt)) = (opened, &self.runtime) {
-                    rt.service(move |ctx| tray::menu_about_to_show(ctx, key, id));
+                    let largest = self.store.display.scales.largest();
+                    rt.service(move |ctx| tray::menu_about_to_show(ctx, key, id, largest));
                 }
                 self.resize_menu();
             }
@@ -1392,7 +1393,6 @@ impl App {
         }
         self.step_menu(now);
         if let Some(p) = &mut self.menu {
-            let _raster = crate::scene::raster_at(p.surface.scale());
             p.layout(&mut self.kit);
             let morphing = p.menu.as_ref().is_some_and(|m| m.morph.running(now));
             let animating = p.card.animating(now) || morphing;
@@ -1405,7 +1405,6 @@ impl App {
                 h.primed();
             }
             let animating = h.animating(now) || h.content_animating(now);
-            let _raster = crate::scene::raster_at(h.surface.scale());
             if self.panel_dirty || animating {
                 h.sync_region(&self.compositor, &strip);
                 h.layout(&self.store, theme, &mut self.kit, now);
@@ -1468,7 +1467,7 @@ impl App {
                 if self.tip_card.is_none() {
                     let size = self.output_size();
                     let layer = self.overlay("formalshell:tooltip", Layer::Overlay, Anchor::all(), (0, 0), -1);
-                    let mut surface = Surface::new("tooltip", Backend::Gpu, layer, &self.shm, self.started);
+                    let mut surface = Surface::new("tooltip", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
                     surface.wait_map = true;
                     self.tip_card = Some(tooltip::Card::new(surface, (size.0 as i32, size.1 as i32), self.motion_scale));
                 }
@@ -2353,11 +2352,9 @@ impl OutputHandler for App {
 
 impl App {
     fn on_outputs(&mut self) {
-        let primary = crate::surface::primary_scale();
-        crate::surface::note_outputs(&self.outputs, self.bar_wl.as_ref());
-        if crate::surface::primary_scale() != primary {
-            crate::services::menu::ask(crate::services::menu::Ask::Rescan);
-        }
+        // Applied before the surfaces below are made, which open at it.
+        let scales = self.store.display.scales.read(&self.outputs, self.bar_wl.as_ref());
+        let topic = self.store.apply(crate::store::Diff::Display(crate::services::display::Diff::Scales(scales)));
         self.lock_outputs();
         self.sync_hot_corners();
         self.sync_heads();
@@ -2371,6 +2368,9 @@ impl App {
             self.refresh_bar(None);
         } else {
             self.request_paint();
+        }
+        if let Some(topic) = topic {
+            surfaces::changed(self, topic);
         }
     }
 }

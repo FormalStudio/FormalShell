@@ -57,7 +57,7 @@ impl Cell for NowPlaying {
         let mut motion = None;
         let cover = active.as_ref().filter(|a| !a.art_url.is_empty()).map(|a| {
             let size = slot(env);
-            let (picture, want) = motion_art::chrome_cover(env.store, a, size);
+            let (picture, want) = motion_art::chrome_cover(env.store, a, size, env.raster);
             motion = want;
             (size, picture)
         });

@@ -883,7 +883,7 @@ impl Panel for QuickSettings {
         let sliders: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::Slider).collect();
         let toggles: Vec<&Tile> = all.iter().filter(|t| matches!(t.kind, Kind::Toggle | Kind::Split)).collect();
         let tail: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::Background).collect();
-        let extras = self.extras_now(v.store);
+        let extras = self.extras_now(v.store, v.raster);
         let scanning = state.want.as_deref() == Some("wifi");
         if scanning != self.scan.borrow().is_some() {
             *self.scan.borrow_mut() = scanning.then(net::Hold::new);
@@ -1129,9 +1129,9 @@ impl QuickSettings {
 
     /// Every info tile as its cell reads now, in `bar.layout` order; a cell
     /// whose view is hidden has none.
-    fn extras_now(&self, store: &Store) -> Vec<Extra> {
+    fn extras_now(&self, store: &Store, raster: f64) -> Vec<Extra> {
         let output = focused_output(store);
-        let env = Env { store, edge: Edge::Top, output: &output };
+        let env = Env { store, edge: Edge::Top, output: &output, raster };
         let mut held = self.extras.borrow_mut();
         let out: Vec<Extra> = held
             .iter_mut()
@@ -1152,7 +1152,7 @@ impl QuickSettings {
     /// or the cell's own click runs. False when `id` is no tile now.
     fn open_extra(&mut self, id: &str, fx: &mut Effect) -> bool {
         let output = focused_output(fx.store);
-        let env = Env { store: fx.store, edge: Edge::Top, output: &output };
+        let env = Env { store: fx.store, edge: Edge::Top, output: &output, raster: fx.store.display.scales.primary() };
         let Some((entry, slot)) = self.extras.get_mut().iter_mut().find(|(_, s)| s.name == id) else { return false };
         slot.cell.read(&env);
         if slot.cell.summary().is_none() {

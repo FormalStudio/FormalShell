@@ -377,7 +377,7 @@ impl Toasts {
         let width = card_width(theme);
         let clock = now_ms();
         let size = theme.font_size.heading.round() as u32;
-        let scale = crate::scene::raster_scale();
+        let scale = self.surface.scale();
         self.fitted.retain(|id, (k, _)| n.icons.contains_key(id) && *k == scale);
         let mut cards: HashMap<String, Card> = HashMap::new();
         for g in &groups {

@@ -32,10 +32,10 @@ struct Subject {
 
 /// Held focus, not raw: opening this panel takes keyboard focus off the
 /// very window it describes.
-fn subject(store: &Store) -> Option<Subject> {
+fn subject(store: &Store, raster: f64) -> Option<Subject> {
     let h = &store.compositor;
     let window = h.window(&h.held_focused_window_id())?.clone();
-    let icon = store.appicon.get(PROBE, probe_size(store), crate::scene::raster_scale());
+    let icon = store.appicon.get(PROBE, probe_size(store), raster);
     let icon = icon.as_ref();
     let windows = h.snapshot.windows.iter().filter(|x| !window.app_id.is_empty() && x.app_id == window.app_id).cloned().collect();
     Some(Subject { entry: icon.and_then(|i| i.entry.clone()), image: icon.and_then(|i| i.image.clone()), window, windows })
@@ -77,7 +77,7 @@ impl Panel for AppMenu {
         let Some(win) = h.window(&h.held_focused_window_id()) else { return };
         appicon::probe(
             probe_size(fx.store),
-            crate::scene::raster_scale(),
+            fx.store.display.scales.primary(),
             vec![appicon::Query {
                 id: PROBE.into(),
                 app_id: win.app_id.clone(),
@@ -90,7 +90,7 @@ impl Panel for AppMenu {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let Some(sub) = subject(v.store) else {
+        let Some(sub) = subject(v.store, v.raster) else {
             return w::column(s.section_gap, vec![w::panel_empty(s, "No window")]);
         };
         let actions: &[Action] = sub.entry.as_ref().map_or(&[], |e| &e.actions);
@@ -137,7 +137,7 @@ impl Panel for AppMenu {
     }
 
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        let Some(sub) = subject(fx.store) else { return };
+        let Some(sub) = subject(fx.store, fx.store.display.scales.primary()) else { return };
         if let Some(i) = stop.strip_prefix("action:").and_then(|i| i.parse::<usize>().ok()) {
             if let Some(entry) = &sub.entry
                 && let Some(a) = entry.actions.get(i)

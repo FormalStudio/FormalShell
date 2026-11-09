@@ -408,7 +408,7 @@ impl App {
             }
             if self.heads[i].clock.is_none() {
                 let layer = self.overlay_on("formalshell:desktop-clock", Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
-                let surface = Surface::on("desktop-clock", Backend::Gpu, layer, &self.shm, self.started, &output);
+                let surface = Surface::new("desktop-clock", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.on(&output));
                 self.heads[i].clock = Some(Clock::new(surface, shards));
                 self.log(&format!("desktop clock on {name}"));
             }

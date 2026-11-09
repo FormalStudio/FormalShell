@@ -50,6 +50,8 @@ pub struct Tray {
     hover: Option<usize>,
     bitmaps: Vec<Option<Bitmap>>,
     bitmap_size: (u32, f64),
+    /// The bar's scale as last read.
+    raster: f64,
 }
 
 impl Tray {
@@ -66,6 +68,7 @@ impl Tray {
             hover: None,
             bitmaps: Vec::new(),
             bitmap_size: (0, 0.0),
+            raster: 1.0,
         }
     }
 
@@ -93,7 +96,7 @@ impl Tray {
     }
 
     fn ensure_bitmaps(&mut self, size: u32) {
-        let scale = crate::scene::raster_scale();
+        let scale = self.raster;
         if self.bitmap_size == (size, scale) && self.bitmaps.len() == self.items.len() {
             return;
         }
@@ -111,6 +114,7 @@ impl Cell for Tray {
         let items = env.store.tray.items.clone();
         let max_visible = env.store.config.f64("tray.maxVisible").map_or(0, |n| n as i64);
         let vertical = env.edge.is_vertical();
+        self.raster = env.raster;
         let changed = items != self.items || max_visible != self.max_visible || vertical != self.vertical;
         if items.len() != self.items.len() || max_visible != self.max_visible {
             self.decided = false;

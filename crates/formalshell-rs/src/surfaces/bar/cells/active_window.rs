@@ -47,7 +47,7 @@ impl Cell for ActiveWindow {
             initial_title: w.initial_title.clone(),
             pid: w.pid,
         };
-        let (edge, scale) = (size.round() as u32, crate::scene::raster_scale());
+        let (edge, scale) = (size.round() as u32, env.raster);
         let px = crate::scene::pixels_at(f64::from(edge), scale);
         if self.probed.as_ref().is_none_or(|(s, q)| *s != px || *q != query) {
             appicon::probe(edge, scale, vec![query.clone()]);

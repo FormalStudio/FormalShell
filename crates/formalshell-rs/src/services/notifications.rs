@@ -8,7 +8,7 @@
 //! one an action implies, comes in as [`Diff::Closed`].
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::{Duration, Instant};
 
 use fs_info::notifications::{self as model, Action, AddOpts, Notif, Patch, Urgency};
@@ -576,6 +576,16 @@ fn phone_invoke(phone: &Value, positive: bool) {
 
 static CMD: OnceLock<async_channel::Sender<Cmd>> = OnceLock::new();
 
+/// The largest scale any output draws at, as the UI thread last said: what
+/// a themed icon is picked for.
+static SCALE: LazyLock<(async_channel::Sender<f64>, async_channel::Receiver<f64>)> = LazyLock::new(async_channel::unbounded);
+
+/// Callable from any thread; only the latest is kept.
+pub fn scale(largest: f64) {
+    while SCALE.1.try_recv().is_ok() {}
+    let _ = SCALE.0.try_send(largest);
+}
+
 /// Ids the server never issued (`local-…`, `iphone-…`) have nobody to tell.
 fn server_id(id: &str) -> Option<u32> {
     id.parse().ok()
@@ -629,7 +639,7 @@ fn sender_icon(desktop_id: &str, app_name: &str) -> Option<String> {
 /// icon.js's order, resolved to pixels: the notification's own image, its
 /// app icon, then nothing (the card's bell). A themed name no theme
 /// carries resolves to nothing rather than to a broken picture.
-fn resolve_icon(image: &str, app_icon: &str, desktop_entry: &str, app_name: &str, pixels: Option<&ImageData>) -> Option<icons::Raw> {
+fn resolve_icon(image: &str, app_icon: &str, desktop_entry: &str, app_name: &str, pixels: Option<&ImageData>, largest: f64) -> Option<icons::Raw> {
     let source = fs_info::notification_icon::resolve(
         &fs_info::notification_icon::IconSource {
             image: image.into(),
@@ -645,7 +655,7 @@ fn resolve_icon(image: &str, app_icon: &str, desktop_entry: &str, app_name: &str
         return icons::from_rgba(d.width as i32, d.height as i32, &d.rgba);
     }
     if let Some(name) = source.strip_prefix("image://icon/") {
-        return icons::named(name, "", icons::pick(ICON_PICK));
+        return icons::named(name, "", icons::pick(ICON_PICK, largest));
     }
     let path = source.strip_prefix("file://")?;
     icons::load(std::path::Path::new(path))
@@ -720,6 +730,7 @@ pub async fn run(ctx: Ctx) {
             }
         }
     });
+    let mut largest = 1.0;
     while let Ok(event) = events.recv().await {
         let (n, replaced) = match event {
             Event::Notified(n) => (n, false),
@@ -734,7 +745,10 @@ pub async fn run(ctx: Ctx) {
         let mut a = arrival(&n, replaced);
         let (image, pixels) = image_of(&n);
         let (app_icon, entry, name) = (n.app_icon.clone(), n.desktop_entry.clone(), n.app_name.clone());
-        a.icon = ctx.pool().run(move || resolve_icon(&image, &app_icon, &entry, &name, pixels.as_deref())).await.flatten();
+        while let Ok(s) = SCALE.1.try_recv() {
+            largest = s;
+        }
+        a.icon = ctx.pool().run(move || resolve_icon(&image, &app_icon, &entry, &name, pixels.as_deref(), largest)).await.flatten();
         ctx.publish(store::Diff::Notifications(Diff::Arrived(Box::new(a))));
     }
 }

@@ -182,7 +182,6 @@ impl App {
             }
             let v = &mut self.veil.handover[i].1;
             v.configure(width, height);
-            let _raster = crate::scene::raster_at(v.surface.scale());
             v.present(Instant::now(), &self.qh);
             if self.lock_unlocking() && self.veil.handover.iter().all(|(_, v)| v.surface.commits() > 0) {
                 self.finish_unlock();
@@ -231,7 +230,7 @@ impl App {
                 ls.set_input_region(Some(region.wl_region()));
             }
             ls.commit();
-            let surface = Surface::on("unlock", Backend::Gpu, ls, &self.shm, self.started, &output);
+            let surface = Surface::new("unlock", Backend::Gpu, ls, &self.shm, self.started, self.store.display.scales.on(&output));
             self.veil.handover.push((output, Veil::picture(surface, scene, now)));
         }
         if self.veil.handover.is_empty() {
@@ -342,7 +341,6 @@ impl App {
     pub(super) fn present_veils(&mut self, now: Instant) {
         if !self.veil.handover.is_empty() && !self.lock_unlocking() {
             for (_, v) in &mut self.veil.handover {
-                let _raster = crate::scene::raster_at(v.surface.scale());
                 v.present(now, &self.qh);
             }
             if self.veil.handover.iter().all(|(_, v)| v.settled()) {

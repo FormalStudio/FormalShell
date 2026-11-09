@@ -103,6 +103,7 @@ struct Decoded {
 struct Greeter {
     registry: RegistryState,
     outputs: OutputState,
+    scales: crate::surface::Scales,
     seats: SeatState,
     compositor: CompositorState,
     layer_shell: LayerShell,
@@ -220,13 +221,13 @@ fn decode(path: &str, size: (i32, i32)) -> Option<Decoded> {
     Some(Decoded { size, bitmap: Bitmap::from_rgba(p.width as u16, p.height as u16, rgba) })
 }
 
-/// The avatar the card draws for `login`, at each scale an output draws at.
-fn avatar(theme: &Theme, state: &Path, login: &str) -> Vec<Bitmap> {
+/// The avatar the card draws for `login`, at each of `scales`.
+fn avatar(theme: &Theme, state: &Path, login: &str, scales: &[f64]) -> Vec<Bitmap> {
     let size = login::avatar_size(theme);
     let Some(path) = users::avatar_path(state, login) else { return Vec::new() };
-    crate::surface::output_scales()
-        .into_iter()
-        .filter_map(|k| lock::avatar(&path, crate::scene::pixels_at(size, k)).map(|b| b.at(k)))
+    scales
+        .iter()
+        .filter_map(|&k| lock::avatar(&path, crate::scene::pixels_at(size, k)).map(|b| b.at(k)))
         .collect()
 }
 
@@ -320,6 +321,7 @@ pub fn main(args: &[String]) {
     let mut g = Greeter {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
+        scales: crate::surface::Scales::default(),
         seats: SeatState::new(&globals, &qh),
         compositor: CompositorState::bind(&globals, &qh).expect("wl_compositor is not available"),
         layer_shell: LayerShell::bind(&globals, &qh).expect("zwlr_layer_shell_v1 is not available"),
@@ -423,7 +425,7 @@ impl Greeter {
     /// password. Their own last session comes back unless one was picked.
     fn open_user(&mut self) {
         let Some(login) = self.users.get(self.user).map(|u| u.login.clone()) else { return };
-        self.avatar = avatar(&self.theme, &self.state_dir, &login);
+        self.avatar = avatar(&self.theme, &self.state_dir, &login, &self.scales.all());
         if !self.picked
             && let Some(own) = sessions::remembered(&self.state_dir, Some(&login))
         {
@@ -589,7 +591,7 @@ impl Greeter {
     }
 
     fn on_outputs(&mut self) {
-        crate::surface::note_outputs(&self.outputs, None);
+        self.scales = self.scales.read(&self.outputs, None);
         let outputs: Vec<wl_output::WlOutput> = self.outputs.outputs().collect();
         for output in outputs {
             if self.outs.iter().any(|o| o.output == output) {
@@ -602,7 +604,7 @@ impl Greeter {
             ls.set_exclusive_zone(-1);
             ls.set_keyboard_interactivity(if first { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None });
             ls.commit();
-            let surface = Surface::on("greeter", Backend::Gpu, ls, &self.shm, self.started, &output);
+            let surface = Surface::new("greeter", Backend::Gpu, ls, &self.shm, self.started, self.scales.on(&output));
             self.outs.push(Out { output, surface, view: View::new(1, 1), backdrop: None, asked: (0, 0) });
         }
     }
@@ -624,7 +626,7 @@ impl Greeter {
                 ls.set_input_region(Some(region.wl_region()));
             }
             ls.commit();
-            let mut veil = Veil::new(Surface::on("greeter-veil", Backend::Gpu, ls, &self.shm, self.started, &o.output), 0.0, now);
+            let mut veil = Veil::new(Surface::new("greeter-veil", Backend::Gpu, ls, &self.shm, self.started, self.scales.on(&o.output)), 0.0, now);
             veil.fade(1.0, LEAVE_MS, now);
             self.veils.push(veil);
         }
@@ -686,7 +688,6 @@ impl Greeter {
             }
             let k = o.surface.scale();
             card.avatar = crate::scene::nearest(&self.avatar, k);
-            let _raster = crate::scene::raster_at(k);
             let moving = o.view.draw(&card, o.backdrop.as_ref(), &self.theme, &mut self.kit, now);
             o.surface.set_opacity(opacity);
             o.surface.present(&mut o.view.scene, moving || (self.shown.is_some() && opacity < 1.0), &self.qh);
@@ -738,7 +739,7 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
     let people: Vec<String> = ["Kyan De Sutter", "Guest"].map(String::from).to_vec();
     let theme = resolve(settings, env);
     let mut kit = Kit::new(&theme);
-    let pic = avatar(&theme, &env.state_dir, "shot");
+    let pic = avatar(&theme, &env.state_dir, "shot", &[1.0]);
     let mut asking = Conversation::new(vec![]);
     asking.open("kyan");
     asking.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });

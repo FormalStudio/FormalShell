@@ -111,7 +111,7 @@ impl App {
                 self.pickers.surfaces.push(PickerSurface {
                     output: s.name,
                     origin: (s.rect.x, s.rect.y),
-                    surface: Surface::on("capture", Backend::Gpu, ls, &self.shm, self.started, &o),
+                    surface: Surface::new("capture", Backend::Gpu, ls, &self.shm, self.started, self.store.display.scales.on(&o)),
                     sheet: Sheet::new(w, h),
                     dirty: true,
                 });
@@ -161,7 +161,6 @@ impl App {
             if !p.dirty {
                 continue;
             }
-            let _raster = crate::scene::raster_at(p.surface.scale());
             let frame = self.capture.picker.frames.get(&p.output).and_then(|f| f.as_ref());
             let animating = p.sheet.draw(&self.capture.picker, &c, p.origin, frame, theme, kit, self.motion_scale, now);
             p.dirty = animating;

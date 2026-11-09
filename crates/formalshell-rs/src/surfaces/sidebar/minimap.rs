@@ -146,8 +146,9 @@ pub struct Map {
 }
 
 impl Map {
-    /// The rows for `output` off the compositor's snapshot.
-    pub fn read(&mut self, store: &Store, output: &str, theme: &Theme) {
+    /// The rows for `output` off the compositor's snapshot, the icons at
+    /// `scale`.
+    pub fn read(&mut self, store: &Store, output: &str, theme: &Theme, scale: f64) {
         let c = &store.compositor.snapshot;
         let slots = workspaces::slots(&c.workspaces, &c.windows, output, SlotOpts { persistent: 0, max_icons: MAX });
         self.cols = c
@@ -157,7 +158,6 @@ impl Map {
             .filter_map(|w| Some((w.id.clone(), w.rect.as_ref()?.x)))
             .collect();
         let size = icon_size(theme).round() as u32;
-        let scale = crate::scene::raster_scale();
         let queries: Vec<appicon::Query> = slots
             .iter()
             .flat_map(|s| &s.windows)

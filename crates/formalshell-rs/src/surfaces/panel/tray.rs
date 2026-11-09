@@ -41,8 +41,7 @@ fn stop(item: &Item) -> String {
 }
 
 impl Tray {
-    fn pictures(&self, items: &[Item], size: u32) -> Vec<Option<Bitmap>> {
-        let scale = crate::scene::raster_scale();
+    fn pictures(&self, items: &[Item], size: u32, scale: f64) -> Vec<Option<Bitmap>> {
         let mut icons = self.icons.borrow_mut();
         if icons.items != items || icons.size != (size, scale) {
             let pictures = items.iter().map(|i| i.icon.as_ref().and_then(|r| r.bitmap(size, scale))).collect();
@@ -105,7 +104,7 @@ impl Panel for Tray {
             return w::panel_empty(s, "No items");
         }
         let size = v.theme.font_size.body.round().max(1.0);
-        let pictures = self.pictures(items, size as u32);
+        let pictures = self.pictures(items, size as u32, v.raster);
         let cols = columns(items.len());
         self.columns.set(cols);
         let cells: Vec<El> = items

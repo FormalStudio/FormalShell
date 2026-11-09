@@ -178,15 +178,6 @@ struct Scaling {
 
 static SCALING: std::sync::OnceLock<Scaling> = std::sync::OnceLock::new();
 
-/// The bar's output's scale in 120ths: what a surface with no output of
-/// its own named starts drawing at, until its preferred scale arrives.
-static HINT: AtomicU32 = AtomicU32::new(120);
-
-/// Each output's scale in 120ths by its wl_output's protocol id, read off
-/// its mode and logical size, for a surface made for one output to draw its
-/// first frame at.
-static OUTPUTS: std::sync::Mutex<Vec<(u32, u32)>> = std::sync::Mutex::new(Vec::new());
-
 /// An output's scale off its current mode and its logical size, in
 /// 120ths; the mode is in the output's own orientation, so the longer
 /// sides are compared.
@@ -195,63 +186,77 @@ pub fn scale_of(mode: (i32, i32), logical: (i32, i32)) -> Option<u32> {
     (m > 0 && l > 0).then(|| ((f64::from(m) / f64::from(l)) * 120.0).round() as u32).filter(|s| *s > 0)
 }
 
-/// The outputs as they are now: each one's scale where its info says it,
-/// and `primary` the one a surface with no output named is made on.
-pub fn note_outputs(outputs: &smithay_client_toolkit::output::OutputState, primary: Option<&WlOutput>) {
-    let mut table = OUTPUTS.lock().unwrap();
-    table.clear();
-    for o in outputs.outputs() {
-        let Some(info) = outputs.info(&o) else { continue };
-        let mode = info.modes.iter().find(|m| m.current).map(|m| m.dimensions);
-        if let Some(scale) = mode.zip(info.logical_size).and_then(|(m, l)| scale_of(m, l)) {
-            table.push((o.id().protocol_id(), scale));
+/// Each output's scale in 120ths by its wl_output's protocol id, read off
+/// its mode and logical size, for a surface made for one output to draw
+/// its first frame at; and the primary output's (the bar's), where a
+/// surface with no output named opens.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Scales {
+    outputs: Vec<(u32, u32)>,
+    primary: u32,
+}
+
+impl Default for Scales {
+    fn default() -> Self {
+        Self { outputs: Vec::new(), primary: 120 }
+    }
+}
+
+impl Scales {
+    /// The outputs as they are now, `primary` the one a surface with no
+    /// output named is made on. A primary whose scale is not known yet
+    /// keeps this one's.
+    pub fn read(&self, outputs: &smithay_client_toolkit::output::OutputState, primary: Option<&WlOutput>) -> Self {
+        let mut table = Vec::new();
+        for o in outputs.outputs() {
+            let Some(info) = outputs.info(&o) else { continue };
+            let mode = info.modes.iter().find(|m| m.current).map(|m| m.dimensions);
+            if let Some(scale) = mode.zip(info.logical_size).and_then(|(m, l)| scale_of(m, l)) {
+                table.push((o.id().protocol_id(), scale));
+            }
         }
+        let id = primary.cloned().or_else(|| outputs.outputs().next()).map(|o| o.id().protocol_id());
+        let primary = id.and_then(|p| table.iter().find(|(o, _)| *o == p)).map_or(self.primary, |(_, s)| *s);
+        Self { outputs: table, primary }
     }
-    let primary = primary.cloned().or_else(|| outputs.outputs().next()).map(|o| o.id().protocol_id());
-    if let Some(s) = primary.and_then(|p| table.iter().find(|(id, _)| *id == p)).map(|(_, s)| *s) {
-        HINT.store(s, Ordering::Relaxed);
+
+    /// The bar's output's scale, else the first output's.
+    pub fn primary(&self) -> f64 {
+        f64::from(self.primary) / 120.0
     }
-}
 
-/// Every scale an output draws at, once each: what a picture shown on
-/// every output (the lock's) is made at.
-pub fn output_scales() -> Vec<f64> {
-    let table = OUTPUTS.lock().unwrap();
-    let mut scales: Vec<u32> = table.iter().map(|(_, s)| *s).collect();
-    scales.sort_unstable();
-    scales.dedup();
-    if scales.is_empty() {
-        scales.push(HINT.load(Ordering::Relaxed));
+    /// Every scale an output draws at, once each: what a picture shown on
+    /// every output (the lock's) is made at.
+    pub fn all(&self) -> Vec<f64> {
+        let mut scales: Vec<u32> = self.outputs.iter().map(|(_, s)| *s).collect();
+        scales.sort_unstable();
+        scales.dedup();
+        if scales.is_empty() {
+            scales.push(self.primary);
+        }
+        scales.into_iter().map(|s| f64::from(s) / 120.0).collect()
     }
-    scales.into_iter().map(|s| f64::from(s) / 120.0).collect()
-}
 
-/// The largest scale any output draws at.
-pub fn largest_scale() -> f64 {
-    let table = OUTPUTS.lock().unwrap();
-    f64::from(table.iter().map(|(_, s)| *s).max().unwrap_or(120).max(120)) / 120.0
-}
+    /// The largest scale any output draws at, never under 1.
+    pub fn largest(&self) -> f64 {
+        f64::from(self.outputs.iter().map(|(_, s)| *s).max().unwrap_or(120).max(120)) / 120.0
+    }
 
-/// The scale a surface made on `output` starts at.
-pub fn scale_on(output: &WlOutput) -> f64 {
-    output_scale(output).unwrap_or_else(primary_scale)
-}
+    /// `output`'s scale where its info says it.
+    pub fn of(&self, output: &WlOutput) -> Option<f64> {
+        let id = output.id().protocol_id();
+        self.outputs.iter().find(|(o, _)| *o == id).map(|(_, s)| f64::from(*s) / 120.0)
+    }
 
-/// `output`'s scale where its info says it.
-pub fn output_scale(output: &WlOutput) -> Option<f64> {
-    let id = output.id().protocol_id();
-    let table = OUTPUTS.lock().unwrap();
-    table.iter().find(|(o, _)| *o == id).map(|(_, s)| f64::from(*s) / 120.0)
+    /// The scale a surface made on `output` starts at.
+    pub fn on(&self, output: &WlOutput) -> f64 {
+        self.of(output).unwrap_or_else(|| self.primary())
+    }
 }
 
 /// Binds the scaling globals, once per process; later calls find them bound.
 pub fn bind_scaling<D: Dispatcher>(globals: &GlobalList, qh: &QueueHandle<D>) {
     SCALING.get_or_init(|| Scaling { fractional: globals.bind(qh, 1..=1, Ignore).ok(), viewporter: globals.bind(qh, 1..=1, Ignore).ok() });
-}
-
-/// The bar's output's scale, else the first output's.
-pub fn primary_scale() -> f64 {
-    f64::from(HINT.load(Ordering::Relaxed)) / 120.0
 }
 
 /// Told when a surface's preferred scale moved, so an owner that draws only
@@ -549,14 +554,14 @@ pub struct Kept {
 const MADV_POPULATE_WRITE: libc::c_int = 23;
 
 impl Kept {
-    /// A clean pool two `size` buffers deep and a canvas of `size`, both
-    /// faulted in on the blocking pool while nothing draws from them.
-    pub fn prefaulted(shm: &Shm, size: (i32, i32), runner: &crate::runtime::Pool) -> Option<Self> {
+    /// A clean pool two `size` buffers deep and a canvas of `size` at
+    /// `scale`, both faulted in on the blocking pool while nothing draws
+    /// from them.
+    pub fn prefaulted(shm: &Shm, size: (i32, i32), scale: f64, runner: &crate::runtime::Pool) -> Option<Self> {
         // The launcher's card draws on the GPU there: nothing to fault in.
         if crate::gpu::active() {
             return None;
         }
-        let scale = primary_scale();
         let bytes = scaled(size.0.max(1), scale) as usize * scaled(size.1.max(1), scale) as usize * 4 * 2;
         let mut pool = SlotPool::new(bytes, shm).ok()?;
         let slot = pool.new_slot(bytes).ok()?;
@@ -616,17 +621,9 @@ impl<R: Role> Surface<R> {
         self.front = None;
     }
 
-    pub fn new(name: &'static str, backend: Backend, layer: R, shm: &Shm, started: Instant) -> Self {
-        Self::at(name, backend, layer, shm, started, primary_scale())
-    }
-
-    /// A surface made for `output`, drawing its first frame at that
-    /// output's scale.
-    pub fn on(name: &'static str, backend: Backend, layer: R, shm: &Shm, started: Instant, output: &WlOutput) -> Self {
-        Self::at(name, backend, layer, shm, started, scale_on(output))
-    }
-
-    fn at(name: &'static str, backend: Backend, layer: R, shm: &Shm, started: Instant, scale: f64) -> Self {
+    /// A surface drawing its first frame at `scale`, until its preferred
+    /// scale arrives.
+    pub fn new(name: &'static str, backend: Backend, layer: R, shm: &Shm, started: Instant, scale: f64) -> Self {
         let mut renderer = backend.renderer();
         renderer.set_scale(scale);
         Self {
@@ -1486,9 +1483,9 @@ struct Fade {
 }
 
 impl Backdrop {
-    pub fn new(layer: LayerSurface, shm: &Shm, output: &WlOutput) -> Self {
+    pub fn new(layer: LayerSurface, shm: &Shm, scale: f64) -> Self {
         Self {
-            scaler: Scaler::new(scale_on(output)),
+            scaler: Scaler::new(scale),
             layer,
             pool: SlotPool::new(4096, shm).expect("wl_shm pool"),
             buffer: None,

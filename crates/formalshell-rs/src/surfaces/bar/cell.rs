@@ -81,6 +81,8 @@ pub struct Env<'a> {
     pub edge: Edge,
     /// The output the bar is on.
     pub output: &'a str,
+    /// The scale the bar's surface draws at, what its pictures are made at.
+    pub raster: f64,
 }
 
 

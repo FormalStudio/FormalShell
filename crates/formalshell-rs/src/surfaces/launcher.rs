@@ -3324,13 +3324,31 @@ impl Shown {
     /// its last thing stands off the sides (panel-language spec §2).
     fn panel_el(&self, m: &Model, store: &Store, theme: &Theme) -> Option<El> {
         let p = m.panel.as_ref().filter(|_| m.on_panel())?;
-        let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: p.cursor.shown(), hovered: self.hovered_stop(), now: Instant::now(), motion_scale: self.scale };
+        let v = crate::surfaces::panel::View {
+            store,
+            theme,
+            output: self.output,
+            cursor: p.cursor.shown(),
+            hovered: self.hovered_stop(),
+            now: Instant::now(),
+            motion_scale: self.scale,
+            raster: self.modal.surface.scale(),
+        };
         Some(p.module.body(&v))
     }
 
     fn measure_panel(&self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit) {
         let Some(p) = m.panel.as_mut() else { return };
-        let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: None, hovered: None, now: Instant::now(), motion_scale: self.scale };
+        let v = crate::surfaces::panel::View {
+            store,
+            theme,
+            output: self.output,
+            cursor: None,
+            hovered: None,
+            now: Instant::now(),
+            motion_scale: self.scale,
+            raster: self.modal.surface.scale(),
+        };
         p.width = crate::surfaces::panel::card_width(p.module.as_ref(), &v, kit);
         let Some(el) = self.panel_el(m, store, theme) else { return };
         let width = m.panel_body(theme).1;
@@ -3514,7 +3532,7 @@ impl Shown {
         let head_rect = Rect::new(fx + field_x, row_top, fx + fw - field_x, row_top + row_h);
         // The row stands the band's height whatever it holds, so a token
         // with no query beside it centres in the band too.
-        let head = header(m, store, theme).height(row_h);
+        let head = header(m, store, theme, self.modal.surface.scale()).height(row_h);
         self.field_rect = Some(Rect::new(fx, fy, fx + fw, fy + band));
         let d = self.head.draw(&head, head_rect, Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
@@ -3773,7 +3791,7 @@ impl Shown {
     }
 }
 
-fn header(m: &Model, store: &Store, theme: &Theme) -> El {
+fn header(m: &Model, store: &Store, theme: &Theme, raster: f64) -> El {
     let s = &theme.space;
     let mut parts = Vec::new();
     let token = m.token(store);
@@ -3788,7 +3806,7 @@ fn header(m: &Model, store: &Store, theme: &Theme) -> El {
     // A held panel takes the keys the field would: its page's title stands
     // where the query would be.
     if let Some(p) = m.panel.as_ref().filter(|_| m.on_panel()) {
-        let v = crate::surfaces::panel::View { store, theme, output: (0.0, 0.0), cursor: None, hovered: None, now: Instant::now(), motion_scale: 1.0 };
+        let v = crate::surfaces::panel::View { store, theme, output: (0.0, 0.0), cursor: None, hovered: None, now: Instant::now(), motion_scale: 1.0, raster };
         let title = p.module.title(&v);
         if token.last() != Some(&title) {
             parts.push(crate::surfaces::panel::title(title));

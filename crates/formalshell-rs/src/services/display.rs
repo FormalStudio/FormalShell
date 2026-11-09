@@ -50,6 +50,8 @@ pub struct State {
     pub cards: Vec<gpu::Card>,
     pub backlight: Option<Brightness>,
     pub ddc: Vec<Brightness>,
+    /// Each output's scale, as the UI thread last read its outputs.
+    pub scales: crate::surface::Scales,
 }
 
 pub enum Diff {
@@ -59,6 +61,7 @@ pub enum Diff {
     Ddc(Vec<Brightness>),
     /// A device's percent as last asked for, the backlight or a DDC row.
     Percent(String, i64),
+    Scales(crate::surface::Scales),
 }
 
 impl State {
@@ -73,6 +76,7 @@ impl State {
             Diff::Cards(v) => set(&mut self.cards, v),
             Diff::Backlight(v) => set(&mut self.backlight, v),
             Diff::Ddc(v) => set(&mut self.ddc, v),
+            Diff::Scales(v) => set(&mut self.scales, v),
             Diff::Percent(id, pct) => match self.backlight.iter_mut().chain(self.ddc.iter_mut()).find(|d| d.id == id) {
                 Some(d) if d.percent != pct => {
                     d.percent = pct;

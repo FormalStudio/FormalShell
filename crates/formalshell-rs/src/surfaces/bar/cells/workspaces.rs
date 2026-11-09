@@ -128,6 +128,8 @@ pub struct Workspaces {
     probed: Option<(u32, Vec<appicon::Query>)>,
     chips: Vec<Chip>,
     icon_size: f64,
+    /// The bar's scale as last read.
+    raster: f64,
     pad_x: f64,
     xs: f64,
     vertical: bool,
@@ -162,6 +164,7 @@ impl Default for Workspaces {
             probed: None,
             chips: Vec::new(),
             icon_size: 0.0,
+            raster: 1.0,
             pad_x: 0.0,
             xs: 0.0,
             vertical: false,
@@ -329,7 +332,8 @@ impl Cell for Workspaces {
         let slots = workspaces::slots(&c.workspaces, &c.windows, env.output, SlotOpts { persistent, max_icons });
 
         let ids: Vec<&str> = slots.iter().flat_map(|s| s.windows.iter().map(|w| w.id.as_str())).collect();
-        let scale = crate::scene::raster_scale();
+        let scale = env.raster;
+        self.raster = scale;
         let agents_now: HashMap<String, String> = ids
             .iter()
             .filter_map(|id| env.store.agents.by_window.get(*id).map(|s| ((*id).to_owned(), s.clone())))
@@ -515,7 +519,7 @@ impl Custom for Workspaces {
         self.motion = look.motion;
         let style = label_style(&look, band);
         self.icon_size = kit.shape("0", style).line_height() as f64;
-        let (size, scale) = (self.icon_size.round() as u32, crate::scene::raster_scale());
+        let (size, scale) = (self.icon_size.round() as u32, self.raster);
         let px = crate::scene::pixels_at(f64::from(size), scale);
         if self.probed.as_ref().is_none_or(|(s, q)| *s != px || *q != self.queries) {
             self.probed = Some((px, self.queries.clone()));
@@ -781,7 +785,7 @@ mod tests {
     }
 
     fn env(store: &Store) -> Env<'_> {
-        Env { store, edge: Edge::Top, output: "o" }
+        Env { store, edge: Edge::Top, output: "o", raster: 1.0 }
     }
 
     #[test]

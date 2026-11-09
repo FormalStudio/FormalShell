@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime};
 
 use fs_menu::frecency::Record;
@@ -222,6 +222,9 @@ pub enum Ask {
     Spawn(String),
     /// An applications directory changed under the shell.
     Rescan,
+    /// The scale the launcher opens at (the bar's output's) moved: the
+    /// apps' icons are decoded again for it.
+    Scale(f64),
     /// The Files source again: the recent list and the user directories.
     Files,
     /// One folder's entries, for →.
@@ -235,16 +238,15 @@ pub enum Ask {
     Icons(Vec<String>),
 }
 
-static ASK: OnceLock<async_channel::Sender<Ask>> = OnceLock::new();
+static ASK: LazyLock<(async_channel::Sender<Ask>, async_channel::Receiver<Ask>)> = LazyLock::new(async_channel::unbounded);
 
+/// Callable from any thread.
 pub fn ask(a: Ask) {
-    if let Some(tx) = ASK.get() {
-        let _ = tx.try_send(a);
-    }
+    let _ = ASK.0.try_send(a);
 }
 
 pub async fn run(ctx: Ctx) {
-    let (tx, rx) = async_channel::unbounded();
+    let (tx, rx) = (ASK.0.clone(), ASK.1.clone());
     // Warm before anything asks: the tree and the apps exist by the first
     // summon even with no settings.json and no state.json yet.
     let _ = tx.try_send(Ask::Base(BaseInputs::default()));
@@ -252,7 +254,7 @@ pub async fn run(ctx: Ctx) {
     let _ = tx.try_send(Ask::Emoji);
     let _ = tx.try_send(Ask::Files);
     ctx.spawn(watch_entries(tx.clone()));
-    let _ = ASK.set(tx);
+    let mut scale = 1.0;
     let mut launches_seen: Vec<Record> = Vec::new();
     let scan = Arc::new(std::sync::Mutex::new(Scan::default()));
     // Set by a change under an applications directory: the next scan reads
@@ -272,12 +274,18 @@ pub async fn run(ctx: Ctx) {
             }
             Ask::Rescan => {
                 rescan.store(true, Ordering::Relaxed);
-                let _ = ASK.get().map(|tx| tx.try_send(Ask::Apps(launches_seen.clone())));
+                let _ = tx.try_send(Ask::Apps(launches_seen.clone()));
+            }
+            Ask::Scale(k) => {
+                if k != scale {
+                    scale = k;
+                    let _ = tx.try_send(Ask::Apps(launches_seen.clone()));
+                }
             }
             Ask::Apps(launches) => {
                 launches_seen = launches.clone();
                 let (scan, rescan) = (scan.clone(), rescan.clone());
-                let done = ctx.pool().run(move || scan.lock().unwrap().apps(&launches, rescan.swap(false, Ordering::Relaxed))).await;
+                let done = ctx.pool().run(move || scan.lock().unwrap().apps(&launches, rescan.swap(false, Ordering::Relaxed), scale)).await;
                 if let Some((rows, icons, exec)) = done {
                     ctx.publish(store::Diff::Menu(Diff::Exec(exec)));
                     ctx.publish(store::Diff::Menu(Diff::Source("apps".into(), rows)));
@@ -288,7 +296,7 @@ pub async fn run(ctx: Ctx) {
             }
             Ask::Icons(paths) => {
                 let scan = scan.clone();
-                let done = ctx.pool().run(move || scan.lock().unwrap().icons(&paths)).await;
+                let done = ctx.pool().run(move || scan.lock().unwrap().icons(&paths, scale)).await;
                 if let Some(icons) = done.filter(|i| !i.is_empty()) {
                     ctx.publish(store::Diff::Menu(Diff::Icons(icons)));
                 }
@@ -522,7 +530,7 @@ struct Scan {
 }
 
 impl Scan {
-    fn apps(&mut self, launches: &[Record], rescan: bool) -> (Vec<Node>, Vec<Icon>, HashMap<String, Vec<String>>) {
+    fn apps(&mut self, launches: &[Record], rescan: bool, scale: f64) -> (Vec<Node>, Vec<Icon>, HashMap<String, Vec<String>>) {
         let dirs = appicon::applications_dirs();
         let stamp: Vec<Option<SystemTime>> = dirs.iter().map(|d| std::fs::metadata(d).and_then(|m| m.modified()).ok()).collect();
         if rescan || !self.scanned || stamp != self.stamp {
@@ -546,7 +554,6 @@ impl Scan {
                 actions: l.actions.iter().map(|a| (a.key.clone(), a.name.clone())).collect(),
             })
             .collect();
-        let scale = crate::surface::primary_scale();
         if scale != self.scale {
             self.scale = scale;
             self.icon_of.clear();
@@ -563,7 +570,7 @@ impl Scan {
         let cell = std::cell::RefCell::new(resolve);
         let rows = providers::apps_provider(&entries, Some(&|n: &str| (cell.borrow_mut())(n)), launches, None);
         let paths: Vec<String> = rows.iter().map(|r| r.icon_source.clone()).collect();
-        let fresh = self.icons(&paths);
+        let fresh = self.icons(&paths, scale);
         let mut exec: HashMap<String, Vec<String>> = HashMap::new();
         for l in &self.entries {
             exec.insert(l.entry.id.clone(), l.entry.command.clone());
@@ -574,9 +581,10 @@ impl Scan {
         (rows, fresh, exec)
     }
 
-    /// Each path not decoded yet, at the cell's and the row's size.
-    fn icons(&mut self, paths: &[String]) -> Vec<Icon> {
-        let scale = if self.scale > 0.0 { self.scale } else { crate::surface::primary_scale() };
+    /// Each path not decoded yet, at the cell's and the row's size, at the
+    /// scale the apps were decoded at, else `wanted`.
+    fn icons(&mut self, paths: &[String], wanted: f64) -> Vec<Icon> {
+        let scale = if self.scale > 0.0 { self.scale } else { wanted };
         let mut fresh = Vec::new();
         for path in paths {
             if path.is_empty() || !self.decoded.insert(path.clone()) {

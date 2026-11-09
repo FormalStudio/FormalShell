@@ -470,8 +470,7 @@ impl Bar {
 
     /// Re-reads the cells that read `topic` (all of them with `None`).
     pub fn read(&mut self, kit: &mut Kit, store: &Store, topic: Option<Topic>, now: Instant) {
-        let _raster = crate::scene::raster_at(self.raster);
-        let env = Env { store, edge: self.edge, output: &self.output };
+        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
         let band = self.band().is_some();
         let animate = self.animate(now);
         let along = self.length() as f64;
@@ -487,8 +486,7 @@ impl Bar {
 
     /// Reads the cells whose own timer ran out.
     pub fn tick(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
-        let _raster = crate::scene::raster_at(self.raster);
-        let env = Env { store, edge: self.edge, output: &self.output };
+        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
         let band = self.band().is_some();
         let animate = self.animate(now);
         let along = self.length() as f64;
@@ -652,13 +650,12 @@ impl Bar {
     /// One pass: budgets, positions and paint. Cheap enough per frame;
     /// unchanged nodes damage nothing.
     pub fn layout(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
-        let _raster = crate::scene::raster_at(self.raster);
         if self.sidebar.is_some() {
             self.paint_strip();
             let anchor = self.strip_nodes.last().copied();
-            let (strip, edge, collapsed) = (self.strip(), self.edge, self.collapsed);
+            let (strip, edge, collapsed, raster) = (self.strip(), self.edge, self.collapsed, self.raster);
             if let Some(sb) = &mut self.sidebar {
-                sb.draw(store, &self.output, collapsed, edge, strip, kit, &mut self.scene, anchor, now);
+                sb.draw(store, &self.output, collapsed, edge, strip, raster, kit, &mut self.scene, anchor, now);
             }
             return;
         }
@@ -719,7 +716,7 @@ impl Bar {
             return false;
         }
         let slack = self.room.slack;
-        let env = Env { store, edge: self.edge, output: &self.output };
+        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
         let band = self.band_box.is_some();
         let animate = self.animate(now);
         let along = self.length() as f64;
@@ -764,7 +761,7 @@ impl Bar {
             return;
         }
         let budgets = layout::label_budgets(along, self.style.inset, gap, rails, &labels);
-        let env = Env { store, edge: self.edge, output: &self.output };
+        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
         let band = self.band_box.is_some();
         let animate = self.animate(now);
         for (i, budget) in at.into_iter().zip(budgets) {
@@ -946,7 +943,6 @@ impl Bar {
         if self.sidebar.is_some() {
             return false;
         }
-        let _raster = crate::scene::raster_at(self.raster);
         let visible = !self.hidden;
         let vertical = self.edge.is_vertical();
         let band = self.band_box.is_some();
@@ -1015,7 +1011,7 @@ impl Bar {
         if let Some(sb) = &mut self.sidebar {
             return if button == Button::Left { sb.clicked(x, y) } else { Action::None };
         }
-        let env = Env { store, edge: self.edge, output: &self.output };
+        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
         let s = &mut self.slots[i];
         if !s.view.interactive {
             return Action::None;
@@ -1028,7 +1024,7 @@ impl Bar {
             sb.wheel(i, vertical);
             return Action::None;
         }
-        let env = Env { store, edge: self.edge, output: &self.output };
+        let env = Env { store, edge: self.edge, output: &self.output, raster: self.raster };
         self.slots[i].cell.wheel_by(vertical, sideways, &env)
     }
 

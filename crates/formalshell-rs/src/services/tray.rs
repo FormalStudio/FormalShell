@@ -3,7 +3,9 @@
 //! one open. Icons are decoded on the pool so the UI thread only scales
 //! them.
 
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
+
+use async_channel::{Receiver, Sender};
 
 use fs_tray::{CheckState, Event, IconSource, Item as WireItem, MenuEventKind, MenuItem, Status, Toggle, closest_pixmap};
 
@@ -88,9 +90,25 @@ static TRAY: OnceLock<fs_tray::Tray> = OnceLock::new();
 /// drawn at.
 const PICK: u32 = 22;
 
-fn icon_of(item: &WireItem) -> Option<Raw> {
+/// The largest scale any output draws at, as the UI thread last said: what
+/// a picture is picked for.
+static SCALE: LazyLock<(Sender<f64>, Receiver<f64>)> = LazyLock::new(async_channel::unbounded);
+
+/// Callable from any thread; only the latest is kept.
+pub fn scale(largest: f64) {
+    while SCALE.1.try_recv().is_ok() {}
+    let _ = SCALE.0.try_send(largest);
+}
+
+fn latest(largest: &mut f64) {
+    while let Ok(s) = SCALE.1.try_recv() {
+        *largest = s;
+    }
+}
+
+fn icon_of(item: &WireItem, largest: f64) -> Option<Raw> {
     let named = match item.icon_source() {
-        IconSource::Named { name, theme_path } => icons::named(name, theme_path, icons::pick(PICK)),
+        IconSource::Named { name, theme_path } => icons::named(name, theme_path, icons::pick(PICK, largest)),
         IconSource::Pixmaps => None,
     };
     named.or_else(|| {
@@ -99,7 +117,7 @@ fn icon_of(item: &WireItem) -> Option<Raw> {
         } else {
             &item.icon_pixmap
         };
-        let pick = icons::pick(PICK) as i32;
+        let pick = icons::pick(PICK, largest) as i32;
         let pm = closest_pixmap(pixmaps, pick, pick)?;
         icons::from_rgba(pm.width, pm.height, &pm.rgba)
     })
@@ -121,30 +139,30 @@ fn picture_key(item: &WireItem) -> (String, String, String, Status, Vec<fs_tray:
     )
 }
 
-fn menu_icon(node: &MenuItem) -> Option<Raw> {
+fn menu_icon(node: &MenuItem, largest: f64) -> Option<Raw> {
     if !node.icon_png.is_empty() {
         return icons::from_bytes(&node.icon_png);
     }
-    (!node.icon_name.is_empty()).then(|| icons::named(&node.icon_name, "", icons::pick(PICK))).flatten()
+    (!node.icon_name.is_empty()).then(|| icons::named(&node.icon_name, "", icons::pick(PICK, largest))).flatten()
 }
 
-fn node_of(node: &MenuItem) -> MenuNode {
+fn node_of(node: &MenuItem, largest: f64) -> MenuNode {
     MenuNode {
         id: node.id,
         label: node.label.clone(),
         enabled: node.enabled,
         separator: node.separator,
-        icon: menu_icon(node),
+        icon: menu_icon(node, largest),
         checked: node.toggle != Toggle::None && node.check == CheckState::Checked,
         has_children: node.has_children,
-        children: node.visible_children().map(node_of).collect(),
+        children: node.visible_children().map(|c| node_of(c, largest)).collect(),
     }
 }
 
-async fn publish_menu(ctx: &Ctx, tray: &fs_tray::Tray, key: &str) {
+async fn publish_menu(ctx: &Ctx, tray: &fs_tray::Tray, key: &str, largest: f64) {
     let Some(tree) = tray.menu(key) else { return };
     let key = key.to_owned();
-    let menu = ctx.pool().run(move || Menu { key, root: node_of(&tree) }).await;
+    let menu = ctx.pool().run(move || Menu { key, root: node_of(&tree, largest) }).await;
     // The tree may have been closed while it decoded.
     if let Some(menu) = menu.filter(|m| tray.menu(&m.key).is_some()) {
         ctx.publish(store::Diff::Tray(Diff::Menu(Some(menu))));
@@ -162,7 +180,9 @@ pub async fn run(ctx: Ctx) {
     };
     let _ = TRAY.set(tray.clone());
     let mut shown: Vec<(WireItem, Option<Raw>)> = Vec::new();
+    let mut largest = 1.0;
     loop {
+        latest(&mut largest);
         let mut next: Vec<(WireItem, Option<Raw>)> = Vec::new();
         for item in tray.items() {
             let kept = shown.iter().find(|(old, _)| old.key == item.key && picture_key(old) == picture_key(&item));
@@ -170,7 +190,7 @@ pub async fn run(ctx: Ctx) {
                 Some((_, icon)) => icon.clone(),
                 None => {
                     let for_decode = item.clone();
-                    ctx.pool().run(move || icon_of(&for_decode)).await.flatten()
+                    ctx.pool().run(move || icon_of(&for_decode, largest)).await.flatten()
                 }
             };
             next.push((item, icon));
@@ -193,7 +213,10 @@ pub async fn run(ctx: Ctx) {
         loop {
             match events.next().await {
                 None => return,
-                Some(Event::MenuChanged { key }) => publish_menu(&ctx, &tray, &key).await,
+                Some(Event::MenuChanged { key }) => {
+                    latest(&mut largest);
+                    publish_menu(&ctx, &tray, &key, largest).await;
+                }
                 Some(_) => break,
             }
         }
@@ -220,8 +243,9 @@ pub fn secondary_activate(ctx: &Ctx, key: String) {
     });
 }
 
-/// Loads the whole tree, tells the app it is showing, and publishes it.
-pub fn open_menu(ctx: &Ctx, key: String) {
+/// Loads the whole tree, tells the app it is showing, and publishes it,
+/// its pictures picked for `largest`.
+pub fn open_menu(ctx: &Ctx, key: String, largest: f64) {
     let ctx = ctx.clone();
     let publisher = ctx.clone();
     spawn_on(&publisher, async move |tray| {
@@ -229,7 +253,7 @@ pub fn open_menu(ctx: &Ctx, key: String) {
             return;
         }
         let _ = tray.menu_event(&key, 0, MenuEventKind::Opened).await;
-        publish_menu(&ctx, tray, &key).await;
+        publish_menu(&ctx, tray, &key, largest).await;
     });
 }
 
@@ -249,12 +273,12 @@ pub fn menu_click(ctx: &Ctx, key: String, id: i32) {
 }
 
 /// A submenu's own `AboutToShow`, for apps that fill it lazily.
-pub fn menu_about_to_show(ctx: &Ctx, key: String, id: i32) {
+pub fn menu_about_to_show(ctx: &Ctx, key: String, id: i32, largest: f64) {
     let ctx = ctx.clone();
     let publisher = ctx.clone();
     spawn_on(&publisher, async move |tray| {
         if tray.menu_about_to_show(&key, id).await.is_ok() {
-            publish_menu(&ctx, tray, &key).await;
+            publish_menu(&ctx, tray, &key, largest).await;
         }
     });
 }

@@ -241,8 +241,8 @@ fn choice_heading(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     }
 }
 
-fn art(dev: &Device, part: &str, size: f64) -> Option<crate::scene::Bitmap> {
-    earbuds::picture(&dev.art, part, size)
+fn art(dev: &Device, part: &str, size: f64, raster: f64) -> Option<crate::scene::Bitmap> {
+    earbuds::picture(&dev.art, part, size, raster)
 }
 
 fn percent(level: Percent) -> String {
@@ -273,7 +273,7 @@ fn hero(s: &fs_theme::tokens::Space, dev: &Device, picture: crate::scene::Bitmap
 
 /// A tile per bud and the case: its picture, its level over a track, a
 /// bolt while it charges, and "In ear" under a bud that is.
-fn battery_tiles(s: &fs_theme::tokens::Space, dev: &Device) -> El {
+fn battery_tiles(s: &fs_theme::tokens::Space, dev: &Device, raster: f64) -> El {
     let size = s.control_height * 1.75;
     let tiles = dev
         .batteries
@@ -291,7 +291,7 @@ fn battery_tiles(s: &fs_theme::tokens::Space, dev: &Device) -> El {
             }
             let word = if b.in_ear == Some(true) { format!("{} · In ear", b.label) } else { b.label.clone() };
             let parts = vec![
-                w::picture(art(dev, part, size), size).centred(),
+                w::picture(art(dev, part, size, raster), size).centred(),
                 w::row(s.xxs, level).centred(),
                 w::track(b.level.as_fraction()),
                 w::caption(word).centred(),
@@ -499,11 +499,11 @@ impl Panel for Earbuds {
             out.push(w::panel_control(s, w::panel_heading(s, "Device"), self.group(DEVICE, &opts, selected, None)));
         }
         let Some(dev) = dev else { return w::column(0.0, out) };
-        match art(dev, "duo", s.control_height * 3.0) {
+        match art(dev, "duo", s.control_height * 3.0, v.raster) {
             Some(picture) => {
                 out.push(w::panel_text(s, hero(s, dev, picture)));
                 if !dev.batteries.iter().all(|b| b.id == BatteryId::Single) {
-                    out.push(w::panel_text(s, battery_tiles(s, dev).pad_top(s.panel_gap)));
+                    out.push(w::panel_text(s, battery_tiles(s, dev, v.raster).pad_top(s.panel_gap)));
                 }
             }
             None => {

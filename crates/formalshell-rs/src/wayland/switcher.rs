@@ -68,7 +68,7 @@ impl App {
                 })
                 .collect()
         };
-        let scale = self.switcher.win.as_ref().map_or_else(crate::scene::raster_scale, |(s, _)| s.scale());
+        let scale = self.switcher.win.as_ref().map_or_else(|| self.store.display.scales.primary(), |(s, _)| s.scale());
         let (small, big) = icon_sizes(s);
         appicon::probe(small, scale, queries(false));
         appicon::probe(big, scale, queries(true));
@@ -173,7 +173,7 @@ impl App {
             layer.set_exclusive_zone(-1);
             layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
             layer.commit();
-            let mut surface = Surface::new("switcher", Backend::Gpu, layer, &self.shm, self.started);
+            let mut surface = Surface::new("switcher", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
             surface.wait_map = true;
             let (w, h) = self.output_size();
             self.switcher.win = Some((surface, Scene::clear(w as i32, h as i32)));
@@ -362,7 +362,6 @@ impl App {
         let output = self.output_size();
         let input = Input { theme: &self.store.theme.theme, output, entries: &refs, icons: &icons, thumbs: &thumbs, alpha };
         let Some((surface, scene)) = &mut self.switcher.win else { return };
-        let _raster = crate::scene::raster_at(scale);
         self.switcher.model.draw(&input, &mut self.kit, scene);
         let qh = self.qh.clone();
         surface.present(scene, fading, &qh);

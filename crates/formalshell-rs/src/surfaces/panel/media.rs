@@ -331,7 +331,7 @@ impl Panel for Media {
                 && v.store.config.bool("media.appleMusicArt").unwrap_or(false)
                 && !a.artist.is_empty()
                 && !a.album.is_empty();
-            let scale = crate::scene::raster_scale();
+            let scale = v.raster;
             motion = animated.then(|| motion_art::Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing }.at(scale));
             let frame = motion.as_ref().and_then(|w| m.motion(&w.key(), px, scale));
             info.push(w::cover(frame.or_else(|| m.cover(&a.art_url, px, radius, scale)), slot));

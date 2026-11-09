@@ -308,7 +308,7 @@ impl App {
         let open = c.popup.is_open();
         c.popup.sync_region(&self.compositor, open);
         let theme = &self.store.theme.theme;
-        let (el, rect) = headset::layout(&face, c.popup.card.content.0, theme, &mut self.kit);
+        let (el, rect) = headset::layout(&face, c.popup.card.content.0, c.popup.surface.scale(), theme, &mut self.kit);
         let drawn = c.popup.draw_in(&el, rect, theme, &mut self.kit, now);
         {
             let frame = c.popup.card.content.0;

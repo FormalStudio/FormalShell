@@ -166,6 +166,13 @@ pub fn changed(app: &mut App, topic: Topic) {
             app.saver_update();
             app.refresh_bar(Some(topic));
         }
+        Topic::Display => {
+            let scales = &app.store.display.scales;
+            crate::services::menu::ask(crate::services::menu::Ask::Scale(scales.primary()));
+            crate::services::tray::scale(scales.largest());
+            crate::services::notifications::scale(scales.largest());
+            app.refresh_bar(Some(topic));
+        }
         _ => app.refresh_bar(Some(topic)),
     }
 }

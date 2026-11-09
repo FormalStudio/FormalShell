@@ -287,7 +287,8 @@ impl Sidebar {
         self.clock.state(store)
     }
 
-    /// The column inside `strip`, after `anchor` in paint order.
+    /// The column inside `strip`, after `anchor` in paint order, its
+    /// pictures made at `raster`.
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
@@ -296,6 +297,7 @@ impl Sidebar {
         collapsed: bool,
         edge: Edge,
         strip: IRect,
+        raster: f64,
         kit: &mut Kit,
         scene: &mut Scene,
         anchor: Option<NodeId>,
@@ -311,16 +313,16 @@ impl Sidebar {
         self.foot.motion_scale = kit.motion_scale;
         self.collapsed = collapsed;
         self.map.rail = collapsed;
-        self.map.read(store, output, theme);
+        self.map.read(store, output, theme, raster);
         self.strip = strip;
-        self.fit_icons(store, &g);
+        self.fit_icons(store, &g, raster);
 
         let foot = if collapsed { rail_foot(edge, &g) } else { foot_card(store, edge, &g) };
         let (_, foot_h) = crate::ui::measure(&foot, width, theme, kit);
         let gap = g.gap;
         let room = (bottom - foot_h - gap - y0).max(0.0);
         let art = if collapsed { g.rail.art } else { g.art };
-        let (cover, motion) = store.media.active().map(|a| motion_art::chrome_cover(store, &a, art)).unwrap_or_default();
+        let (cover, motion) = store.media.active().map(|a| motion_art::chrome_cover(store, &a, art, raster)).unwrap_or_default();
         let build = |map: &minimap::Map, kit: &mut Kit| {
             if collapsed { rail(theme, store, map, &g, &cover) } else { cards(theme, store, map, &g, &cover, &self.icons, width, kit, now) }
         };
@@ -380,7 +382,7 @@ impl Sidebar {
         self.foot.anchor = drawn.last.or(anchor);
         let at = bottom - foot_h;
         let feet = self.foot.draw(&foot, Rect::new(x0, at, x0 + width, bottom), clip, 1.0, theme, kit, scene, now);
-        let face = self.paint_face(collapsed, store, &g, kit, scene, feet.last.or(self.foot.anchor), strip);
+        let face = self.paint_face(collapsed, store, &g, raster, kit, scene, feet.last.or(self.foot.anchor), strip);
         let card = (x0, width);
         let gliding = self.map.paint(&self.top.hits, theme, kit, scene, face, strip, card, edge == Edge::Right, now);
         self.animating = drawn.animating || feet.animating || gliding;
@@ -389,9 +391,8 @@ impl Sidebar {
 
     /// Fits each notification's picture at the row's icon size once, and
     /// lets go of the ones whose entries are gone.
-    fn fit_icons(&mut self, store: &Store, g: &Geo) {
+    fn fit_icons(&mut self, store: &Store, g: &Geo, scale: f64) {
         let n = &store.notifications;
-        let scale = crate::scene::raster_scale();
         self.icons.retain(|id, _| n.icons.contains_key(id));
         for (id, raw) in &n.icons {
             self.icons.entry(id.clone()).or_insert_with(|| raw.bitmap(g.glyph as u32, scale));
@@ -401,7 +402,8 @@ impl Sidebar {
     /// The clock's digits, its period and the date box over the time
     /// card's reserved box, or the rail's lines; the last node drawn.
     #[allow(clippy::too_many_arguments)]
-    fn paint_face(&mut self, collapsed: bool, store: &Store, g: &Geo, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect) -> Option<NodeId> {
+    #[allow(clippy::too_many_arguments)]
+    fn paint_face(&mut self, collapsed: bool, store: &Store, g: &Geo, raster: f64, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect) -> Option<NodeId> {
         let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some("panel:calendar")).map(|h| h.rect);
         let mut nodes = std::mem::take(&mut self.face);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
@@ -412,7 +414,7 @@ impl Sidebar {
                 // The time keeps its own box; the battery's line runs under it.
                 let line = store.devices.power.battery.as_ref().map(|b| (b, card.h - g.time_h as i32));
                 let face = IRect::new(card.x, card.y, card.w, card.h - line.map_or(0, |(_, h)| h));
-                self.clock.paint(&mut p, kit, store, g, face);
+                self.clock.paint(&mut p, kit, store, g, face, raster);
                 if let Some((b, _)) = line {
                     battery_line(&mut p, &store.theme.theme, g, b, IRect::new(card.x, face.bottom(), card.w, card.h - face.h));
                 }
@@ -660,7 +662,7 @@ fn battery_line(p: &mut Painter, theme: &Theme, g: &Geo, b: &crate::services::de
 }
 
 impl ClockCard {
-    fn paint(&mut self, p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect) {
+    fn paint(&mut self, p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect, scale: f64) {
         let started = Instant::now();
         let theme = &store.theme.theme;
         let fg = theme.colors.get("foreground");
@@ -677,7 +679,6 @@ impl ClockCard {
         let after = shaped.as_ref().map_or(0.0, |t| f64::from(t.width) + g.dot);
         let room = f64::from(bx - (card.x + g.time_x as i32)) - g.dot;
         let face = FaceSettings::read(&store.config);
-        let scale = crate::scene::raster_scale();
         let (hours, minutes) = time.split_once(':').unwrap_or((&time, ""));
         // A time wider than the room shrinks rather than cut.
         let mut digit_h = (g.digits * FIGURE).round();

@@ -290,10 +290,11 @@ pub fn load_at(path: &Path, size: u32, scale: f64) -> Option<Bitmap> {
     bitmap.map(|b| b.at(scale))
 }
 
-/// `size` as the pixel size a named icon is looked up at: the largest any
-/// output draws it at, so a surface at that scale never upscales it.
-pub fn pick(size: u32) -> u32 {
-    crate::scene::pixels_at(f64::from(size), crate::surface::largest_scale())
+/// `size` as the pixel size a named icon is looked up at: at `largest`,
+/// the largest scale any output draws at, so a surface at that scale never
+/// upscales it.
+pub fn pick(size: u32, largest: f64) -> u32 {
+    crate::scene::pixels_at(f64::from(size), largest)
 }
 
 /// `name` looked up for `size` pixels, decoded for a later [`Raw::bitmap`].

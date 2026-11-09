@@ -266,6 +266,7 @@ struct Key {
     stations: u64,
     imagery: Option<u64>,
     moving: bool,
+    scale: u64,
 }
 
 pub struct Globe {
@@ -639,9 +640,9 @@ impl Globe {
         self.update_highlight();
     }
 
-    /// The draw list for the current pose at `alpha`, the same `Arc` while
-    /// nothing on the globe moved.
-    pub fn paint(&mut self, ink: &Ink, alpha: f32) -> Arc<Vec<VOp>> {
+    /// The draw list for the current pose at `alpha` on a surface at
+    /// `scale`, the same `Arc` while nothing on the globe moved.
+    pub fn paint(&mut self, ink: &Ink, alpha: f32, scale: f64) -> Arc<Vec<VOp>> {
         let bits = |c: Rgba| u32::from_le_bytes(c.to_u8());
         let key = Key {
             pose: [self.centre_latitude, self.centre_longitude, self.scale],
@@ -655,13 +656,14 @@ impl Globe {
             stations: self.stations_version + if self.countries.is_some() { 1 << 40 } else { 0 },
             imagery: self.earth.as_ref().map(|e| e.version()),
             moving: self.moving(),
+            scale: scale.to_bits(),
         };
         if let Some((k, ops)) = &self.drawn
             && *k == key
         {
             return ops.clone();
         }
-        let ops = Arc::new(self.build(ink, alpha));
+        let ops = Arc::new(self.build(ink, alpha, scale));
         self.drawn = Some((key, ops.clone()));
         ops
     }
@@ -675,7 +677,7 @@ impl Globe {
         self.stars = None;
     }
 
-    fn build(&mut self, ink: &Ink, alpha: f32) -> Vec<VOp> {
+    fn build(&mut self, ink: &Ink, alpha: f32, k: f64) -> Vec<VOp> {
         let started = Instant::now();
         let mut ops = Vec::new();
         let (ox, oy, w, h) = self.rect;
@@ -735,7 +737,6 @@ impl Globe {
         let moving = self.moving();
         if let Some(earth) = &earth {
             // Sampled in device pixels so the picture lands one to one.
-            let k = crate::scene::raster_scale();
             let (dx, dy, dd) = (cx * k, cy * k, disc * k);
             let area = (
                 ((dx - dd - 1.0).floor().max((ox * k).floor())) as i32,
@@ -1014,11 +1015,11 @@ mod tests {
     fn a_still_globe_hands_back_the_same_list() {
         let mut g = Globe { rect: (0.0, 0.0, 400.0, 300.0), countries: Some(Arc::new(load())), ..Globe::default() };
         let ink = Ink { sphere: Rgba::hex(0x101010ff), land: Rgba::hex(0x303030ff), grid: Rgba::hex(0x404040ff), outline: Rgba::hex(0x808080ff), signal: Rgba::hex(0xff8800ff), accent: Rgba::hex(0xff8800ff), radius: 8.0 };
-        let a = g.paint(&ink, 1.0);
-        let b = g.paint(&ink, 1.0);
+        let a = g.paint(&ink, 1.0, 1.0);
+        let b = g.paint(&ink, 1.0, 1.0);
         assert!(Arc::ptr_eq(&a, &b));
         g.wheel(120.0);
-        assert!(!Arc::ptr_eq(&a, &g.paint(&ink, 1.0)));
+        assert!(!Arc::ptr_eq(&a, &g.paint(&ink, 1.0, 1.0)));
     }
 
     #[test]
@@ -1027,7 +1028,7 @@ mod tests {
         let s = Station { uuid: "u".into(), name: "Smoke".into(), latitude: Some(18.0), longitude: Some(-20.0), ..Station::default() };
         g.set_stations(vec![s.clone()]);
         let ink = Ink { sphere: Rgba::hex(0x101010ff), land: Rgba::hex(0x303030ff), grid: Rgba::hex(0x404040ff), outline: Rgba::hex(0x808080ff), signal: Rgba::hex(0xff8800ff), accent: Rgba::hex(0xff8800ff), radius: 8.0 };
-        g.paint(&ink, 1.0);
+        g.paint(&ink, 1.0, 1.0);
         g.press(210.0, 170.0);
         assert_eq!(g.release(212.0, 171.0, 0, Instant::now()), Out::Station(s));
     }
@@ -1049,7 +1050,7 @@ mod tests {
     }
 
     fn picture(g: &mut Globe) -> (crate::scene::Bitmap, (f64, f64)) {
-        let ops = g.paint(&ink(), 1.0);
+        let ops = g.paint(&ink(), 1.0, 1.0);
         ops.iter().find_map(|op| if let VOp::Image(i, at, _) = op { Some((i.clone(), *at)) } else { None }).expect("an image op")
     }
 
@@ -1088,7 +1089,7 @@ mod tests {
     #[test]
     fn without_a_picture_the_flat_globe_draws() {
         let mut g = Globe { rect: (0.0, 0.0, 400.0, 400.0), ..Globe::default() };
-        assert!(!g.paint(&ink(), 1.0).iter().any(|op| matches!(op, VOp::Image(..))));
+        assert!(!g.paint(&ink(), 1.0, 1.0).iter().any(|op| matches!(op, VOp::Image(..))));
     }
 
     #[test]
@@ -1103,7 +1104,7 @@ mod tests {
         let t = Instant::now();
         for i in 0..20 {
             g.centre_longitude = i as f64 * 3.0;
-            g.paint(&ink(), 1.0);
+            g.paint(&ink(), 1.0, 1.0);
         }
         eprintln!("globe build with imagery: {} us a frame", t.elapsed().as_micros() / 20);
         let earth = g.earth.clone().unwrap();
@@ -1127,7 +1128,7 @@ mod tests {
         let t = Instant::now();
         for i in 0..20 {
             g.centre_longitude = i as f64 * 3.0 + 1.0;
-            g.paint(&ink(), 1.0);
+            g.paint(&ink(), 1.0, 1.0);
         }
         eprintln!("globe build flat: {} us a frame", t.elapsed().as_micros() / 20);
     }

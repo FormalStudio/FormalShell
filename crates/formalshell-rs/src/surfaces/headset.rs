@@ -166,12 +166,12 @@ pub fn size(f: &Face, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
     (width.clamp(n * 4.0 + p * 2.0, theme.space.popup_width_narrow).ceil(), n + p * 2.0)
 }
 
-/// The picture and the words; the ring's slot is held empty for
-/// `paint_ring`, so the words sit in the capsule's middle.
-fn content(f: &Face, theme: &Theme) -> El {
+/// The picture, made at `scale`, and the words; the ring's slot is held
+/// empty for `paint_ring`, so the words sit in the capsule's middle.
+fn content(f: &Face, theme: &Theme, scale: f64) -> El {
     let s = &theme.space;
     let size = slot(theme);
-    let lead = match crate::services::devices::earbuds::picture(&f.art, "duo", size) {
+    let lead = match crate::services::devices::earbuds::picture(&f.art, "duo", size, scale) {
         Some(picture) => w::picture(Some(picture), size),
         None => w::column(0.0, vec![w::icon(f.icon).size(Type::Heading).ink(Ink::Fg).centred()]).width(Size::Px(size)),
     };
@@ -182,11 +182,11 @@ fn content(f: &Face, theme: &Theme) -> El {
 }
 
 /// The content's element and the rect it is laid in, inside the card's
-/// `frame` and centred down it.
-pub fn layout(f: &Face, frame: IRect, theme: &Theme, kit: &mut Kit) -> (El, Rect) {
+/// `frame` and centred down it, its picture made at `scale`.
+pub fn layout(f: &Face, frame: IRect, scale: f64, theme: &Theme, kit: &mut Kit) -> (El, Rect) {
     let p = pad(theme);
     let (x0, x1) = (frame.x as f64 + p, (frame.x + frame.w) as f64 - p);
-    let el = content(f, theme);
+    let el = content(f, theme, scale);
     let h = ui::measure(&el, x1 - x0, theme, kit).1;
     let top = frame.y as f64 + (frame.h as f64 - h) / 2.0;
     (el, Rect::new(x0, top, x1, top + h))

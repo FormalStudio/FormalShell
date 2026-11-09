@@ -476,6 +476,7 @@ impl Host {
             hovered: self.hovered_stop(),
             now,
             motion_scale: self.scale,
+            raster: self.surface.scale(),
         }
     }
 

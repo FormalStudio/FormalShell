@@ -160,7 +160,7 @@ impl App {
         layer.set_exclusive_zone(0);
         layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         layer.commit();
-        let mut surface = Surface::on("overview", Backend::Cpu, layer, &self.shm, self.started, &output);
+        let mut surface = Surface::new("overview", Backend::Cpu, layer, &self.shm, self.started, self.store.display.scales.on(&output));
         surface.wait_map = true;
         self.overview.win = Some((surface, Scene::clear(size.0 as i32, size.1 as i32), output));
         compositor::send(compositor::Command::RefreshWindows);
@@ -229,7 +229,7 @@ impl App {
 
     fn overview_capture(&mut self) {
         let wants = self.overview.model.thumb_sizes(&self.overview_current());
-        let scale = self.overview.win.as_ref().map_or_else(crate::scene::raster_scale, |(s, _, _)| s.scale());
+        let scale = self.overview.win.as_ref().map_or_else(|| self.store.display.scales.primary(), |(s, _, _)| s.scale());
         self.capture_set(Owner::Overview, &wants, false, scale);
     }
 
@@ -238,7 +238,7 @@ impl App {
     }
 
     fn overview_probe(&self) {
-        let scale = self.overview.win.as_ref().map_or_else(crate::scene::raster_scale, |(s, _, _)| s.scale());
+        let scale = self.overview.win.as_ref().map_or_else(|| self.store.display.scales.primary(), |(s, _, _)| s.scale());
         let ids: Vec<&WindowId> = self.overview.model.rows.iter().flat_map(|r| r.windows.iter().map(|w| &w.id)).collect();
         let queries = ids
             .iter()
@@ -426,7 +426,6 @@ impl App {
         let clear = self.overview.model.phase == Phase::Opening;
         let input = ov::Input { theme: &self.store.theme.theme, wallpaper: picture.as_ref().map(|p| &p.0), backdrop: picture.as_ref().map(|p| &p.1), flat, thumbs: &thumbs, icons: &icons, now };
         let Some((surface, scene, _)) = &mut self.overview.win else { return };
-        let _raster = crate::scene::raster_at(scale);
         if clear {
             let mut p = crate::paint::Painter::new(scene, &mut self.overview.model.nodes, None);
             p.rect(crate::scene::IRect::new(0, 0, 0, 0), Rgba::TRANSPARENT, 0.0);

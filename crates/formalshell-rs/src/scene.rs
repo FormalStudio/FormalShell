@@ -139,35 +139,9 @@ pub fn keep(made: &mut Vec<Bitmap>, b: Bitmap) {
     made.push(b);
 }
 
-thread_local! {
-    static RASTER: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
-}
-
-/// The scale the surface whose scene is being built draws at: what a
-/// picture asked for while building it is made at. Scenes are built on the
-/// main thread one surface at a time, inside a [`raster_at`] scope; outside
-/// one it is the bar's output's, where a surface with no output of its own
-/// opens.
-pub fn raster_scale() -> f64 {
-    RASTER.with(|r| r.get()).unwrap_or_else(crate::surface::primary_scale)
-}
-
 /// A logical length as the pixels a picture of it is made with at `scale`.
 pub fn pixels_at(logical: f64, scale: f64) -> u32 {
     (logical * scale).round().max(1.0) as u32
-}
-
-/// Sets [`raster_scale`] until dropped.
-pub struct RasterScope(Option<f64>);
-
-pub fn raster_at(scale: f64) -> RasterScope {
-    RasterScope(RASTER.with(|r| r.replace(Some(scale))))
-}
-
-impl Drop for RasterScope {
-    fn drop(&mut self) {
-        RASTER.with(|r| r.set(self.0));
-    }
 }
 
 impl PartialEq for Bitmap {
@@ -729,16 +703,5 @@ mod tests {
         scene.update_with(id, IRect::new(60, 60, 40, 40), paint(), true, Affine::IDENTITY, None);
         let damage = scene.take_damage();
         assert!(damage.iter().any(|d| d.x <= 75 && d.y <= 75 && d.right() >= 125 && d.bottom() >= 125), "{damage:?}");
-    }
-
-    #[test]
-    fn a_raster_scope_holds_until_dropped() {
-        let _outer = raster_at(1.0);
-        {
-            let _inner = raster_at(1.25);
-            assert_eq!(raster_scale(), 1.25);
-            assert_eq!(pixels_at(32.0, raster_scale()), 40);
-        }
-        assert_eq!(raster_scale(), 1.0);
     }
 }
