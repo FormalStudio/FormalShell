@@ -3,44 +3,7 @@
 //! (`fill_rect`, a path then `fill`, ...) and `Scene` records each as a
 //! `Shape`; a renderer walks `Scene::shapes` and never sees the canvas state.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Color {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    pub a: u8,
-}
-
-impl Color {
-    pub(crate) const BLACK: Color = Color {
-        r: 0,
-        g: 0,
-        b: 0,
-        a: 255,
-    };
-
-    /// `#rrggbb` or `#rrggbbaa`.
-    #[cfg(test)]
-    pub(crate) fn from_hex(s: &str) -> Option<Color> {
-        let hex = s.strip_prefix('#')?;
-        let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
-        match hex.len() {
-            6 => Some(Color {
-                r: byte(0)?,
-                g: byte(2)?,
-                b: byte(4)?,
-                a: 255,
-            }),
-            8 => Some(Color {
-                r: byte(0)?,
-                g: byte(2)?,
-                b: byte(4)?,
-                a: byte(6)?,
-            }),
-            _ => None,
-        }
-    }
-}
+use fs_theme::color::Rgba;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PathEl {
@@ -84,17 +47,17 @@ pub enum Shape {
         y: f64,
         w: f64,
         h: f64,
-        color: Color,
+        color: Rgba,
         alpha: f64,
     },
     Fill {
         path: Vec<PathEl>,
-        color: Color,
+        color: Rgba,
         alpha: f64,
     },
     Stroke {
         path: Vec<PathEl>,
-        color: Color,
+        color: Rgba,
         alpha: f64,
         width: f64,
     },
@@ -107,7 +70,7 @@ pub enum Shape {
         family: String,
         align: TextAlign,
         baseline: TextBaseline,
-        color: Color,
+        color: Rgba,
         alpha: f64,
     },
 }
@@ -115,8 +78,8 @@ pub enum Shape {
 #[derive(Debug, Clone)]
 pub struct Scene {
     pub shapes: Vec<Shape>,
-    pub fill_style: Color,
-    pub stroke_style: Color,
+    pub fill_style: Rgba,
+    pub stroke_style: Rgba,
     pub line_width: f64,
     pub global_alpha: f64,
     pub font_size: f64,
@@ -130,8 +93,8 @@ impl Default for Scene {
     fn default() -> Self {
         Scene {
             shapes: Vec::new(),
-            fill_style: Color::BLACK,
-            stroke_style: Color::BLACK,
+            fill_style: Rgba::BLACK,
+            stroke_style: Rgba::BLACK,
             line_width: 1.0,
             global_alpha: 1.0,
             font_size: 10.0,

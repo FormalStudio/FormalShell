@@ -54,7 +54,7 @@ impl State {
             "style": current,
             "override": self.style_override,
             "configured": configured,
-            "configuredKnown": fs_media::visualizer::styles::is_known(configured),
+            "configuredKnown": crate::ui::spectrum::styles::is_known(configured),
             "running": self.running,
             "state": self.avail.as_str(),
             "levels": levels(&frame.mono),
@@ -82,7 +82,7 @@ impl State {
         if !self.style_override.is_empty() {
             return self.style_override.clone();
         }
-        if fs_media::visualizer::styles::is_known(configured) { configured.to_owned() } else { crate::settings::VISUALIZER_STYLE.default.to_owned() }
+        if crate::ui::spectrum::styles::is_known(configured) { configured.to_owned() } else { crate::settings::VISUALIZER_STYLE.default.to_owned() }
     }
 }
 

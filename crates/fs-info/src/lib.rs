@@ -14,6 +14,6 @@ pub mod notification_icon;
 pub mod notifications;
 pub mod reminders;
 pub mod system_update;
-pub mod toast_stack;
+pub mod time;
 pub mod usage;
 pub mod weather;

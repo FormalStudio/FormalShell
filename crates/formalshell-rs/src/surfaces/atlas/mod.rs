@@ -7,12 +7,13 @@
 
 pub mod earth;
 pub mod globe;
+pub mod model;
 pub mod view;
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use fs_media::radio::model::{self as rm, EstimateCache};
+use model::{self as rm, EstimateCache};
 use fs_media::radio::stations::Station;
 use crate::ui::field::{self, Modifiers, Outcome};
 

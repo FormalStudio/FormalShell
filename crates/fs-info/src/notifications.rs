@@ -1,7 +1,7 @@
 //! Three-tier notification state machine: popups (visible toasts), then
 //! pending (unseen, waiting in the history center), then past (seen, pruned
-//! after 15 minutes). Every function takes state in and returns state out;
-//! the clock is always an argument and the input is never mutated.
+//! after 15 minutes). The reducer steps are `State` methods taking `&mut self`;
+//! the clock is always an argument.
 //!
 //! Times are milliseconds since the epoch.
 
@@ -250,39 +250,6 @@ pub fn group_entries(entries: &[Entry]) -> Vec<Group> {
         .collect()
 }
 
-pub fn add(state: &State, notif: &Notif, now: i64, opts: &AddOpts) -> State {
-    if opts.quiet || (state.dnd && !bypasses_dnd(notif)) {
-        let mut next = state.clone();
-        next.pending.push(make_entry(notif, now, None));
-        return next;
-    }
-
-    let timeout = opts.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
-    let expires_at = if notif.urgency == Urgency::Critical { 0 } else { now + timeout };
-    let mut popups = state.popups.clone();
-    popups.push(make_entry(notif, now, Some(expires_at)));
-    let mut pending = state.pending.clone();
-
-    // The whole oldest GROUP moves to pending together, order preserved in
-    // both tiers, so a repeat never costs an unrelated toast its slot.
-    let groups = group_entries(&popups);
-    if groups.len() > MAX_POPUPS {
-        let evicted: HashSet<&str> = groups[..groups.len() - MAX_POPUPS]
-            .iter()
-            .flat_map(|g| g.member_ids.iter().map(String::as_str))
-            .collect();
-        pending.extend(popups.iter().filter(|p| evicted.contains(p.id.as_str())).cloned());
-        popups.retain(|p| !evicted.contains(p.id.as_str()));
-    }
-
-    State {
-        next_expiry: recompute_next_expiry(&popups),
-        popups,
-        pending,
-        ..state.clone()
-    }
-}
-
 fn apply(entry: &mut Entry, patch: &Patch) {
     if let Some(v) = &patch.app_name {
         entry.app_name.clone_from(v);
@@ -313,148 +280,154 @@ fn apply(entry: &mut Entry, patch: &Patch) {
     }
 }
 
-/// Applies a `replaces_id` update (the server mutates the existing
-/// notification in place instead of emitting a new one) to whichever tier
-/// currently holds the entry, without moving it between tiers or touching
-/// `arrived_at`/`seen_at`. A still-popped-up entry gets `expires_at`
-/// recomputed from the patched urgency exactly like `add` does, so a later
-/// update isn't silently cut off by the original arrival's clock.
-pub fn update(state: &State, id: &str, patch: &Patch, now: i64) -> State {
-    let mut next = state.clone();
-    if let Some(entry) = next.popups.iter_mut().find(|p| p.id == id) {
-        apply(entry, patch);
-        entry.expires_at = Some(if entry.urgency == Urgency::Critical {
-            0
-        } else {
-            now + DEFAULT_TIMEOUT_MS
+impl State {
+    pub fn add(&mut self, notif: &Notif, now: i64, opts: &AddOpts) {
+        if opts.quiet || (self.dnd && !bypasses_dnd(notif)) {
+            self.pending.push(make_entry(notif, now, None));
+            return;
+        }
+
+        let timeout = opts.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+        let expires_at = if notif.urgency == Urgency::Critical { 0 } else { now + timeout };
+        self.popups.push(make_entry(notif, now, Some(expires_at)));
+
+        // The whole oldest GROUP moves to pending together, order preserved in
+        // both tiers, so a repeat never costs an unrelated toast its slot.
+        let groups = group_entries(&self.popups);
+        if groups.len() > MAX_POPUPS {
+            let evicted: HashSet<&str> = groups[..groups.len() - MAX_POPUPS]
+                .iter()
+                .flat_map(|g| g.member_ids.iter().map(String::as_str))
+                .collect();
+            self.pending.extend(self.popups.iter().filter(|p| evicted.contains(p.id.as_str())).cloned());
+            self.popups.retain(|p| !evicted.contains(p.id.as_str()));
+        }
+        self.next_expiry = recompute_next_expiry(&self.popups);
+    }
+
+    /// Applies a `replaces_id` update (the server mutates the existing
+    /// notification in place instead of emitting a new one) to whichever tier
+    /// currently holds the entry, without moving it between tiers or touching
+    /// `arrived_at`/`seen_at`. A still-popped-up entry gets `expires_at`
+    /// recomputed from the patched urgency exactly like `add` does, so a later
+    /// update isn't silently cut off by the original arrival's clock.
+    pub fn update(&mut self, id: &str, patch: &Patch, now: i64) {
+        if let Some(entry) = self.popups.iter_mut().find(|p| p.id == id) {
+            apply(entry, patch);
+            entry.expires_at = Some(if entry.urgency == Urgency::Critical {
+                0
+            } else {
+                now + DEFAULT_TIMEOUT_MS
+            });
+            self.next_expiry = recompute_next_expiry(&self.popups);
+        } else if let Some(entry) = self.pending.iter_mut().find(|p| p.id == id) {
+            apply(entry, patch);
+        } else if let Some(entry) = self.past.iter_mut().find(|p| p.id == id) {
+            apply(entry, patch);
+        }
+    }
+
+    /// True when a popup timed out into pending.
+    pub fn expire(&mut self, now: i64) -> bool {
+        let before = self.popups.len();
+        let (timed_out, popups): (Vec<Entry>, Vec<Entry>) = std::mem::take(&mut self.popups).into_iter().partition(|p| match p.expires_at {
+            Some(0) => false,
+            Some(t) => t <= now,
+            None => now >= 0,
         });
-        next.next_expiry = recompute_next_expiry(&next.popups);
-        return next;
+        self.popups = popups;
+        if timed_out.is_empty() {
+            return false;
+        }
+        debug_assert!(self.popups.len() < before);
+        self.pending.extend(timed_out);
+        self.next_expiry = recompute_next_expiry(&self.popups);
+        true
     }
-    if let Some(entry) = next.pending.iter_mut().find(|p| p.id == id) {
-        apply(entry, patch);
-        return next;
-    }
-    if let Some(entry) = next.past.iter_mut().find(|p| p.id == id) {
-        apply(entry, patch);
-        return next;
-    }
-    next
-}
 
-pub fn expire(state: &State, now: i64) -> State {
-    let (timed_out, popups): (Vec<Entry>, Vec<Entry>) = state.popups.iter().cloned().partition(|p| match p.expires_at {
-        Some(0) => false,
-        Some(t) => t <= now,
-        None => now >= 0,
-    });
-    if timed_out.is_empty() {
-        return state.clone();
+    /// Only removes from the popups tier, marking the entry seen on its way to
+    /// past: the toast surface's dismiss ("X" cell, or the click that
+    /// acknowledges a popup still on screen).
+    pub fn dismiss_popup(&mut self, id: &str, now: i64) {
+        let Some(idx) = self.popups.iter().position(|p| p.id == id) else {
+            return;
+        };
+        let mut entry = self.popups.remove(idx);
+        entry.seen_at = Some(now);
+        self.past.push(entry);
+        self.next_expiry = recompute_next_expiry(&self.popups);
     }
-    let mut pending = state.pending.clone();
-    pending.extend(timed_out);
-    State {
-        next_expiry: recompute_next_expiry(&popups),
-        popups,
-        pending,
-        ..state.clone()
+
+    pub fn mark_all_seen(&mut self, now: i64) {
+        for mut e in self.pending.drain(..) {
+            e.seen_at = Some(now);
+            self.past.push(e);
+        }
     }
-}
 
-/// Only removes from the popups tier, marking the entry seen on its way to
-/// past: the toast surface's dismiss ("X" cell, or the click that
-/// acknowledges a popup still on screen).
-pub fn dismiss_popup(state: &State, id: &str, now: i64) -> State {
-    let Some(idx) = state.popups.iter().position(|p| p.id == id) else {
-        return state.clone();
-    };
-    let mut popups = state.popups.clone();
-    let mut entry = popups.remove(idx);
-    entry.seen_at = Some(now);
-    let mut past = state.past.clone();
-    past.push(entry);
-    State {
-        next_expiry: recompute_next_expiry(&popups),
-        popups,
-        past,
-        ..state.clone()
+    /// True when an entry aged out.
+    pub fn prune_past(&mut self, now: i64) -> bool {
+        let cutoff = now - PAST_TTL_MS;
+        let before = self.past.len();
+        self.past.retain(|p| p.seen_at.unwrap_or(p.arrived_at) >= cutoff);
+        self.past.len() != before
     }
-}
 
-pub fn mark_all_seen(state: &State, now: i64) -> State {
-    if state.pending.is_empty() {
-        return state.clone();
+    fn drop_ids(&mut self, wanted: &HashSet<&str>) {
+        let keep = |p: &Entry| !wanted.contains(p.id.as_str());
+        let popups = self.popups.len();
+        self.popups.retain(keep);
+        self.pending.retain(keep);
+        self.past.retain(keep);
+        if self.popups.len() != popups {
+            self.next_expiry = recompute_next_expiry(&self.popups);
+        }
     }
-    let mut past = state.past.clone();
-    past.extend(state.pending.iter().cloned().map(|mut e| {
-        e.seen_at = Some(now);
-        e
-    }));
-    State { pending: Vec::new(), past, ..state.clone() }
-}
 
-pub fn prune_past(state: &State, now: i64) -> State {
-    let cutoff = now - PAST_TTL_MS;
-    let kept: Vec<Entry> = state
-        .past
-        .iter()
-        .filter(|p| p.seen_at.unwrap_or(p.arrived_at) >= cutoff)
-        .cloned()
-        .collect();
-    if kept.len() == state.past.len() {
-        return state.clone();
+    /// General-purpose delete by id from whichever tier holds it (the history
+    /// center's per-row dismiss, on pending or past rows). Unlike
+    /// `dismiss_popup`, this drops the entry outright rather than promoting it.
+    pub fn dismiss_one(&mut self, id: &str) {
+        self.drop_ids(&HashSet::from([id]));
     }
-    State { past: kept, ..state.clone() }
-}
 
-fn drop_ids(state: &State, wanted: &HashSet<&str>) -> State {
-    let keep = |p: &&Entry| !wanted.contains(p.id.as_str());
-    let popups: Vec<Entry> = state.popups.iter().filter(keep).cloned().collect();
-    let pending: Vec<Entry> = state.pending.iter().filter(keep).cloned().collect();
-    let past: Vec<Entry> = state.past.iter().filter(keep).cloned().collect();
-    if popups.len() == state.popups.len()
-        && pending.len() == state.pending.len()
-        && past.len() == state.past.len()
-    {
-        return state.clone();
+    /// `dismiss_one` for a whole group: the history center's per-row dismiss,
+    /// where one row can stand for several notifications.
+    pub fn dismiss_many<S: AsRef<str>>(&mut self, ids: &[S]) {
+        self.drop_ids(&ids.iter().map(AsRef::as_ref).collect());
     }
-    let next_expiry = if popups.len() == state.popups.len() {
-        state.next_expiry
-    } else {
-        recompute_next_expiry(&popups)
-    };
-    State { popups, pending, past, next_expiry, ..state.clone() }
-}
 
-/// General-purpose delete by id from whichever tier holds it (the history
-/// center's per-row dismiss, on pending or past rows). Unlike
-/// `dismiss_popup`, this drops the entry outright rather than promoting it.
-pub fn dismiss_one(state: &State, id: &str) -> State {
-    drop_ids(state, &HashSet::from([id]))
-}
-
-/// `dismiss_one` for a whole group: the history center's per-row dismiss,
-/// where one row can stand for several notifications.
-pub fn dismiss_many<S: AsRef<str>>(state: &State, ids: &[S]) -> State {
-    drop_ids(state, &ids.iter().map(AsRef::as_ref).collect())
-}
-
-pub fn dismiss_all(state: &State) -> State {
-    if state.popups.is_empty() {
-        return state.clone();
+    pub fn dismiss_all(&mut self) {
+        self.popups.clear();
+        self.next_expiry = None;
     }
-    State { popups: Vec::new(), next_expiry: None, ..state.clone() }
-}
 
-pub fn clear_pending(state: &State) -> State {
-    if state.pending.is_empty() {
-        return state.clone();
+    pub fn clear_pending(&mut self) {
+        self.pending.clear();
     }
-    State { pending: Vec::new(), ..state.clone() }
-}
 
-pub fn set_dnd(state: &State, on: bool) -> State {
-    State { dnd: on, ..state.clone() }
+    pub fn set_dnd(&mut self, on: bool) {
+        self.dnd = on;
+    }
+
+    /// Toasts still up plus entries filed unseen: what a bell badge counts.
+    pub fn unseen(&self) -> usize {
+        self.popups.len() + self.pending.len()
+    }
+
+    /// Every entry in every tier.
+    pub fn total(&self) -> usize {
+        self.popups.len() + self.pending.len() + self.past.len()
+    }
+
+    /// What a bell badge reads: the unseen count, or the whole history when
+    /// nothing is unseen.
+    pub fn badge(&self) -> usize {
+        match self.unseen() {
+            0 => self.total(),
+            n => n,
+        }
+    }
 }
 
 /// Not a reducer step: the entry `invokeLast` acts on, the most recently
@@ -503,24 +476,6 @@ pub fn sanitize_body(body: &str, app_name: &str, app_icon: &str) -> String {
     }
     let text = LINK_PREFIX.replace(&text, "");
     BARE_URL_PREFIX.replace(&text, "").into_owned()
-}
-
-/// now/Nm/Nh/Nd ago, each unit's own upper bound exclusive so an exact hour
-/// reads "1h ago" rather than "60m ago".
-pub fn rel_time(now_ms: i64, arrived_at_ms: i64) -> String {
-    let diff = (now_ms - arrived_at_ms).max(0);
-    let minute = 60 * 1000;
-    let hour = 60 * minute;
-    let day = 24 * hour;
-    if diff < minute {
-        "now".into()
-    } else if diff < hour {
-        format!("{}m ago", diff / minute)
-    } else if diff < day {
-        format!("{}h ago", diff / hour)
-    } else {
-        format!("{}d ago", diff / day)
-    }
 }
 
 /// The actions a card draws as buttons. `default` is the freedesktop

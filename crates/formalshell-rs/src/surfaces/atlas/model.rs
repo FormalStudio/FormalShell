@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use super::stations::Station;
+use fs_media::radio::stations::Station;
 
 const RADIANS: f64 = std::f64::consts::PI / 180.0;
 const DEGREES: f64 = 180.0 / std::f64::consts::PI;

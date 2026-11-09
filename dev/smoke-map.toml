@@ -277,7 +277,7 @@ paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formals
 runs = ["--tray", "--tray-overflow", "--tray --sidebar", "--tray-overflow --sidebar"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/surfaces/panel/media/spectrum.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/ui/spectrum/**"]
 runs = ["--visualizer", "--visualizer-styles", "--spectrum"]
 
 [[rule]]
@@ -387,7 +387,7 @@ paths = ["crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-kopuz/**", "c
 runs = ["--kopuz"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/lyrics.rs", "crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-media/src/lyrics.rs", "crates/formalshell-rs/src/surfaces/panel/media/lyrics.rs"]
+paths = ["crates/formalshell-rs/src/services/lyrics.rs", "crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-media/src/lyrics.rs", "crates/formalshell-rs/src/surfaces/panel/media/lyrics.rs", "crates/formalshell-rs/src/surfaces/panel/media/lyrics/**"]
 runs = ["--lyrics", "--lyrics-blur"]
 
 [[rule]]
@@ -488,7 +488,7 @@ paths = [
   "crates/fs-notifd/**",
   "crates/fs-info/src/notifications.rs",
   "crates/fs-info/src/notification_icon.rs",
-  "crates/fs-info/src/toast_stack.rs",
+  "crates/formalshell-rs/src/surfaces/toasts/**",
 ]
 runs = ["--notify", "--toast-swipe", "--notify-close", "--notify-emerge", "--center", "--activity", "--tray-overflow --sidebar"]
 

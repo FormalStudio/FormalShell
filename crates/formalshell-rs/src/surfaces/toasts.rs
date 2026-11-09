@@ -7,7 +7,7 @@
 //!
 //! Collapsed is the depth stack (the front card, two levels peeking behind
 //! it as empty chrome at the front card's height), expanded the plain
-//! column, both laid out by fs-info's `toast_stack`.
+//! column, both laid out by `stack`.
 //!
 //! Each group keeps its slot across draws, so a card retargets rather than
 //! snaps: x, y, width and height ride the table's `restack` clock (y behind
@@ -27,12 +27,14 @@
 //! it pulls against the rubber band, and the lift either sends it on off
 //! that edge or springs it back.
 
+mod stack;
+
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use fs_types::Insets;
 use fs_info::notifications::{self as model, Group, PositionSpec, Urgency};
-use fs_info::toast_stack::{self, StackParams};
+use self::stack::StackParams;
 use fs_theme::color::Rgba;
 use fs_theme::style::Role;
 use fs_theme::theme::Theme;
@@ -236,7 +238,7 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
     let s = &theme.space;
     let e = &g.entry;
     let critical = e.urgency == Urgency::Critical;
-    let rel = model::rel_time(now, e.arrived_at);
+    let rel = fs_info::time::rel_time(now, e.arrived_at);
     let meta = if g.count > 1 { format!("{rel}  x{}", g.count) } else { rel };
     let slot = s.control_height;
     let mark = match picture.filter(|_| !critical) {
@@ -401,7 +403,7 @@ impl Toasts {
             let inner = ui::measure(&c.el, width - s.panel_padding * 2.0, theme, kit).1;
             heights.insert(k.clone(), inner + s.panel_padding * 2.0);
         }
-        let layout = toast_stack::layout(&StackParams {
+        let layout = stack::layout(&StackParams {
             frame_width: width,
             peek_inset: s.md,
             peek_offset: s.panel_padding,

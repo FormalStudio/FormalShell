@@ -18,12 +18,12 @@
 //! reports; nothing ticks while paused.
 
 mod lyrics;
-mod spectrum;
+
 
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 
-use fs_media::visualizer::styles;
+use crate::ui::spectrum::styles;
 use fs_theme::icons;
 use fs_types::Fraction;
 
@@ -340,7 +340,7 @@ impl Panel for Media {
         if enabled && (vis.avail == Avail::Available || a.kind.tempo_driven()) {
             let style = vis.style(VISUALIZER_STYLE.get(&v.store.config));
             let tip = styles::label(&style);
-            info.push(El::custom(spectrum::Spectrum { style, columns: SPECTRUM_COLUMNS, live: vis.running }).on("spectrum").tip(tip).key("spectrum"));
+            info.push(El::custom(crate::ui::spectrum::Spectrum { style, columns: SPECTRUM_COLUMNS, live: vis.running }).on("spectrum").tip(tip).key("spectrum"));
         }
         col.push(w::row(s.lg, info).fill());
 

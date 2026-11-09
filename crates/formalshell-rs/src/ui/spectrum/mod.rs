@@ -1,4 +1,4 @@
-//! The media panel's spectrum: fs-media's style draws its shape list for the
+//! The media panel's spectrum: a style draws its shape list for the
 //! frame, and each shape becomes one node. A style keeps its own state (its
 //! caps, particles and traces) per element, thrown away when the style
 //! changes or the live state flips, so each style's resting frame is drawn
@@ -7,8 +7,6 @@
 use std::time::Instant;
 
 use fs_media::visualizer::model;
-use fs_media::visualizer::scene::{self as vis, PathEl, Shape, TextAlign};
-use fs_media::visualizer::styles;
 use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use vello_cpu::kurbo::{self, Affine, BezPath, Rect, Shape as _};
@@ -17,6 +15,11 @@ use crate::scene::{IRect, Paint, Scene};
 use crate::services::visualizer;
 use crate::text::TextStyle;
 use crate::ui::{Cx, State, Widget, irect};
+
+pub mod scene;
+pub mod styles;
+
+use self::scene::{self as vis, PathEl, Shape, TextAlign};
 
 /// The spectrum in one style, `columns` wide, redrawn every frame while
 /// `live` and at rest otherwise.
@@ -49,13 +52,8 @@ impl Widget for Spectrum {
     }
 }
 
-fn to_vis(c: Rgba) -> vis::Color {
-    let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-    vis::Color { r: b(c.r), g: b(c.g), b: b(c.b), a: b(c.a) }
-}
-
-fn from_vis(c: vis::Color, alpha: f64, outer: f32) -> Rgba {
-    Rgba { r: c.r as f32 / 255.0, g: c.g as f32 / 255.0, b: c.b as f32 / 255.0, a: c.a as f32 / 255.0 * alpha as f32 * outer }
+fn faded(c: Rgba, alpha: f64, outer: f32) -> Rgba {
+    Rgba { a: c.a * alpha as f32 * outer, ..c }
 }
 
 fn path(els: &[PathEl], at: Affine) -> BezPath {
@@ -82,10 +80,10 @@ fn path(els: &[PathEl], at: Affine) -> BezPath {
 fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key: &str) {
     let t = cx.theme;
     let ink = styles::Ink {
-        groove: to_vis(t.colors.get(ColorRole::Muted)),
-        dim: to_vis(t.colors.get(ColorRole::MutedForeground)),
-        content: to_vis(t.colors.get(ColorRole::Foreground)),
-        accent: to_vis(t.colors.get(ColorRole::Primary)),
+        groove: t.colors.get(ColorRole::Muted),
+        dim: t.colors.get(ColorRole::MutedForeground),
+        content: t.colors.get(ColorRole::Foreground),
+        accent: t.colors.get(ColorRole::Primary),
         mono: String::new(),
         columns,
         gap: t.space.xxs,
@@ -143,17 +141,17 @@ fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key: &st
                 b.extend(Rect::new(*x, *y, x + w, y + h).path_elements(0.1));
                 b.apply_affine(at);
                 let bounds = Scene::cover(b.bounding_box(), Affine::IDENTITY, 1.0);
-                p.shape_in(bounds, Paint::Shape { fill: Some((b, from_vis(*color, *alpha, outer))), strokes: Vec::new() }, clip);
+                p.shape_in(bounds, Paint::Shape { fill: Some((b, faded(*color, *alpha, outer))), strokes: Vec::new() }, clip);
             }
             Shape::Fill { path: els, color, alpha } => {
                 let b = path(els, at);
                 let bounds = Scene::cover(b.bounding_box(), Affine::IDENTITY, 1.0);
-                p.shape_in(bounds, Paint::Shape { fill: Some((b, from_vis(*color, *alpha, outer))), strokes: Vec::new() }, clip);
+                p.shape_in(bounds, Paint::Shape { fill: Some((b, faded(*color, *alpha, outer))), strokes: Vec::new() }, clip);
             }
             Shape::Stroke { path: els, color, alpha, width } => {
                 let b = path(els, at);
                 let bounds = Scene::cover(b.bounding_box(), Affine::IDENTITY, width + 1.0);
-                p.shape_in(bounds, Paint::Shape { fill: None, strokes: vec![(b, from_vis(*color, *alpha, outer), *width)] }, clip);
+                p.shape_in(bounds, Paint::Shape { fill: None, strokes: vec![(b, faded(*color, *alpha, outer), *width)] }, clip);
             }
             Shape::Text { x, y, align, color, alpha, .. } => {
                 let Some(t) = text else { continue };
@@ -162,7 +160,7 @@ fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key: &st
                 let y = r.y0 + y - t.line_height() as f64 / 2.0;
                 let (bw, bh) = t.box_size();
                 let bounds = IRect::new(x.round() as i32 - crate::text::PAD, y.round() as i32 - crate::text::PAD, bw, bh);
-                p.text_in(&t, bounds, Affine::IDENTITY, Some(clip), from_vis(*color, *alpha, outer), &[]);
+                p.text_in(&t, bounds, Affine::IDENTITY, Some(clip), faded(*color, *alpha, outer), &[]);
             }
         }
     }

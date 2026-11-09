@@ -353,7 +353,7 @@ fn readout(bpm: Bpm, caption: String) -> El {
 
 /// A point's caption: the unit and how long ago the check took it.
 fn point_caption(now_ms: i64, at_ms: u64) -> String {
-    match fs_info::notifications::rel_time(now_ms, at_ms as i64).as_str() {
+    match fs_info::time::rel_time(now_ms, at_ms as i64).as_str() {
         "now" => "BPM, just now".into(),
         ago => format!("BPM, {ago}"),
     }

@@ -253,8 +253,8 @@ pub fn stereo_frame_to_levels(
 // per-index rainbow. Both cuts are relative to the running peak: 0.4 is a band
 // ~37% of the peak (-8.6dB); a steady loud passage's loudest band draws 0.757,
 // so 0.85 is only crossed by a band 36% over it.
-pub(crate) const LEVEL_DIM_BELOW: f64 = 0.4;
-pub(crate) const LEVEL_ACCENT_FROM: f64 = 0.85;
+pub const LEVEL_DIM_BELOW: f64 = 0.4;
+pub const LEVEL_ACCENT_FROM: f64 = 0.85;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Band {

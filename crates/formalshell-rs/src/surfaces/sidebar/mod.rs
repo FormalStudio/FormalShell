@@ -776,8 +776,7 @@ fn notifications(theme: &Theme, store: &Store, g: &Geo, icons: &HashMap<String, 
         return w::row(s.icon_gap, vec![bell, w::caption("Notifications").ink(Ink::Muted).elide()]);
     }
     // A toast still up is as new as one filed unseen.
-    let new = m.popups.len() + m.pending.len();
-    let count = if new == 0 { all.len() } else { new }.to_string();
+    let count = m.badge().to_string();
     all.sort_by_key(|e| std::cmp::Reverse(e.arrived_at));
     let mut apps: Vec<(&str, Bitmap)> = Vec::new();
     for e in all {
@@ -894,10 +893,8 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
     }
     let m = &store.notifications.model;
     let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);
-    let all = m.popups.len() + m.pending.len() + m.past.len();
     // A toast still up is as new as one filed unseen.
-    let new = m.popups.len() + m.pending.len();
-    let bell = match if new == 0 { all } else { new } {
+    let bell = match m.badge() {
         0 => bell,
         n => w::row(r.tight, vec![bell, w::caption(n.to_string()).mono().weight(Weight::Medium).ink(Ink::Muted)]),
     };

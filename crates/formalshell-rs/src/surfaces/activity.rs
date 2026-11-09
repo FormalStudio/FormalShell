@@ -73,7 +73,7 @@ pub fn row(theme: &Theme, store: &Store, g: &Group, actions: bool) -> El {
 /// A folded item, newest first in the history: how it ended and when.
 pub fn folded(theme: &Theme, item: &Item, now: i64) -> El {
     let s = &theme.space;
-    let when = fs_info::notifications::rel_time(now, item.ended_ms.unwrap_or(item.updated_ms));
+    let when = fs_info::time::rel_time(now, item.ended_ms.unwrap_or(item.updated_ms));
     let words = w::column(
         s.xxs,
         vec![

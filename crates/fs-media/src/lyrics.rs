@@ -51,11 +51,6 @@ pub(crate) const WORD_FALLBACK_SECONDS: f64 = 0.35;
 /// tail can be far longer than the syllable itself. The wipe caps there so it
 /// lands on the beat and holds instead of creeping through the silence.
 pub(crate) const WIPE_MAX_SECONDS: f64 = 1.2;
-/// How long the glow on a chunk takes to fade once the chunk's own span is
-/// over, and the step it is reported in, so a decaying glow rewrites the
-/// effect's properties twenty times rather than once a frame.
-pub(crate) const GLOW_DECAY_SECONDS: f64 = 0.6;
-pub(crate) const GLOW_QUANTUM: f64 = 0.05;
 /// How far ahead of the player's own clock every lyrics reader works. An MPRIS
 /// position is a single sample stamped when the player's D-Bus reply arrived
 /// and extrapolated from there, and the frame drawn off it reaches the display
@@ -67,13 +62,6 @@ pub(crate) const POSITION_LEAD_SECONDS: f64 = 0.1;
 /// stays lit across it.
 pub(crate) const SEAMLESS_GAP_SECONDS: f64 = 3.0;
 
-/// The rightbar ramp from kopuz: per-line-of-distance blur step and cap, in px,
-/// sized for the panel's own (smaller) type.
-pub(crate) const BLUR_STEP_PX: f64 = 1.1;
-pub(crate) const BLUR_MAX_PX: f64 = 6.0;
-pub const BLUR_QUANTUM_PX: f64 = 0.5;
-/// The lit line rests this far down the viewport rather than at its centre.
-pub(crate) const COMFORT_OFFSET_FRACTION: f64 = 0.42;
 
 /// `lyrics_match_score`'s floor and the duration window: a candidate under the
 /// floor is dropped outright, one further than this many seconds from the
@@ -84,7 +72,6 @@ pub(crate) const DURATION_WINDOW_SECONDS: f64 = 12.0;
 /// A latency past this is a misreport rather than a sink.
 pub(crate) const OUTPUT_LATENCY_MAX_MS: f64 = 2000.0;
 
-const DEPTH_OPACITY: [f64; 4] = [1.0, 0.7, 0.45, 0.25];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,10 +123,6 @@ impl Line {
 }
 
 /// `x > 0`, false for NaN.
-fn positive(x: f64) -> bool {
-    x > 0.0
-}
-
 fn finite(v: Option<f64>) -> Option<f64> {
     v.filter(|x| x.is_finite())
 }
@@ -830,7 +813,7 @@ pub fn chunk_words(words: &[Word]) -> Vec<&[Word]> {
 /// has no next, so it runs to the line's end, and a line with no end of its
 /// own (the last display entry) falls back to a chunk-sized fudge past its own
 /// stamp (kopuz's chunk_end_time).
-pub(crate) fn chunk_end(words: &[Word], index: usize, line_end: Option<f64>) -> f64 {
+pub fn chunk_end(words: &[Word], index: usize, line_end: Option<f64>) -> f64 {
     if let Some(next) = words.get(index + 1) {
         return next.time;
     }
@@ -869,26 +852,6 @@ pub fn chunk_progress(
         return if t >= start { 1.0 } else { 0.0 };
     }
     ((t - start) / (end - start)).clamp(0.0, 1.0)
-}
-
-/// The 0..1 glow on chunk `index` at `t`: full while the chunk is the one
-/// being sung, then linear to 0 over `GLOW_DECAY_SECONDS`. Off its raw span
-/// rather than the capped wipe: a chunk held over a pause keeps its glow for as
-/// long as it is the chunk being sung.
-pub fn chunk_glow(words: &[Word], index: usize, line_end: Option<f64>, t: f64) -> f64 {
-    let Some(chunk) = words.get(index) else {
-        return 0.0;
-    };
-    if t < chunk.time {
-        return 0.0;
-    }
-    let end = chunk_end(words, index, line_end);
-    let glow = if t <= end {
-        1.0
-    } else {
-        1.0 - (t - end) / GLOW_DECAY_SECONDS
-    };
-    round(glow.clamp(0.0, 1.0) / GLOW_QUANTUM) * GLOW_QUANTUM
 }
 
 /// A line's own words if it has any (not synthesised), the whole main-line
@@ -1262,165 +1225,6 @@ pub fn display_lines(lines: &[Line]) -> Vec<Line> {
         }
     }
     display
-}
-
-/// The depth ramp at `distance` rows from the anchor, spread over `row_span`
-/// rows instead of the table's own four entries: `row_span` is how many rows
-/// the pane actually has room for on that side of the anchor, so the ramp
-/// reaches its floor at the viewport's edge rather than three rows in with the
-/// rest of the pane left holding rows nobody can read. The table is sampled
-/// rather than replaced, and an omitted span reproduces the four entries
-/// exactly.
-pub fn depth_opacity(distance: f64, row_span: Option<f64>) -> f64 {
-    let last = DEPTH_OPACITY.len() - 1;
-    let span = finite(row_span).filter(|s| *s > 0.0).unwrap_or(last as f64);
-    // Multiplied before the divide, so an integer distance against the default
-    // span lands on a table entry exactly rather than a float hair away from
-    // one.
-    let at = (distance.abs() * last as f64 / span).min(last as f64);
-    let low = at.floor() as usize;
-    if low >= last {
-        return DEPTH_OPACITY[last];
-    }
-    DEPTH_OPACITY[low] + (DEPTH_OPACITY[low + 1] - DEPTH_OPACITY[low]) * (at - low as f64)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RowSpans {
-    pub above: f64,
-    pub below: f64,
-}
-
-/// How many rows fit between the anchored row's own resting place (the comfort
-/// offset) and each end of a `viewport_height`-tall viewport, at `row_pitch` px
-/// a row. The two ramps above and `blur_for` below span these rather than a
-/// fixed row count, so a taller pane reads more of the song. Never under 1: a
-/// pane with room for less than one row either side still has to put its
-/// neighbours somewhere on the ramp.
-pub fn row_spans(viewport_height: f64, row_pitch: f64) -> RowSpans {
-    if !positive(viewport_height) || !positive(row_pitch) {
-        return RowSpans {
-            above: 1.0,
-            below: 1.0,
-        };
-    }
-    let top = viewport_height * COMFORT_OFFSET_FRACTION;
-    RowSpans {
-        above: f64::max(1.0, top / row_pitch),
-        below: f64::max(1.0, (viewport_height - top) / row_pitch),
-    }
-}
-
-/// The 0..1 fade a `height`-tall row starting at `top` carries for its
-/// clearance from the ends of a `viewport_height`-tall viewport: 1 while it
-/// clears both by its own height, ramping to 0 as either end reaches it. The
-/// ramp is spent before the viewport's clip rather than across it, so the pane
-/// never ends on half a glyph. `top` is the item's position after the column's
-/// own travel.
-///
-/// `ramp_height` is how much clearance buys a full fade in, one row's pitch
-/// rather than the row's own height: a line wrapped over three rows would
-/// otherwise sit at half opacity for resting where every other line rests.
-pub fn edge_fraction(top: f64, height: f64, viewport_height: f64, ramp_height: Option<f64>) -> f64 {
-    if !positive(height) {
-        return 0.0;
-    }
-    let ramp = finite(ramp_height).filter(|r| *r > 0.0).unwrap_or(height);
-    let clearance = top.min(viewport_height - (top + height));
-    (clearance / ramp).clamp(0.0, 1.0)
-}
-
-/// A line's depth-of-field blur for its distance (in display rows, not
-/// seconds) from the anchor: kopuz's rightbar ramp, capped before the strength
-/// scale is applied, quantised to `BLUR_QUANTUM_PX` so the effect's own cache
-/// doesn't rebuild every frame over a sub-pixel change. `row_span` is the row
-/// count the pane has room for on that side (`row_spans`), so the cap lands at
-/// the viewport's edge; omitting it keeps the ramp's own `BLUR_STEP_PX` slope.
-pub fn blur_for(distance: f64, strength_percent: f64, row_span: Option<f64>) -> f64 {
-    let span = finite(row_span)
-        .filter(|s| *s > 0.0)
-        .unwrap_or(BLUR_MAX_PX / BLUR_STEP_PX);
-    let capped = (distance.abs() / span).min(1.0) * BLUR_MAX_PX;
-    let scaled = capped * (strength_percent / 100.0);
-    round(scaled / BLUR_QUANTUM_PX) * BLUR_QUANTUM_PX
-}
-
-/// One laid-out text row of a chunk: its `y`, `height` and ink `width`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TextRow {
-    pub y: f64,
-    pub height: f64,
-    pub width: f64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RowBand {
-    pub top: f64,
-    pub height: f64,
-    pub width: f64,
-}
-
-/// A chunk's own text rows as bands over its box. A chunk wider than the pane
-/// wraps inside its own text item, and the wipe over it has to cross that
-/// break the way reading does. The bands returned tile the whole box top to
-/// bottom (a band runs to the next row's own top, and the last to the box's
-/// floor) so the mask never leaves a sliver of a glyph uncovered, and each
-/// carries the row's own ink width for `row_wipe`.
-pub fn chunk_row_bands(rows: &[TextRow], box_height: f64, box_width: f64) -> Vec<RowBand> {
-    if rows.is_empty() {
-        return vec![RowBand {
-            top: 0.0,
-            height: box_height,
-            width: box_width,
-        }];
-    }
-    rows.iter()
-        .enumerate()
-        .map(|(i, row)| {
-            let top = if i == 0 { 0.0 } else { row.y };
-            let bottom = rows.get(i + 1).map_or(box_height, |next| next.y);
-            RowBand {
-                top,
-                height: f64::max(0.0, bottom - top),
-                width: if row.width > 0.0 {
-                    row.width
-                } else {
-                    box_width
-                },
-            }
-        })
-        .collect()
-}
-
-/// The 0..1 wipe on one band of a wrapped chunk at the chunk's own `progress`:
-/// band N finishes at its own right end before band N+1 starts at its left, so
-/// the lit run reads in reading order rather than as one horizontal cut across
-/// every row of the block at once. The travel is weighted by each band's own
-/// ink width, so the edge crosses a full row and a short last one at one speed
-/// instead of spending the same time on each.
-pub fn row_wipe(bands: &[RowBand], index: usize, progress: f64) -> f64 {
-    if index >= bands.len() {
-        return 0.0;
-    }
-    if bands.len() == 1 {
-        return progress;
-    }
-    let total: f64 = bands.iter().map(|b| b.width.max(0.0)).sum();
-    let own = bands[index].width.max(0.0);
-    if !positive(total) || !positive(own) {
-        return if progress >= 1.0 { 1.0 } else { 0.0 };
-    }
-    let before: f64 = bands[..index].iter().map(|b| b.width.max(0.0)).sum();
-    ((progress * total - before) / own).clamp(0.0, 1.0)
-}
-
-/// The column `y` that rests an item starting at `item_y` with its own top
-/// `COMFORT_OFFSET_FRACTION` down a `viewport_height`-tall viewport (kopuz's
-/// comfort scroll offset, translated from a scrollTop into a translated
-/// column's own y since the pane never has real scroll content). Anchored on
-/// the item's top rather than its centre.
-pub fn comfort_y(viewport_height: f64, item_y: f64) -> f64 {
-    viewport_height * COMFORT_OFFSET_FRACTION - item_y
 }
 
 #[cfg(test)]

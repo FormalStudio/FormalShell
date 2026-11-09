@@ -10,14 +10,18 @@
 //! node group, so between line changes only the lit row's nodes change (the
 //! wipe), and a line change repaints the rows whose distance changed.
 
+mod numbers;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use fs_media::lyrics::{self as model, Line, RowBand, TextRow};
+use fs_media::lyrics::{self as model, Line};
 use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use fs_theme::style::{Glow, Role};
 use vello_cpu::kurbo::{Affine, Rect};
+
+use numbers::{RowBand, TextRow};
 
 use crate::motion::Kind as Clock;
 use crate::scene::IRect;
@@ -179,7 +183,7 @@ fn layout_row(cx: &mut Cx, line: &Line, width: f64) -> (f64, Vec<Piece>, HashMap
                 }
             }
             let box_w = text_rows.iter().map(|r| r.width).fold(0.0, f64::max);
-            bands.insert(index, model::chunk_row_bands(&text_rows, lh * n as f64, box_w));
+            bands.insert(index, numbers::chunk_row_bands(&text_rows, lh * n as f64, box_w));
             index += 1;
         }
         x += space;
@@ -272,8 +276,8 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
     let vh = vp.height();
     let total: f64 = pane.rows.last().map_or(0.0, |r| r.y + r.h);
     let pitch = if lines.is_empty() { 0.0 } else { total / lines.len() as f64 };
-    let spans = model::row_spans(vh, pitch);
-    let resting = |rows: &[Row], i: usize| model::comfort_y(vh, rows.get(i).map_or(0.0, |r| r.y));
+    let spans = numbers::row_spans(vh, pitch);
+    let resting = |rows: &[Row], i: usize| numbers::comfort_y(vh, rows.get(i).map_or(0.0, |r| r.y));
     let follow_y = resting(&pane.rows, anchor);
     if !v.follow && pane.following {
         pane.wheel_y = pane.last_y;
@@ -313,8 +317,8 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
         let lit = Some(i) == active || secondary.contains(&i);
         let distance = i as f64 - anchor as f64;
         let span = if distance < 0.0 { spans.above } else { spans.below };
-        let edge = model::edge_fraction(top, rh, vh, Some(ramp));
-        let depth = if lit { 1.0 } else { model::depth_opacity(distance, Some(span)) };
+        let edge = numbers::edge_fraction(top, rh, vh, Some(ramp));
+        let depth = if lit { 1.0 } else { numbers::depth_opacity(distance, Some(span)) };
         // A line arriving at lit fades in from 0.68 rather than stepping to
         // its depth opacity (kopuz's fadeLineIn).
         let arrival_key = format!("{rpath}.arrival");
@@ -324,9 +328,9 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
         let arrival = cx.tween(&arrival_key, 1.0, Clock::EffectsSlow);
         let row_alpha = cx.tween(&format!("{rpath}.a"), depth * if line.background { 0.7 } else { 1.0 }, Clock::Effects) * edge * arrival;
         let hovered = cx.hover(&rpath);
-        let blur_target = if !v.blur || lit || hovered || cursor_row { 0.0 } else { model::blur_for(distance, v.strength, Some(span)) };
+        let blur_target = if !v.blur || lit || hovered || cursor_row { 0.0 } else { numbers::blur_for(distance, v.strength, Some(span)) };
         let blur = cx.tween(&format!("{rpath}.blur"), blur_target, Clock::Effects);
-        let blur = (blur / model::BLUR_QUANTUM_PX).round() * model::BLUR_QUANTUM_PX;
+        let blur = (blur / numbers::BLUR_QUANTUM_PX).round() * numbers::BLUR_QUANTUM_PX;
         let a = (row_alpha as f32) * alpha;
         let ink = cx.color(&format!("{rpath}.ink"), if lit { fg } else { muted });
         let x0 = vp.x0 + if line.opposite_turn { vp.width() - box_w } else { 0.0 } + s.control_padding_x + if line.background && !line.opposite_turn { s.control_padding_x } else { 0.0 };
@@ -364,12 +368,12 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
                 (true, Some((ci, k))) => {
                     draws.push((piece.text.clone(), at, muted.with_alpha(muted.a * a), None, Vec::new(), 0.0));
                     let progress = model::chunk_progress(&line.words, ci, line_end, v.t, line.estimated);
-                    let frac = row.bands.get(&ci).map_or(progress, |b| model::row_wipe(b, k, progress));
+                    let frac = row.bands.get(&ci).map_or(progress, |b| numbers::row_wipe(b, k, progress));
                     if frac > 0.0 {
                         let c = IRect::new(at.0 - text::PAD, at.1 - text::PAD, (piece.w * frac).round() as i32 + text::PAD, piece.text.line_height() + text::PAD * 2);
                         // MultiEffect's shadow under the sung part: a
                         // Gaussian of (4 + 6g)px at 0.3g of the ink.
-                        let glow = model::chunk_glow(&line.words, ci, line_end, v.t);
+                        let glow = numbers::chunk_glow(&line.words, ci, line_end, v.t);
                         if glow > 0.0 {
                             let sigma = ((4.0 + glow * 6.0) / 2.0) as f32;
                             draws.push((piece.text.clone(), at, fg.with_alpha(fg.a * 0.3 * glow as f32 * a), Some(c), Vec::new(), sigma));

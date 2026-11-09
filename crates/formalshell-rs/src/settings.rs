@@ -423,7 +423,7 @@ mod tests {
         let toasts = fs_info::notifications::position_spec(None).name;
         assert_eq!(fs_info::notifications::position_spec(Some(NOTIFICATIONS_POSITION.default)).name, toasts);
         assert_eq!(crate::services::theme::mode_key(&json!({})), "");
-        assert!(fs_media::visualizer::styles::is_known(VISUALIZER_STYLE.default));
+        assert!(crate::ui::spectrum::styles::is_known(VISUALIZER_STYLE.default));
         assert_eq!(battery_thresholds(&json!({})), Thresholds::LAPTOP);
     }
 

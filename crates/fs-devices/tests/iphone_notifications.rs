@@ -40,19 +40,15 @@ fn all_entries(state: &nm::State) -> impl Iterator<Item = &nm::Entry> {
 }
 
 fn add(state: &nm::State, notif: &nm::Notif, now: i64) -> nm::State {
-    nm::add(state, notif, now, &nm::AddOpts::default())
+    let mut next = state.clone();
+    next.add(notif, now, &nm::AddOpts::default());
+    next
 }
 
 fn add_quiet(state: &nm::State, notif: &nm::Notif, now: i64) -> nm::State {
-    nm::add(
-        state,
-        notif,
-        now,
-        &nm::AddOpts {
-            quiet: true,
-            ..nm::AddOpts::default()
-        },
-    )
+    let mut next = state.clone();
+    next.add(notif, now, &nm::AddOpts { quiet: true, ..nm::AddOpts::default() });
+    next
 }
 
 fn entry_of(notif: &nm::Notif, arrived_at: i64) -> nm::Entry {
@@ -73,7 +69,7 @@ fn local_arrival_replaces_phone_card() {
     let incoming = s.popups.iter().find(|p| p.id == "9").unwrap();
     let stale = superseded(&rules(), incoming, all_entries(&s), (now + 3000) as f64);
     assert_eq!(stale, vec!["iphone-77-4012".to_string()]);
-    s = nm::dismiss_many(&s, &stale);
+    s.dismiss_many(&stale);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.popups[0].id, "9");
     assert_eq!(s.pending.len() + s.past.len(), 0);
@@ -92,7 +88,7 @@ fn local_arrival_replaces_quiet_phone_entry_in_history() {
     let incoming = entry_of(&local("9", "Alex", "Still on for Friday?"), now + 1000);
     let stale = superseded(&rules(), &incoming, all_entries(&s), (now + 1000) as f64);
     assert_eq!(stale.len(), 1);
-    s = nm::dismiss_many(&s, &stale);
+    s.dismiss_many(&stale);
     assert_eq!(s.pending.len(), 0);
 }
 
@@ -116,7 +112,8 @@ fn phone_and_local_cards_never_group() {
 #[test]
 fn critical_phone_entry_still_waits_behind_dnd() {
     let call = parse_notification(LINE_CALL);
-    let s = nm::set_dnd(&nm::State::new(), true);
+    let mut s = nm::State::new();
+    s.set_dnd(true);
     let s = add(&s, &to_notification(&call), 1000);
     assert_eq!(s.popups.len(), 0);
     assert_eq!(s.pending.len(), 1);

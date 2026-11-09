@@ -25,12 +25,18 @@ fn ids(entries: &[Entry]) -> String {
     entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>().join(",")
 }
 
-fn add_at(s: &State, n: Notif, now: i64) -> State {
-    add(s, &n, now, &AddOpts::default())
+fn add_at(s: &mut State, n: Notif, now: i64) {
+    s.add(&n, now, &AddOpts::default());
 }
 
-fn add_timeout(s: &State, n: Notif, now: i64, timeout_ms: i64) -> State {
-    add(s, &n, now, &AddOpts { timeout_ms: Some(timeout_ms), ..AddOpts::default() })
+fn add_timeout(s: &mut State, n: Notif, now: i64, timeout_ms: i64) {
+    s.add(&n, now, &AddOpts { timeout_ms: Some(timeout_ms), ..AddOpts::default() });
+}
+
+fn dnd() -> State {
+    let mut s = State::new();
+    s.set_dnd(true);
+    s
 }
 
 fn patch_summary(s: &str) -> Patch {
@@ -79,8 +85,8 @@ fn bypasses_dnd_false_for_local_at_normal_urgency() {
 
 #[test]
 fn add_dnd_on_non_bypassing_routes_to_pending() {
-    let s = set_dnd(&State::new(), true);
-    let s = add_at(&s, notif("a", 1), 1000);
+    let mut s = dnd();
+    add_at(&mut s, notif("a", 1), 1000);
     assert_eq!(s.popups.len(), 0);
     assert_eq!(s.pending.len(), 1);
     assert_eq!(s.pending[0].id, "a");
@@ -89,33 +95,37 @@ fn add_dnd_on_non_bypassing_routes_to_pending() {
 
 #[test]
 fn add_dnd_on_bypassing_critical_routes_to_popup() {
-    let s = set_dnd(&State::new(), true);
-    let s = add_at(&s, from_notify_send(notif("a", 2)), 1000);
+    let mut s = dnd();
+    add_at(&mut s, from_notify_send(notif("a", 2)), 1000);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.pending.len(), 0);
 }
 
 #[test]
 fn add_normal_urgency_gets_default_timeout_expiry() {
-    let s = add_at(&State::new(), notif("a", 1), 1000);
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1000);
     assert_eq!(s.popups[0].expires_at, Some(7000)); // 1000 + 6000ms default
 }
 
 #[test]
 fn add_critical_urgency_is_sticky() {
-    let s = add_at(&State::new(), from_notify_send(notif("a", 2)), 1000);
+    let mut s = State::new();
+    add_at(&mut s, from_notify_send(notif("a", 2)), 1000);
     assert_eq!(s.popups[0].expires_at, Some(0));
 }
 
 #[test]
 fn add_custom_timeout_via_opts() {
-    let s = add_timeout(&State::new(), notif("a", 0), 1000, 2000);
+    let mut s = State::new();
+    add_timeout(&mut s, notif("a", 0), 1000, 2000);
     assert_eq!(s.popups[0].expires_at, Some(3000));
 }
 
 #[test]
 fn add_entry_shape_carries_arrival_time_and_null_seen() {
-    let s = add_at(&State::new(), notif("a", 1), 1234);
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1234);
     let e = &s.popups[0];
     assert_eq!(e.app_name, "TestApp");
     assert_eq!(e.summary, "Summary a");
@@ -127,12 +137,12 @@ fn add_entry_shape_carries_arrival_time_and_null_seen() {
 fn popup_cap_overflow_pushes_oldest_to_pending() {
     let mut s = State::new();
     for (id, t) in [("a", 1000), ("b", 1001), ("c", 1002), ("d", 1003)] {
-        s = add_at(&s, notif(id, 1), t);
+        add_at(&mut s, notif(id, 1), t);
     }
     assert_eq!(s.popups.len(), 4);
     assert_eq!(s.pending.len(), 0);
 
-    s = add_at(&s, notif("e", 1), 1004);
+    add_at(&mut s, notif("e", 1), 1004);
     assert_eq!(s.popups.len(), 4);
     assert_eq!(s.pending.len(), 1);
     assert_eq!(s.pending[0].id, "a"); // oldest evicted
@@ -153,7 +163,7 @@ fn add_caps_popups_at_four_groups_not_four_entries() {
         ("d3", "D", 1005),
         ("d4", "D", 1006),
     ] {
-        s = add_at(&s, summary(notif(id, 1), sum), t);
+        add_at(&mut s, summary(notif(id, 1), sum), t);
     }
     assert_eq!(s.popups.len(), 7);
     assert_eq!(group_entries(&s.popups).len(), 4);
@@ -170,11 +180,11 @@ fn add_overflow_evicts_the_whole_oldest_group_to_pending() {
         ("c", "C", 1003),
         ("d", "D", 1004),
     ] {
-        s = add_at(&s, summary(notif(id, 1), sum), t);
+        add_at(&mut s, summary(notif(id, 1), sum), t);
     }
     assert_eq!(s.pending.len(), 0);
 
-    s = add_at(&s, summary(notif("e", 1), "E"), 1005);
+    add_at(&mut s, summary(notif("e", 1), "E"), 1005);
     assert_eq!(ids(&s.pending), "a1,a2");
     assert_eq!(ids(&s.popups), "b,c,d,e");
     assert_eq!(group_entries(&s.popups).len(), 4);
@@ -183,9 +193,9 @@ fn add_overflow_evicts_the_whole_oldest_group_to_pending() {
 #[test]
 fn expire_moves_timed_out_popups_to_pending_unseen() {
     let mut s = State::new();
-    s = add_timeout(&s, notif("a", 1), 1000, 500); // expires 1500
-    s = add_timeout(&s, notif("b", 1), 1000, 5000); // expires 6000
-    s = expire(&s, 2000);
+    add_timeout(&mut s, notif("a", 1), 1000, 500); // expires 1500
+    add_timeout(&mut s, notif("b", 1), 1000, 5000); // expires 6000
+    s.expire(2000);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.popups[0].id, "b");
     assert_eq!(s.pending.len(), 1);
@@ -195,8 +205,9 @@ fn expire_moves_timed_out_popups_to_pending_unseen() {
 
 #[test]
 fn expire_never_times_out_sticky_critical_popups() {
-    let s = add_at(&State::new(), from_notify_send(notif("a", 2)), 1000);
-    let s = expire(&s, 999_999_999);
+    let mut s = State::new();
+    add_at(&mut s, from_notify_send(notif("a", 2)), 1000);
+    s.expire(999_999_999);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.pending.len(), 0);
 }
@@ -207,13 +218,13 @@ fn expire_shrinks_a_group_member_by_member() {
     // render time and never stored: a group of three shrinks to two, and the
     // expired member lands in pending on its own.
     let mut s = State::new();
-    s = add_timeout(&s, summary(notif("a", 1), "Ping"), 1000, 500);
-    s = add_timeout(&s, summary(notif("b", 1), "Ping"), 1001, 5000);
-    s = add_timeout(&s, summary(notif("c", 1), "Ping"), 1002, 9000);
+    add_timeout(&mut s, summary(notif("a", 1), "Ping"), 1000, 500);
+    add_timeout(&mut s, summary(notif("b", 1), "Ping"), 1001, 5000);
+    add_timeout(&mut s, summary(notif("c", 1), "Ping"), 1002, 9000);
     assert_eq!(group_entries(&s.popups).len(), 1);
     assert_eq!(group_entries(&s.popups)[0].count, 3);
 
-    s = expire(&s, 2000);
+    s.expire(2000);
     assert_eq!(ids(&s.pending), "a");
     let groups = group_entries(&s.popups);
     assert_eq!(groups.len(), 1);
@@ -223,8 +234,9 @@ fn expire_shrinks_a_group_member_by_member() {
 
 #[test]
 fn update_patches_popup_content_in_place_without_moving_tier() {
-    let s = add_at(&State::new(), notif("a", 1), 1000);
-    let s = update(&s, "a", &patch_summary("Song B"), 5000);
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1000);
+    s.update("a", &patch_summary("Song B"), 5000);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.pending.len(), 0);
     assert_eq!(s.popups[0].summary, "Song B");
@@ -233,23 +245,25 @@ fn update_patches_popup_content_in_place_without_moving_tier() {
 
 #[test]
 fn update_refreshes_expiry_for_still_popped_up_entry() {
-    let s = add_at(&State::new(), notif("a", 1), 1000); // expires 7000
-    let s = update(&s, "a", &patch_summary("Song B"), 6500); // past the original clock
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1000); // expires 7000
+    s.update("a", &patch_summary("Song B"), 6500); // past the original clock
     assert_eq!(s.popups[0].expires_at, Some(12500)); // 6500 + 6000ms default, not expired
 }
 
 #[test]
 fn update_keeps_sticky_expiry_for_critical_popup() {
-    let s = add_at(&State::new(), from_notify_send(notif("a", 2)), 1000);
-    let s = update(&s, "a", &patch_summary("Song B"), 5000);
+    let mut s = State::new();
+    add_at(&mut s, from_notify_send(notif("a", 2)), 1000);
+    s.update("a", &patch_summary("Song B"), 5000);
     assert_eq!(s.popups[0].expires_at, Some(0));
 }
 
 #[test]
 fn update_patches_pending_entry_without_touching_expiry() {
-    let s = set_dnd(&State::new(), true);
-    let s = add_at(&s, notif("a", 1), 1000);
-    let s = update(&s, "a", &patch_summary("Song B"), 5000);
+    let mut s = dnd();
+    add_at(&mut s, notif("a", 1), 1000);
+    s.update("a", &patch_summary("Song B"), 5000);
     assert_eq!(s.pending.len(), 1);
     assert_eq!(s.pending[0].summary, "Song B");
     assert_eq!(s.pending[0].expires_at, None);
@@ -257,23 +271,18 @@ fn update_patches_pending_entry_without_touching_expiry() {
 
 #[test]
 fn update_unknown_id_is_noop() {
-    let s = add_at(&State::new(), notif("a", 1), 1000);
-    let updated = update(&s, "missing", &patch_summary("Song B"), 5000);
-    assert_eq!(updated, s);
-}
-
-#[test]
-fn purity_update_does_not_mutate_input_state() {
-    let s = add_at(&State::new(), notif("a", 1), 1000);
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1000);
     let before = s.clone();
-    let _ = update(&s, "a", &patch_summary("Song B"), 5000);
+    s.update("missing", &patch_summary("Song B"), 5000);
     assert_eq!(s, before);
 }
 
 #[test]
 fn dismiss_popup_moves_to_past_marked_seen() {
-    let s = add_at(&State::new(), notif("a", 1), 1000);
-    let s = dismiss_popup(&s, "a", 5000);
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1000);
+    s.dismiss_popup("a", 5000);
     assert_eq!(s.popups.len(), 0);
     assert_eq!(s.past.len(), 1);
     assert_eq!(s.past[0].id, "a");
@@ -282,10 +291,10 @@ fn dismiss_popup_moves_to_past_marked_seen() {
 
 #[test]
 fn mark_all_seen_drains_pending_to_past() {
-    let mut s = set_dnd(&State::new(), true);
-    s = add_at(&s, notif("a", 1), 1000);
-    s = add_at(&s, notif("b", 1), 1001);
-    s = mark_all_seen(&s, 9000);
+    let mut s = dnd();
+    add_at(&mut s, notif("a", 1), 1000);
+    add_at(&mut s, notif("b", 1), 1001);
+    s.mark_all_seen(9000);
     assert_eq!(s.pending.len(), 0);
     assert_eq!(s.past.len(), 2);
     assert_eq!(s.past[0].seen_at, Some(9000));
@@ -295,14 +304,14 @@ fn mark_all_seen_drains_pending_to_past() {
 #[test]
 fn prune_past_drops_entries_older_than_15_minutes() {
     let mut s = State::new();
-    s = add_at(&s, notif("a", 1), 0);
-    s = dismiss_popup(&s, "a", 1000); // seenAt 1000
-    s = add_at(&s, notif("b", 1), 0);
-    s = dismiss_popup(&s, "b", 900_000); // seenAt exactly 15min after "now" below
+    add_at(&mut s, notif("a", 1), 0);
+    s.dismiss_popup("a", 1000); // seenAt 1000
+    add_at(&mut s, notif("b", 1), 0);
+    s.dismiss_popup("b", 900_000); // seenAt exactly 15min after "now" below
 
     let fifteen_min = 15 * 60 * 1000;
     let now = 1000 + fifteen_min + 1;
-    s = prune_past(&s, now);
+    s.prune_past(now);
     let kept = ids(&s.past);
     assert!(!kept.contains('a'));
     assert!(kept.contains('b'));
@@ -310,10 +319,10 @@ fn prune_past_drops_entries_older_than_15_minutes() {
 
 #[test]
 fn invoke_target_returns_most_recently_arrived_across_popups_and_pending() {
-    let mut s = set_dnd(&State::new(), true);
-    s = add_at(&s, notif("old", 1), 1000); // pending (dnd on)
-    s = set_dnd(&s, false);
-    s = add_at(&s, notif("newer", 1), 2000); // popups
+    let mut s = dnd();
+    add_at(&mut s, notif("old", 1), 1000); // pending (dnd on)
+    s.set_dnd(false);
+    add_at(&mut s, notif("newer", 1), 2000); // popups
     assert_eq!(invoke_target(&s).unwrap().id, "newer");
 }
 
@@ -324,25 +333,26 @@ fn invoke_target_null_when_nothing_pending_or_popup() {
 
 #[test]
 fn dismiss_one_removes_from_any_tier() {
-    let mut s = add_at(&State::new(), notif("a", 1), 1000);
-    s = dismiss_popup(&s, "a", 2000); // now in past
-    s = dismiss_one(&s, "a");
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1000);
+    s.dismiss_popup("a", 2000); // now in past
+    s.dismiss_one("a");
     assert_eq!(s.past.len(), 0);
 }
 
 #[test]
 fn dismiss_many_drops_members_from_any_tier() {
-    let mut s = set_dnd(&State::new(), true);
-    s = add_at(&s, notif("p", 1), 1000); // pending
-    s = set_dnd(&s, false);
-    s = add_at(&s, notif("q", 1), 1001); // popup
-    s = add_at(&s, notif("r", 1), 1002);
-    s = dismiss_popup(&s, "r", 2000); // past
+    let mut s = dnd();
+    add_at(&mut s, notif("p", 1), 1000); // pending
+    s.set_dnd(false);
+    add_at(&mut s, notif("q", 1), 1001); // popup
+    add_at(&mut s, notif("r", 1), 1002);
+    s.dismiss_popup("r", 2000); // past
     assert_eq!(s.pending.len(), 1);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.past.len(), 1);
 
-    s = dismiss_many(&s, &["p", "q", "r"]);
+    s.dismiss_many(&["p", "q", "r"]);
     assert_eq!(s.popups.len(), 0);
     assert_eq!(s.pending.len(), 0);
     assert_eq!(s.past.len(), 0);
@@ -351,52 +361,38 @@ fn dismiss_many_drops_members_from_any_tier() {
 
 #[test]
 fn dismiss_many_unknown_ids_returns_identity() {
-    let s = add_at(&State::new(), notif("a", 1), 1000);
-    assert_eq!(dismiss_many(&s, &["nope"]), s);
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1000);
+    let before = s.clone();
+    s.dismiss_many(&["nope"]);
+    assert_eq!(s, before);
 }
 
 #[test]
 fn dismiss_all_clears_popups_only() {
-    let mut s = set_dnd(&State::new(), true);
-    s = add_at(&s, notif("a", 1), 1000); // pending
-    s = set_dnd(&s, false);
-    s = add_at(&s, notif("b", 1), 1001); // popup
-    s = dismiss_all(&s);
+    let mut s = dnd();
+    add_at(&mut s, notif("a", 1), 1000); // pending
+    s.set_dnd(false);
+    add_at(&mut s, notif("b", 1), 1001); // popup
+    s.dismiss_all();
     assert_eq!(s.popups.len(), 0);
     assert_eq!(s.pending.len(), 1);
 }
 
 #[test]
 fn clear_pending_empties_pending_only() {
-    let mut s = set_dnd(&State::new(), true);
-    s = add_at(&s, notif("a", 1), 1000);
-    s = clear_pending(&s);
+    let mut s = dnd();
+    add_at(&mut s, notif("a", 1), 1000);
+    s.clear_pending();
     assert_eq!(s.pending.len(), 0);
 }
 
 #[test]
 fn set_dnd_toggles_flag() {
-    let s = set_dnd(&State::new(), true);
+    let mut s = dnd();
     assert!(s.dnd);
-    assert!(!set_dnd(&s, false).dnd);
-}
-
-#[test]
-fn purity_add_does_not_mutate_input_state() {
-    let s = State::new();
-    let before = s.clone();
-    let _ = add_at(&s, notif("a", 1), 1000);
-    assert_eq!(s, before);
-}
-
-#[test]
-fn purity_expire_dismiss_prune_do_not_mutate_input_state() {
-    let s = add_timeout(&State::new(), notif("a", 1), 1000, 100);
-    let before = s.clone();
-    let _ = expire(&s, 5000);
-    let _ = dismiss_popup(&s, "a", 5000);
-    let _ = prune_past(&s, 5000);
-    assert_eq!(s, before);
+    s.set_dnd(false);
+    assert!(!s.dnd);
 }
 
 #[test]
@@ -404,9 +400,10 @@ fn replace_by_id_never_creates_a_second_popup_entry() {
     // The freedesktop replaces_id contract: the service resyncs an existing
     // id via update() on every property change instead of calling add()
     // again, so the reducer must never grow a second entry for the same id.
-    let mut s = add_at(&State::new(), notif("a", 1), 1000);
-    s = update(&s, "a", &patch_summary("Song B"), 2000);
-    s = update(&s, "a", &patch_summary("Song C"), 3000);
+    let mut s = State::new();
+    add_at(&mut s, notif("a", 1), 1000);
+    s.update("a", &patch_summary("Song B"), 2000);
+    s.update("a", &patch_summary("Song C"), 3000);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.popups[0].summary, "Song C");
 }
@@ -445,10 +442,10 @@ fn group_key_separator_prevents_field_boundary_collisions() {
 #[test]
 fn group_entries_collapses_repeats_and_counts_them() {
     let mut s = State::new();
-    s = add_at(&s, summary(notif("a", 1), "Ping"), 1000);
-    s = add_at(&s, summary(notif("b", 1), "Ping"), 1001);
-    s = add_at(&s, summary(notif("c", 1), "Ping"), 1002);
-    s = add_at(&s, summary(notif("d", 1), "Other"), 1003);
+    add_at(&mut s, summary(notif("a", 1), "Ping"), 1000);
+    add_at(&mut s, summary(notif("b", 1), "Ping"), 1001);
+    add_at(&mut s, summary(notif("c", 1), "Ping"), 1002);
+    add_at(&mut s, summary(notif("d", 1), "Other"), 1003);
     let groups = group_entries(&s.popups);
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].summary, "Ping");
@@ -464,8 +461,8 @@ fn group_entries_representative_is_the_newest_member() {
     first.body = "first".into();
     let mut second = summary(notif("b", 1), "Ping");
     second.body = "second".into();
-    s = add_timeout(&s, first, 1000, 500);
-    s = add_timeout(&s, second, 2000, 500);
+    add_timeout(&mut s, first, 1000, 500);
+    add_timeout(&mut s, second, 2000, 500);
     let g = &group_entries(&s.popups)[0];
     assert_eq!(g.id, "b");
     assert_eq!(g.body, "second");
@@ -476,9 +473,9 @@ fn group_entries_representative_is_the_newest_member() {
 #[test]
 fn group_entries_member_ids_are_oldest_first() {
     let mut s = State::new();
-    s = add_at(&s, summary(notif("a", 1), "Ping"), 1000);
-    s = add_at(&s, summary(notif("b", 1), "Ping"), 1001);
-    s = add_at(&s, summary(notif("c", 1), "Ping"), 1002);
+    add_at(&mut s, summary(notif("a", 1), "Ping"), 1000);
+    add_at(&mut s, summary(notif("b", 1), "Ping"), 1001);
+    add_at(&mut s, summary(notif("c", 1), "Ping"), 1002);
     let g = &group_entries(&s.popups)[0];
     assert_eq!(g.count, 3);
     assert_eq!(g.member_ids.join(","), "a,b,c");
@@ -494,8 +491,8 @@ fn group_entries_member_ids_are_oldest_first() {
 #[test]
 fn group_entries_orders_groups_by_newest_member() {
     let mut s = State::new();
-    s = add_at(&s, summary(notif("a", 1), "Ping"), 1000);
-    s = add_at(&s, summary(notif("b", 1), "Other"), 1001);
+    add_at(&mut s, summary(notif("a", 1), "Ping"), 1000);
+    add_at(&mut s, summary(notif("b", 1), "Other"), 1001);
     let order = |s: &State| {
         group_entries(&s.popups)
             .iter()
@@ -507,7 +504,7 @@ fn group_entries_orders_groups_by_newest_member() {
 
     // A repeat moves the whole group to the newest slot rather than adding a
     // row below.
-    s = add_at(&s, summary(notif("c", 1), "Ping"), 1002);
+    add_at(&mut s, summary(notif("c", 1), "Ping"), 1002);
     assert_eq!(order(&s), "Other,Ping");
     assert_eq!(group_entries(&s.popups).len(), 2);
 }
@@ -520,8 +517,8 @@ fn group_entries_of_empty_list_is_empty() {
 #[test]
 fn purity_group_entries_does_not_mutate_input() {
     let mut s = State::new();
-    s = add_at(&s, summary(notif("a", 1), "Ping"), 1000);
-    s = add_at(&s, summary(notif("b", 1), "Ping"), 1001);
+    add_at(&mut s, summary(notif("a", 1), "Ping"), 1000);
+    add_at(&mut s, summary(notif("b", 1), "Ping"), 1001);
     let before = s.clone();
     let _ = group_entries(&s.popups);
     assert_eq!(s, before);
@@ -591,49 +588,6 @@ fn sanitize_body_chromium_sender_still_strips_img() {
 // sender's plain text is incidental, not markup: styled_body must escape it
 // rather than hand it to a renderer that drops everything after an
 // unterminated tag.
-
-// rel_time
-
-#[test]
-fn rel_time_under_a_minute_is_now() {
-    assert_eq!(rel_time(1000, 1000), "now");
-    assert_eq!(rel_time(60999, 1000), "now");
-}
-
-#[test]
-fn rel_time_minute_boundary() {
-    assert_eq!(rel_time(61000, 1000), "1m ago");
-}
-
-#[test]
-fn rel_time_minutes_just_under_an_hour() {
-    assert_eq!(rel_time(1000 + 59 * 60 * 1000, 1000), "59m ago");
-}
-
-#[test]
-fn rel_time_hour_boundary_reads_hours_not_sixty_minutes() {
-    assert_eq!(rel_time(1000 + 60 * 60 * 1000, 1000), "1h ago");
-}
-
-#[test]
-fn rel_time_hours_just_under_a_day() {
-    assert_eq!(rel_time(1000 + 23 * 60 * 60 * 1000, 1000), "23h ago");
-}
-
-#[test]
-fn rel_time_day_boundary_reads_days_not_twentyfour_hours() {
-    assert_eq!(rel_time(1000 + 24 * 60 * 60 * 1000, 1000), "1d ago");
-}
-
-#[test]
-fn rel_time_multiple_days() {
-    assert_eq!(rel_time(1000 + 3 * 24 * 60 * 60 * 1000, 1000), "3d ago");
-}
-
-#[test]
-fn rel_time_clamps_future_arrival_to_now() {
-    assert_eq!(rel_time(1000, 5000), "now");
-}
 
 // button_actions
 
@@ -838,4 +792,16 @@ fn a_missing_category_reads_as_no_category() {
 fn every_other_category_is_the_information_sound() {
     assert_eq!(sound_name(NORMAL, Some("email.arrived")), "dialog-information");
     assert_eq!(sound_name(NORMAL, Some("device.added")), "dialog-information");
+}
+
+#[test]
+fn badge_counts_unseen_then_falls_back_to_history() {
+    let mut s = State::new();
+    assert_eq!((s.unseen(), s.total(), s.badge()), (0, 0, 0));
+    add_at(&mut s, notif("a", 1), 1000);
+    add_at(&mut s, notif("b", 1), 1001);
+    s.dismiss_popup("a", 2000);
+    assert_eq!((s.unseen(), s.total(), s.badge()), (1, 2, 1));
+    s.dismiss_popup("b", 2000);
+    assert_eq!((s.unseen(), s.total(), s.badge()), (0, 2, 2));
 }

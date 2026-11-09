@@ -164,13 +164,13 @@ impl Mirror {
         let notif = iphone::to_notification(record);
         if entries(m).any(|e| e.id == notif.id) {
             let patch = Patch { summary: Some(notif.summary), body: Some(notif.body), phone: notif.phone, ..Patch::default() };
-            *m = model::update(m, &notif.id, &patch, now);
+            m.update(&notif.id, &patch, now);
             return;
         }
         if !self.rules.is_empty() && iphone::dedupe(&self.rules, record, entries(m), now as f64).is_some() {
             return;
         }
-        *m = model::add(m, &notif, now, &AddOpts { quiet, timeout_ms: None });
+        m.add(&notif, now, &AddOpts { quiet, timeout_ms: None });
     }
 
     /// A local arrival, `id`, just added: the local client wins, so a phone
@@ -180,7 +180,7 @@ impl Mirror {
         let Some(entry) = entries(m).find(|e| e.id == id) else { return };
         let stale = iphone::superseded(&self.rules, entry, entries(m), now as f64);
         if !stale.is_empty() {
-            *m = model::dismiss_many(m, &stale);
+            m.dismiss_many(&stale);
         }
     }
 }
@@ -189,7 +189,7 @@ impl Mirror {
 /// back. True when there was one.
 pub fn withdraw(m: &mut model::State, id: i64) -> bool {
     let ids: Vec<String> = entries(m).filter(|e| iphone::phone_of(e).is_some_and(|p| p.id == id)).map(|e| e.id.clone()).collect();
-    *m = model::dismiss_many(m, &ids);
+    m.dismiss_many(&ids);
     !ids.is_empty()
 }
 

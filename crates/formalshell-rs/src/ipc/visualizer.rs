@@ -2,7 +2,7 @@
 //! for exploring the styles without an edit to settings.json. The override is
 //! in memory only, `style config` drops it.
 
-use fs_media::visualizer::styles;
+use crate::ui::spectrum::styles;
 
 use super::registry::{Function, Reply, Target, Type, Value, text};
 use crate::services::visualizer::{self, Diff};

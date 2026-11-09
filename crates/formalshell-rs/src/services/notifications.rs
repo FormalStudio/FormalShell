@@ -139,17 +139,17 @@ impl State {
                         image: Some(notif.image.clone()),
                         phone: None,
                     };
-                    self.model = model::update(&self.model, &notif.id, &patch, now);
+                    self.model.update(&notif.id, &patch, now);
                 } else {
                     let opts = AddOpts { quiet: false, timeout_ms: Some(timeout_ms) };
-                    self.model = model::add(&self.model, &notif, now, &opts);
+                    self.model.add(&notif, now, &opts);
                     self.phone.local_arrived(&mut self.model, &notif.id, now);
                 }
                 self.after_change();
                 true
             }
             Diff::Closed(id) => {
-                self.model = model::dismiss_one(&self.model, &id);
+                self.model.dismiss_one(&id);
                 self.after_change();
                 true
             }
@@ -220,7 +220,7 @@ impl State {
     pub fn sync(&mut self, data: &state::Data) {
         if self.dnd_seen != Some(data.dnd) {
             self.dnd_seen = Some(data.dnd);
-            self.model = model::set_dnd(&self.model, data.dnd);
+            self.model.set_dnd(data.dnd);
         }
         if self.reminders_seen.as_ref() != Some(&data.reminders) {
             self.reminders_seen = Some(data.reminders.clone());
@@ -229,7 +229,7 @@ impl State {
     }
 
     pub fn set_dnd(&mut self, on: bool) {
-        self.model = model::set_dnd(&self.model, on);
+        self.model.set_dnd(on);
         state::set(vec![Field::Dnd(on)]);
     }
 
@@ -255,7 +255,7 @@ impl State {
             local: true,
             ..Default::default()
         };
-        self.model = model::add(&self.model, &notif, now_ms(), &AddOpts::default());
+        self.model.add(&notif, now_ms(), &AddOpts::default());
         id
     }
 
@@ -264,7 +264,7 @@ impl State {
         if self.model.popups.iter().any(|p| p.id == id) {
             self.phone_dismissed(id);
         }
-        self.model = model::dismiss_popup(&self.model, id, now_ms());
+        self.model.dismiss_popup(id, now_ms());
         close(id, CloseReason::Dismissed);
     }
 
@@ -276,7 +276,7 @@ impl State {
 
     pub fn dismiss_one(&mut self, id: &str) {
         self.phone_dismissed(id);
-        self.model = model::dismiss_one(&self.model, id);
+        self.model.dismiss_one(id);
         self.after_change();
     }
 
@@ -287,17 +287,17 @@ impl State {
     }
 
     pub fn dismiss_all(&mut self) {
-        self.model = model::dismiss_all(&self.model);
+        self.model.dismiss_all();
         self.after_change();
     }
 
     pub fn clear_pending(&mut self) {
-        self.model = model::clear_pending(&self.model);
+        self.model.clear_pending();
         self.after_change();
     }
 
     pub fn mark_all_seen(&mut self) {
-        self.model = model::mark_all_seen(&self.model, now_ms());
+        self.model.mark_all_seen(now_ms());
     }
 
     pub fn set_hovered(&mut self, ids: &[String], hovered: bool) {
@@ -369,17 +369,15 @@ impl State {
                 self.model.next_expiry = self.model.popups.iter().filter_map(|p| p.expires_at.filter(|t| *t != 0)).min();
             }
             let before: Vec<String> = self.model.popups.iter().map(|p| p.id.clone()).collect();
-            let next = model::expire(&self.model, now);
-            for id in before.iter().filter(|id| !next.popups.iter().any(|p| &p.id == *id)) {
-                self.hovered.remove(id);
-                close(id, CloseReason::Expired);
+            if self.model.expire(now) {
+                for id in before.iter().filter(|id| !self.model.popups.iter().any(|p| &p.id == *id)) {
+                    self.hovered.remove(id);
+                    close(id, CloseReason::Expired);
+                }
+                moved = true;
             }
-            moved |= next != self.model;
-            self.model = next;
         }
-        let pruned = model::prune_past(&self.model, now);
-        if pruned != self.model {
-            self.model = pruned;
+        if self.model.prune_past(now) {
             self.after_change();
             moved = true;
         }
@@ -674,7 +672,7 @@ mod tests {
     #[test]
     fn a_reminder_fires_through_dnd_into_the_popups() {
         let mut s = State::default();
-        s.model = model::set_dnd(&s.model, true);
+        s.model.set_dnd(true);
         s.reminders = vec![reminders::make_entry(1, "m", 0.0, 1)];
         assert!(s.tick(5000));
         assert!(s.reminders.is_empty());

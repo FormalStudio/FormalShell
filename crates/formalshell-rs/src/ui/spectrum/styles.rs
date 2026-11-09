@@ -23,8 +23,9 @@
 
 use std::f64::consts::PI;
 
-use super::model::{BAR_COUNT, Band, LEVEL_ACCENT_FROM, LEVEL_DIM_BELOW, level_color_band};
-use super::scene::{Color, Scene, TextAlign, TextBaseline};
+use fs_media::visualizer::model::{BAR_COUNT, Band, LEVEL_ACCENT_FROM, LEVEL_DIM_BELOW, level_color_band};
+use fs_theme::color::Rgba;
+use super::scene::{Scene, TextAlign, TextBaseline};
 use fs_js::round;
 
 pub(crate) struct StyleInfo {
@@ -190,10 +191,10 @@ pub const MAX_DT: f64 = 0.1;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ink {
-    pub groove: Color,
-    pub dim: Color,
-    pub content: Color,
-    pub accent: Color,
+    pub groove: Rgba,
+    pub dim: Rgba,
+    pub content: Rgba,
+    pub accent: Rgba,
     /// The mono font family.
     pub mono: String,
     pub columns: usize,
@@ -464,7 +465,7 @@ fn fold(levels: &[f64], count: usize) -> Vec<f64> {
     out
 }
 
-fn band(ink: &Ink, l: f64) -> Color {
+fn band(ink: &Ink, l: f64) -> Rgba {
     match level_color_band(l) {
         Band::Dim => ink.dim,
         Band::Content => ink.content,
@@ -2235,17 +2236,17 @@ fn stipple(c: &mut Scene, f: &Frame, _state: &mut State) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::visualizer::scene::{PathEl, Shape};
+    use crate::ui::spectrum::scene::{PathEl, Shape};
 
     const BOX_W: f64 = 94.0;
     const BOX_H: f64 = 32.0;
 
     fn ink() -> Ink {
         Ink {
-            groove: Color::from_hex("#111111").unwrap(),
-            dim: Color::from_hex("#555555").unwrap(),
-            content: Color::from_hex("#eeeeee").unwrap(),
-            accent: Color::from_hex("#ff8800").unwrap(),
+            groove: Rgba::parse("#111111").unwrap(),
+            dim: Rgba::parse("#555555").unwrap(),
+            content: Rgba::parse("#eeeeee").unwrap(),
+            accent: Rgba::parse("#ff8800").unwrap(),
             mono: "monospace".into(),
             columns: 12,
             gap: 2.0,
@@ -2296,7 +2297,7 @@ mod tests {
         out
     }
 
-    fn fills(scene: &Scene) -> Vec<Color> {
+    fn fills(scene: &Scene) -> Vec<Rgba> {
         scene
             .shapes
             .iter()

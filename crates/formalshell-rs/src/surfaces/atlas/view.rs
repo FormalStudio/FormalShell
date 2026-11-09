@@ -6,7 +6,7 @@
 
 use std::time::Instant;
 
-use fs_media::radio::model as rm;
+use super::model as rm;
 use fs_theme::palette::ColorRole;
 use fs_theme::style::Role;
 use fs_theme::icons;

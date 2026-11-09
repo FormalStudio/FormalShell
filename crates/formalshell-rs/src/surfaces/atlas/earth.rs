@@ -766,7 +766,7 @@ mod tests {
 
     fn draw(e: &Earth, r: f64) -> (Pixmap, Stats) {
         let mut pool = Vec::new();
-        let (b, stats) = e.sample(&mut pool, false, (100, 50, 900, 850), (500.0, 450.0), r, 396.0, fs_media::radio::model::view_distance(1.0), &ROT).unwrap();
+        let (b, stats) = e.sample(&mut pool, false, (100, 50, 900, 850), (500.0, 450.0), r, 396.0, crate::surfaces::atlas::model::view_distance(1.0), &ROT).unwrap();
         ((*b.pixmap).clone(), stats)
     }
 
@@ -817,7 +817,7 @@ mod tests {
             let mut pool = Vec::new();
             let t = Instant::now();
             for _ in 0..20 {
-                e.sample(&mut pool, false, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, fs_media::radio::model::view_distance(1.0), &ROT).unwrap();
+                e.sample(&mut pool, false, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, crate::surfaces::atlas::model::view_distance(1.0), &ROT).unwrap();
             }
             eprintln!("{name}: {} us a frame", t.elapsed().as_micros() / 20);
         }

@@ -1,4 +1,3 @@
-//! The Radio Atlas: Radio Browser records and saved state, and the globe.
+//! The Radio Atlas: Radio Browser records and saved state.
 
-pub mod model;
 pub mod stations;

@@ -53,7 +53,7 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     let e = &g.entry;
     let key = model::group_key(g);
     let critical = e.urgency == Urgency::Critical;
-    let rel = model::rel_time(now, e.arrived_at);
+    let rel = fs_info::time::rel_time(now, e.arrived_at);
     let meta = if g.count > 1 { format!("{rel}  x{}", g.count) } else { rel };
     let mut head = Vec::new();
     if unread {

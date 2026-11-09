@@ -10,7 +10,7 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 use std::time::Instant;
 
-use fs_media::radio::model::{self as rm, Feature, KineticOptions, KineticState, View};
+use super::model::{self as rm, Feature, KineticOptions, KineticState, View};
 use fs_media::radio::stations::Station;
 use fs_theme::color::Rgba;
 use vello_cpu::Pixmap;
