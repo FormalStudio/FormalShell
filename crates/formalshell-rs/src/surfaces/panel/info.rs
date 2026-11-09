@@ -8,6 +8,7 @@
 //! (`Source::About`), the GPU, memory and disk from the system monitor; a
 //! fact the machine does not report says so instead of a guess.
 
+use fs_theme::palette::ColorRole;
 use fs_info::about;
 
 use super::{Effect, Panel, View};
@@ -129,7 +130,7 @@ fn footer(v: &View) -> El {
     let s = &v.theme.space;
     let side = s.panel_row * 2.0;
     let letter = |t: &str| w::text(t).size(Type::Display).weight(Weight::Bold).ink(Ink::Primary);
-    let primary = v.theme.colors.get("primary");
+    let primary = v.theme.colors.get(ColorRole::Primary);
     let pip = || w::dot(primary, s.sm);
     let monogram = w::cell(
         w::column(
@@ -158,7 +159,7 @@ fn footer(v: &View) -> El {
     });
     let name = w::column(s.xs, vec![w::text("FormalShell").size(Type::Title).weight(Weight::Semibold), w::row(0.0, vec![badge])]);
 
-    let off = v.theme.colors.get("border");
+    let off = v.theme.colors.get(ColorRole::Border);
     let field = w::column(
         s.sm,
         (0..3)

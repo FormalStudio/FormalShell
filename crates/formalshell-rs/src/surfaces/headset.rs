@@ -12,7 +12,9 @@
 
 use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
 use fs_system::power::model::Thresholds;
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 use fs_types::{BtAddress, Percent};
@@ -200,9 +202,9 @@ pub fn paint_ring(p: &mut Painter, alpha: f32, f: &Face, frame: IRect, theme: &T
     let Some(level) = level(f) else { return };
     let d = slot(theme);
     let (cx, cy) = ((frame.x + frame.w) as f64 - pad(theme) - d / 2.0, frame.y as f64 + frame.h as f64 / 2.0);
-    let groove = theme.box_style("track.groove", None).fill;
+    let groove = theme.box_style(Role::TrackGroove, None).fill;
     let low = Thresholds::HEADSET.low(level).is_some();
-    let fill = if low { theme.colors.get("destructive") } else { theme.box_style("track.fill", None).fill };
+    let fill = if low { theme.colors.get(ColorRole::Destructive) } else { theme.box_style(Role::TrackFill, None).fill };
     let ring = Ring::Progress(level.as_fraction());
     let strokes = ui::ring_strokes((cx, cy), d, theme.space.xs, ring, 0.0, with_alpha(groove, alpha), with_alpha(fill, alpha));
     let bounds = Scene::cover(Rect::new(cx - d / 2.0, cy - d / 2.0, cx + d / 2.0, cy + d / 2.0), Affine::IDENTITY, 2.0);
@@ -210,5 +212,5 @@ pub fn paint_ring(p: &mut Painter, alpha: f32, f: &Face, frame: IRect, theme: &T
     let style = kit.weight(kit.look.mono, theme.font_size.body_small as f32, WEIGHTS.medium);
     let text = kit.shape(&level.rounded().to_string(), style);
     let at = ((cx - text.width as f64 / 2.0).round() as i32, (cy - text.line_height() as f64 / 2.0).round() as i32);
-    p.text(&text, at, with_alpha(theme.colors.get("mutedForeground"), alpha), &[]);
+    p.text(&text, at, with_alpha(theme.colors.get(ColorRole::MutedForeground), alpha), &[]);
 }

@@ -5,6 +5,7 @@
 //! service the bar cell reads; this panel asks it to go again on open and
 //! on Check.
 
+use fs_theme::palette::ColorRole;
 use fs_info::system_update::{self, PollState};
 
 use super::{Effect, Panel, View};
@@ -80,7 +81,7 @@ impl Panel for SystemUpdate {
         }
 
         if !u.inputs.is_empty() {
-            let warning = Ink::Color(v.theme.colors.get("warning"));
+            let warning = Ink::Color(v.theme.colors.get(ColorRole::Warning));
             let rows = u
                 .inputs
                 .iter()

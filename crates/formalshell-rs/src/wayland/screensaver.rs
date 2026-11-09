@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
 use fs_screensaver::{blocks, effect, ttfx};
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use parley::GenericFamily;
 use serde_json::json;
@@ -703,7 +704,7 @@ impl App {
         let banner = self.saver_banner();
         let frame = effect::resolve_render_frame(self.saver.pinned, self.saver.auto_frame);
         let grid = effect::frame_state(&self.saver_effect(), frame, &banner);
-        let primary = self.store.theme.theme.colors.get("primary");
+        let primary = self.store.theme.theme.colors.get(ColorRole::Primary);
         let col0 = (columns - banner.width as i64).div_euclid(2);
         let row0 = (rows - banner.height as i64).div_euclid(2);
         let mut out: Vec<Row> = vec![Vec::new(); rows.max(0) as usize];

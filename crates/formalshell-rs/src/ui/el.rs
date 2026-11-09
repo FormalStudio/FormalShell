@@ -90,13 +90,14 @@ pub enum Variant {
 }
 
 impl Variant {
-    pub fn role(self) -> &'static str {
+    pub fn role(self) -> fs_theme::style::Role {
+        use fs_theme::style::Role;
         match self {
-            Variant::Default => "button.default",
-            Variant::Outline => "button.outline",
-            Variant::Ghost => "button.ghost",
-            Variant::Selected => "button.selected",
-            Variant::Destructive => "button.destructive",
+            Variant::Default => Role::ButtonDefault,
+            Variant::Outline => Role::ButtonOutline,
+            Variant::Ghost => Role::ButtonGhost,
+            Variant::Selected => Role::ButtonSelected,
+            Variant::Destructive => Role::ButtonDestructive,
         }
     }
 }

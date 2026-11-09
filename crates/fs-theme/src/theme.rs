@@ -8,8 +8,8 @@ use serde_json::{Map, Value};
 use crate::barpaint::{Paint, Pin};
 use crate::chrome;
 use crate::color::Rgba;
-use crate::palette::{self, COLOR_KEYS};
-use crate::style::{self, BoxStyle, Clock, Radius, Ring};
+use crate::palette::{self, COLOR_KEYS, ColorRole};
+use crate::style::{self, BoxStyle, Clock, Ctx, Radius, Ring, Role};
 use crate::tokens::{self, Easing, FontTokens, LetterSpacing, Radii, Space};
 
 /// The palette's light or dark side.
@@ -39,34 +39,30 @@ impl Mode {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Colors {
     pub mode: Mode,
-    values: [Rgba; 26],
+    values: [Rgba; COLOR_KEYS.len()],
 }
 
 impl Colors {
     pub fn from_palette(palette: &Map<String, Value>) -> Self {
         let mode = Mode::parse(palette.get("mode").and_then(Value::as_str).unwrap_or("dark"));
-        let values = COLOR_KEYS.map(|key| {
-            palette.get(key).and_then(Value::as_str).and_then(Rgba::parse).unwrap_or(Rgba::TRANSPARENT)
+        let values = ColorRole::ALL.map(|role| {
+            palette.get(role.name()).and_then(Value::as_str).and_then(Rgba::parse).unwrap_or(Rgba::TRANSPARENT)
         });
         Self { mode, values }
     }
 
-    /// A role by its theme.json name; an unknown one draws nothing.
-    pub fn get(&self, name: &str) -> Rgba {
-        COLOR_KEYS.iter().position(|k| *k == name).map_or(Rgba::TRANSPARENT, |i| self.values[i])
+    pub fn get(&self, role: ColorRole) -> Rgba {
+        self.values[role as usize]
     }
 
     /// The same roles with `primary` taken from `role`, for a surface drawn
     /// in its own accent. A role too close to the background to read as one
     /// (the static fallback's grey chart steps) leaves `primary` alone.
-    pub fn accented(&self, role: &str) -> Self {
+    pub fn accented(&self, role: ColorRole) -> Self {
         let mut out = self.clone();
         let accent = self.get(role);
-        if let Some(p) = COLOR_KEYS.iter().position(|k| *k == "primary")
-            && COLOR_KEYS.contains(&role)
-            && Rgba::contrast(accent.luminance(), self.get("background").luminance()) >= 3.0
-        {
-            out.values[p] = accent;
+        if Rgba::contrast(accent.luminance(), self.get(ColorRole::Background).luminance()) >= 3.0 {
+            out.values[ColorRole::Primary as usize] = accent;
         }
         out
     }
@@ -95,12 +91,11 @@ pub struct ThemeMotion {
     pub switcher_curve: Easing,
 }
 
-/// One text role's family: a face's name, and the fontconfig alias that
-/// stands in when it names none or the face is missing.
+/// A text role's family: the fontconfig alias it resolves through.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Face {
-    pub name: Option<&'static str>,
-    pub generic: &'static str,
+pub enum Face {
+    SansSerif,
+    Monospace,
 }
 
 /// The four text roles: `words` for labels, `values` for numbers and
@@ -116,10 +111,8 @@ pub struct Faces {
 impl Faces {
     /// Every role on its fontconfig alias: `values` on `monospace`, the
     /// rest on `sans-serif`.
-    pub const ALIASES: Self = {
-        let sans = Face { name: None, generic: "sans-serif" };
-        Self { words: sans, values: Face { name: None, generic: "monospace" }, display: sans, body: sans }
-    };
+    pub const ALIASES: Self =
+        Self { words: Face::SansSerif, values: Face::Monospace, display: Face::SansSerif, body: Face::SansSerif };
 }
 
 /// `bar.style`: the band's paint. `corners` is `solid` with a fillet at
@@ -231,10 +224,7 @@ pub struct Theme {
     pub lock_dither: bool,
     pub wallpaper_grid: bool,
     pub lock_grid: bool,
-    pub font_base_size: f64,
-    pub font_scale: f64,
     pub font_size: FontTokens,
-    pub spacing_scale: f64,
     pub space: Space,
     pub letter_spacing: LetterSpacing,
     pub motion_enabled: bool,
@@ -250,35 +240,6 @@ pub struct Theme {
     pub frame_radius: f64,
 }
 
-struct PaletteCtx<'a> {
-    theme: &'a Theme,
-}
-
-impl style::Ctx for PaletteCtx<'_> {
-    type Color = Rgba;
-    fn mode(&self) -> Mode {
-        self.theme.colors.mode
-    }
-    fn surface_opacity(&self) -> f64 {
-        self.theme.surface_opacity
-    }
-    fn radius(&self, step: &str) -> Option<f64> {
-        self.theme.radii.step(step)
-    }
-    fn color(&self, name: &str) -> Rgba {
-        self.theme.colors.get(name)
-    }
-    fn literal(&self, value: &'static str) -> Rgba {
-        Rgba::parse(value).unwrap_or(Rgba::TRANSPARENT)
-    }
-    fn alpha(&self, c: &Rgba, a: f64) -> Rgba {
-        c.with_alpha(a as f32)
-    }
-    fn tint(&self, c: &Rgba, over: &Rgba) -> Rgba {
-        c.tint(*over)
-    }
-}
-
 impl Default for Theme {
     /// Every key unset, on the fallback dark palette.
     fn default() -> Self {
@@ -290,10 +251,6 @@ impl Theme {
     pub fn resolve(get: impl Fn(&str) -> Option<Value>, palette: &Map<String, Value>) -> Self {
         let style = crate::table();
         let surface_opacity = tokens::clamp(get("theme.surfaceOpacity").as_ref(), 0.0, 1.0, 0.85);
-
-        let font_base_size = 13.0;
-        let font_scale = tokens::font_scale(font_base_size);
-        let spacing_scale = font_scale;
 
         let frame_thickness =
             fs_js::round(tokens::clamp(get("frame.thickness").as_ref(), 0.0, f64::INFINITY, 0.0));
@@ -311,12 +268,9 @@ impl Theme {
             lock_dither: boolean(get("lock.dither"), false),
             wallpaper_grid: boolean(get("wallpaper.grid"), false),
             lock_grid: boolean(get("lock.grid"), false),
-            font_base_size,
-            font_scale,
-            font_size: tokens::font_tokens(font_base_size),
-            spacing_scale,
-            space: tokens::spacing_tokens(spacing_scale),
-            letter_spacing: tokens::letter_spacing_tokens(font_scale),
+            font_size: tokens::font_tokens(),
+            space: Space::TOKENS,
+            letter_spacing: tokens::LETTER_SPACING,
             motion_enabled: boolean(get("motion.enabled"), true),
             motion_scale: 1.0,
             bar_style: BarStyle::parse(get("bar.style").as_ref()),
@@ -332,31 +286,31 @@ impl Theme {
     }
 
     /// This theme with `primary` taken from another palette role.
-    pub fn accented(&self, role: &str) -> Self {
+    pub fn accented(&self, role: ColorRole) -> Self {
         let mut out = self.clone();
         out.colors = self.colors.accented(role);
         out
     }
 
-    fn ctx(&self) -> PaletteCtx<'_> {
-        PaletteCtx { theme: self }
+    fn ctx(&self) -> Ctx<'_> {
+        Ctx { colors: &self.colors, surface_opacity: self.surface_opacity, radii: self.radii }
     }
 
     /// `Theme.box(role, state)`: one role's box, drawable.
-    pub fn box_style(&self, role: &str, state: Option<&str>) -> BoxStyle<Rgba> {
+    pub fn box_style(&self, role: Role, state: Option<&str>) -> BoxStyle<Rgba> {
         style::resolve(self.style, role, state, &self.ctx())
     }
 
-    pub fn has_state(&self, role: &str, state: &str) -> bool {
+    pub fn has_state(&self, role: Role, state: &str) -> bool {
         style::has_state(self.style, role, state)
     }
 
     pub fn with_cursor(&self, b: BoxStyle<Rgba>, on: bool, halo: bool) -> BoxStyle<Rgba> {
-        if on { style::with_cursor(&b, &self.box_style("cursor", None), halo) } else { b }
+        if on { style::with_cursor(&b, &self.box_style(Role::Cursor, None), halo) } else { b }
     }
 
     /// A number a role carries beside its box.
-    pub fn metric(&self, role: &str, key: &str) -> f64 {
+    pub fn metric(&self, role: Role, key: &str) -> f64 {
         style::metric(self.style, role, key)
     }
 
@@ -370,7 +324,7 @@ impl Theme {
     /// The `card` role's radius, which a card joined to the bar also opens
     /// its fillets at.
     pub fn card_radius(&self) -> f64 {
-        match self.box_style("card", None).radius {
+        match self.box_style(Role::Card, None).radius {
             Radius::Pill => self.radii.xl,
             Radius::Px(px) => px,
         }
@@ -382,7 +336,7 @@ impl Theme {
 
     /// The halo the `cursor` entry declares; nothing when it declares none.
     pub fn cursor_ring(&self) -> Ring<Rgba> {
-        let cursor = self.box_style("cursor", None);
+        let cursor = self.box_style(Role::Cursor, None);
         cursor.rings.into_iter().next().unwrap_or(Ring { spread: 0.0, color: Rgba::TRANSPARENT, fade: None })
     }
 
@@ -483,7 +437,7 @@ mod tests {
     #[test]
     fn a_fill_and_a_border_are_one_rectangle() {
         let t = theme();
-        let b = t.box_style("card", None);
+        let b = t.box_style(Role::Card, None);
         assert_eq!(b.fill, hex("#151515").with_alpha(t.surface_opacity as f32));
         let border = b.border.clone().unwrap();
         assert_eq!(border.color, Rgba::BLACK.with_alpha(0.75));
@@ -496,7 +450,7 @@ mod tests {
     #[test]
     fn a_role_with_no_border_draws_none() {
         let t = theme();
-        let b = t.box_style("cell.mark", None);
+        let b = t.box_style(Role::CellMark, None);
         assert_eq!(b.fill, hex("#1133ff"));
         assert_eq!(b.border, None);
         assert_eq!(t.box_radius(&b, 40.0), t.radii.sm);
@@ -505,12 +459,12 @@ mod tests {
     #[test]
     fn a_state_changes_the_fill() {
         let t = theme();
-        assert_eq!(t.box_style("cell", Some("active")).fill, hex("#1133ff"));
-        assert_eq!(t.box_style("cell", Some("selected")).fill, hex("#3b3b3b"));
-        let ghost = t.box_style("cell", Some("ghost"));
+        assert_eq!(t.box_style(Role::Cell, Some("active")).fill, hex("#1133ff"));
+        assert_eq!(t.box_style(Role::Cell, Some("selected")).fill, hex("#3b3b3b"));
+        let ghost = t.box_style(Role::Cell, Some("ghost"));
         assert_eq!(ghost.fill, Rgba::TRANSPARENT);
         assert_eq!(ghost.border, None);
-        assert_eq!(t.box_style("cell", Some("destructive")).border.unwrap().color, hex("#ff2222"));
+        assert_eq!(t.box_style(Role::Cell, Some("destructive")).border.unwrap().color, hex("#ff2222"));
     }
 
     // Box's colour transition rides the effects clock family, which is all
@@ -518,14 +472,14 @@ mod tests {
     #[test]
     fn the_fill_crossfades_on_a_state_change() {
         let t = theme();
-        assert_ne!(t.box_style("cell", Some("rest")).fill, t.box_style("cell", Some("active")).fill);
+        assert_ne!(t.box_style(Role::Cell, Some("rest")).fill, t.box_style(Role::Cell, Some("active")).fill);
         assert_eq!(t.motion().families.effects, 200.0);
     }
 
     #[test]
     fn a_literal_colour_resolves_under_its_own_alpha() {
         let t = theme();
-        let b = t.box_style("scrim", None);
+        let b = t.box_style(Role::Scrim, None);
         assert_eq!(b.fill, Rgba { r: 0.0, g: 0.0, b: 0.0, a: 125.0 / 255.0 });
         assert_eq!(t.box_radius(&b, 40.0), 0.0);
         assert_eq!(b.border, None);
@@ -535,13 +489,13 @@ mod tests {
     fn the_consumer_can_override_the_radius() {
         // Box's own `radius` property wins over the table; the table's value
         // is what it overrides.
-        assert_eq!(theme().box_style("card", None).radius, Radius::Px(12.0));
+        assert_eq!(theme().box_style(Role::Card, None).radius, Radius::Px(12.0));
     }
 
     #[test]
     fn pill_resolves_against_the_box_itself() {
         let t = theme();
-        let knob = t.box_style("switch.knob", None);
+        let knob = t.box_style(Role::SwitchKnob, None);
         assert_eq!(knob.radius, Radius::Pill);
         assert_eq!(t.box_radius(&knob, 40.0f64.min(100.0)), 20.0);
     }
@@ -552,7 +506,7 @@ mod tests {
         assert_eq!(ring.x, -2.0);
         assert_eq!(ring.width, 104.0);
         assert_eq!(ring.radius, 10.0);
-        let cursor = theme().box_style("cursor", None);
+        let cursor = theme().box_style(Role::Cursor, None);
         assert!(cursor.rings.is_empty());
         assert_eq!(cursor.border.unwrap().color, hex("#00ccff").with_alpha(0.5));
     }
@@ -574,21 +528,21 @@ mod tests {
 
     #[test]
     fn a_box_with_no_hairlines_draws_none() {
-        assert!(theme().box_style("scrim", None).hairlines.is_empty());
-        assert_eq!(theme().box_style("button.outline", Some("rest")).hairlines.len(), 4);
+        assert!(theme().box_style(Role::Scrim, None).hairlines.is_empty());
+        assert_eq!(theme().box_style(Role::ButtonOutline, Some("rest")).hairlines.len(), 4);
     }
 
     #[test]
     fn a_face_draws_a_gradient_only_when_the_table_sets_one() {
-        assert_eq!(theme().box_style("card", None).face, None);
+        assert_eq!(theme().box_style(Role::Card, None).face, None);
         assert_eq!(geometry::inner_radius(8.0, 1.0, 100.0, 40.0), 8.0 - 1.0);
     }
 
     #[test]
     fn a_cast_layers_an_effect_only_when_a_layer_blurs() {
         let t = theme();
-        assert_eq!(t.box_style("card", None).casts.len(), 2);
-        assert!(t.box_style("cursor", None).casts.is_empty());
+        assert_eq!(t.box_style(Role::Card, None).casts.len(), 2);
+        assert!(t.box_style(Role::Cursor, None).casts.is_empty());
 
         let casts = [
             Cast { x: 0.0, y: 3.0, blur: 4.0, spread: 0.0, color: hex("#00000026") },
@@ -609,7 +563,7 @@ mod tests {
     #[test]
     fn the_pointer_wash_lands_over_the_fill() {
         let t = theme();
-        let b = t.box_style("cell", Some("hover"));
+        let b = t.box_style(Role::Cell, Some("hover"));
         assert_eq!(b.wash, Some(style::wash(t.style, "hover", &t.ctx())));
         assert_eq!(t.box_radius(&b, 40.0), 9.0);
     }
@@ -617,7 +571,7 @@ mod tests {
     #[test]
     fn a_tinted_state_carries_no_wash() {
         let t = theme();
-        let b = t.box_style("button.default", Some("hover"));
+        let b = t.box_style(Role::ButtonDefault, Some("hover"));
         assert_eq!(b.wash, None);
         assert_eq!(b.fill, hex("#1133ff").tint(style::wash(t.style, "filledHover", &t.ctx())));
     }
@@ -630,7 +584,7 @@ mod tests {
         assert_eq!((t.radii.md, t.radii.xl, t.surface_opacity), (9.0, 15.0, 0.85));
         assert!(t.blur_behind);
         assert_eq!(t.faces, Faces::ALIASES);
-        assert_eq!(t.faces.words, Face { name: None, generic: "sans-serif" });
+        assert_eq!(t.faces.words, Face::SansSerif);
         assert!(!t.wallpaper_dither && !t.lock_dither && !t.wallpaper_grid && !t.lock_grid);
         assert_eq!((t.bar_style, t.morph), (BarStyle::Transparent, true));
         assert_eq!((t.frame_thickness, t.frame_radius), (0.0, 15.0));
@@ -674,11 +628,11 @@ mod tests {
     #[test]
     fn a_glass_fill_goes_opaque_with_the_cards() {
         let mut t = theme();
-        assert_eq!(t.box_style("switcher", None).fill.a, 0.6);
-        assert_eq!(t.box_style("popover", None).fill.a, 0.9);
+        assert_eq!(t.box_style(Role::Switcher, None).fill.a, 0.6);
+        assert_eq!(t.box_style(Role::Popover, None).fill.a, 0.9);
         t.surface_opacity = 1.0;
-        assert_eq!(t.box_style("switcher", None).fill.a, 1.0);
-        assert_eq!(t.box_style("popover", None).fill.a, 1.0);
+        assert_eq!(t.box_style(Role::Switcher, None).fill.a, 1.0);
+        assert_eq!(t.box_style(Role::Popover, None).fill.a, 1.0);
     }
 
     #[test]
@@ -743,8 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_palette_role_draws_nothing() {
-        assert_eq!(theme().colors.get("nonsense"), Rgba::TRANSPARENT);
-        assert_eq!(Colors::default().get("card"), Rgba::hex(0x18181b));
+    fn the_default_palette_is_the_zinc_fallback() {
+        assert_eq!(Colors::default().get(ColorRole::Card), Rgba::hex(0x18181b));
     }
 }

@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use calloop::channel::{self, Sender};
 use fs_chrome::clock_face::{self, Face, Width};
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 
@@ -136,7 +137,7 @@ impl FaceSettings {
     pub(crate) fn ink(&self, store: &Store) -> Option<Rgba> {
         match self.color.as_str() {
             "auto" => None,
-            "primary" => Some(store.theme.theme.colors.get("primary")),
+            "primary" => Some(store.theme.theme.colors.get(ColorRole::Primary)),
             hex => Some(Rgba::parse(hex).unwrap_or(Rgba::WHITE)),
         }
     }
@@ -619,7 +620,7 @@ fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: 
             if from.is_none() || from != clock.ink_from {
                 let luma = match &under {
                     Some(u) => u.luma(rect),
-                    None => store.theme.theme.colors.get("background").luma601(),
+                    None => store.theme.theme.colors.get(ColorRole::Background).luma601(),
                 };
                 clock.ink_from = from;
                 clock.ink = auto_ink(luma);

@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
@@ -43,9 +44,9 @@ impl Look {
             icon_gap: s.icon_gap,
             sm: s.sm,
             border_width: theme.border_width,
-            border: theme.colors.get("border"),
-            accent: theme.colors.get("accent"),
-            accent_fg: theme.colors.get("accentForeground"),
+            border: theme.colors.get(ColorRole::Border),
+            accent: theme.colors.get(ColorRole::Accent),
+            accent_fg: theme.colors.get(ColorRole::AccentForeground),
             subtitle: theme.font_size.subtitle as f32,
             width: s.popup_width_default,
         }

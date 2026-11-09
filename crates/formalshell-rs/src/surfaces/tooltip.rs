@@ -7,6 +7,8 @@
 use std::time::{Duration, Instant};
 
 use fs_types::Edge;
+use fs_theme::palette::ColorRole;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 
@@ -207,7 +209,7 @@ impl Card {
 
     fn shape(theme: &Theme, kit: &mut Kit, text: &str) -> ShapedText {
         let style = Self::style(theme, kit);
-        kit.elided(text, style, MAX_TEXT * theme.font_scale)
+        kit.elided(text, style, MAX_TEXT)
     }
 
     /// Takes the group's committed ask: a new line crossfades in, a new
@@ -239,11 +241,11 @@ impl Card {
     }
 
     pub fn draw(&mut self, theme: &Theme, kit: &mut Kit, now: Instant) {
-        let b = theme.box_style("popover", None);
+        let b = theme.box_style(Role::Popover, None);
         let s = &theme.space;
         let pose = self.pose.value(now).clamp(0.0, 1.0) as f32;
         let zoom = 0.97 + 0.03 * self.zoom.value(now);
-        let ink = theme.colors.get("popoverForeground");
+        let ink = theme.colors.get(ColorRole::PopoverForeground);
         let front = Self::shape(theme, kit, &self.texts[self.front].clone());
         let back = Self::shape(theme, kit, &self.texts[1 - self.front].clone());
         let cross = self.cross.value(now).clamp(0.0, 1.0) as f32;

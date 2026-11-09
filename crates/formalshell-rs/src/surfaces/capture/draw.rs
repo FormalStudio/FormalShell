@@ -5,6 +5,8 @@
 
 use std::time::Instant;
 
+use fs_theme::palette::ColorRole;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use vello_cpu::kurbo::Rect;
 
@@ -72,9 +74,9 @@ impl Sheet {
         if let Some(f) = frame {
             p.shape(IRect::new(0, 0, sw, sh), Paint::Picture { image: f.clone(), alpha: 1.0, radius: 0.0 });
         }
-        let bg = theme.colors.get("background");
+        let bg = theme.colors.get(ColorRole::Background);
         let scrim = bg.with_alpha(0.6);
-        let toolbar_box = theme.box_style("card", Some("opaque"));
+        let toolbar_box = theme.box_style(Role::Card, Some("opaque"));
         let pad = s.panel_padding;
         let toolbar_el = toolbar(picker, theme);
         let (tw, th) = crate::ui::measure(&toolbar_el, sw as f64, theme, kit);
@@ -92,7 +94,7 @@ impl Sheet {
             p.rect(IRect::new(0, yi + hi, sw, (sh - (yi + hi)).max(0)), scrim, 0.0);
             p.rect(IRect::new(0, yi, xi.max(0), hi), scrim, 0.0);
             p.rect(IRect::new(xi + wi, yi, (sw - (xi + wi)).max(0), hi), scrim, 0.0);
-            let ink = theme.colors.get(if picker.recording() { "destructive" } else { "primary" });
+            let ink = theme.colors.get(if picker.recording() { ColorRole::Destructive } else { ColorRole::Primary });
             let width = (theme.border_width * 2.0) as f32;
             p.framed(IRect::new(xi, yi, wi, hi), fs_theme::color::Rgba::TRANSPARENT, 0.0, ink, width);
         } else {

@@ -13,34 +13,66 @@ use regex::Regex;
 use serde_json::{Map, Value};
 use std::sync::LazyLock;
 
-pub const COLOR_KEYS: [&str; 26] = [
-    "background",
-    "foreground",
-    "card",
-    "cardForeground",
-    "popover",
-    "popoverForeground",
-    "primary",
-    "primaryForeground",
-    "secondary",
-    "secondaryForeground",
-    "muted",
-    "mutedForeground",
-    "accent",
-    "accentForeground",
-    "destructive",
-    "destructiveForeground",
-    "warning",
-    "warningForeground",
-    "border",
-    "input",
-    "ring",
-    "chart1",
-    "chart2",
-    "chart3",
-    "chart4",
-    "chart5",
-];
+macro_rules! color_roles {
+    ($($variant:ident $name:literal,)*) => {
+        /// One of theme.json's colour roles.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum ColorRole {
+            $($variant,)*
+        }
+
+        impl ColorRole {
+            pub const ALL: [Self; COLOR_KEYS.len()] = [$(Self::$variant,)*];
+
+            /// The role's theme.json key.
+            pub const fn name(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)*
+                }
+            }
+
+            /// A role by its theme.json key, for a name the table or a
+            /// settings file spells out at run time.
+            pub fn parse(name: &str) -> Option<Self> {
+                match name {
+                    $($name => Some(Self::$variant),)*
+                    _ => None,
+                }
+            }
+        }
+
+        pub const COLOR_KEYS: [&str; [$($name,)*].len()] = [$($name,)*];
+    };
+}
+
+color_roles! {
+    Background "background",
+    Foreground "foreground",
+    Card "card",
+    CardForeground "cardForeground",
+    Popover "popover",
+    PopoverForeground "popoverForeground",
+    Primary "primary",
+    PrimaryForeground "primaryForeground",
+    Secondary "secondary",
+    SecondaryForeground "secondaryForeground",
+    Muted "muted",
+    MutedForeground "mutedForeground",
+    Accent "accent",
+    AccentForeground "accentForeground",
+    Destructive "destructive",
+    DestructiveForeground "destructiveForeground",
+    Warning "warning",
+    WarningForeground "warningForeground",
+    Border "border",
+    Input "input",
+    Ring "ring",
+    Chart1 "chart1",
+    Chart2 "chart2",
+    Chart3 "chart3",
+    Chart4 "chart4",
+    Chart5 "chart5",
+}
 
 static HEX_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^#[0-9a-fA-F]{6}$").expect("static hex pattern"));

@@ -34,8 +34,8 @@ impl Chrome {
             rounding: Some(rounding),
             blur: Some(blur),
             motion,
-            window: style::entry(table, "window", Some("rest")).map(Cow::into_owned),
-            window_inactive: style::entry(table, "window", Some("inactive")).map(Cow::into_owned),
+            window: style::entry(table, style::Role::Window, Some("rest")).map(Cow::into_owned),
+            window_inactive: style::entry(table, style::Role::Window, Some("inactive")).map(Cow::into_owned),
         }
     }
 }

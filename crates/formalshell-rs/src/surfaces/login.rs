@@ -7,7 +7,9 @@
 use std::time::Instant;
 
 use chrono::{DateTime, Local};
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use vello_cpu::kurbo::Rect;
 
@@ -109,7 +111,7 @@ impl Card<'_> {
         let top = inner.y0 + ((inner.height() - leading_h) / 2.0).max(0.0);
         let (over, slot) = clock_slot(clock);
         let at = (inner.x0.round() as i32, (top + date_h + theme.space.xs).round() as i32);
-        let ink = theme.colors.get("foreground");
+        let ink = theme.colors.get(ColorRole::Foreground);
         p.text(clock, (at.0, at.1 + over), ink.with_alpha(ink.a * alpha), &[]);
         IRect::new(at.0, at.1, clock.width, slot)
     }
@@ -155,7 +157,7 @@ pub fn paint_grid(p: &mut Painter, theme: &Theme, size: (i32, i32), alpha: f32) 
         return;
     }
     let g = crate::services::wallpaper::grid(theme, 1.0);
-    let ink = theme.box_style("backdrop.grid", None).fill;
+    let ink = theme.box_style(Role::BackdropGrid, None).fill;
     let (w, h) = (f64::from(size.0), f64::from(size.1));
     let from = g.fade_from(h);
     let at = |x0: f64, y0: f64, x1: f64, y1: f64| {
@@ -175,7 +177,7 @@ pub fn paint_grid(p: &mut Painter, theme: &Theme, size: (i32, i32), alpha: f32) 
 }
 
 pub fn paint(p: &mut Painter, rect: IRect, theme: &Theme, alpha: f32) {
-    let card = theme.box_style("card", Some("dialog"));
+    let card = theme.box_style(Role::Card, Some("dialog"));
     ui::boxes::paint(p, rect, &card, theme.box_radius(&card, rect.h as f64), alpha, 0.0);
 }
 
@@ -261,7 +263,7 @@ impl View {
             // Made at the output's own scale, or at its last one while the
             // new size decodes.
             Some(b) => p.shape(full, Paint::Picture { image: b.clone(), alpha: 1.0, radius: 0.0 }),
-            None => p.rect(full, theme.colors.get("background"), 0.0),
+            None => p.rect(full, theme.colors.get(ColorRole::Background), 0.0),
         }
         paint_grid(&mut p, theme, (w, h), 1.0);
         paint(&mut p, card, theme, 1.0);

@@ -1,6 +1,8 @@
 //! Shaping, cached by text and style, with the look it shapes for.
 
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::{Face, Theme};
 use fs_theme::tokens::WEIGHTS;
 use parley::GenericFamily;
@@ -62,21 +64,18 @@ pub struct Look {
     pub chip: Option<fs_theme::style::BoxStyle<Rgba>>,
 }
 
-/// A theme text role's family: the table's face over its alias, or the
-/// alias alone.
+/// A theme text role's family: its fontconfig alias.
 pub fn face(face: Face) -> Family {
-    let generic = match face.generic {
-        "monospace" => GenericFamily::Monospace,
-        "serif" => GenericFamily::Serif,
-        _ => GenericFamily::SansSerif,
-    };
-    face.name.map_or(Family::Generic(generic), |name| Family::Face(name, generic))
+    Family::Generic(match face {
+        Face::SansSerif => GenericFamily::SansSerif,
+        Face::Monospace => GenericFamily::Monospace,
+    })
 }
 
 impl Look {
     pub fn new(theme: &Theme) -> Self {
         let s = &theme.space;
-        let cell = |state| theme.box_style("cell", Some(state));
+        let cell = |state| theme.box_style(Role::Cell, Some(state));
         let border = |state| cell(state).border.map(|l| (l.color, l.width as f32));
         let motion = theme.motion().families;
         Self {
@@ -95,18 +94,18 @@ impl Look {
             narrow: s.popup_width_narrow,
             sans: face(theme.faces.words),
             mono: face(theme.faces.values),
-            foreground: theme.colors.get("foreground"),
-            muted: theme.colors.get("mutedForeground"),
-            destructive: theme.colors.get("destructive"),
-            warning: theme.colors.get("warning"),
-            primary: theme.colors.get("primary"),
-            background: theme.colors.get("background"),
-            muted_fill: theme.colors.get("muted"),
-            border: theme.colors.get("border"),
+            foreground: theme.colors.get(ColorRole::Foreground),
+            muted: theme.colors.get(ColorRole::MutedForeground),
+            destructive: theme.colors.get(ColorRole::Destructive),
+            warning: theme.colors.get(ColorRole::Warning),
+            primary: theme.colors.get(ColorRole::Primary),
+            background: theme.colors.get(ColorRole::Background),
+            muted_fill: theme.colors.get(ColorRole::Muted),
+            border: theme.colors.get(ColorRole::Border),
             track: s.track_thickness,
             radius_sm: theme.radii.sm,
-            radius: theme.box_radius(&theme.box_style("cell", None), s.bar_cell_height) as f32,
-            on_active: theme.colors.get("primaryForeground"),
+            radius: theme.box_radius(&theme.box_style(Role::Cell, None), s.bar_cell_height) as f32,
+            on_active: theme.colors.get(ColorRole::PrimaryForeground),
             active_fill: cell("active").fill,
             hover_wash: cell("hover").wash,
             ghost_open: cell("ghostOpen").fill,
@@ -121,7 +120,7 @@ impl Look {
             motion: theme.motion_enabled,
             marquee_px: motion.marquee_px_per_sec,
             marquee_hold: motion.marquee_hold_ms,
-            chip: Some(theme.box_style("bar.cell", None)).filter(|b| b.fill.a > 0.0 || b.border.as_ref().is_some_and(|l| l.width > 0.0)),
+            chip: Some(theme.box_style(Role::BarCell, None)).filter(|b| b.fill.a > 0.0 || b.border.as_ref().is_some_and(|l| l.width > 0.0)),
         }
     }
 

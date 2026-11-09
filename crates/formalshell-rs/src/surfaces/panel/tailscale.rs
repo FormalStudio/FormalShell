@@ -6,6 +6,7 @@
 //! and each peer: Enter toggles on the hero and copies an address on any
 //! other row. NEEDS LOGIN and NO TAILSCALE carry no cursor.
 
+use fs_theme::palette::ColorRole;
 use fs_devices::tailscale as model;
 
 use super::{Effect, Panel, View};
@@ -108,8 +109,8 @@ impl Panel for Tailscale {
             parts.push(w::panel_row(s, "copy", "IP", None, vec![w::panel_value(ip.clone())]).stop("self").on(format!("copy:{ip}")));
         }
 
-        let primary = v.theme.colors.get("primary");
-        let muted = v.theme.colors.get("mutedForeground");
+        let primary = v.theme.colors.get(ColorRole::Primary);
+        let muted = v.theme.colors.get(ColorRole::MutedForeground);
         let rows = status
             .peers
             .iter()

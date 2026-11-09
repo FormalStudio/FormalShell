@@ -10,6 +10,7 @@
 //! (`fs_theme::sky`), the step the sun stands in. Every reader of the wallpaper (the backdrops, the
 //! lock, the band's paint, matugen, the greeter) takes the source.
 
+use fs_theme::style::Role;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -289,8 +290,8 @@ pub fn show(path: &str, width: u32, height: u32, dither: Option<usize>, grid: Op
 /// The table's `backdrop.grid` for a buffer at `scale` times the logical
 /// size, in RGBA order.
 pub fn grid(theme: &fs_theme::theme::Theme, scale: f64) -> Grid {
-    let m = |key| theme.metric("backdrop.grid", key);
-    let color = theme.box_style("backdrop.grid", None).fill.to_u8();
+    let m = |key| theme.metric(Role::BackdropGrid, key);
+    let color = theme.box_style(Role::BackdropGrid, None).fill.to_u8();
     Grid { pitch: m("pitch"), width: m("width"), fade: m("fade"), color }.scaled(scale)
 }
 

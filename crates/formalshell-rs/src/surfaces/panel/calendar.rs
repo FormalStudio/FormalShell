@@ -17,6 +17,7 @@
 //! hides and shows a life row whose two values settings.json or state.json
 //! already hold.
 
+use fs_theme::palette::ColorRole;
 use std::time::{Duration, Instant};
 
 use chrono::{Datelike, Local, NaiveDate};
@@ -155,7 +156,7 @@ impl Panel for Calendar {
                 let is_today = cell.in_month && grid::same_date(&date, &t);
                 let is_selected = cell.in_month && grid::same_date(&date, &self.selected) && !is_today;
                 let count = if cell.in_month { ics::events_on_date(events, date).len() } else { 0 };
-                let dot_color = if is_today { c.get("primaryForeground") } else { c.get("primary") };
+                let dot_color = if is_today { c.get(ColorRole::PrimaryForeground) } else { c.get(ColorRole::Primary) };
                 let dot = if grid::shows_event_dot(Some(cell), count) { dot_color } else { fs_theme::color::Rgba::TRANSPARENT };
                 let day = w::value(cell.day.to_string()).size(Type::Body).ink(if cell.in_month { Ink::Fg } else { Ink::Muted }).centred();
                 let face = w::column(0.0, vec![w::spacer(), day, w::dot(dot, s.xs).centred(), w::spacer()]).fill();
@@ -192,7 +193,7 @@ impl Panel for Calendar {
             .map(|e| {
                 let status = agenda::status(e, now);
                 let past = status == agenda::Status::Past;
-                let dot = w::dot(if past { c.get("mutedForeground") } else { c.get("primary") }, s.sm);
+                let dot = w::dot(if past { c.get(ColorRole::MutedForeground) } else { c.get(ColorRole::Primary) }, s.sm);
                 let name = w::label(&e.summary).ink(if past { Ink::Muted } else { Ink::Fg });
                 let time = w::caption(agenda::time_label(e, twelve)).mono();
                 let now = (status == agenda::Status::Now).then(|| w::caption("Now").weight(Weight::Semibold).ink(Ink::Primary));

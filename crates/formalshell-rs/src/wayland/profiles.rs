@@ -12,6 +12,7 @@
 
 use std::time::Instant;
 
+use fs_theme::palette::ColorRole;
 use fs_types::Edge;
 use fs_upower::Profile;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
@@ -33,15 +34,15 @@ const LEVEL_ALPHA: f32 = 0.12;
 
 /// The charge's tint: `primary`, `warning` under a fifth on battery and
 /// `destructive` past the low warning.
-fn level_colour(b: &crate::services::devices::power::Battery) -> &'static str {
+fn level_colour(b: &crate::services::devices::power::Battery) -> ColorRole {
     use fs_system::power::model::Thresholds;
     use fs_upower::DeviceState;
     let charging = matches!(b.state, DeviceState::Charging | DeviceState::FullyCharged | DeviceState::PendingCharge);
     match b.level {
-        _ if charging => "primary",
-        l if Thresholds::LAPTOP.low(l).is_some() => "destructive",
-        l if l.as_percent() < 20.0 => "warning",
-        _ => "primary",
+        _ if charging => ColorRole::Primary,
+        l if Thresholds::LAPTOP.low(l).is_some() => ColorRole::Destructive,
+        l if l.as_percent() < 20.0 => ColorRole::Warning,
+        _ => ColorRole::Primary,
     }
 }
 

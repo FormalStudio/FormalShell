@@ -5,8 +5,9 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
-use fs_theme::style::{BoxStyle, Line};
+use fs_theme::style::{BoxStyle, Line, Role};
 use fs_theme::tokens::WEIGHTS;
 use vello_cpu::kurbo::{Affine, Arc, BezPath, Circle, Rect, Shape};
 
@@ -121,9 +122,9 @@ pub fn resolve(cx: &Cx, ink: Ink) -> Rgba {
     match ink {
         Ink::Fg => cx.ink.0,
         Ink::Dim => cx.ink.1,
-        Ink::Muted => cx.theme.colors.get("mutedForeground"),
-        Ink::Primary => cx.theme.colors.get("primary"),
-        Ink::Destructive => cx.theme.colors.get("destructive"),
+        Ink::Muted => cx.theme.colors.get(ColorRole::MutedForeground),
+        Ink::Primary => cx.theme.colors.get(ColorRole::Primary),
+        Ink::Destructive => cx.theme.colors.get(ColorRole::Destructive),
         Ink::Color(c) => c,
     }
 }
@@ -357,7 +358,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
 }
 
 fn edge_width(cx: &Cx) -> f64 {
-    cx.theme.box_style("separator", None).edge.map_or(0.0, |l| l.width)
+    cx.theme.box_style(Role::Separator, None).edge.map_or(0.0, |l| l.width)
 }
 
 fn segment_width(cx: &mut Cx, options: &[String]) -> f64 {
@@ -527,8 +528,8 @@ fn badge(cx: &mut Cx, rect: Rect, name: &str, path: &str) {
     let xxs = cx.theme.space.xxs;
     let disc = IRect::new((rect.x1 + xxs - d).round() as i32, (rect.y1 + xxs - d).round() as i32, d.round() as i32, d.round() as i32);
     let glyph = icon(cx, name, Type::Caption);
-    let fill = cx.a(cx.theme.colors.get("background"));
-    let ink = cx.a(cx.theme.colors.get("mutedForeground"));
+    let fill = cx.a(cx.theme.colors.get(ColorRole::Background));
+    let ink = cx.a(cx.theme.colors.get(ColorRole::MutedForeground));
     let at = (disc.x + (disc.w - glyph.width) / 2, disc.y + (disc.h - glyph.line_height()) / 2);
     let mut p = cx.painter(&format!("{path}/badge"));
     p.rect(disc, fill, disc.w as f32 / 2.0);
@@ -725,10 +726,10 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let check = checked.then(|| icon(cx, "check", Type::Body));
             let badge = badge.map(|name| icon(cx, name, Type::Body));
             let t = cx.theme;
-            let (ring, disc, ink) = (cx.a(t.colors.get("card")), cx.a(t.colors.get("primary")), cx.a(t.colors.get("primaryForeground")));
-            let (plate, plate_ink) = (cx.a(t.colors.get("card").with_alpha(0.8)), cx.a(t.colors.get("foreground")));
-            let (outline, gap) = (cx.a(t.colors.get("ring")), cx.a(t.colors.get("card")));
-            let field = cx.a(t.colors.get("muted"));
+            let (ring, disc, ink) = (cx.a(t.colors.get(ColorRole::Card)), cx.a(t.colors.get(ColorRole::Primary)), cx.a(t.colors.get(ColorRole::PrimaryForeground)));
+            let (plate, plate_ink) = (cx.a(t.colors.get(ColorRole::Card).with_alpha(0.8)), cx.a(t.colors.get(ColorRole::Foreground)));
+            let (outline, gap) = (cx.a(t.colors.get(ColorRole::Ring)), cx.a(t.colors.get(ColorRole::Card)));
+            let field = cx.a(t.colors.get(ColorRole::Muted));
             let (d, inset, bw) = ((t.space.control_height - 8.0).round() as i32, t.space.sm.round() as i32, (t.border_width * 2.0).round() as i32);
             let mut p = cx.painter(path);
             match &pic.0 {
@@ -767,7 +768,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let t = cx.theme;
             let radius = t.cover_radius(*size) as f32;
             let bw = t.border_width;
-            let (well, line) = (cx.a(t.colors.get("muted")), cx.a(t.colors.get("border")));
+            let (well, line) = (cx.a(t.colors.get(ColorRole::Muted)), cx.a(t.colors.get(ColorRole::Border)));
             let alpha = cx.alpha;
             let r = irect(inner);
             let mut p = cx.painter(path);
@@ -819,13 +820,13 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let t = cx.theme;
             let alpha = cx.alpha;
             let mut p = cx.painter(path);
-            paint_line(&mut p, t, &line, (room.x, ty), room, alpha, (bold, "primary"));
+            paint_line(&mut p, t, &line, (room.x, ty), room, alpha, (bold, ColorRole::Primary));
             let last = p.last();
             p.finish();
             cx.done(last);
         }
         Kind::Separator { vertical, bleed, .. } => {
-            let b = cx.theme.box_style("separator", None);
+            let b = cx.theme.box_style(Role::Separator, None);
             let bw = cx.theme.border_width;
             let fill = cx.a(b.fill);
             let edge = b.edge.clone().map(|l| (cx.a(l.color), l.width));
@@ -846,8 +847,8 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             cx.done(last);
         }
         Kind::Keycap { key } => {
-            let b = cx.theme.box_style("keycap", None);
-            let ink = if b.ink.a > 0.0 { b.ink } else { cx.theme.colors.get("mutedForeground") };
+            let b = cx.theme.box_style(Role::Keycap, None);
+            let ink = if b.ink.a > 0.0 { b.ink } else { cx.theme.colors.get(ColorRole::MutedForeground) };
             let ink = cx.a(ink);
             let (text, glyph) = keycap(key);
             let t = if glyph.is_empty() {
@@ -869,8 +870,8 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         }
         Kind::Ordinal { n } => {
             let t = shape(cx, &n.to_string(), &Font { size: Type::Caption, weight: Weight::Semibold, mono: true });
-            let line = cx.a(cx.theme.colors.get("border"));
-            let ink = cx.a(cx.theme.colors.get("mutedForeground"));
+            let line = cx.a(cx.theme.colors.get(ColorRole::Border));
+            let ink = cx.a(cx.theme.colors.get(ColorRole::MutedForeground));
             let bw = cx.theme.border_width as f32;
             let r = irect(inner);
             let at = (r.x + (r.w - t.width) / 2, r.y + (r.h - t.line_height()) / 2);
@@ -882,7 +883,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             cx.done(last);
         }
         Kind::Swatch { color, radius, border, .. } => {
-            let line = cx.theme.colors.get("border");
+            let line = cx.theme.colors.get(ColorRole::Border);
             let bw = if *border { cx.theme.border_width as f32 } else { 0.0 };
             let (fill, line) = (cx.a(*color), cx.a(line));
             let mut p = cx.painter(path);
@@ -914,11 +915,11 @@ fn centred(p: &mut crate::paint::Painter, image: &crate::scene::Bitmap, r: IRect
 
 fn stop_radius(cx: &Cx, el: &El, h: f64) -> f64 {
     match &el.kind {
-        Kind::Cell { state, .. } if state.group => cx.theme.box_radius(&cx.theme.box_style("panel.group", None), h),
-        Kind::Cell { .. } => cx.theme.box_radius(&cx.theme.box_style("cell", None), h),
-        Kind::Track { .. } => cx.theme.box_radius(&cx.theme.box_style("track.groove", None), h),
-        Kind::Group { .. } | Kind::Segmented { .. } => cx.theme.box_radius(&cx.theme.box_style("trough", None), h),
-        Kind::Switch { .. } => cx.theme.box_radius(&cx.theme.box_style("switch.track", Some("off")), switch_track(cx.theme).1),
+        Kind::Cell { state, .. } if state.group => cx.theme.box_radius(&cx.theme.box_style(Role::PanelGroup, None), h),
+        Kind::Cell { .. } => cx.theme.box_radius(&cx.theme.box_style(Role::Cell, None), h),
+        Kind::Track { .. } => cx.theme.box_radius(&cx.theme.box_style(Role::TrackGroove, None), h),
+        Kind::Group { .. } | Kind::Segmented { .. } => cx.theme.box_radius(&cx.theme.box_style(Role::Trough, None), h),
+        Kind::Switch { .. } => cx.theme.box_radius(&cx.theme.box_style(Role::SwitchTrack, Some("off")), switch_track(cx.theme).1),
         _ => cx.theme.radii.md,
     }
 }
@@ -950,31 +951,31 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     };
     let hovered = !state.disabled && (state.hovered || (interactive && cx.hover(path)));
     let mut b = if state.hero {
-        t.box_style("hero", None)
+        t.box_style(Role::Hero, None)
     } else if state.group && state.open {
-        BoxStyle { radius: t.box_style("panel.group", None).radius, ..t.box_style("panel.chip", Some("on")) }
+        BoxStyle { radius: t.box_style(Role::PanelGroup, None).radius, ..t.box_style(Role::PanelChip, Some("on")) }
     } else if state.group {
-        t.box_style("panel.group", Some(if hovered { "hover" } else { "rest" }))
+        t.box_style(Role::PanelGroup, Some(if hovered { "hover" } else { "rest" }))
     } else if state.glyph {
-        t.box_style("panel.chip", Some(if state.open { "on" } else { "rest" }))
+        t.box_style(Role::PanelChip, Some(if state.open { "on" } else { "rest" }))
     } else if state.card {
-        t.box_style("card", None)
+        t.box_style(Role::Card, None)
     } else if state.token {
-        t.box_style("launcher.token", None)
+        t.box_style(Role::LauncherToken, None)
     } else if state.row {
-        let mut b = t.box_style("launcher.row", Some(if state.selected && !owned { "selected" } else { "rest" }));
+        let mut b = t.box_style(Role::LauncherRow, Some(if state.selected && !owned { "selected" } else { "rest" }));
         if state.destructive {
-            b.border = t.box_style("cell", Some("destructive")).border;
+            b.border = t.box_style(Role::Cell, Some("destructive")).border;
         }
         b
     } else {
-        let mut b = t.box_style("cell", Some(fill_state));
-        let rest_border = t.box_style("cell", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
-        b.border = Some(t.box_style("cell", Some(border_state)).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
+        let mut b = t.box_style(Role::Cell, Some(fill_state));
+        let rest_border = t.box_style(Role::Cell, None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
+        b.border = Some(t.box_style(Role::Cell, Some(border_state)).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
         b
     };
     let washing = hovered && !state.active && !state.selected;
-    b.wash = t.box_style(if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash;
+    b.wash = t.box_style(if state.row { Role::LauncherRow } else { Role::Cell }, Some("hover")).wash;
     let (_, ring) = cx.cursor(stop.as_deref());
     let ring = (ring || state.cursor) && !owned && !state.row;
     let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);
@@ -988,19 +989,19 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     let fg = if state.token {
         b.ink
     } else if state.row && !state.destructive {
-        t.colors.get("foreground")
+        t.colors.get(ColorRole::Foreground)
     } else if state.active {
-        t.colors.get("primaryForeground")
+        t.colors.get(ColorRole::PrimaryForeground)
     } else if state.destructive {
-        t.colors.get("destructive")
+        t.colors.get(ColorRole::Destructive)
     } else if state.warning {
-        t.colors.get("warning")
+        t.colors.get(ColorRole::Warning)
     } else if state.selected {
-        t.colors.get("accentForeground")
+        t.colors.get(ColorRole::AccentForeground)
     } else {
-        t.colors.get("foreground")
+        t.colors.get(ColorRole::Foreground)
     };
-    let dim = if (state.active || state.selected) && !state.row { fg } else { t.colors.get("mutedForeground") };
+    let dim = if (state.active || state.selected) && !state.row { fg } else { t.colors.get(ColorRole::MutedForeground) };
     let fg = cx.color(&format!("{path}.fg"), fg);
     let dim = cx.color(&format!("{path}.dim"), dim);
     let alpha = cx.alpha;
@@ -1072,9 +1073,9 @@ fn button(
     let b = BoxStyle { fill, border, ..b };
     let wash = cx.tween(&format!("{path}.wash"), if washing { 1.0 } else { 0.0 }, Clock::Effects) as f32;
     let ink = match variant {
-        Variant::Default => t.colors.get("primaryForeground"),
-        Variant::Destructive => t.colors.get("destructiveForeground"),
-        _ => t.colors.get("foreground"),
+        Variant::Default => t.colors.get(ColorRole::PrimaryForeground),
+        Variant::Destructive => t.colors.get(ColorRole::DestructiveForeground),
+        _ => t.colors.get(ColorRole::Foreground),
     };
     let saved = cx.alpha;
     if !enabled {
@@ -1121,15 +1122,15 @@ fn button(
 /// The track's (width, height): the table's width, and the knob with its
 /// padding above and below.
 fn switch_track(t: &fs_theme::theme::Theme) -> (f64, f64) {
-    let (knob, pad) = (t.metric("switch.knob", "size"), t.metric("switch.track", "padding"));
-    (t.metric("switch.track", "width"), knob + pad * 2.0)
+    let (knob, pad) = (t.metric(Role::SwitchKnob, "size"), t.metric(Role::SwitchTrack, "padding"));
+    (t.metric(Role::SwitchTrack, "width"), knob + pad * 2.0)
 }
 
 fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &str, stop: Option<String>) {
     let t = cx.theme;
-    let inset = t.metric("switch.track", "padding");
+    let inset = t.metric(Role::SwitchTrack, "padding");
     let (track_w, track_h) = switch_track(t);
-    let size = t.metric("switch.knob", "size");
+    let size = t.metric(Role::SwitchKnob, "size");
     let (rest, travel) = (inset, track_w - size - inset * 2.0);
     let kx = cx.tween(&format!("{path}.knob"), if checked { rest + travel } else { rest }, Clock::SpatialFast);
     let along = if travel > 0.0 { ((kx - rest) / travel).clamp(0.0, 1.0) as f32 } else { 0.0 };
@@ -1138,10 +1139,10 @@ fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &st
         wash: off.wash.zip(on.wash).map(|(a, b)| a.mix(b, along)),
         ..off
     };
-    let mut track = between(t.box_style("switch.track", Some("off")), t.box_style("switch.track", Some("on")));
+    let mut track = between(t.box_style(Role::SwitchTrack, Some("off")), t.box_style(Role::SwitchTrack, Some("on")));
     let (_, ring) = cx.cursor(stop.as_deref());
     track = t.with_cursor(track, ring, !cx.halo_owned());
-    let knob = between(t.box_style("switch.knob", Some("off")), t.box_style("switch.knob", Some("on")));
+    let knob = between(t.box_style(Role::SwitchKnob, Some("off")), t.box_style(Role::SwitchKnob, Some("on")));
     let hovered = enabled && cx.hover(path);
     let wash = cx.tween(&format!("{path}.wash"), if hovered { 1.0 } else { 0.0 }, Clock::Effects) as f32;
     let tr = Rect::new(r.x0, r.y0 + (r.height() - track_h) / 2.0, r.x0 + track_w, r.y0 + (r.height() + track_h) / 2.0);
@@ -1165,23 +1166,23 @@ fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &st
 #[allow(clippy::too_many_arguments)]
 fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interactive: bool, path: &str, stop: Option<String>) {
     let t = cx.theme;
-    let mut groove = t.box_style("track.groove", None);
+    let mut groove = t.box_style(Role::TrackGroove, None);
     let (_, ring) = cx.cursor(stop.as_deref());
     if ring {
         groove = t.with_cursor(groove, true, !cx.halo_owned());
     } else {
-        let cursor = t.box_style("cursor", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
+        let cursor = t.box_style(Role::Cursor, None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
         groove.border = Some(Line { color: cursor, width: 0.0 });
     }
-    let fill = t.box_style("track.fill", None);
-    let notch_fill = t.box_style("track.notch", None).fill;
+    let fill = t.box_style(Role::TrackFill, None);
+    let notch_fill = t.box_style(Role::TrackNotch, None).fill;
     let ri = irect(r);
     let radius = t.box_radius(&groove, ri.h as f64);
     let fill_radius = t.box_radius(&fill, ri.h as f64);
     // A slider carries a knob, GNOME's handle: it travels the track less its
     // own width, so it never hangs past either end, and the fill ends under
     // its centre.
-    let knob = interactive.then(|| (t.box_style("track.knob", None), t.metric("track.knob", "size")));
+    let knob = interactive.then(|| (t.box_style(Role::TrackKnob, None), t.metric(Role::TrackKnob, "size")));
     let inset = knob.as_ref().map_or(0.0, |(_, size)| size / 2.0);
     let travel = (ri.w as f64 - inset * 2.0).max(0.0);
     let w = cx.tween(&format!("{path}.fill"), inset + travel * value.clamp(0.0, 1.0), Clock::SpatialFast);
@@ -1236,7 +1237,7 @@ fn group_grid(natural: f64, count: usize, width: f64, pad: f64) -> (usize, usize
 fn group(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize, exclusive: bool, cursor_index: usize, wrap: bool, path: &str, stop: Option<String>) {
     let t = cx.theme;
     let s = t.space.clone();
-    let trough = t.box_style("trough", None);
+    let trough = t.box_style(Role::Trough, None);
     let ri = irect(r);
     let tr_radius = t.box_radius(&trough, if wrap { s.control_height + s.xs * 2.0 } else { ri.h as f64 });
     let radius = t.radii.sm.max(tr_radius - s.xs);
@@ -1281,7 +1282,7 @@ fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usi
     for (i, o) in options.iter().enumerate() {
         let x = r.x0 + (bw + gap) * i as f64;
         let b = Rect::new(x, r.y0, x + bw, r.y1);
-        let chip = t.box_style("panel.chip", Some(if i == index { "on" } else { "rest" }));
+        let chip = t.box_style(Role::PanelChip, Some(if i == index { "on" } else { "rest" }));
         let radius = t.box_radius(&chip, b.height());
         let alpha = if o.enabled { cx.alpha } else { cx.alpha * 0.5 };
         let mut p = cx.painter(&format!("{path}/{i}.chip"));
@@ -1313,10 +1314,10 @@ fn segmented(cx: &mut Cx, el: &El, r: Rect, options: &[String], index: usize, pa
     let t = cx.theme;
     let s = t.space.clone();
     let (_, ring) = cx.cursor(stop.as_deref());
-    let trough = t.with_cursor(t.box_style("trough", None), ring, !cx.halo_owned());
-    let chip = t.box_style("segmented.chip", None);
-    let hover_wash = t.box_style("button.ghost", Some("hover")).wash.unwrap_or(Rgba::TRANSPARENT);
-    let press_wash = t.box_style("button.ghost", Some("press")).wash.unwrap_or(Rgba::TRANSPARENT);
+    let trough = t.with_cursor(t.box_style(Role::Trough, None), ring, !cx.halo_owned());
+    let chip = t.box_style(Role::SegmentedChip, None);
+    let hover_wash = t.box_style(Role::ButtonGhost, Some("hover")).wash.unwrap_or(Rgba::TRANSPARENT);
+    let press_wash = t.box_style(Role::ButtonGhost, Some("press")).wash.unwrap_or(Rgba::TRANSPARENT);
     let ri = irect(r);
     let tr_radius = t.box_radius(&trough, ri.h as f64);
     let radius = t.radii.sm.max(tr_radius - s.xxs);
@@ -1324,8 +1325,8 @@ fn segmented(cx: &mut Cx, el: &El, r: Rect, options: &[String], index: usize, pa
     let (at, cw) = spans.get(index).copied().unwrap_or((0.0, 0.0));
     let x = cx.tween(&format!("{path}.chip"), s.xxs + at, Clock::SpatialFast);
     let chip_w = cx.tween(&format!("{path}.chipw"), cw, Clock::SpatialFast);
-    let fg = t.colors.get("foreground");
-    let muted = t.colors.get("mutedForeground");
+    let fg = t.colors.get(ColorRole::Foreground);
+    let muted = t.colors.get(ColorRole::MutedForeground);
     let mut labels = Vec::new();
     for (i, o) in options.iter().enumerate() {
         let sp = format!("{path}/{i}");
@@ -1368,11 +1369,11 @@ fn input(cx: &mut Cx, r: Rect, text: &str, placeholder: &str, caret: Option<(usi
     let t = cx.theme;
     let s = t.space.clone();
     let state = if error.is_some() { "error" } else if focused { "focus" } else { "rest" };
-    let mut b = t.box_style("input", Some(state));
+    let mut b = t.box_style(Role::Input, Some(state));
     b.rings.clear();
-    let focus_ring = t.box_style("input", Some("focus")).rings.into_iter().next();
+    let focus_ring = t.box_style(Role::Input, Some("focus")).rings.into_iter().next();
     let frame = IRect::new(r.x0.round() as i32, r.y0.round() as i32, r.width().round() as i32, s.control_height as i32);
-    let radius = t.box_radius(&t.box_style("input", None), frame.h as f64);
+    let radius = t.box_radius(&t.box_style(Role::Input, None), frame.h as f64);
     let fill = cx.color(&format!("{path}.fill"), b.fill);
     let border = b.border.clone().map(|l| Line { color: cx.color(&format!("{path}.border"), l.color), width: l.width });
     let b = BoxStyle { fill, border, ..b };
@@ -1386,7 +1387,7 @@ fn input(cx: &mut Cx, r: Rect, text: &str, placeholder: &str, caret: Option<(usi
         let st = style(cx, &Font { size: Type::Caption, weight: Weight::Normal, mono: false });
         cx.kit.shape(e, st)
     });
-    let destructive = t.colors.get("destructive");
+    let destructive = t.colors.get(ColorRole::Destructive);
     let alpha = cx.alpha;
     let tx = frame.x + s.md as i32;
     let ty = frame.y + (frame.h - line.shown.line_height()) / 2;
@@ -1396,7 +1397,7 @@ fn input(cx: &mut Cx, r: Rect, text: &str, placeholder: &str, caret: Option<(usi
         p.rect(IRect::new(frame.x - sp, frame.y - sp, frame.w + sp * 2, frame.h + sp * 2), ring.color.with_alpha(ring.color.a * ring_a * alpha), (radius + ring.spread) as f32);
     }
     boxes::paint(&mut p, frame, &b, radius, alpha, 0.0);
-    paint_line(&mut p, t, &line, (tx, ty), IRect::new(tx, frame.y, inner_w as i32, frame.h), alpha, (caret_w, "foreground"));
+    paint_line(&mut p, t, &line, (tx, ty), IRect::new(tx, frame.y, inner_w as i32, frame.h), alpha, (caret_w, ColorRole::Foreground));
     if let Some(e) = &err {
         p.text(e, (frame.x, frame.bottom() + s.xs as i32), destructive.with_alpha(destructive.a * alpha), &[]);
     }
@@ -1443,7 +1444,7 @@ fn line_parts(cx: &mut Cx, text: &str, placeholder: &str, caret: Option<(usize, 
 /// covers, that text in `primaryForeground`, and the caret, which holds
 /// still rather than blinking (a blink is a clock) and steps aside while
 /// anything is selected.
-fn paint_line(p: &mut crate::paint::Painter, t: &fs_theme::theme::Theme, line: &LineParts, at: (i32, i32), room: IRect, alpha: f32, caret: (i32, &str)) {
+fn paint_line(p: &mut crate::paint::Painter, t: &fs_theme::theme::Theme, line: &LineParts, at: (i32, i32), room: IRect, alpha: f32, caret: (i32, ColorRole)) {
     let (caret_w, caret_ink) = caret;
     let h = line.shown.line_height();
     let x0 = at.0 - line.scroll;
@@ -1451,16 +1452,16 @@ fn paint_line(p: &mut crate::paint::Painter, t: &fs_theme::theme::Theme, line: &
     let (w, bh) = line.shown.box_size();
     let pad = if line.empty && line.caret.is_some() { caret_w } else { 0 };
     let bounds = IRect::new(x0 + pad - text::PAD, at.1 - text::PAD, w, bh);
-    let ink = if line.empty { t.colors.get("mutedForeground") } else { t.colors.get("foreground") };
+    let ink = if line.empty { t.colors.get(ColorRole::MutedForeground) } else { t.colors.get(ColorRole::Foreground) };
     let sel = line.selection.map(|(a, b)| IRect::new(x0 + a, at.1, b - a, h));
     if let Some(r) = sel {
-        let style = t.box_style("input.selection", None);
+        let style = t.box_style(Role::InputSelection, None);
         let fill = style.fill;
         p.shape_in(r, Paint::Rect { fill: fill.with_alpha(fill.a * alpha), radius: t.box_radius(&style, f64::from(h)) as f32 }, clip);
     }
     p.text_in(&line.shown, bounds, Affine::IDENTITY, Some(clip), ink.with_alpha(ink.a * alpha), &[]);
     if let Some(r) = sel {
-        let on = t.colors.get("primaryForeground");
+        let on = t.colors.get(ColorRole::PrimaryForeground);
         p.text_in(&line.shown, bounds, Affine::IDENTITY, Some(clip.intersect(&r)), on.with_alpha(on.a * alpha), &[]);
     }
     if let Some(x) = line.caret.filter(|_| sel.is_none()) {
@@ -1546,7 +1547,7 @@ fn matrix(cx: &mut Cx, r: Rect, rows: &[String], path: &str) {
     let side = m * n as f64;
     let x0 = (r.x0 + ((r.width() - side) / 2.0).floor()).round();
     let y0 = r.y0.round();
-    let (fg, bg) = (cx.theme.colors.get("foreground"), cx.theme.colors.get("background"));
+    let (fg, bg) = (cx.theme.colors.get(ColorRole::Foreground), cx.theme.colors.get(ColorRole::Background));
     let light = |c: Rgba| c.r.max(c.g).max(c.b) + c.r.min(c.g).min(c.b);
     let (module, quiet) = if light(fg) < light(bg) { (fg, bg) } else { (bg, fg) };
     let (module, quiet) = (cx.a(module), cx.a(quiet));
@@ -1606,10 +1607,10 @@ fn ring(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
     let t = cx.theme;
     let d = inner.width().min(inner.height());
     let centre = (inner.center().x, inner.center().y);
-    let groove = cx.a(t.box_style("track.groove", None).fill);
+    let groove = cx.a(t.box_style(Role::TrackGroove, None).fill);
     let fill = cx.a(match r {
-        Ring::Failed => t.colors.get("destructive"),
-        _ => t.box_style("track.fill", None).fill,
+        Ring::Failed => t.colors.get(ColorRole::Destructive),
+        _ => t.box_style(Role::TrackFill, None).fill,
     });
     let turn = if r == Ring::Unknown && t.motion_enabled {
         cx.animate();
@@ -1618,8 +1619,8 @@ fn ring(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
         0.0
     };
     let mark = match r {
-        Ring::Done => Some(("check", t.colors.get("foreground"))),
-        Ring::Failed => Some(("x", t.colors.get("destructive"))),
+        Ring::Done => Some(("check", t.colors.get(ColorRole::Foreground))),
+        Ring::Failed => Some(("x", t.colors.get(ColorRole::Destructive))),
         _ => None,
     };
     let mark = mark.map(|(name, ink)| (icon(cx, name, Type::Caption), cx.a(ink)));
@@ -1638,9 +1639,9 @@ fn ring(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
 
 fn sparkline(cx: &mut Cx, r: Rect, series: &super::el::Series, path: &str) {
     let t = cx.theme;
-    let primary = cx.a(t.colors.get("primary"));
-    let muted = cx.a(t.colors.get("mutedForeground"));
-    let line = cx.a(t.colors.get("border"));
+    let primary = cx.a(t.colors.get(ColorRole::Primary));
+    let muted = cx.a(t.colors.get(ColorRole::MutedForeground));
+    let line = cx.a(t.colors.get(ColorRole::Border));
     let stroke = t.space.xxs;
     let bw = cx_border(t);
     let ri = irect(r);
@@ -1686,10 +1687,10 @@ const INDICATOR_STROKE: f64 = 2.5;
 fn indicator(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
     let t = cx.theme;
     let centre = (inner.center().x, inner.center().y);
-    let ink = t.colors.get("foreground");
+    let ink = t.colors.get(ColorRole::Foreground);
     let mark = match r {
         Ring::Done => Some((icon(cx, "check", Type::Body), cx.a(ink))),
-        Ring::Failed => Some((shape(cx, "!", &Font { size: Type::Title, weight: Weight::Bold, mono: false }), cx.a(t.colors.get("destructive")))),
+        Ring::Failed => Some((shape(cx, "!", &Font { size: Type::Title, weight: Weight::Bold, mono: false }), cx.a(t.colors.get(ColorRole::Destructive)))),
         _ => None,
     };
     // Pond draws an unknown measure as the bare groove; that reads as a

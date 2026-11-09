@@ -15,7 +15,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use fs_chrome::bar::workspaces::{self, SlotOpts};
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 use fs_types::{Rect, Window, WindowId, WorkspaceId};
@@ -370,9 +372,9 @@ impl Overview {
         let base = self.geo.transform(p, glide);
         let current = self.current_row();
         let fade = |c: Rgba, a: f64| c.with_alpha(c.a * a as f32);
-        let border = t.colors.get("border");
-        let ring = t.colors.get("ring");
-        let muted = t.colors.get("mutedForeground");
+        let border = t.colors.get(ColorRole::Border);
+        let ring = t.colors.get(ColorRole::Ring);
+        let muted = t.colors.get(ColorRole::MutedForeground);
         let bw = t.border_width as f32;
         let area = IRect::new(0, 0, self.geo.area.0.round() as i32, self.geo.area.1.round() as i32);
         let slides: Vec<f64> = (0..self.rows.len()).map(|i| self.slide(i, now)).collect();
@@ -385,7 +387,7 @@ impl Overview {
         match (input.backdrop, input.flat) {
             (_, Some(c)) => painter.rect(area, c, 0.0),
             (Some(image), None) => painter.shape(output, Paint::Picture { image: image.clone(), alpha: 1.0, radius: 0.0 }),
-            (None, None) => painter.rect(area, t.colors.get("background"), 0.0),
+            (None, None) => painter.rect(area, t.colors.get(ColorRole::Background), 0.0),
         }
         painter.rect(area, Rgba { r: 0.0, g: 0.0, b: 0.0, a: (DIM * p) as f32 }, 0.0);
         painter.transform = base;
@@ -405,7 +407,7 @@ impl Overview {
             let selected = i == self.sel.row && self.sel.win.is_none() || over == Some(i);
             let edge = if selected { ring } else { border };
             if row.workspace_id.is_empty() {
-                let b = t.box_style("cell", Some("rest"));
+                let b = t.box_style(Role::Cell, Some("rest"));
                 let fill = b.fill;
                 painter.framed(card, fade(fill, alpha), radius, fade(edge, alpha * p), bw);
                 kit.glyph(&mut painter, "plus", 24.0, card, fade(muted, alpha));
@@ -414,7 +416,7 @@ impl Overview {
             match (input.wallpaper, input.flat) {
                 (_, Some(c)) => painter.rect(card, fade(c, alpha), radius * p as f32),
                 (Some(image), None) => painter.shape(card, Paint::Picture { image: image.clone(), alpha: alpha as f32, radius: radius * p as f32 }),
-                (None, None) => painter.rect(card, fade(t.colors.get("muted"), alpha), radius * p as f32),
+                (None, None) => painter.rect(card, fade(t.colors.get(ColorRole::Muted), alpha), radius * p as f32),
             }
             painter.transform = base * Affine::translate((slides[i], 0.0));
             let mut order: Vec<&Win> = row.windows.iter().collect();
@@ -431,7 +433,7 @@ impl Overview {
             painter.framed(card, Rgba::TRANSPARENT, radius, fade(edge, alpha * p), bw);
             let label = kit.shape(&row.idx.to_string(), caption);
             let pad = t.space.sm.round() as i32;
-            painter.text(&label, (card.x + pad, card.y + pad), fade(t.colors.get("foreground"), alpha * p), &[]);
+            painter.text(&label, (card.x + pad, card.y + pad), fade(t.colors.get(ColorRole::Foreground), alpha * p), &[]);
         }
         if let Some(d) = self.drag.as_ref().filter(|d| d.lifted)
             && let Some(w) = self.rows.get(d.from_row).and_then(|r| r.windows.iter().find(|w| w.id == d.id))

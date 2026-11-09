@@ -26,6 +26,7 @@ pub mod toasts;
 pub mod tooltip;
 pub mod veil;
 
+use fs_theme::palette::ColorRole;
 use crate::services::lights;
 use crate::store::Topic;
 use crate::wayland::{App, theme_inputs};
@@ -192,6 +193,6 @@ pub fn changed(app: &mut App, topic: Topic) {
 
 /// The theme's primary as the keyboard lights' wallpaper colour.
 fn lights_palette(app: &App) {
-    let c = app.store.theme.theme.colors.get("primary");
+    let c = app.store.theme.theme.colors.get(ColorRole::Primary);
     lights::palette(fs_system::lights::hex_from_rgb(f64::from(c.r) * 255.0, f64::from(c.g) * 255.0, f64::from(c.b) * 255.0));
 }

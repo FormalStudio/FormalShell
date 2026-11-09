@@ -14,58 +14,94 @@ use std::sync::LazyLock;
 
 use serde_json::{Map, Value};
 
-use crate::tokens::{self, Easing, Motion};
+use crate::color::Rgba;
+use crate::palette::ColorRole;
+use crate::theme::Colors;
+use crate::tokens::{self, Easing, Motion, Radii};
 use fs_js::truthy;
 use fs_types::Edge;
 
-/// Every role a table must carry and its states. An empty list is a role
-/// with one box; otherwise the FIRST state is the base the others merge
-/// over, which is why `switch.track` reads `off` before `on`. The band
-/// carries one paint per answer `bar.style` and its wallpaper reading give,
-/// the frame the same (its band is a stretch of the ring once
-/// `frame.thickness` is set), and an open cell on a band fills.
-pub const ROLES: [(&str, &[&str]); 40] = [
-    ("bar", BAND_PAINTS),
-    ("frame", BAND_PAINTS),
-    ("card", &["rest", "opaque", "raised", "dialog", "popover"]),
-    ("notification", &["rest", "critical", "flat", "flatCritical"]),
-    ("popover", &[]),
-    ("menu", &[]),
-    ("cell", &["rest", "ghost", "hover", "active", "selected", "destructive", "warning", "ghostOpen"]),
-    ("cell.mark", &[]),
-    ("button.default", &["rest", "hover", "press"]),
-    ("button.outline", &["rest", "hover", "press"]),
-    ("button.ghost", &["rest", "hover", "press"]),
-    ("button.selected", &["rest", "hover", "press"]),
-    ("button.destructive", &["rest", "hover", "press"]),
-    ("input", &["rest", "focus", "error"]),
-    ("input.selection", &[]),
-    ("switch.track", &["off", "on"]),
-    ("switch.knob", &["off", "on"]),
-    ("track.groove", &[]),
-    ("track.fill", &[]),
-    ("track.notch", &[]),
-    ("track.knob", &[]),
-    ("trough", &[]),
-    ("segmented.chip", &[]),
-    ("cursor", &[]),
-    ("hero", &[]),
-    ("panel.group", &["rest", "hover"]),
-    ("panel.chip", &["rest", "on"]),
-    ("bar.cell", &[]),
-    ("backdrop.grid", &[]),
-    ("backdrop.shards", &[]),
-    ("backdrop.mark", &[]),
-    ("scrim", &[]),
-    ("separator", &[]),
-    ("keycap", &[]),
-    ("switcher", &[]),
-    ("switcher.cell", &["rest", "selected"]),
-    ("lock.ink", &["light", "dark"]),
-    ("launcher.row", &["rest", "hover", "selected"]),
-    ("launcher.token", &[]),
-    ("window", &["rest", "inactive"]),
-];
+macro_rules! roles {
+    ($($variant:ident $name:literal $states:expr,)*) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum Role {
+            $($variant,)*
+        }
+
+        impl Role {
+            pub const ALL: [Self; [$($name,)*].len()] = [$(Self::$variant,)*];
+
+            /// The role's key in a table.
+            pub const fn name(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)*
+                }
+            }
+
+            pub const fn states(self) -> &'static [&'static str] {
+                match self {
+                    $(Self::$variant => $states,)*
+                }
+            }
+
+            /// A role by its table key, for one named at run time.
+            pub fn parse(name: &str) -> Option<Self> {
+                match name {
+                    $($name => Some(Self::$variant),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+// An empty list is a role with one box; otherwise the FIRST state is the
+// base the others merge over, which is why `switch.track` reads `off`
+// before `on`. The band carries one paint per answer `bar.style` and its
+// wallpaper reading give, the frame the same (its band is a stretch of the
+// ring once `frame.thickness` is set), and an open cell on a band fills.
+roles! {
+    Bar "bar" BAND_PAINTS,
+    Frame "frame" BAND_PAINTS,
+    Card "card" &["rest", "opaque", "raised", "dialog", "popover"],
+    Notification "notification" &["rest", "critical", "flat", "flatCritical"],
+    Popover "popover" &[],
+    Menu "menu" &[],
+    Cell "cell" &["rest", "ghost", "hover", "active", "selected", "destructive", "warning", "ghostOpen"],
+    CellMark "cell.mark" &[],
+    ButtonDefault "button.default" &["rest", "hover", "press"],
+    ButtonOutline "button.outline" &["rest", "hover", "press"],
+    ButtonGhost "button.ghost" &["rest", "hover", "press"],
+    ButtonSelected "button.selected" &["rest", "hover", "press"],
+    ButtonDestructive "button.destructive" &["rest", "hover", "press"],
+    Input "input" &["rest", "focus", "error"],
+    InputSelection "input.selection" &[],
+    SwitchTrack "switch.track" &["off", "on"],
+    SwitchKnob "switch.knob" &["off", "on"],
+    TrackGroove "track.groove" &[],
+    TrackFill "track.fill" &[],
+    TrackNotch "track.notch" &[],
+    TrackKnob "track.knob" &[],
+    Trough "trough" &[],
+    SegmentedChip "segmented.chip" &[],
+    Cursor "cursor" &[],
+    Hero "hero" &[],
+    PanelGroup "panel.group" &["rest", "hover"],
+    PanelChip "panel.chip" &["rest", "on"],
+    BarCell "bar.cell" &[],
+    BackdropGrid "backdrop.grid" &[],
+    BackdropShards "backdrop.shards" &[],
+    BackdropMark "backdrop.mark" &[],
+    Scrim "scrim" &[],
+    Separator "separator" &[],
+    Keycap "keycap" &[],
+    Switcher "switcher" &[],
+    SwitcherCell "switcher.cell" &["rest", "selected"],
+    LockInk "lock.ink" &["light", "dark"],
+    LauncherRow "launcher.row" &["rest", "hover", "selected"],
+    LauncherToken "launcher.token" &[],
+    Window "window" &["rest", "inactive"],
+}
 
 const BAND_PAINTS: &[&str] = &["rest", "light", "dark", "translucentLight", "translucentDark", "maximized"];
 
@@ -86,29 +122,12 @@ fn num_or_zero(value: Option<&Value>) -> f64 {
     num(value).filter(|f| *f != 0.0 && !f.is_nan()).unwrap_or(0.0)
 }
 
-/// What a resolution needs from the live theme: the palette, the mode, the
-/// surface alpha, the radius ladder and Qt's colour arithmetic.
-pub trait Ctx {
-    type Color: Clone + std::fmt::Debug + PartialEq;
-    fn mode(&self) -> crate::theme::Mode;
-    fn surface_opacity(&self) -> f64;
-    fn radius(&self, step: &str) -> Option<f64>;
-    /// A palette role by name.
-    fn color(&self, name: &str) -> Self::Color;
-    /// One of [`LITERAL_COLORS`]' values.
-    fn literal(&self, value: &'static str) -> Self::Color;
-    /// `Qt.alpha(c, a)`.
-    fn alpha(&self, c: &Self::Color, a: f64) -> Self::Color;
-    /// `Qt.tint(c, over)`.
-    fn tint(&self, c: &Self::Color, over: &Self::Color) -> Self::Color;
-}
-
-pub fn role_names() -> impl Iterator<Item = &'static str> {
-    ROLES.iter().map(|(r, _)| *r)
-}
-
-pub fn states_for(role: &str) -> &'static [&'static str] {
-    ROLES.iter().find(|(r, _)| *r == role).map_or(&[], |(_, s)| *s)
+/// What a resolution needs from the live theme: the palette (and its
+/// mode), the surface alpha and the radius ladder.
+pub struct Ctx<'a> {
+    pub colors: &'a Colors,
+    pub surface_opacity: f64,
+    pub radii: Radii,
 }
 
 fn roles(style: &Value) -> Option<&Map<String, Value>> {
@@ -116,15 +135,15 @@ fn roles(style: &Value) -> Option<&Map<String, Value>> {
 }
 
 /// Whether a table describes a state at all.
-pub fn has_state(style: &Value, role: &str, state: &str) -> bool {
-    roles(style).and_then(|r| r.get(role)).is_some_and(|d| truthy(d.get(state)))
+pub fn has_state(style: &Value, role: Role, state: &str) -> bool {
+    roles(style).and_then(|r| r.get(role.name())).is_some_and(|d| truthy(d.get(state)))
 }
 
 /// The raw entry for a role and a state, the state merged key by key over
 /// the role's base. An unknown or empty state reads as the base.
-pub fn entry<'a>(style: &'a Value, role: &str, state: Option<&str>) -> Option<Cow<'a, Map<String, Value>>> {
-    let declared = roles(style)?.get(role).filter(|d| truthy(Some(d)))?;
-    let states = states_for(role);
+pub fn entry<'a>(style: &'a Value, role: Role, state: Option<&str>) -> Option<Cow<'a, Map<String, Value>>> {
+    let declared = roles(style)?.get(role.name()).filter(|d| truthy(Some(d)))?;
+    let states = role.states();
     if states.is_empty() {
         return declared.as_object().map(Cow::Borrowed);
     }
@@ -136,7 +155,7 @@ pub fn entry<'a>(style: &'a Value, role: &str, state: Option<&str>) -> Option<Co
     // Surfaces resolve boxes every frame, so the shipped table's merges are
     // made once rather than cloned per call.
     if std::ptr::eq(style, crate::table())
-        && let Some(m) = merged().get(role).and_then(|m| m.get(s)) {
+        && let Some(m) = merged().get(&role).and_then(|m| m.get(s)) {
             return Some(Cow::Borrowed(m));
         }
     Some(Cow::Owned(merge(base, over)))
@@ -150,23 +169,24 @@ fn merge(base: &Map<String, Value>, over: &Value) -> Map<String, Value> {
     out
 }
 
-type Merged = HashMap<&'static str, HashMap<&'static str, Map<String, Value>>>;
+type Merged = HashMap<Role, HashMap<&'static str, Map<String, Value>>>;
 
 /// Every declared state of the shipped table merged over its role's base.
 fn merged() -> &'static Merged {
     static MERGED: LazyLock<Merged> = LazyLock::new(|| {
         let roles = roles(crate::table());
-        ROLES
-            .iter()
-            .map(|(role, states)| {
-                let declared = roles.and_then(|r| r.get(*role));
+        Role::ALL
+            .into_iter()
+            .map(|role| {
+                let states = role.states();
+                let declared = roles.and_then(|r| r.get(role.name()));
                 let base = declared.zip(states.first()).and_then(|(d, s)| d.get(*s)?.as_object());
                 let own = states
                     .iter()
                     .skip(1)
                     .filter_map(|s| Some((*s, merge(base?, declared?.get(*s).filter(|o| truthy(Some(o)))?))))
                     .collect();
-                (*role, own)
+                (role, own)
             })
             .collect()
     });
@@ -177,16 +197,16 @@ fn merged() -> &'static Merged {
 /// mode picks between. Absent reads as opaque. `{ glass }` is a fill of its
 /// own alpha that only holds while the cards are translucent at all, so it
 /// goes opaque with them where the compositor does not blur.
-pub fn alpha_for(value: Option<&Value>, ctx: &impl Ctx) -> f64 {
+pub fn alpha_for(value: Option<&Value>, ctx: &Ctx) -> f64 {
     match value {
         None | Some(Value::Null) => 1.0,
-        Some(Value::String(s)) if s == "surface" => ctx.surface_opacity(),
+        Some(Value::String(s)) if s == "surface" => ctx.surface_opacity,
         Some(Value::Object(o)) if o.contains_key("glass") => {
-            if ctx.surface_opacity() < 1.0 { num(o.get("glass")).unwrap_or(f64::NAN) } else { 1.0 }
+            if ctx.surface_opacity < 1.0 { num(o.get("glass")).unwrap_or(f64::NAN) } else { 1.0 }
         }
         Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
         Some(Value::Object(pair)) => {
-            let side = ctx.mode().as_str();
+            let side = ctx.colors.mode.as_str();
             num(pair.get(side)).unwrap_or(f64::NAN)
         }
         Some(_) => 1.0,
@@ -195,21 +215,21 @@ pub fn alpha_for(value: Option<&Value>, ctx: &impl Ctx) -> f64 {
 
 /// One colour: a literal or a palette role under the alpha the table asked
 /// for. `transparent` never takes an alpha, since that would make black.
-pub fn paint<C: Ctx>(name: Option<&Value>, alpha: Option<&Value>, ctx: &C) -> C::Color {
+pub fn paint(name: Option<&Value>, alpha: Option<&Value>, ctx: &Ctx) -> Rgba {
     let name = match name {
-        None | Some(Value::Null) => return ctx.literal("transparent"),
+        None | Some(Value::Null) => return Rgba::TRANSPARENT,
         Some(Value::String(s)) => s.clone(),
         Some(other) => other.to_string(),
     };
     if name == "transparent" {
-        return ctx.literal("transparent");
+        return Rgba::TRANSPARENT;
     }
     let base = match literal(&name) {
-        Some(lit) => ctx.literal(lit),
-        None => ctx.color(&name),
+        Some(lit) => Rgba::parse(lit).unwrap_or(Rgba::TRANSPARENT),
+        None => ColorRole::parse(&name).map_or(Rgba::TRANSPARENT, |role| ctx.colors.get(role)),
     };
     let a = alpha_for(alpha, ctx);
-    if a >= 1.0 { base } else { ctx.alpha(&base, a) }
+    if a >= 1.0 { base } else { base.with_alpha(a as f32) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -220,11 +240,11 @@ pub enum Radius {
     Pill,
 }
 
-pub fn radius_for(value: Option<&Value>, ctx: &impl Ctx) -> Radius {
+pub fn radius_for(value: Option<&Value>, ctx: &Ctx) -> Radius {
     match value {
         Some(Value::Number(n)) => Radius::Px(n.as_f64().unwrap_or(0.0)),
         Some(Value::String(s)) if s == "pill" => Radius::Pill,
-        Some(Value::String(s)) => Radius::Px(ctx.radius(s).unwrap_or(0.0)),
+        Some(Value::String(s)) => Radius::Px(ctx.radii.step(s).unwrap_or(0.0)),
         _ => Radius::Px(0.0),
     }
 }
@@ -373,7 +393,7 @@ fn pair(value: Option<&Value>) -> (Option<&Value>, Option<&Value>) {
     (value.and_then(|v| v.get(0)), value.and_then(|v| v.get(1)))
 }
 
-fn line<C: Ctx>(raw: Option<&Value>, ctx: &C) -> Option<Line<C::Color>> {
+fn line(raw: Option<&Value>, ctx: &Ctx) -> Option<Line<Rgba>> {
     let raw = raw.filter(|r| truthy(Some(r)))?;
     Some(Line {
         color: paint(raw.get("color"), raw.get("alpha"), ctx),
@@ -384,8 +404,8 @@ fn line<C: Ctx>(raw: Option<&Value>, ctx: &C) -> Option<Line<C::Color>> {
 /// The whole box: colours against the live palette, alphas against the
 /// mode, the radius against the ladder, and `tint` folded into the fill
 /// (the fill blended toward a colour and left opaque).
-pub fn resolve<C: Ctx>(style: &Value, role: &str, state: Option<&str>, ctx: &C) -> BoxStyle<C::Color> {
-    let mut out = BoxStyle::empty(ctx.literal("transparent"));
+pub fn resolve(style: &Value, role: Role, state: Option<&str>, ctx: &Ctx) -> BoxStyle<Rgba> {
+    let mut out = BoxStyle::empty(Rgba::TRANSPARENT);
     let Some(raw) = entry(style, role, state) else {
         return out;
     };
@@ -393,7 +413,7 @@ pub fn resolve<C: Ctx>(style: &Value, role: &str, state: Option<&str>, ctx: &C) 
     out.fill = paint(raw.get("fill"), raw.get("fillAlpha"), ctx);
     if truthy(raw.get("tint")) {
         let (color, alpha) = pair(raw.get("tint"));
-        out.fill = ctx.tint(&out.fill, &paint(color, alpha, ctx));
+        out.fill = out.fill.tint(paint(color, alpha, ctx));
     }
     out.radius = radius_for(raw.get("radius"), ctx);
     out.border = line(raw.get("border"), ctx);
@@ -505,10 +525,10 @@ pub fn stops(raw: &[Value]) -> Option<Vec<(f64, f64)>> {
 }
 
 /// One of the table's pointer washes, transparent for an unknown key.
-pub fn wash<C: Ctx>(style: &Value, key: &str, ctx: &C) -> C::Color {
+pub fn wash(style: &Value, key: &str, ctx: &Ctx) -> Rgba {
     match style.get("wash").and_then(|w| w.get(key)).filter(|e| truthy(Some(e))) {
         Some(e) => paint(e.get("color"), e.get("alpha"), ctx),
-        None => ctx.literal("transparent"),
+        None => Rgba::TRANSPARENT,
     }
 }
 
@@ -528,7 +548,7 @@ pub fn with_cursor<C: Clone>(b: &BoxStyle<C>, cursor: &BoxStyle<C>, halo: bool) 
 
 /// A number a role carries beside its box (the backdrop grid's pitch),
 /// 0 when the table gives none.
-pub fn metric(style: &Value, role: &str, key: &str) -> f64 {
+pub fn metric(style: &Value, role: Role, key: &str) -> f64 {
     entry(style, role, None).and_then(|e| num(e.get(key))).filter(|n| n.is_finite()).unwrap_or(0.0)
 }
 
@@ -607,23 +627,23 @@ pub(crate) mod tests {
     const WASH_KEYS: [&str; 4] = ["hover", "press", "filledHover", "filledPress"];
     const RADIUS_STEPS: [&str; 5] = ["sm", "md", "lg", "xl", "pill"];
 
-    /// Every box a table declares under [`ROLES`], with its path, in role order.
+    /// Every box a table declares under [`Role`], with its path, in role order.
     fn walk_boxes<'a>(style: &'a Value, mut take: impl FnMut(String, &'a Value)) {
         let Some(roles) = roles(style) else {
             return;
         };
-        for role in role_names() {
-            let Some(declared) = roles.get(role).filter(|d| truthy(Some(d))) else {
+        for role in Role::ALL {
+            let Some(declared) = roles.get(role.name()).filter(|d| truthy(Some(d))) else {
                 continue;
             };
-            let states = states_for(role);
+            let states = role.states();
             if states.is_empty() {
-                take(role.to_owned(), declared);
+                take(role.name().to_owned(), declared);
                 continue;
             }
             for state in states {
                 if let Some(b) = declared.get(state).filter(|b| truthy(Some(b))) {
-                    take(format!("{role}.{state}"), b);
+                    take(format!("{}.{state}", role.name()), b);
                 }
             }
         }
@@ -735,49 +755,76 @@ pub(crate) mod tests {
         out
     }
 
-    /// A palette whose every role answers with its own name, so a resolved
-    /// colour says which role it came from.
-    pub(crate) struct Names {
-        pub mode: &'static str,
+    /// A palette whose every role is a colour of its own, so a resolved
+    /// colour says which role it came from through [`show`].
+    fn witness(mode: &str) -> Colors {
+        let mut m = Map::new();
+        m.insert("mode".into(), Value::from(mode));
+        for (i, role) in ColorRole::ALL.iter().enumerate() {
+            m.insert(role.name().into(), Value::from(format!("#{:02x}4080", (i + 1) * 8)));
+        }
+        Colors::from_palette(&m)
     }
+
+    static DARK: LazyLock<Colors> = LazyLock::new(|| witness("dark"));
+    static LIGHT: LazyLock<Colors> = LazyLock::new(|| witness("light"));
 
     pub(crate) fn fmt(a: f64) -> String {
-        format!("{a}")
+        format!("{}", a as f32)
     }
 
-    impl Ctx for Names {
-        type Color = String;
-        fn mode(&self) -> crate::theme::Mode {
-            crate::theme::Mode::parse(self.mode)
+    /// A colour as the palette that made it names it: `role:x`, `#rrggbb`
+    /// for the literals, `transparent`, and `@alpha` under 1.
+    fn show(c: Rgba) -> String {
+        if c == Rgba::TRANSPARENT {
+            return "transparent".to_owned();
         }
-        fn surface_opacity(&self) -> f64 {
-            0.85
-        }
-        fn radius(&self, step: &str) -> Option<f64> {
-            match step {
-                "sm" => Some(6.0),
-                "md" => Some(9.0),
-                "lg" => Some(12.0),
-                "xl" => Some(15.0),
-                _ => None,
-            }
-        }
-        fn color(&self, name: &str) -> String {
-            format!("role:{name}")
-        }
-        fn literal(&self, value: &'static str) -> String {
-            value.to_owned()
-        }
-        fn alpha(&self, c: &String, a: f64) -> String {
-            format!("{c}@{}", fmt(a))
-        }
-        fn tint(&self, c: &String, over: &String) -> String {
-            format!("{c}+{over}")
+        let rgb = |c: Rgba| {
+            let [r, g, b, _] = c.to_u8();
+            [r, g, b]
+        };
+        let base = if rgb(c) == rgb(Rgba::BLACK) {
+            "#000000".to_owned()
+        } else if rgb(c) == rgb(Rgba::WHITE) {
+            "#ffffff".to_owned()
+        } else if let Some(role) = ColorRole::ALL.iter().find(|r| rgb(DARK.get(**r)) == rgb(c)) {
+            format!("role:{}", role.name())
+        } else {
+            c.to_hex()
+        };
+        if c.a < 1.0 { format!("{base}@{}", c.a) } else { base }
+    }
+
+    fn show_box(b: BoxStyle<Rgba>) -> BoxStyle<String> {
+        let line = |l: Line<Rgba>| Line { color: show(l.color), width: l.width };
+        let ring = |r: Ring<Rgba>| Ring { spread: r.spread, color: show(r.color), fade: r.fade };
+        BoxStyle {
+            fill: show(b.fill),
+            radius: b.radius,
+            border: b.border.map(line),
+            face: b.face.map(|f| Face { from: show(f.from), to: show(f.to) }),
+            wash: b.wash.map(show),
+            edge: b.edge.map(line),
+            ink: show(b.ink),
+            ink_shadow: b.ink_shadow.into_iter().map(|g| Glow { x: g.x, y: g.y, blur: g.blur, color: show(g.color) }).collect(),
+            hairlines: b
+                .hairlines
+                .into_iter()
+                .map(|h| Hairline { edge: h.edge, thickness: h.thickness, inset: h.inset, color: show(h.color) })
+                .collect(),
+            rings: b.rings.into_iter().map(ring).collect(),
+            inset_rings: b.inset_rings.into_iter().map(ring).collect(),
+            casts: b
+                .casts
+                .into_iter()
+                .map(|c| Cast { x: c.x, y: c.y, blur: c.blur, spread: c.spread, color: show(c.color) })
+                .collect(),
         }
     }
 
-    fn ctx(mode: &'static str) -> Names {
-        Names { mode }
+    /// The witness palette at a mode; anything but `light` is dark.
+    fn ctx(mode: &str) -> Ctx<'static> {
+        Ctx { colors: if mode == "light" { &LIGHT } else { &DARK }, surface_opacity: 0.85, radii: tokens::RADII }
     }
 
     fn tables() -> [(&'static str, &'static Value); 1] {
@@ -788,21 +835,20 @@ pub(crate) mod tests {
     const WHITE: &str = "#ffffff";
     const CLEAR: &str = "transparent";
 
-    fn r(style: &Value, role: &str, state: Option<&str>, mode: &'static str) -> BoxStyle<String> {
-        resolve(style, role, state, &ctx(mode))
+    fn r(style: &Value, role: &str, state: Option<&str>, mode: &str) -> BoxStyle<String> {
+        show_box(resolve(style, Role::parse(role).expect("a role"), state, &ctx(mode)))
     }
 
     // --- The tables
 
     #[test]
     fn every_table_carries_every_role_and_state() {
-        assert!(role_names().count() > 0);
         for (name, style) in tables() {
-            for role in role_names() {
-                let declared = &style["roles"][role];
-                assert!(truthy(Some(declared)), "{name} is missing the role {role}");
-                for state in states_for(role) {
-                    assert!(truthy(declared.get(*state)), "{name} is missing {role}.{state}");
+            for role in Role::ALL {
+                let declared = &style["roles"][role.name()];
+                assert!(truthy(Some(declared)), "{name} is missing the role {}", role.name());
+                for state in role.states() {
+                    assert!(truthy(declared.get(*state)), "{name} is missing {}.{state}", role.name());
                 }
             }
         }
@@ -856,12 +902,13 @@ pub(crate) mod tests {
     #[test]
     fn every_radius_is_a_step_or_a_number() {
         for (name, style) in tables() {
-            for role in role_names() {
-                let states = states_for(role);
+            for role in Role::ALL {
+                let states = role.states();
                 let walk: Vec<Option<&str>> =
                     if states.is_empty() { vec![None] } else { states.iter().map(|s| Some(*s)).collect() };
                 for state in walk {
                     let e = entry(style, role, state).expect("every role resolves");
+                    let role = role.name();
                     match e.get("radius") {
                         None => {}
                         Some(Value::Number(_)) => {}
@@ -1212,7 +1259,7 @@ pub(crate) mod tests {
         let on = r(m, "switch.track", Some("on"), "dark");
         assert_eq!(on.fill, "role:primary");
         assert_eq!(on.radius, Radius::Pill);
-        assert_eq!(r(m, "switch.knob", Some("on"), "dark").fill, "role:card+#ffffff");
+        assert_eq!(r(m, "switch.knob", Some("on"), "dark").fill, "#ffffff");
     }
 
     #[test]
@@ -1252,7 +1299,7 @@ pub(crate) mod tests {
     fn a_tint_folds_into_the_fill_and_leaves_it_opaque() {
         let m = crate::table();
         let press = r(m, "button.default", Some("press"), "dark");
-        assert_eq!(press.fill, "role:primary+role:background@0.18");
+        assert_eq!(press.fill, show(DARK.get(ColorRole::Primary).tint(DARK.get(ColorRole::Background).with_alpha(0.18))));
         assert_eq!(press.wash, None);
         assert_eq!(r(m, "button.ghost", Some("press"), "dark").wash.as_deref(), Some("role:foreground@0.22"));
     }
@@ -1299,21 +1346,20 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn an_unknown_role_resolves_to_an_empty_box() {
-        let b = r(crate::table(), "nonsense", None, "dark");
-        assert_eq!(b.fill, CLEAR);
-        assert_eq!(b.radius, Radius::Px(0.0));
-        assert_eq!(b.border, None);
-        assert_eq!(b.hairlines.len(), 0);
+    fn a_role_round_trips_through_its_table_key() {
+        for role in Role::ALL {
+            assert_eq!(Role::parse(role.name()), Some(role));
+        }
+        assert_eq!(Role::parse("nonsense"), None);
     }
 
     #[test]
     fn a_wash_resolves_off_the_table() {
         let m = crate::table();
-        assert_eq!(wash(m, "hover", &ctx("dark")), "role:foreground@0.15");
-        assert_eq!(wash(m, "hover", &ctx("light")), "role:foreground@0.15");
-        assert_eq!(wash(m, "filledPress", &ctx("dark")), "role:background@0.18");
-        assert_eq!(wash(m, "nonsense", &ctx("dark")), CLEAR);
+        assert_eq!(show(wash(m, "hover", &ctx("dark"))), "role:foreground@0.15");
+        assert_eq!(show(wash(m, "hover", &ctx("light"))), "role:foreground@0.15");
+        assert_eq!(show(wash(m, "filledPress", &ctx("dark"))), "role:background@0.18");
+        assert_eq!(show(wash(m, "nonsense", &ctx("dark"))), CLEAR);
     }
 
     // --- The window
@@ -1321,8 +1367,8 @@ pub(crate) mod tests {
     #[test]
     fn every_table_declares_a_window_hyprland_can_draw() {
         for (name, style) in tables() {
-            let focused = entry(style, "window", Some("rest")).unwrap();
-            let backdrop = entry(style, "window", Some("inactive")).unwrap();
+            let focused = entry(style, Role::Window, Some("rest")).unwrap();
+            let backdrop = entry(style, Role::Window, Some("inactive")).unwrap();
 
             let border = focused.get("border").expect("a window frame");
             let width = border["width"].as_f64().unwrap();
@@ -1349,7 +1395,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_window_is_elementarys_shadow() {
-        let focused = entry(crate::table(), "window", Some("rest")).unwrap();
+        let focused = entry(crate::table(), Role::Window, Some("rest")).unwrap();
         assert_eq!(focused["border"]["color"], "border");
         assert_eq!(focused["border"]["width"], 1);
         assert_eq!(focused["shadow"]["enabled"], true);
@@ -1357,7 +1403,7 @@ pub(crate) mod tests {
         assert_eq!(focused["shadow"]["renderPower"], 3);
         assert_eq!(focused["shadow"]["offset"][1], 6);
         assert_eq!(focused["shadow"]["alpha"], 0.35);
-        assert_eq!(entry(crate::table(), "window", Some("inactive")).unwrap()["shadow"]["alpha"], 0.25);
+        assert_eq!(entry(crate::table(), Role::Window, Some("inactive")).unwrap()["shadow"]["alpha"], 0.25);
     }
 
     #[test]

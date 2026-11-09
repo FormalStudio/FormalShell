@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use fs_chrome::bar::workspaces::{self, SlotOpts};
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use fs_types::{WindowId, WorkspaceId};
@@ -148,7 +149,7 @@ pub struct Map {
 impl Map {
     /// The rows for `output` off the compositor's snapshot, the icons at
     /// `scale`.
-    pub fn read(&mut self, store: &Store, output: &str, theme: &Theme, scale: f64) {
+    pub fn read(&mut self, store: &Store, output: &str, scale: f64) {
         let c = &store.compositor.snapshot;
         let slots = workspaces::slots(&c.workspaces, &c.windows, output, SlotOpts { persistent: 0, max_icons: MAX });
         self.cols = c
@@ -157,7 +158,7 @@ impl Map {
             .filter(|w| !w.is_floating && c.workspaces.iter().any(|ws| ws.id == w.workspace_id && ws.columns))
             .filter_map(|w| Some((w.id.clone(), w.rect.as_ref()?.x)))
             .collect();
-        let size = icon_size(theme).round() as u32;
+        let size = icon_size().round() as u32;
         let queries: Vec<appicon::Query> = slots
             .iter()
             .flat_map(|s| &s.windows)
@@ -321,7 +322,7 @@ impl Map {
     }
 
     pub fn view(&self, theme: &Theme, _now: Instant) -> El {
-        let g = Geo::of(theme);
+        let g = Geo::of();
         let target = self.drag.as_ref().filter(|d| d.lifted).and_then(|d| d.target).map(|t| t.0);
         let shown = self.shown();
         let last = shown.len() - 1;
@@ -517,8 +518,8 @@ impl Map {
         let ms = Clock::Spatial.ms(theme) * kit.motion_scale;
         let lifted = self.drag.as_ref().filter(|d| d.lifted).map(|d| (d.id.clone(), d.at));
         self.glides.retain(|id, _| self.slots.contains_key(id) || lifted.as_ref().is_some_and(|l| &l.0 == id));
-        let fg = theme.colors.get("foreground");
-        let g = Geo::of(theme);
+        let fg = theme.colors.get(ColorRole::Foreground);
+        let g = Geo::of();
         let mut nodes = std::mem::take(&mut self.nodes);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
         if self.rail {
@@ -527,7 +528,7 @@ impl Map {
             self.pills(&mut p, kit, theme, &g, card, right);
         }
         let ring = super::outline(theme);
-        let focus = theme.colors.get("ring");
+        let focus = theme.colors.get(ColorRole::Ring);
         let at = self.cursor.as_ref().and_then(|c| c.window.as_ref()).map(|id| format!("window:{id}"));
         let d = g.slot.round() as i32;
         for h in hits.iter().filter(|h| h.rect.w == h.rect.h && h.rect.w <= d && h.on.as_deref().is_some_and(on_map)) {
@@ -553,11 +554,11 @@ impl Map {
             // the circle filled, its ring the wallpaper colour.
             let d = g.slot.round() as i32;
             let (cx, cy) = (at.0.round() as i32, at.1.round() as i32);
-            let shadow = theme.colors.get("shadow");
+            let shadow = Rgba::BLACK;
             let drop = (g.dot / 2.0).round() as i32;
             let spread = d + drop * 2;
             p.rect(IRect::new(cx + drop - spread / 2, cy + drop * 2 - spread / 2, spread, spread), shadow.with_alpha(0.35), spread as f32 / 2.0);
-            p.framed(IRect::new(cx - d / 2, cy - d / 2, d, d), theme.colors.get("popover"), d as f32 / 2.0, theme.colors.get("primary"), theme.border_width as f32);
+            p.framed(IRect::new(cx - d / 2, cy - d / 2, d, d), theme.colors.get(ColorRole::Popover), d as f32 / 2.0, theme.colors.get(ColorRole::Primary), theme.border_width as f32);
             let icon = self.win(&id).and_then(|w| w.icon.clone());
             draw_icon(&mut p, kit, icon.as_ref(), at, LIFT_SCALE, 1.0, fg);
             // It lands from where it was let go.
@@ -575,12 +576,12 @@ impl Map {
         let (pw, ph) = (g.pill.0.round() as i32, g.pill.1.round() as i32);
         let edge = if right { card.0 + card.1 } else { card.0 };
         let x = edge.round() as i32 - pw / 2;
-        let fg = theme.colors.get("foreground");
+        let fg = theme.colors.get(ColorRole::Foreground);
         let style = TextStyle { family: kit.look.sans, size: g.pill_words as f32, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
         for (i, r) in &self.row_boxes {
             let Some(row) = self.rows.get(*i) else { continue };
             let y = r.y + (r.h - ph) / 2;
-            p.framed(IRect::new(x, y, pw, ph), theme.colors.get("muted"), pw as f32 / 2.0, super::outline(theme), theme.border_width as f32);
+            p.framed(IRect::new(x, y, pw, ph), theme.colors.get(ColorRole::Muted), pw as f32 / 2.0, super::outline(theme), theme.border_width as f32);
             let t = kit.shape(&row.label, style);
             p.text(&t, (x + (pw - t.width) / 2, y + (ph - t.line_height()) / 2), fg, &[]);
         }
@@ -589,8 +590,8 @@ impl Map {
     /// Pond's collapsed rows: one per workspace and the empty one, each a
     /// plate (the current row's, else the hover's) whose number and window
     /// dots `paint` draws; the current row holds its windows' circles.
-    pub fn rail_view(&self, theme: &Theme) -> El {
-        let r = Geo::of(theme).rail;
+    pub fn rail_view(&self) -> El {
+        let r = Geo::of().rail;
         let shown = self.held();
         let last = shown.len() - 1;
         let rows = shown
@@ -627,7 +628,7 @@ impl Map {
     /// the hairline between rows.
     fn rail_marks(&self, p: &mut Painter, kit: &mut Kit, theme: &Theme, g: &Geo) {
         let r = &g.rail;
-        let fg = theme.colors.get("foreground");
+        let fg = theme.colors.get(ColorRole::Foreground);
         let style = TextStyle { family: kit.look.mono, size: r.words as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
         let cap = super::cap_height(r.words);
         let shown = self.held();
@@ -737,8 +738,8 @@ fn mean_colour(b: &Bitmap) -> Option<Rgba> {
 }
 
 /// An icon in its circle.
-fn icon_size(theme: &Theme) -> f64 {
-    Geo::of(theme).icon
+fn icon_size() -> f64 {
+    Geo::of().icon
 }
 
 /// One icon centred on `at`, `scale` about its centre.
@@ -863,7 +864,7 @@ fn row(theme: &Theme, g: &Geo, current: bool, lit: bool, ids: &[WindowId], row_o
         .iter()
         .map(|id| {
             if id.is_empty() {
-                return circle(theme.colors.get("muted"));
+                return circle(theme.colors.get(ColorRole::Muted));
             }
             circle(Rgba::TRANSPARENT).on(format!("window:{id}")).stop(format!("w:{id}"))
         })
@@ -872,7 +873,7 @@ fn row(theme: &Theme, g: &Geo, current: bool, lit: bool, ids: &[WindowId], row_o
         slots.push(circle(Rgba::TRANSPARENT).on(row_on.to_owned()));
     }
     let lines = slots.len().div_ceil(ACROSS).max(1);
-    let dot = theme.colors.get("mutedForeground").with_alpha(0.3);
+    let dot = theme.colors.get(ColorRole::MutedForeground).with_alpha(0.3);
     let inset = (g.slot - g.dot) / 2.0;
     while slots.len() < lines * ACROSS {
         slots.push(w::dot(dot, g.dot).pad(inset, inset, inset, inset));

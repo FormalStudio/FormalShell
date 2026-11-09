@@ -11,6 +11,7 @@ pub mod record;
 use std::collections::HashMap;
 
 use fs_system::capture as model;
+use fs_theme::palette::ColorRole;
 use fs_types::Rect;
 use serde_json::json;
 
@@ -176,7 +177,7 @@ pub fn now() -> chrono::NaiveDateTime {
     chrono::Local::now().naive_local()
 }
 
-fn hex(app: &App, role: &str, alpha: &str) -> String {
+fn hex(app: &App, role: ColorRole, alpha: &str) -> String {
     format!("{}{alpha}", app.store.theme.theme.colors.get(role).to_hex())
 }
 
@@ -185,9 +186,9 @@ fn border_weight(app: &App) -> String {
 }
 
 /// slurp's chrome, resolved at call time so it follows matugen.
-fn slurp_run(app: &App, job: Job, generation: u64, border_role: &str, script: &str) -> Run {
+fn slurp_run(app: &App, job: Job, generation: u64, border_role: ColorRole, script: &str) -> Run {
     Run::sh(job, generation, script)
-        .env("FS_SLURP_BG", hex(app, "background", "99"))
+        .env("FS_SLURP_BG", hex(app, ColorRole::Background, "99"))
         .env("FS_SLURP_BORDER", hex(app, border_role, "FF"))
         .env("FS_SLURP_SEL", "#00000000")
         .env("FS_SLURP_WEIGHT", border_weight(app))
@@ -230,7 +231,7 @@ pub fn shot_start(app: &mut App, region: bool, processing: &str) -> String {
     if region {
         let g = app.capture.generation();
         app.capture.shot.slurp = Some(g);
-        spawn(app, slurp_run(app, Job::ShotSlurp, g, "primary", SLURP_REGION));
+        spawn(app, slurp_run(app, Job::ShotSlurp, g, ColorRole::Primary, SLURP_REGION));
         shot_watchdog(app);
     } else {
         shot_grab(app, "");
@@ -739,7 +740,7 @@ pub fn grab_start(app: &mut App, mode: &str, geometry: &str) -> String {
     };
     let g_ = app.capture.generation();
     app.capture.grab.slurp = Some(g_);
-    spawn(app, slurp_run(app, Job::GrabSlurp, g_, "primary", script));
+    spawn(app, slurp_run(app, Job::GrabSlurp, g_, ColorRole::Primary, script));
     grab_watchdog(app);
     "ok".into()
 }

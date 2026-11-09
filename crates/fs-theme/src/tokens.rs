@@ -20,10 +20,6 @@ pub const FONT_MULTIPLIERS: [(&str, f64); 8] = [
     ("displayLarge", 2.333),
 ];
 
-pub fn font_scale(base_size: f64) -> f64 {
-    base_size / 13.0
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FontTokens {
     pub base_size: f64,
@@ -37,7 +33,9 @@ pub struct FontTokens {
     pub display_large: f64,
 }
 
-pub fn font_tokens(base_size: f64) -> FontTokens {
+/// The type ramp at the body size the shell runs at.
+pub fn font_tokens() -> FontTokens {
+    let base_size = 13.0;
     let at = |name: &str| {
         let (_, m) = FONT_MULTIPLIERS.iter().find(|(k, _)| *k == name).expect("every FontTokens field has a ratio");
         fs_js::round(base_size * m)
@@ -55,234 +53,83 @@ pub fn font_tokens(base_size: f64) -> FontTokens {
     }
 }
 
-/// libadwaita's grid of 3 and 6, `xxs` aside.
-pub const SPACING_BASE: [(&str, f64); 8] = [
-    ("xxs", 2.0),
-    ("xs", 3.0),
-    ("sm", 6.0),
-    ("md", 9.0),
-    ("lg", 12.0),
-    ("xl", 18.0),
-    ("xxl", 24.0),
-    ("huge", 36.0),
-];
+/// Every spacing token at the one scale the shell runs at: libadwaita's
+/// grid of 3 and 6 (`xxs` aside), then the semantic tokens. The struct, its
+/// string lookup and its values come from this one list.
+macro_rules! spacing {
+    ($($field:ident $name:literal $value:literal,)*) => {
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        pub struct Space {
+            $(pub $field: f64,)*
+        }
 
-pub const SEMANTIC_SPACING_BASE: [(&str, f64); 40] = [
-    ("controlGap", 6.0),
-    ("controlPaddingX", 10.0),
-    ("controlPaddingY", 5.0),
-    ("controlHeight", 34.0),
-    ("barCellHeight", 28.0),
-    ("barCellWidth", 44.0),
-    ("barMargin", 6.0),
-    ("popupRowHeight", 32.0),
-    ("rowGap", 4.0),
-    ("iconGap", 6.0),
-    ("panelPadding", 12.0),
-    ("sectionGap", 18.0),
-    ("screenPadding", 12.0),
-    ("trackThickness", 6.0),
-    ("popupWidthNarrow", 320.0),
-    ("popupWidthDefault", 380.0),
-    ("popupWidthWide", 480.0),
-    ("popupWidthMenu", 560.0),
-    ("popupWidthMenuSplit", 840.0),
-    ("popupWidthMenuApp", 900.0),
-    ("popupWidthBubble", 332.0),
-    ("popupHeightMenu", 520.0),
-    ("popupHeightMenuSplit", 462.0),
-    ("popupHeightMenuApp", 720.0),
-    ("switcherThumb", 128.0),
-    ("switcherInset", 64.0),
-    ("keycapHeight", 20.0),
-    ("sidebarWidth", 154.0),
-    ("sidebarRail", 60.0),
+        impl Space {
+            pub const TOKENS: Self = Self { $($field: $value,)* };
+
+            /// A token by its tokens.js name, for the readers (IPC dumps, tests)
+            /// that address them by string.
+            pub fn get(&self, name: &str) -> Option<f64> {
+                match name {
+                    $($name => Some(self.$field),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+spacing! {
+    xxs "xxs" 2.0,
+    xs "xs" 3.0,
+    sm "sm" 6.0,
+    md "md" 9.0,
+    lg "lg" 12.0,
+    xl "xl" 18.0,
+    xxl "xxl" 24.0,
+    huge "huge" 36.0,
+    control_gap "controlGap" 6.0,
+    control_padding_x "controlPaddingX" 10.0,
+    control_padding_y "controlPaddingY" 5.0,
+    control_height "controlHeight" 34.0,
+    bar_cell_height "barCellHeight" 28.0,
+    bar_cell_width "barCellWidth" 44.0,
+    bar_margin "barMargin" 6.0,
+    popup_row_height "popupRowHeight" 32.0,
+    row_gap "rowGap" 4.0,
+    icon_gap "iconGap" 6.0,
+    panel_padding "panelPadding" 12.0,
+    section_gap "sectionGap" 18.0,
+    screen_padding "screenPadding" 12.0,
+    track_thickness "trackThickness" 6.0,
+    popup_width_narrow "popupWidthNarrow" 320.0,
+    popup_width_default "popupWidthDefault" 380.0,
+    popup_width_wide "popupWidthWide" 480.0,
+    popup_width_menu "popupWidthMenu" 560.0,
+    popup_width_menu_split "popupWidthMenuSplit" 840.0,
+    popup_width_menu_app "popupWidthMenuApp" 900.0,
+    popup_width_bubble "popupWidthBubble" 332.0,
+    popup_height_menu "popupHeightMenu" 520.0,
+    popup_height_menu_split "popupHeightMenuSplit" 462.0,
+    popup_height_menu_app "popupHeightMenuApp" 720.0,
+    switcher_thumb "switcherThumb" 128.0,
+    switcher_inset "switcherInset" 64.0,
+    keycap_height "keycapHeight" 20.0,
+    sidebar_width "sidebarWidth" 154.0,
+    sidebar_rail "sidebarRail" 60.0,
     // The panel language's 4px grid (specs/2026-10-30-panel-language.md §2),
     // Pond's numbers rounded onto it.
-    ("panelInset", 20.0),
-    ("panelRowInset", 8.0),
-    ("panelRow", 44.0),
-    ("panelRowCompact", 40.0),
-    ("panelGap", 8.0),
-    ("panelSection", 16.0),
-    ("panelIcon", 20.0),
-    ("panelMark", 16.0),
-    ("panelWidth", 320.0),
-    ("panelWidthWide", 400.0),
+    panel_inset "panelInset" 20.0,
+    panel_row_inset "panelRowInset" 8.0,
+    panel_row "panelRow" 44.0,
+    panel_row_compact "panelRowCompact" 40.0,
+    panel_gap "panelGap" 8.0,
+    panel_section "panelSection" 16.0,
+    panel_icon "panelIcon" 20.0,
+    panel_mark "panelMark" 16.0,
+    panel_width "panelWidth" 320.0,
+    panel_width_wide "panelWidthWide" 400.0,
     // The wallpaper picker's narrowest 16:9 tile; columns are as many as fit.
-    ("pickerTile", 180.0),
-];
-
-/// `spacingTokens(scale)`: every scale step and semantic spacing token,
-/// rounded at the given scale.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Space {
-    pub xxs: f64,
-    pub xs: f64,
-    pub sm: f64,
-    pub md: f64,
-    pub lg: f64,
-    pub xl: f64,
-    pub xxl: f64,
-    pub huge: f64,
-    pub control_gap: f64,
-    pub control_padding_x: f64,
-    pub control_padding_y: f64,
-    pub control_height: f64,
-    pub bar_cell_height: f64,
-    pub bar_cell_width: f64,
-    pub bar_margin: f64,
-    pub popup_row_height: f64,
-    pub row_gap: f64,
-    pub icon_gap: f64,
-    pub panel_padding: f64,
-    pub section_gap: f64,
-    pub screen_padding: f64,
-    pub track_thickness: f64,
-    pub popup_width_narrow: f64,
-    pub popup_width_default: f64,
-    pub popup_width_wide: f64,
-    pub popup_width_menu: f64,
-    pub popup_width_menu_split: f64,
-    pub popup_width_menu_app: f64,
-    pub popup_width_bubble: f64,
-    pub popup_height_menu: f64,
-    pub popup_height_menu_split: f64,
-    pub popup_height_menu_app: f64,
-    pub switcher_thumb: f64,
-    pub switcher_inset: f64,
-    pub keycap_height: f64,
-    pub sidebar_width: f64,
-    pub sidebar_rail: f64,
-    pub panel_inset: f64,
-    pub panel_row_inset: f64,
-    pub panel_row: f64,
-    pub panel_row_compact: f64,
-    pub panel_gap: f64,
-    pub panel_section: f64,
-    pub panel_icon: f64,
-    pub panel_mark: f64,
-    pub panel_width: f64,
-    pub panel_width_wide: f64,
-    pub picker_tile: f64,
-}
-
-impl Space {
-    /// A token by its tokens.js name, for the readers (IPC dumps, tests)
-    /// that address them by string.
-    pub fn get(&self, name: &str) -> Option<f64> {
-        Some(match name {
-            "xxs" => self.xxs,
-            "xs" => self.xs,
-            "sm" => self.sm,
-            "md" => self.md,
-            "lg" => self.lg,
-            "xl" => self.xl,
-            "xxl" => self.xxl,
-            "huge" => self.huge,
-            "controlGap" => self.control_gap,
-            "controlPaddingX" => self.control_padding_x,
-            "controlPaddingY" => self.control_padding_y,
-            "controlHeight" => self.control_height,
-            "barCellHeight" => self.bar_cell_height,
-            "barCellWidth" => self.bar_cell_width,
-            "barMargin" => self.bar_margin,
-            "popupRowHeight" => self.popup_row_height,
-            "rowGap" => self.row_gap,
-            "iconGap" => self.icon_gap,
-            "panelPadding" => self.panel_padding,
-            "sectionGap" => self.section_gap,
-            "screenPadding" => self.screen_padding,
-            "trackThickness" => self.track_thickness,
-            "popupWidthNarrow" => self.popup_width_narrow,
-            "popupWidthDefault" => self.popup_width_default,
-            "popupWidthWide" => self.popup_width_wide,
-            "popupWidthMenu" => self.popup_width_menu,
-            "popupWidthMenuSplit" => self.popup_width_menu_split,
-            "popupWidthMenuApp" => self.popup_width_menu_app,
-            "popupWidthBubble" => self.popup_width_bubble,
-            "popupHeightMenu" => self.popup_height_menu,
-            "popupHeightMenuSplit" => self.popup_height_menu_split,
-            "popupHeightMenuApp" => self.popup_height_menu_app,
-            "switcherThumb" => self.switcher_thumb,
-            "switcherInset" => self.switcher_inset,
-            "keycapHeight" => self.keycap_height,
-            "sidebarWidth" => self.sidebar_width,
-            "sidebarRail" => self.sidebar_rail,
-            "panelInset" => self.panel_inset,
-            "panelRowInset" => self.panel_row_inset,
-            "panelRow" => self.panel_row,
-            "panelRowCompact" => self.panel_row_compact,
-            "panelGap" => self.panel_gap,
-            "panelSection" => self.panel_section,
-            "panelIcon" => self.panel_icon,
-            "panelMark" => self.panel_mark,
-            "panelWidth" => self.panel_width,
-            "panelWidthWide" => self.panel_width_wide,
-            "pickerTile" => self.picker_tile,
-            _ => return None,
-        })
-    }
-}
-
-/// A spacing token's value at scale 1.
-pub fn spacing_base(name: &str) -> f64 {
-    let (_, v) = SPACING_BASE.iter().chain(SEMANTIC_SPACING_BASE.iter()).find(|(k, _)| *k == name).expect("every Space field has a base");
-    *v
-}
-
-pub fn spacing_tokens(scale: f64) -> Space {
-    let s = |name: &str| fs_js::round(spacing_base(name) * scale);
-    Space {
-        xxs: s("xxs"),
-        xs: s("xs"),
-        sm: s("sm"),
-        md: s("md"),
-        lg: s("lg"),
-        xl: s("xl"),
-        xxl: s("xxl"),
-        huge: s("huge"),
-        control_gap: s("controlGap"),
-        control_padding_x: s("controlPaddingX"),
-        control_padding_y: s("controlPaddingY"),
-        control_height: s("controlHeight"),
-        bar_cell_height: s("barCellHeight"),
-        bar_cell_width: s("barCellWidth"),
-        bar_margin: s("barMargin"),
-        popup_row_height: s("popupRowHeight"),
-        row_gap: s("rowGap"),
-        icon_gap: s("iconGap"),
-        panel_padding: s("panelPadding"),
-        section_gap: s("sectionGap"),
-        screen_padding: s("screenPadding"),
-        track_thickness: s("trackThickness"),
-        popup_width_narrow: s("popupWidthNarrow"),
-        popup_width_default: s("popupWidthDefault"),
-        popup_width_wide: s("popupWidthWide"),
-        popup_width_menu: s("popupWidthMenu"),
-        popup_width_menu_split: s("popupWidthMenuSplit"),
-        popup_width_menu_app: s("popupWidthMenuApp"),
-        popup_width_bubble: s("popupWidthBubble"),
-        popup_height_menu: s("popupHeightMenu"),
-        popup_height_menu_split: s("popupHeightMenuSplit"),
-        popup_height_menu_app: s("popupHeightMenuApp"),
-        switcher_thumb: s("switcherThumb"),
-        switcher_inset: s("switcherInset"),
-        keycap_height: s("keycapHeight"),
-        sidebar_width: s("sidebarWidth"),
-        sidebar_rail: s("sidebarRail"),
-        panel_inset: s("panelInset"),
-        panel_row_inset: s("panelRowInset"),
-        panel_row: s("panelRow"),
-        panel_row_compact: s("panelRowCompact"),
-        panel_gap: s("panelGap"),
-        panel_section: s("panelSection"),
-        panel_icon: s("panelIcon"),
-        panel_mark: s("panelMark"),
-        panel_width: s("panelWidth"),
-        panel_width_wide: s("panelWidthWide"),
-        picker_tile: s("pickerTile"),
-    }
+    picker_tile "pickerTile" 180.0,
 }
 
 /// The launcher's counts and shares, unscaled.
@@ -325,9 +172,7 @@ pub struct LetterSpacing {
     pub display: f64,
 }
 
-pub fn letter_spacing_tokens(scale: f64) -> LetterSpacing {
-    LetterSpacing { meta: fs_js::round(scale), wide: fs_js::round(2.0 * scale), display: fs_js::round(6.0 * scale) }
-}
+pub const LETTER_SPACING: LetterSpacing = LetterSpacing { meta: 1.0, wide: 2.0, display: 6.0 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Weights {
@@ -497,14 +342,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn font_scale_is_base_over_thirteen() {
-        assert_eq!(font_scale(13.0), 1.0);
-        assert_eq!(font_scale(26.0), 2.0);
-    }
-
-    #[test]
     fn font_tokens_at_default_base_match_design_doc_table() {
-        let f = font_tokens(13.0);
+        let f = font_tokens();
         assert_eq!(f.caption, 11.0);
         assert_eq!(f.body_small, 11.0);
         assert_eq!(f.body, 13.0);
@@ -516,17 +355,8 @@ mod tests {
     }
 
     #[test]
-    fn font_tokens_rescale_proportionally_with_base_size() {
-        let f = font_tokens(16.0);
-        assert_eq!(f.base_size, 16.0);
-        assert_eq!(f.body, 16.0);
-        assert_eq!(f.caption, fs_js::round(16.0 * 0.82));
-        assert_eq!(f.display, fs_js::round(16.0 * 1.81));
-    }
-
-    #[test]
     fn spacing_tokens_at_scale_one_are_the_adwaita_grid() {
-        let s = spacing_tokens(1.0);
+        let s = Space::TOKENS;
         assert_eq!(
             [s.xxs, s.xs, s.sm, s.md, s.lg, s.xl, s.xxl, s.huge],
             [2.0, 3.0, 6.0, 9.0, 12.0, 18.0, 24.0, 36.0]
@@ -536,7 +366,7 @@ mod tests {
 
     #[test]
     fn semantic_spacing_tokens_match_the_adwaita_table() {
-        let s = spacing_tokens(1.0);
+        let s = Space::TOKENS;
         assert_eq!(s.control_height, 34.0);
         assert_eq!(s.control_padding_x, 10.0);
         assert_eq!(s.control_padding_y, 5.0);
@@ -556,16 +386,6 @@ mod tests {
         assert_eq!(s.popup_width_menu, 560.0);
         assert_eq!(s.popup_width_menu_split, 840.0);
         assert_eq!(s.popup_width_menu_app, 900.0);
-    }
-
-    #[test]
-    fn spacing_tokens_rescale_with_scale_factor() {
-        let s = spacing_tokens(2.0);
-        assert_eq!(s.sm, 12.0);
-        assert_eq!(s.panel_padding, 24.0);
-        assert_eq!(s.track_thickness, 12.0);
-        assert_eq!(s.control_height, 68.0);
-        assert_eq!(s.bar_margin, 12.0);
     }
 
     #[test]
@@ -636,18 +456,6 @@ mod tests {
     #[test]
     fn clamp_accepts_a_numeric_string() {
         assert_eq!(clamp(Some(&json!("0.5")), 0.0, 1.0, 0.85), 0.5);
-    }
-
-    #[test]
-    fn letter_spacing_tokens_at_scale_one() {
-        let l = letter_spacing_tokens(1.0);
-        assert_eq!((l.meta, l.wide, l.display), (1.0, 2.0, 6.0));
-    }
-
-    #[test]
-    fn letter_spacing_tokens_rescale_with_font_scale() {
-        let l = letter_spacing_tokens(2.0);
-        assert_eq!((l.meta, l.wide, l.display), (2.0, 4.0, 12.0));
     }
 
     #[test]

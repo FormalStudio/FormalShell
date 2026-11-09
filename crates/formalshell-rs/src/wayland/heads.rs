@@ -15,6 +15,7 @@
 //! catcher leaves that output's bar strip out of its input, so a press there
 //! still reaches its cell, once the live bar's cards are gone.
 
+use fs_theme::palette::ColorRole;
 use std::time::Instant;
 
 use fs_types::Edge;
@@ -382,7 +383,7 @@ impl App {
     pub(super) fn update_backdrops(&mut self) {
         let theme = &self.store.theme.theme;
         let dither = theme.wallpaper_dither.then(|| self.store.config.f64("wallpaper.ditherColors").unwrap_or(6.0).max(1.0) as usize);
-        let background = theme.colors.get("background");
+        let background = theme.colors.get(ColorRole::Background);
         let wanted = &self.store.desktop();
         let reveal = theme.motion().families.reveal * self.motion_scale;
         let animate = crate::settings::WALLPAPER_ANIMATE.get(&self.store.config);
@@ -440,7 +441,7 @@ impl App {
             let Some(word) = &word else { continue };
             let Some((w, h)) = b.pixels() else { continue };
             let picture = self.store.wallpaper.sized(w as u32, h as u32).filter(|p| p.path == *wanted);
-            let base = picture.and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get("background"));
+            let base = picture.and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get(ColorRole::Background));
             let look = crate::shards::Look::new(theme, base, word.clone(), 1.0);
             let grid = theme.wallpaper_grid.then(|| crate::services::wallpaper::grid(theme, b.scale()));
             let running = b.sync_shards(look, grid, run, now, qh);

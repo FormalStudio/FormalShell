@@ -10,6 +10,7 @@
 use std::time::{Duration, Instant};
 
 use fs_types::Edge;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::compositor::{CompositorState, Region};
 use smithay_client_toolkit::reexports::client::QueueHandle;
@@ -120,7 +121,7 @@ impl Modal {
         let (edge, inset, ends) = make.chrome.modal_ends();
         // The scrim's alpha rides in its pixel, under the modal namespaces'
         // `ignore_alpha`, so it only darkens and the card alone is blurred.
-        let tone = f64::from(theme.box_style("scrim", None).fill.a);
+        let tone = f64::from(theme.box_style(Role::Scrim, None).fill.a);
         let band = (inset > 0.0).then(|| {
             let size = if edge.is_vertical() { (inset as u32, 0) } else { (0, inset as u32) };
             let ls = make.layer(namespace, layer, crate::wayland::edge_anchor(edge), size);

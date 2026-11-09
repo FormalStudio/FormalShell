@@ -17,6 +17,7 @@ use std::time::Instant;
 use fs_types::{Edge, Insets};
 use fs_info::notifications::PositionSpec;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 use vello_cpu::kurbo::Rect;
@@ -628,7 +629,7 @@ impl Host {
             let mut p = Painter::new(scene, &mut self.rule_nodes, Some(clip));
             let (sx, sw) = ((fx + s.panel_inset).round() as i32, (fw - s.panel_inset * 2.0).max(0.0).round() as i32);
             let seam = IRect::new(sx, (fy + f.rule(theme)).round() as i32, sw, theme.border_width.round().max(1.0) as i32);
-            let sep = theme.box_style("separator", None).fill;
+            let sep = theme.box_style(Role::Separator, None).fill;
             p.rect(seam, sep.with_alpha(sep.a * alpha), 0.0);
             p.finish();
         } else {
@@ -680,7 +681,7 @@ impl Host {
                 let sp = cr.spread;
                 let row = Rect::new(origin.0 + x, origin.1 + y, origin.0 + x + w, origin.1 + y + h);
                 let rect = row.inflate(sp, sp);
-                let fill = theme.box_style("cursor", None).fill;
+                let fill = theme.box_style(Role::Cursor, None).fill;
                 let mut p = Painter::new(&mut self.win.card.scene, &mut self.halo_nodes, Some(body_clip));
                 p.rect(ui::irect(rect), cr.color.with_alpha(cr.color.a * alpha), (st.radius + sp) as f32);
                 p.rect(ui::irect(row), fill.with_alpha(fill.a * alpha), st.radius as f32);

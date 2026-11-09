@@ -19,7 +19,9 @@ use std::time::Instant;
 
 use fs_types::Edge;
 use fs_info::clock::format_qt;
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;
@@ -129,9 +131,8 @@ pub struct Rail {
 }
 
 impl Geo {
-    pub fn of(theme: &Theme) -> Self {
-        let k = theme.space.sidebar_width / fs_theme::tokens::spacing_base("sidebarWidth");
-        let p = |v: f64| (v * k).round();
+    pub fn of() -> Self {
+        let p = |v: f64| v.round();
         Self {
             margin: p(9.0),
             gap: p(5.0),
@@ -159,7 +160,7 @@ impl Geo {
             plate_inset: p(4.0),
             pill: (p(12.0), p(17.0)),
             pill_words: p(10.0),
-            rail: Rail::of(&|v| (v * 0.875 * k).round()),
+            rail: Rail::of(&|v| (v * 0.875).round()),
         }
     }
 }
@@ -196,7 +197,7 @@ impl Rail {
 /// The hairline round a window's circle, the date box and a row's number:
 /// Pond's inner outline, a tenth of the ink over the card.
 pub fn outline(theme: &Theme) -> Rgba {
-    let fg = theme.colors.get("foreground");
+    let fg = theme.colors.get(ColorRole::Foreground);
     fg.with_alpha(fg.a * 0.14)
 }
 
@@ -304,7 +305,7 @@ impl Sidebar {
         now: Instant,
     ) {
         let theme = &store.theme.theme;
-        let g = Geo::of(theme);
+        let g = Geo::of();
         let pad = g.margin;
         let width = (strip.w as f64 - pad * 2.0).max(1.0);
         let (x0, y0) = (strip.x as f64 + pad, strip.y as f64 + pad);
@@ -313,7 +314,7 @@ impl Sidebar {
         self.foot.motion_scale = kit.motion_scale;
         self.collapsed = collapsed;
         self.map.rail = collapsed;
-        self.map.read(store, output, theme, raster);
+        self.map.read(store, output, raster);
         self.strip = strip;
         self.fit_icons(store, &g, raster);
 
@@ -324,7 +325,7 @@ impl Sidebar {
         let art = if collapsed { g.rail.art } else { g.art };
         let (cover, motion) = store.media.active().map(|a| motion_art::chrome_cover(store, &a, art, raster)).unwrap_or_default();
         let build = |map: &minimap::Map, kit: &mut Kit| {
-            if collapsed { rail(theme, store, map, &g, &cover) } else { cards(theme, store, map, &g, &cover, &self.icons, width, kit, now) }
+            if collapsed { rail(store, map, &g, &cover) } else { cards(theme, store, map, &g, &cover, &self.icons, width, kit, now) }
         };
         // Measured whole first: every row, from the top.
         let want = self.map.first;
@@ -640,13 +641,13 @@ const FIGURE: f64 = 0.7;
 /// on battery, centred in `band`.
 fn battery_line(p: &mut Painter, theme: &Theme, g: &Geo, b: &crate::services::devices::power::Battery, band: IRect) {
     use fs_upower::DeviceState;
-    let fg = theme.colors.get("foreground");
+    let fg = theme.colors.get(ColorRole::Foreground);
     let charging = matches!(b.state, DeviceState::Charging | DeviceState::FullyCharged | DeviceState::PendingCharge);
     let low = !charging && fs_system::power::model::Thresholds::LAPTOP.low(b.level).is_some();
     let fill = if charging {
-        theme.colors.get("primary")
+        theme.colors.get(ColorRole::Primary)
     } else if low {
-        theme.colors.get("destructive")
+        theme.colors.get(ColorRole::Destructive)
     } else {
         fg.with_alpha(fg.a * 0.7)
     };
@@ -665,7 +666,7 @@ impl ClockCard {
     fn paint(&mut self, p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect, scale: f64) {
         let started = Instant::now();
         let theme = &store.theme.theme;
-        let fg = theme.colors.get("foreground");
+        let fg = theme.colors.get(ColorRole::Foreground);
         let clock = store.clock.now;
         let b = g.date_box as i32;
         let (bx, by) = (card.right() - g.date_inset as i32 - b, card.y + (card.h - b) / 2);
@@ -691,7 +692,7 @@ impl ClockCard {
         let top = (f64::from(card.y) + (f64::from(card.h) - digit_h) / 2.0).round();
         let x = f64::from(card.x) + g.time_x;
         // `auto` reads what is behind the digits, which here is the card.
-        let ink = face.ink(store).unwrap_or_else(|| glass::auto_ink(theme.box_style("card", None).fill.luma601()));
+        let ink = face.ink(store).unwrap_or_else(|| glass::auto_ink(theme.box_style(Role::Card, None).fill.luma601()));
         self.rect = self.glass.paint(p, digits, &face, (x, top), digit_h, scale, ink, self.under.as_ref(), card);
         if let Some(t) = shaped {
             let baseline = (top + digit_h) as i32;
@@ -780,7 +781,7 @@ fn notifications(theme: &Theme, store: &Store, g: &Geo, icons: &HashMap<String, 
     let fit = ((room - head - g.spacing * 2.0 - theme.border_width + g.spacing) / (g.glyph + g.spacing)).floor().max(0.0) as usize;
     let mut row = vec![w::row(s.xxs, vec![bell, w::caption(count).weight(Weight::Medium).ink(Ink::Muted)])];
     if fit > 0 && !apps.is_empty() {
-        row.push(w::swatch(theme.colors.get("border"), theme.border_width, g.glyph, 0.0));
+        row.push(w::swatch(theme.colors.get(ColorRole::Border), theme.border_width, g.glyph, 0.0));
         for (i, (_, b)) in apps.into_iter().take(fit).enumerate() {
             let pic = w::picture(Some(b), g.glyph);
             row.push(if i == 0 { pic } else { pic.fade(0.4) });
@@ -871,12 +872,12 @@ fn rail_foot(edge: Edge, g: &Geo) -> El {
 /// The rail's cards, Pond's collapsed column: the time card (painted over
 /// by `rail_clock`), the workspace rows, the art while a player plays, the
 /// bell, and a ring per running group.
-fn rail(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> Vec<(&'static str, El)> {
+fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> Vec<(&'static str, El)> {
     let r = &g.rail;
     let bare = |c: &mut crate::ui::el::CellState| c.inset = Some((0.0, 0.0));
     let square = |child: El| w::cell(w::column(0.0, vec![child.centred()]).fill()).ghost().cell_state(bare).height(r.square).fill();
     let mut out = vec![("time", w::action_card(w::space(r.time_h), "panel:calendar").cell_state(bare).fill())];
-    out.push(("spaces", w::card(map.rail_view(theme)).cell_state(bare).fill()));
+    out.push(("spaces", w::card(map.rail_view()).cell_state(bare).fill()));
     if store.media.active().is_some() {
         out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), "panel:media").cell_state(bare).fill()));
     }
@@ -940,7 +941,7 @@ type Line = (String, f32);
 fn rail_clock(p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect) -> Vec<String> {
     let theme = &store.theme.theme;
     let r = &g.rail;
-    let fg = theme.colors.get("foreground");
+    let fg = theme.colors.get(ColorRole::Foreground);
     let style = TextStyle { family: kit.look.mono, size: r.words as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
     let cap = cap_height(r.words);
     let [time, date] = rail_lines(store);

@@ -18,9 +18,10 @@ use std::time::{Duration, Instant};
 use fs_chrome::bar::layout::{self, Entry, Label, Rails, Resolved};
 use fs_chrome::frame::{self, Gaps};
 use fs_types::{Edge, Insets, Region};
+use fs_theme::palette::ColorRole;
 use fs_theme::barpaint;
 use fs_theme::color::Rgba;
-use fs_theme::style::Glow;
+use fs_theme::style::{Glow, Role};
 use fs_theme::theme::{BarStyle, Theme};
 
 use crate::settings::Layout;
@@ -563,17 +564,17 @@ impl Bar {
         let pin = self.style.bar_style.pin();
         let fullscreen = store.compositor.snapshot.fullscreen_outputs.contains(&self.output);
         let stats = store.bar_paint.stats();
-        let [r, g, b, _] = theme.colors.get("background").to_u8();
+        let [r, g, b, _] = theme.colors.get(ColorRole::Background).to_u8();
         let blank = barpaint::Stats::flat([r, g, b]);
         let paint = Some(PaintState { paint: barpaint::decide(stats.as_ref(), &blank, fullscreen, pin), pin, fullscreen });
         let state = paint.as_ref().map(|p| p.paint.as_str());
-        let bar = theme.box_style("bar", state);
-        let ring = theme.box_style("frame", state);
+        let bar = theme.box_style(Role::Bar, state);
+        let ring = theme.box_style(Role::Frame, state);
         let line = ring.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
         let band_box = paint.as_ref().map(|_| (bar.ink, bar.ink_shadow.clone()));
         let bare_inks = paint.as_ref().map(|_| {
             [barpaint::Paint::Light, barpaint::Paint::Dark].map(|p| {
-                let b = theme.box_style("bar", Some(p.as_str()));
+                let b = theme.box_style(Role::Bar, Some(p.as_str()));
                 (b.ink, b.ink_shadow)
             })
         });

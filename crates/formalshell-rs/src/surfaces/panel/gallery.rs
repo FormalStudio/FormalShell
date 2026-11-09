@@ -4,6 +4,8 @@
 //! place of an auth prompt sample, which lands with the lock
 //! (R6), so every control a panel builds from is on the sheet.
 
+use fs_theme::palette::ColorRole;
+use fs_theme::style::Role;
 use fs_theme::color::Rgba;
 use fs_types::{Edge, Percent};
 use vello_cpu::kurbo::{Affine, Rect};
@@ -33,11 +35,11 @@ impl Widget for Shoulders {
     fn paint(&self, cx: &mut Cx, r: Rect, path: &str) {
         let Shoulders { edge, span, depth, run } = *self;
         let t = cx.theme;
-        let card = t.box_style("card", None);
+        let card = t.box_style(Role::Card, None);
         let radius = t.box_radius(&card, depth);
         let border = card.border.clone().map_or((Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width));
         let bw = t.border_width;
-        let sep = t.box_style("separator", None).fill;
+        let sep = t.box_style(Role::Separator, None).fill;
         let (fill, line, sep) = (cx.a(card.fill), cx.a(border.0), cx.a(sep));
         let paths = crate::paint::shoulders::paths(span + radius * 2.0, depth, radius, border.1, 1.0, 0.0);
         // Built for a top line, then turned onto the gallery's edge.
@@ -260,8 +262,8 @@ impl Panel for Gallery {
         )
         .pad_start(s.control_padding_x);
         let mut swatches = vec![w::panel_heading(s, "Color tokens")];
-        for key in fs_theme::palette::COLOR_KEYS {
-            let c = t.colors.get(key);
+        for role in ColorRole::ALL {
+            let (key, c) = (role.name(), t.colors.get(role));
             let row = w::row(
                 s.sm,
                 vec![w::swatch(c, s.xl + s.md, f.caption + s.sm, t.radii.sm), w::section_label(s, &format!("{key} {}", c.to_hex()), None, false)],
@@ -293,7 +295,7 @@ impl Panel for Gallery {
         for (name, px) in [("xxs", s.xxs), ("xs", s.xs), ("sm", s.sm), ("md", s.md), ("lg", s.lg), ("xl", s.xl), ("xxl", s.xxl), ("huge", s.huge)] {
             let row = w::row(
                 s.sm,
-                vec![w::section_label(s, &format!("{name} {px}"), None, false), w::swatch(t.colors.get("foreground"), px, f.caption, t.radii.sm)],
+                vec![w::section_label(s, &format!("{name} {px}"), None, false), w::swatch(t.colors.get(ColorRole::Foreground), px, f.caption, t.radii.sm)],
             );
             steps.push(w::cell(row).ghost());
         }

@@ -7,6 +7,8 @@
 use std::time::Instant;
 
 use fs_media::radio::model as rm;
+use fs_theme::palette::ColorRole;
+use fs_theme::style::Role;
 use fs_theme::icons;
 use fs_theme::theme::Theme;
 use vello_cpu::kurbo::{Affine, Rect};
@@ -165,7 +167,7 @@ impl Shown {
         let player_top = oy + chh - player_h;
         let player_rule = (player_top - p - bw).round();
 
-        let sep = theme.box_style("separator", None).fill;
+        let sep = theme.box_style(Role::Separator, None).fill;
         let sep = sep.with_alpha(sep.a * alpha);
         let mut rules = Painter::new(scene, &mut self.rules, Some(clip));
         let bwi = bw.round().max(1.0) as i32;
@@ -243,8 +245,8 @@ impl Shown {
         a.globe.rect = (ox, g_top, (map_right - p - ox).max(0.0), (g_bottom - g_top).max(0.0));
         a.globe.set_selected(r.station.clone().or_else(|| a.selected.clone()));
         a.globe.active_country = a.active_code.clone();
-        let c = |n: &str| theme.colors.get(n);
-        let ink = GlobeInk { sphere: c("background"), land: c("muted"), grid: c("border"), outline: c("mutedForeground"), signal: c("primary"), accent: c("primary"), radius: theme.radii.lg };
+        let c = |n: ColorRole| theme.colors.get(n);
+        let ink = GlobeInk { sphere: c(ColorRole::Background), land: c(ColorRole::Muted), grid: c(ColorRole::Border), outline: c(ColorRole::MutedForeground), signal: c(ColorRole::Primary), accent: c(ColorRole::Primary), radius: theme.radii.lg };
         let ops = a.globe.paint(&ink, alpha, self.modal.win.surface.scale());
         let (gx, gy, gw, gh) = a.globe.rect;
         let bounds = IRect::new(gx.floor() as i32, gy.floor() as i32, gw.ceil() as i32 + 1, gh.ceil() as i32 + 1);
@@ -258,7 +260,7 @@ impl Shown {
         match shown {
             Some(st) => {
                 let anchor = if a.globe.hovered.is_some() { a.globe.hover } else { a.globe.highlight };
-                let popover = theme.colors.get("popoverForeground");
+                let popover = theme.colors.get(ColorRole::PopoverForeground);
                 let label = format!("{}{}", if landing { "Landed near " } else { "" }, st.name);
                 let column = |elide: bool| {
                     let text = w::text(label.clone()).size(Type::BodySmall).ink(Ink::Color(popover));
@@ -279,7 +281,7 @@ impl Shown {
                 let tx = (gw - bw_ - s.md).min(s.md.max(anchor.0 + s.xl));
                 let ty = (gh - bh - s.md).min(s.md.max(anchor.1 + s.xl));
                 let rect = IRect::new((gx + tx).round() as i32, (gy + ty).round() as i32, bw_.round() as i32, bh.round() as i32);
-                let b = theme.box_style("popover", None);
+                let b = theme.box_style(Role::Popover, None);
                 let radius = theme.box_radius(&b, rect.h as f64) as f32;
                 let (border, width) = b.border.as_ref().map_or((fs_theme::color::Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width as f32));
                 let fade = |c: fs_theme::color::Rgba| c.with_alpha(c.a * alpha);

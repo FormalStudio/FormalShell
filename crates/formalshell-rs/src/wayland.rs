@@ -1150,7 +1150,7 @@ impl App {
         let anchor = anchor.unwrap_or(self.bar.length() as f64);
         menu.anchor = anchor;
         let size = Sizing::Card { size: oriented(menu.cap), anchor, length: self.bar.length() };
-        let mut card = Card::new(theme, CardSpec { role: "menu", ..CardSpec::new(edge, line_at, size) }, self.motion_scale, self.cast);
+        let mut card = Card::new(theme, CardSpec { role: fs_theme::style::Role::Menu, ..CardSpec::new(edge, line_at, size) }, self.motion_scale, self.cast);
         card.resize(now, anchor, self.bar.length(), pad, oriented(menu.height().min(menu.cap)));
         menu.morph.jump(menu.height().min(menu.cap));
         let surface = self.popout_surface(&card, Layer::Overlay);
@@ -2517,7 +2517,7 @@ fn join_preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::N
     let mut p = crate::paint::Painter::new(scene, nodes, None);
     if let Some((x, width)) = join {
         const DEPTH: f64 = 140.0;
-        let card = theme.box_style("card", None);
+        let card = theme.box_style(fs_theme::style::Role::Card, None);
         let radius = theme.card_radius();
         let (color, bw) = card.border.map_or((fs_theme::color::Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width));
         let paths = crate::paint::shoulders::paths(width + radius * 2.0, DEPTH, radius, bw, 1.0, 0.0);

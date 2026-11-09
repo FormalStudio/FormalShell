@@ -14,8 +14,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use fs_media::lyrics::{self as model, Line, RowBand, TextRow};
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
-use fs_theme::style::Glow;
+use fs_theme::style::{Glow, Role};
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::Kind as Clock;
@@ -206,7 +207,7 @@ impl Widget for Pane {
 fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
     let t = cx.theme;
     let s = t.space.clone();
-    let card = t.box_style("card", None);
+    let card = t.box_style(Role::Card, None);
     let radius = t.radii.md;
     let alpha = cx.alpha;
     {
@@ -218,8 +219,8 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
     }
     let pad = s.panel_padding;
     let label = cx.kit.shape("Lyrics", TextStyle { family: cx.kit.look.sans, size: t.font_size.caption as f32, weight: fs_theme::tokens::WEIGHTS.medium as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
-    let muted = t.colors.get("mutedForeground");
-    let fg = t.colors.get("foreground");
+    let muted = t.colors.get(ColorRole::MutedForeground);
+    let fg = t.colors.get(ColorRole::Foreground);
     {
         let at = ((r.x0 + pad).round() as i32, (r.y0 + pad).round() as i32);
         let mut p = cx.painter(&format!("{path}/label"));

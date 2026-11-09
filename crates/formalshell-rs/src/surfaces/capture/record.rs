@@ -7,6 +7,7 @@
 use std::time::Instant;
 
 use fs_system::capture as model;
+use fs_theme::palette::ColorRole;
 use fs_types::WindowId;
 use serde_json::json;
 
@@ -156,7 +157,7 @@ pub fn start(app: &mut App, scope: &str, audio: &str, max_height: Option<&str>) 
     if scope == "region" {
         let g = app.capture.generation();
         app.capture.rec.slurp = Some(g);
-        spawn(app, slurp_run(app, Job::RecSlurp, g, "destructive", SLURP_REGION));
+        spawn(app, slurp_run(app, Job::RecSlurp, g, ColorRole::Destructive, SLURP_REGION));
         let secs = settings::RECORDING_TIMEOUT_SECONDS.get(&app.store.config);
         app.capture.rec.region_watch += 1;
         let token = app.capture.rec.region_watch;

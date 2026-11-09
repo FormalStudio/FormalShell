@@ -17,7 +17,7 @@ Every value below comes off the live `Theme` (`fs-theme/src/theme.rs`), with
 the token maths in `fs-theme/src/tokens.rs`. A surface never writes a literal
 colour, radius, size or duration.
 
-**Color** (`theme.colors.get("<role>")`, the roles in
+**Color** (`theme.colors.get(ColorRole::<Role>)`, the roles in
 `fs-theme/src/palette.rs`): `background`, `foreground`, `card`,
 `cardForeground`, `popover`, `popoverForeground`, `primary`,
 `primaryForeground`, `secondary`, `secondaryForeground`, `muted`,

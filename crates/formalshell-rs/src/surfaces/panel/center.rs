@@ -10,6 +10,7 @@
 //! Finished Activity folds here (`surfaces/activity.rs`): an `Activity`
 //! section over the rest, the newest [`FOLDED`] rows and a `Clear`.
 
+use fs_theme::palette::ColorRole;
 use fs_info::notifications::{self as model, Group, Urgency};
 
 use super::{Effect, Panel, View};
@@ -57,7 +58,7 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     let mut head = Vec::new();
     if unread {
         let d = s.sm;
-        head.push(El::new(Kind::Swatch { color: v.theme.colors.get("primary"), w: d, h: d, radius: d / 2.0, border: false }));
+        head.push(El::new(Kind::Swatch { color: v.theme.colors.get(ColorRole::Primary), w: d, h: d, radius: d / 2.0, border: false }));
     }
     let mut chip = if critical { w::panel_chip_ink(s, "triangle-alert", false, Ink::Destructive) } else { w::panel_chip(s, "bell", false) };
     if e.source == "iphone" {

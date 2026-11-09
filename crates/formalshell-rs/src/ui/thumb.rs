@@ -2,7 +2,9 @@
 //! lands. The Spaces preview's strip, the switcher and the overview all
 //! draw windows through this.
 
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 
@@ -34,12 +36,12 @@ pub fn paint(p: &mut Painter, kit: &mut Kit, t: &Theme, th: &Thumb, r: IRect, li
     match th.picture {
         Some(image) => {
             let cover = t.cover_radius(r.w.min(r.h) as f64) as f32 * th.edge;
-            let border = if lit { t.colors.get("ring") } else { t.colors.get("border") };
+            let border = if lit { t.colors.get(ColorRole::Ring) } else { t.colors.get(ColorRole::Border) };
             p.shape(r, Paint::Picture { image: image.clone(), alpha, radius: cover });
             p.framed(r, Rgba::TRANSPARENT, cover, a(border, th.edge), t.border_width as f32);
             let roomy = r.w as f64 > s.control_height * 2.0 && r.h as f64 > s.control_height * 1.5;
             if let Some(icon) = th.icon.filter(|_| th.badge && roomy) {
-                let cell = t.box_style("cell", Some("rest"));
+                let cell = t.box_style(Role::Cell, Some("rest"));
                 let size = (s.control_height - s.sm).round() as i32;
                 let b = IRect::new(r.x + s.sm as i32, r.bottom() - s.sm as i32 - size, size, size);
                 boxes::paint(p, b, &cell, t.box_radius(&cell, size as f64), alpha, 0.0);
@@ -48,8 +50,8 @@ pub fn paint(p: &mut Painter, kit: &mut Kit, t: &Theme, th: &Thumb, r: IRect, li
             }
         }
         None => {
-            let mut b = t.box_style("cell", Some(if th.selected { "selected" } else { "rest" }));
-            b.border = t.box_style("cell", None).border;
+            let mut b = t.box_style(Role::Cell, Some(if th.selected { "selected" } else { "rest" }));
+            b.border = t.box_style(Role::Cell, None).border;
             let b = t.with_cursor(b, ring, false);
             let radius = t.box_radius(&b, r.h as f64);
             let size = (s.xl * 2.0).min(r.w as f64 / 2.0).min(r.h as f64 / 2.0).round().max(1.0) as i32;
@@ -58,8 +60,8 @@ pub fn paint(p: &mut Painter, kit: &mut Kit, t: &Theme, th: &Thumb, r: IRect, li
             let title = title.filter(|l| r.h as f64 >= size as f64 + s.xs + l.line_height() as f64 + s.sm * 2.0);
             let total = size + title.as_ref().map_or(0, |l| s.xs as i32 + l.line_height());
             let at = IRect::new(r.x + (r.w - size) / 2, r.y + (r.h - total) / 2, size, size);
-            let ink = if th.selected { t.colors.get("accentForeground") } else { t.colors.get("foreground") };
-            let dim = if th.selected { ink } else { t.colors.get("mutedForeground") };
+            let ink = if th.selected { t.colors.get(ColorRole::AccentForeground) } else { t.colors.get(ColorRole::Foreground) };
+            let dim = if th.selected { ink } else { t.colors.get(ColorRole::MutedForeground) };
             boxes::paint(p, r, &b, radius, alpha, 0.0);
             match th.icon {
                 Some(icon) => p.shape(at, Paint::Picture { image: icon.clone(), alpha, radius: 0.0 }),

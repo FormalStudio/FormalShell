@@ -22,6 +22,7 @@ use fs_menu::nav::{self, Dir};
 use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
 use fs_menu::toggles::{self, Snapshot};
 use fs_types::{Edge, WindowId};
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;
@@ -793,7 +794,7 @@ impl Model {
         if let Some(p) = self.panel.as_ref().filter(|p| self.on_panel() && p.width > 0.0) {
             return p.width;
         }
-        if self.app_view() { theme.space.popup_width_menu_app } else { launcher_px(theme, fs_theme::tokens::LAUNCHER.width) }
+        if self.app_view() { theme.space.popup_width_menu_app } else { launcher_px(fs_theme::tokens::LAUNCHER.width) }
     }
 
     /// The list's share of a halved body, the side column taking the rest
@@ -3091,7 +3092,7 @@ pub fn selection_path() -> std::path::PathBuf {
 
 fn row_height(node: &Node, theme: &Theme, kit: &mut Kit) -> f64 {
     let s = &theme.space;
-    let row = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_height);
+    let row = launcher_px(fs_theme::tokens::LAUNCHER.row_height);
     if node.emoji_only {
         let h = ui::measure(&w::text("Ag").size(Type::Display), 100.0, theme, kit).1;
         return row.max(h + s.control_padding_y * 2.0);
@@ -3128,9 +3129,9 @@ fn row_words(text: String) -> El {
     w::text(text).size(Type::Row).elide()
 }
 
-/// A `LAUNCHER` length at the theme's type scale.
-fn launcher_px(theme: &Theme, base: f64) -> f64 {
-    (base * fs_theme::tokens::font_scale(theme.font_size.base_size)).round()
+/// A `LAUNCHER` length in whole pixels.
+fn launcher_px(base: f64) -> f64 {
+    base.round()
 }
 
 /// The window: the card, its surface and the three bands' widgets.
@@ -3264,7 +3265,7 @@ impl Shown {
         let page = m.on_panel().then(|| crate::surfaces::panel::Frame::new(theme, true));
         let head = match page {
             Some(f) => f.body(),
-            None => launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band) + theme.border_width,
+            None => launcher_px(fs_theme::tokens::LAUNCHER.field_band) + theme.border_width,
         };
         let foot = match page {
             Some(f) => f.foot + m.layout.close,
@@ -3446,7 +3447,7 @@ impl Shown {
         glide(&mut self.scroll, now, m.scroll, m.wheeled, m.travels, theme, self.scale);
         match &mut m.column {
             Some(c) => {
-                c.row_h = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_height);
+                c.row_h = launcher_px(fs_theme::tokens::LAUNCHER.row_height);
                 c.view_h = (body_h - theme.space.sm * 2.0).max(0.0);
                 c.scroll = c.scroll.min(c.max_scroll());
                 if let Some(coast) = c.touch.tick(now, c.max_scroll()) {
@@ -3522,7 +3523,7 @@ impl Shown {
         let (band, row_top, row_h) = match page {
             Some(f) => (f.rule(theme), fy + f.top, f.head),
             None => {
-                let band = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band);
+                let band = launcher_px(fs_theme::tokens::LAUNCHER.field_band);
                 (band, fy + ((band - line) / 2.0).round(), line)
             }
         };
@@ -3550,7 +3551,7 @@ impl Shown {
         } else {
             (fx + pad, inner_w)
         };
-        let sep = theme.box_style("separator", None).fill;
+        let sep = theme.box_style(Role::Separator, None).fill;
         let sep = sep.with_alpha(sep.a * alpha);
 
         // The body.
@@ -3596,9 +3597,9 @@ impl Shown {
                 let [x, y, w_, h] = [0, 1, 2, 3].map(|i| self.sel[i].value(now));
                 let r = ui::irect(Rect::new(origin.0 + x, origin.1 + y, origin.0 + x + w_, origin.1 + y + h));
                 let b = if matches!(m.view, View::Rows | View::AppGrid | View::Emoji) {
-                    theme.box_style("launcher.row", Some("selected"))
+                    theme.box_style(Role::LauncherRow, Some("selected"))
                 } else {
-                    let mut b = theme.box_style("cell", Some("selected"));
+                    let mut b = theme.box_style(Role::Cell, Some("selected"));
                     b.border = None;
                     b.wash = None;
                     theme.with_cursor(b, m.from_keys, true)
@@ -3904,7 +3905,7 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
     let s = &theme.space;
     let Some(c) = &m.column else { return (w::space(0.0), false) };
     let row_h = c.row_h.max(1.0);
-    let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
+    let icon_px = launcher_px(fs_theme::tokens::LAUNCHER.row_icon);
     let armed = m.column_armed();
     let first = (scroll / row_h).floor().max(0.0) as usize;
     let fits = (c.view_h / row_h).ceil() as usize + 1;
@@ -4325,7 +4326,7 @@ fn package_pane(store: &Store, row: &Node, theme: &Theme, kit: &mut Kit, width: 
     let info = store.packages.info.get(&row.path);
     let ok = info.and_then(|i| i.as_ref().ok());
     let found = store.packages.search.as_ref().and_then(|(_, f)| f.as_ref().ok()).and_then(|f| f.iter().find(|p| p.id == row.path));
-    let icon_px = launcher_px(theme, 48.0);
+    let icon_px = launcher_px(48.0);
     let mark = match store.menu.row_icons.get(&row.icon_source).cloned().flatten() {
         Some(image) => {
             let density = image.pixmap.width() as f64 / icon_px.max(1.0);
@@ -4586,7 +4587,7 @@ fn slot_x_of(m: &Model, el: &El) -> f64 {
 fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, checked: bool, theme: &Theme) -> El {
     let s = &theme.space;
     let confirming = m.confirming(&row.id);
-    let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
+    let icon_px = launcher_px(fs_theme::tokens::LAUNCHER.row_icon);
     let live = fs_menu::providers::is_package(row).then(|| crate::surfaces::packages::live(store, &row.path)).flatten();
     let checked = crate::surfaces::packages::row_checked(store, row, checked);
     let mut lead = Vec::new();

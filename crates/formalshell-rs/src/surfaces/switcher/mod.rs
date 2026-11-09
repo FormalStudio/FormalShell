@@ -12,8 +12,9 @@ pub mod model;
 
 use std::time::{Duration, Instant};
 
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
-use fs_theme::style::Line;
+use fs_theme::style::{Line, Role};
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 use fs_types::{Window, WindowId, WorkspaceId};
@@ -205,17 +206,17 @@ impl Switcher {
 
         let alpha = input.alpha;
         let a = |c: Rgba| c.with_alpha(c.a * alpha);
-        let fg = t.colors.get("foreground");
-        let muted = t.colors.get("mutedForeground");
+        let fg = t.colors.get(ColorRole::Foreground);
+        let muted = t.colors.get(ColorRole::MutedForeground);
         let mut p = Painter::new(scene, &mut self.nodes, None);
 
-        let card_box = t.box_style("switcher", None);
+        let card_box = t.box_style(Role::Switcher, None);
         let radius = t.box_radius(&card_box, card.h as f64);
         boxes::paint(&mut p, card, &card_box, radius, alpha, 0.0);
 
         if count == 0 {
             let r = IRect::new(card.x + pad as i32, card.y + pad as i32, content_w.round() as i32, m.cell_h.round() as i32);
-            let b = t.box_style("switcher.cell", Some("rest"));
+            let b = t.box_style(Role::SwitcherCell, Some("rest"));
             boxes::paint(&mut p, r, &b, t.box_radius(&b, r.h as f64), alpha, 0.0);
             let style = kit.weight(kit.look.sans, kit.look.caption, WEIGHTS.medium);
             let label = kit.shape("No windows", style);
@@ -233,9 +234,9 @@ impl Switcher {
             let win = input.entries[i];
             let icon = input.icons.get(i);
 
-            let mut b = t.box_style("switcher.cell", Some(if selected { "selected" } else { "ghost" }));
-            let rest_border = t.box_style("switcher.cell", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
-            b.border = Some(t.box_style("switcher.cell", Some("ghost")).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
+            let mut b = t.box_style(Role::SwitcherCell, Some(if selected { "selected" } else { "ghost" }));
+            let rest_border = t.box_style(Role::SwitcherCell, None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
+            b.border = Some(t.box_style(Role::SwitcherCell, Some("ghost")).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
             let b = t.with_cursor(b, selected, true);
             boxes::paint(&mut p, rects.cell, &b, t.box_radius(&b, rects.cell.h as f64), alpha, 0.0);
 
@@ -250,9 +251,9 @@ impl Switcher {
                 let h = label.line_height() + (s.control_padding_y * 2.0) as i32;
                 let w = label.width + (s.control_padding_x * 2.0) as i32;
                 let r = IRect::new(th.right() - s.xs as i32 - w, th.bottom() - s.xs as i32 - h, w, h);
-                let chip = t.box_style("cell", Some("active"));
+                let chip = t.box_style(Role::Cell, Some("active"));
                 boxes::paint(&mut p, r, &chip, t.radii.sm, alpha, 0.0);
-                p.text(&label, (r.x + (r.w - label.width) / 2, r.y + (r.h - label.line_height()) / 2), a(t.colors.get("primaryForeground")), &[]);
+                p.text(&label, (r.x + (r.w - label.width) / 2, r.y + (r.h - label.line_height()) / 2), a(t.colors.get(ColorRole::PrimaryForeground)), &[]);
             }
 
             let ir = rects.icon;

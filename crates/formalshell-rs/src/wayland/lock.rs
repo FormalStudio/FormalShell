@@ -25,6 +25,7 @@
 //! lock surfaces in place of the card, input dismisses it back to the card,
 //! and a lock raised over it brings it back on idle rather than blanking.
 
+use fs_theme::palette::ColorRole;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -1127,7 +1128,7 @@ impl App {
         let word = self.shard_word();
         let theme = &self.store.theme.theme;
         let wanted = self.store.desktop();
-        let base = self.store.wallpaper.latest().filter(|p| p.path == wanted).and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get("background"));
+        let base = self.store.wallpaper.latest().filter(|p| p.path == wanted).and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get(ColorRole::Background));
         let look = crate::shards::Look::new(theme, base, word, (1.0 - view::SCRIM) as f32);
         let t = self.heads.iter().find_map(|h| h.backdrop.as_ref()?.shards.as_ref().map(|s| s.t)).unwrap_or(0.0);
         let mut raster = crate::shards::Raster::new();

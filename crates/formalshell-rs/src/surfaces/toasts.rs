@@ -34,6 +34,7 @@ use fs_types::Insets;
 use fs_info::notifications::{self as model, Group, PositionSpec, Urgency};
 use fs_info::toast_stack::{self, StackParams};
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
@@ -282,7 +283,7 @@ pub fn card_width(theme: &Theme) -> f64 {
 pub fn column_cast(theme: &Theme) -> f64 {
     ["rest", "critical"]
         .iter()
-        .map(|k| fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some(k)).casts))
+        .map(|k| fs_theme::style::geometry::cast_pad(&theme.box_style(Role::Notification, Some(k)).casts))
         .fold(0.0, f64::max)
 }
 
@@ -526,7 +527,7 @@ impl Toasts {
             let cut = if spec.top { solid.map(|f| f.drawn.bottom()).max() } else { solid.map(|f| f.drawn.y).min() };
             let slot = self.slots.get_mut(&at.key).expect("ordered from the map");
             slot.rect = at.drawn;
-            let b = theme.box_style("notification", Some(if slot.critical { "critical" } else { "rest" }));
+            let b = theme.box_style(Role::Notification, Some(if slot.critical { "critical" } else { "rest" }));
             let (fx, fy, fh) = (at.fx, at.fy, at.fh);
             let rect = IRect::new(fx.round() as i32, fy.round() as i32, width.round() as i32, fh.round() as i32);
             let alpha = at.alpha as f32;
@@ -794,7 +795,7 @@ mod tests {
             let inset = if right { insets.right } else { insets.left };
             let column = f64::from(column_width(&theme, column_cast(&theme), &insets, right));
             let card = card_width(&theme);
-            let cast = fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some("rest")).casts);
+            let cast = fs_theme::style::geometry::cast_pad(&theme.box_style(Role::Notification, Some("rest")).casts);
             let inner = column - inset - theme.space.screen_padding - card;
             assert!(inner >= scroll::rubber(-1e9, card).abs() + cast, "{inner}px past the card's inner edge");
         }

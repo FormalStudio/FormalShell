@@ -6,6 +6,7 @@
 //! cursor walks the rows and activates nothing.
 
 use fs_system::dualsense::state_line;
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 
 use super::{Panel, View};
@@ -60,8 +61,8 @@ impl Panel for Dualsense {
             rows.push(status_row(s, "Lightbar", "lightbulb", w::swatch(fill, body, body, v.theme.radii.sm), hex.clone(), "lightbar"));
         }
         if let Some(lit) = lights.player_leds {
-            let primary = v.theme.colors.get("primary");
-            let muted = v.theme.colors.get("mutedForeground");
+            let primary = v.theme.colors.get(ColorRole::Primary);
+            let muted = v.theme.colors.get(ColorRole::MutedForeground);
             let pips = (0..5)
                 .map(|i| El::new(Kind::Swatch { color: if i < lit { primary } else { muted }, w: s.sm, h: s.sm, radius: s.sm / 2.0, border: false }))
                 .collect();

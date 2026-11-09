@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use fs_chrome::shards::{Cluster, Flat};
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use vello_cpu::color::{AlphaColor, Srgb};
 use vello_cpu::kurbo::{Affine, BezPath, Ellipse, Shape, Stroke};
@@ -50,8 +51,8 @@ impl Look {
     /// wallpaper's own mean colour (the theme's background without one),
     /// every colour times `dim` (the lock's scrim).
     pub fn new(theme: &Theme, base: Rgba, word: Words, dim: f32) -> Self {
-        let s = theme.box_style("backdrop.shards", None);
-        let m = theme.box_style("backdrop.mark", None);
+        let s = theme.box_style(Role::BackdropShards, None);
+        let m = theme.box_style(Role::BackdropMark, None);
         let darken = |c: Rgba| Rgba { r: c.r * dim, g: c.g * dim, b: c.b * dim, a: c.a };
         let edge = s.border.as_ref().map_or((Rgba::TRANSPARENT, 0.0), |b| (b.color, b.width));
         Self {

@@ -2,6 +2,7 @@
 //! own places, each tile a window's picture or its schematic until a frame
 //! lands.
 
+use fs_theme::style::Role;
 use vello_cpu::kurbo::Rect;
 
 use crate::scene::IRect;
@@ -57,7 +58,7 @@ impl Widget for Strip {
 fn paint(cx: &mut Cx, on: &str, r: Rect, inset: f64, scroll: (f64, f64), tiles: &[Tile], path: &str) {
     let t = cx.theme;
     let frame = irect(r);
-    let b = t.box_style("cell", Some("rest"));
+    let b = t.box_style(Role::Cell, Some("rest"));
     let radius = t.box_radius(&b, frame.h as f64);
     let alpha = cx.alpha;
     let mut p = cx.painter(path);

@@ -37,7 +37,9 @@ pub use widget::{State, Widget};
 use std::collections::HashMap;
 use std::time::Instant;
 
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use vello_cpu::kurbo::Rect;
 
@@ -295,7 +297,7 @@ impl Ui {
             motion_scale,
             floats: Vec::new(),
         };
-        cx.ink = (theme.colors.get("foreground"), theme.colors.get("mutedForeground"));
+        cx.ink = (theme.colors.get(ColorRole::Foreground), theme.colors.get(ColorRole::MutedForeground));
         let (w, h) = draw::measure(&mut cx, root, rect.width());
         let bounds = Rect::new(rect.x0, rect.y0, rect.x0 + rect.width(), rect.y0 + h);
         draw::paint(&mut cx, root, bounds, "");
@@ -610,7 +612,7 @@ impl Cx<'_> {
         for (anchor, list, path, at) in floats {
             let s = self.theme.space.clone();
             let pad = s.xxs;
-            let card = self.theme.box_style("popover", None);
+            let card = self.theme.box_style(Role::Popover, None);
             let area = room.unwrap_or(bounds);
             // Rows fill whatever they are given, so the list has no width of
             // its own: the anchor's, never under a narrow popup's.

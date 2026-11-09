@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::{DateTime, Local};
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
+use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use image::imageops::{self, FilterType};
 use serde_json::{Value, json};
@@ -364,7 +366,7 @@ fn paint_backdrop(p: &mut Painter, s: &Shared, theme: &Theme, (w, h): (i32, i32)
         // The wallpaper still decoding: dark, never the theme's background.
         None if s.has_wallpaper => {}
         _ => {
-            let bg = theme.colors.get("background");
+            let bg = theme.colors.get(ColorRole::Background);
             p.rect(full, bg.with_alpha(bg.a * s.wake), 0.0);
             if s.has_wallpaper {
                 p.rect(full, Rgba { r: 0.0, g: 0.0, b: 0.0, a: SCRIM as f32 }, 0.0);
@@ -432,7 +434,7 @@ fn ink_of(backdrop: f64) -> &'static str {
 /// The ink over `rect`, the backdrop luma it was chosen against, and
 /// whether that luma was read off the wallpaper (BarPaint's `sampled`).
 fn ink(s: &Shared, theme: &Theme, rect: IRect, size: (i32, i32)) -> (&'static str, f64, bool) {
-    let fallback = if s.has_wallpaper { 0.0 } else { theme.colors.get("background").luma601() };
+    let fallback = if s.has_wallpaper { 0.0 } else { theme.colors.get(ColorRole::Background).luma601() };
     let mean = s.picture.and_then(|p| {
         let (pw, ph) = (p.width as i32, p.height as i32);
         if (pw, ph) == size {
@@ -489,7 +491,7 @@ fn over_clock(cache: &mut Option<OverClock>, fg: &Bitmap, rect: IRect, card_rect
     if px.is_empty() {
         return None;
     }
-    let card = theme.box_style("card", Some("dialog"));
+    let card = theme.box_style(Role::Card, Some("dialog"));
     let hit = matches!(&*cache, Some(c) if c.pixels == px && c.card_rect == card_rect && c.card == card && Arc::ptr_eq(&c.from, &fg.pixmap));
     if !hit {
         let data = fg.pixmap.data_as_u8_slice();
@@ -742,7 +744,7 @@ mod tests {
     fn wake_never_passes_a_light_background() {
         use crate::render::Renderer;
         let theme = Theme::resolve(|_| None, &fs_theme::palette::fallback("light"));
-        assert!(theme.colors.get("background").luma601() > 200.0);
+        assert!(theme.colors.get(ColorRole::Background).luma601() > 200.0);
         let mut kit = Kit::new(&theme);
         // Big enough that the corner is clear of the column.
         let (w, h) = (900, 700);

@@ -8,6 +8,7 @@
 //! the screen's left, nodding sees it nod toward them. Lines facing away
 //! are drawn fainter the further round they are.
 
+use fs_theme::palette::ColorRole;
 use std::time::Instant;
 
 use vello_cpu::kurbo::{BezPath, Circle, Point, Rect, Shape};
@@ -282,8 +283,8 @@ fn paint(cx: &mut Cx, r: Rect, orientation: Option<[f32; 4]>, path: &str) {
     }
 
     let live = orientation.is_some();
-    let ink = cx.a(if live { t.colors.get("foreground") } else { t.colors.get("mutedForeground") });
-    let accent = cx.a(if live { t.colors.get("primary") } else { t.colors.get("mutedForeground") });
+    let ink = cx.a(if live { t.colors.get(ColorRole::Foreground) } else { t.colors.get(ColorRole::MutedForeground) });
+    let accent = cx.a(if live { t.colors.get(ColorRole::Primary) } else { t.colors.get(ColorRole::MutedForeground) });
     let reach = r.width().min(r.height()) / 2.0;
     let tilt = TILT_DEG.to_radians();
     // The ears reach past the globe; leave them room at any turn.

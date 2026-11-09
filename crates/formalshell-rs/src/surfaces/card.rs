@@ -27,7 +27,7 @@ use crate::scene::{Cast, Fade, Fit, IRect, Joined, LitLine, NodeId, Outline, Pai
 use crate::paint::rim::{Lit, Rim};
 use crate::paint::shoulders::{self, Walls};
 use fs_theme::color::Rgba;
-use fs_theme::style::Radius;
+use fs_theme::style::{Radius, Role};
 use fs_theme::theme::Theme;
 
 
@@ -64,14 +64,14 @@ struct Look {
 impl Look {
     /// A popover casts its role's `popover` state's layers; a joined card
     /// casts the raised card's while `cast` asks for pantheon's cast.
-    fn new(theme: &Theme, role: &str, state: Option<&str>, cast: bool) -> Self {
+    fn new(theme: &Theme, role: Role, state: Option<&str>, cast: bool) -> Self {
         let card = theme.box_style(role, state);
         let border = card.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
         let popover = !theme.morph;
         let casts = if popover {
             theme.box_style(role, Some("popover")).casts
         } else if cast {
-            theme.box_style("card", Some("raised")).casts
+            theme.box_style(Role::Card, Some("raised")).casts
         } else {
             Vec::new()
         };
@@ -176,7 +176,7 @@ pub enum Sizing {
 #[derive(Clone, Copy, Debug)]
 pub struct CardSpec {
     /// The box style the look resolves from.
-    pub role: &'static str,
+    pub role: Role,
     pub state: Option<&'static str>,
     pub edge: Edge,
     pub size: Sizing,
@@ -202,7 +202,7 @@ impl CardSpec {
     /// A plain `card` on `edge`, budding off the line at `line_at`.
     pub fn new(edge: Edge, line_at: f64, size: Sizing) -> Self {
         Self {
-            role: "card",
+            role: Role::Card,
             state: None,
             edge,
             size,
@@ -220,7 +220,7 @@ pub struct Card {
     pub scene: Scene,
     look: Look,
     /// The box style `look` was resolved from, for a theme change.
-    role: &'static str,
+    role: Role,
     state: Option<&'static str>,
     capsule: bool,
     pub edge: Edge,
@@ -888,7 +888,7 @@ pub struct Scrim {
 
 impl Scrim {
     pub fn new(theme: &Theme, scale: f64) -> Self {
-        let alpha = f64::from(theme.box_style("scrim", None).fill.a);
+        let alpha = f64::from(theme.box_style(Role::Scrim, None).fill.a);
         Self { open: true, mapped: false, pose: Animated::new(0.0, Kind::Spatial.curve()), ms: Kind::Spatial.ms(theme), scale, alpha }
     }
 

@@ -9,6 +9,7 @@ use std::time::Instant;
 use fs_media::visualizer::model;
 use fs_media::visualizer::scene::{self as vis, PathEl, Shape, TextAlign};
 use fs_media::visualizer::styles;
+use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use vello_cpu::kurbo::{self, Affine, BezPath, Rect, Shape as _};
 
@@ -81,10 +82,10 @@ fn path(els: &[PathEl], at: Affine) -> BezPath {
 fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key: &str) {
     let t = cx.theme;
     let ink = styles::Ink {
-        groove: to_vis(t.colors.get("muted")),
-        dim: to_vis(t.colors.get("mutedForeground")),
-        content: to_vis(t.colors.get("foreground")),
-        accent: to_vis(t.colors.get("primary")),
+        groove: to_vis(t.colors.get(ColorRole::Muted)),
+        dim: to_vis(t.colors.get(ColorRole::MutedForeground)),
+        content: to_vis(t.colors.get(ColorRole::Foreground)),
+        accent: to_vis(t.colors.get(ColorRole::Primary)),
         mono: String::new(),
         columns,
         gap: t.space.xxs,

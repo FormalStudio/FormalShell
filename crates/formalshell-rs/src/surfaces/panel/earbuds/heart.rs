@@ -3,6 +3,7 @@
 //! phase is kept per element and advanced by the clock, so a new rate
 //! changes the tempo from where the beat is rather than jumping.
 
+use fs_theme::palette::ColorRole;
 use std::time::Instant;
 
 use vello_cpu::kurbo::{Affine, BezPath, Circle, Rect, Shape};
@@ -91,7 +92,7 @@ fn paint(cx: &mut Cx, r: Rect, bpm: Option<f64>, beat: bool, path: &str) {
         cx.animate();
     }
 
-    let ink = if live { t.colors.get("destructive") } else { t.colors.get("mutedForeground") };
+    let ink = if live { t.colors.get(ColorRole::Destructive) } else { t.colors.get(ColorRole::MutedForeground) };
     let ink = cx.a(ink);
     let centre = (r.center().x, r.center().y);
     let reach = r.width().min(r.height()) / 2.0;
