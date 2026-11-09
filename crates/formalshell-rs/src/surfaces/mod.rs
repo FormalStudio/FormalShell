@@ -110,8 +110,8 @@ pub fn changed(app: &mut App, topic: Topic) {
         | Topic::Profiles
         | Topic::Revealed
         | Topic::Logind => {
-            if app.battery_watch.check(&mut app.store) {
-                changed(app, Topic::Notifications);
+            if let Some(diff) = app.battery_watch.check(&app.store) {
+                app.apply(diff);
             }
             app.osd_audio();
             app.headset_devices();

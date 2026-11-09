@@ -7,7 +7,8 @@ use fs_system::power::model::{Fired, Low, warn_event};
 use fs_types::Percent;
 use fs_upower::DeviceState;
 
-use crate::store::Store;
+use crate::services::notifications::{Diff, Op};
+use crate::store::{self, Store};
 
 #[derive(Default)]
 pub struct Watch {
@@ -16,25 +17,24 @@ pub struct Watch {
 }
 
 impl Watch {
-    /// Reads the battery once; true when it raised a notification.
-    pub fn check(&mut self, store: &mut Store) -> bool {
-        let Some(b) = store.power.battery.clone() else { return false };
+    /// Reads the battery once; the notification it raises, if any.
+    pub fn check(&mut self, store: &Store) -> Option<store::Diff> {
+        let b = store.power.battery.as_ref()?;
         // UPower has not populated yet: the percent can still read 0, and
         // recording it would arm the rising guard against a bogus value.
         if b.state == DeviceState::Unknown {
-            return false;
+            return None;
         }
         let draining = matches!(b.state, DeviceState::Discharging | DeviceState::PendingDischarge | DeviceState::Empty);
         let result = warn_event(self.last, b.level, !draining, self.fired, crate::settings::battery_thresholds(&store.config));
         self.last = Some(b.level);
         self.fired = result.fired;
+        let (summary, urgency) = match result.event? {
+            Low::Warn => ("LOW BATTERY", Urgency::Normal),
+            Low::Critical => ("CRITICAL BATTERY", Urgency::Critical),
+        };
         let body = format!("{}% REMAINING", b.level.rounded());
-        match result.event {
-            Some(Low::Warn) => store.notifications.notify("LOW BATTERY", &body, Urgency::Normal),
-            Some(Low::Critical) => store.notifications.notify("CRITICAL BATTERY", &body, Urgency::Critical),
-            None => return false,
-        }
-        true
+        Some(store::Diff::Notifications(Diff::Op(Op::Notify(summary.into(), body, urgency))))
     }
 }
 
@@ -53,17 +53,17 @@ mod tests {
     #[test]
     fn a_threshold_fires_once_and_charging_rearms_it() {
         let mut watch = Watch::default();
-        assert!(!watch.check(&mut store(40.0, DeviceState::Discharging)));
-        assert!(watch.check(&mut store(9.0, DeviceState::Discharging)));
-        assert!(!watch.check(&mut store(8.0, DeviceState::Discharging)));
-        assert!(watch.check(&mut store(4.0, DeviceState::Discharging)));
-        assert!(!watch.check(&mut store(30.0, DeviceState::Charging)));
-        assert!(watch.check(&mut store(9.0, DeviceState::Discharging)));
+        assert!(watch.check(&store(40.0, DeviceState::Discharging)).is_none());
+        assert!(watch.check(&store(9.0, DeviceState::Discharging)).is_some());
+        assert!(watch.check(&store(8.0, DeviceState::Discharging)).is_none());
+        assert!(watch.check(&store(4.0, DeviceState::Discharging)).is_some());
+        assert!(watch.check(&store(30.0, DeviceState::Charging)).is_none());
+        assert!(watch.check(&store(9.0, DeviceState::Discharging)).is_some());
     }
 
     #[test]
     fn a_battery_that_has_not_reported_is_skipped() {
         let mut watch = Watch::default();
-        assert!(!watch.check(&mut store(0.0, DeviceState::Unknown)));
+        assert!(watch.check(&store(0.0, DeviceState::Unknown)).is_none());
     }
 }

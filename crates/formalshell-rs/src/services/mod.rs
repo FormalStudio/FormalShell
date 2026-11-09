@@ -140,7 +140,7 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
             lyrics::sync(&store.media, &store.config, &store.lyrics);
             None
         }
-        Topic::Compositor => launch::windows_changed(store),
+        Topic::Compositor | Topic::Launch => launch::windows_changed(store),
         _ => None,
     }
 }
