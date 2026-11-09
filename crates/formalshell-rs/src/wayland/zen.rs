@@ -81,7 +81,7 @@ impl App {
             workspace: win.workspace_id.clone(),
             floating: if win.is_floating { win.rect } else { None },
             before: if columns && !win.is_floating { next_column(&snap.windows, &win.id, &win.workspace_id) } else { None },
-            unfold: self.bar.sidebar.is_some() && !self.store.state.data.sidebar_collapsed,
+            unfold: live!(self).bar.sidebar.is_some() && !self.store.state.data.sidebar_collapsed,
         };
         let rect = centred(ox, oy, ow, oh, self.store.theme.theme.space.md);
         compositor::send(Command::Zen { id: zen.id.clone(), rect });

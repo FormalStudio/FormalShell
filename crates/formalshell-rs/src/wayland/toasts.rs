@@ -62,7 +62,7 @@ impl App {
                 self.close_panels();
             }
         } else if !self.center_open() {
-            let anchor = anchor.or_else(|| self.bar.panel_anchor(center::ID));
+            let anchor = anchor.or_else(|| live!(self).bar.panel_anchor(center::ID));
             self.open_host(Box::new(center::Center::default()), anchor, now);
         }
         self.tick_notifications();
@@ -86,7 +86,7 @@ impl App {
     pub(crate) fn present_toasts(&mut self, now: Instant) {
         let chrome = self.chrome();
         let covered = chrome.bar_covered();
-        let floating = self.store.compositor.snapshot.floating_outputs.contains(&self.bar.output);
+        let floating = self.store.compositor.snapshot.floating_outputs.contains(&live!(self).bar.output);
         let n = &self.store.notifications;
         let fading = self.toasts.as_ref().is_some_and(|t| t.holds_cards());
         let up = !n.model.popups.is_empty() || !surfaces::toasts::activity_groups(&self.store).is_empty() || fading;
@@ -104,7 +104,7 @@ impl App {
         self.clear_of_cards(&mut insets, spec);
         // The column stays mapped between toasts (see above), so it is moved
         // to the live bar's output only when a toast arrives on an empty one.
-        let stray = up && self.toasts.as_ref().is_some_and(|t| !t.holds_cards() && t.output.as_ref() != self.bar_wl.as_ref());
+        let stray = up && self.toasts.as_ref().is_some_and(|t| !t.holds_cards() && t.output.as_ref() != self.bar_wl());
         // The column is as tall as the output, which is unknown until its
         // first mode or logical size arrives; a scene made before that is
         // zero rows tall and never commits.
@@ -126,7 +126,7 @@ impl App {
             let ls = self.overlay("formalshell:notifications", layer, Anchor::TOP | Anchor::BOTTOM | side, (column.1, 0), -1);
             let mut surface = Surface::new("toasts", Backend::Gpu, ls, &self.shm, self.started, self.store.display.scales.primary());
             surface.wait_map = true;
-            self.toasts = Some(Toasts::new(surface, (column.1 as i32, out_h as i32), column, layer, self.bar_wl.clone()));
+            self.toasts = Some(Toasts::new(surface, (column.1 as i32, out_h as i32), column, layer, self.bar_wl().cloned()));
             self.toasts_dirty = true;
         }
         let qh = self.qh.clone();

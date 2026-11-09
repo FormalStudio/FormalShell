@@ -74,7 +74,7 @@ impl App {
 
     /// Opens the card on `chip`, handing over whatever card is up.
     fn preview_show(&mut self, chip: &Chip, pointer: bool) {
-        let along = if self.bar.edge().is_vertical() { chip.rect.1 + chip.rect.3 / 2.0 } else { chip.rect.0 + chip.rect.2 / 2.0 };
+        let along = if live!(self).bar.edge().is_vertical() { chip.rect.1 + chip.rect.3 / 2.0 } else { chip.rect.0 + chip.rect.2 / 2.0 };
         if self.preview_up() {
             self.close_panels();
         }
@@ -105,7 +105,7 @@ impl App {
 
     /// `workspaces peek <n>`.
     pub fn preview_peek(&mut self, n: i64) -> Result<(), String> {
-        let Some(status) = self.bar.workspaces_status() else { return Err("no workspaces cell on any bar".into()) };
+        let Some(status) = live!(self).bar.workspaces_status() else { return Err("no workspaces cell on any bar".into()) };
         if !self.preview_enabled() {
             return Err("preview is off (workspaces.preview)".into());
         }
@@ -129,7 +129,7 @@ impl App {
     pub(super) fn preview_pointer(&mut self, on_bar: bool, on_card: bool, at: (f64, f64)) {
         let now = Instant::now();
         let chip = if on_bar && self.preview_enabled() {
-            self.bar.workspaces_status().map(|s| chips(&s)).and_then(|cs| {
+            live!(self).bar.workspaces_status().map(|s| chips(&s)).and_then(|cs| {
                 cs.into_iter().find(|c| at.0 >= c.rect.0 && at.0 < c.rect.0 + c.rect.2 && at.1 >= c.rect.1 && at.1 < c.rect.1 + c.rect.3)
             })
         } else {
@@ -176,7 +176,7 @@ impl App {
             && at <= now
         {
             self.peek.hover_at = None;
-            let chip = self.bar.workspaces_status().map(|s| chips(&s)).and_then(|cs| cs.into_iter().find(|c| c.idx == idx));
+            let chip = live!(self).bar.workspaces_status().map(|s| chips(&s)).and_then(|cs| cs.into_iter().find(|c| c.idx == idx));
             if let Some(c) = chip.filter(|c| c.previews && self.peek.on_chip == Some(idx)) {
                 self.preview_show(&c, true);
             }

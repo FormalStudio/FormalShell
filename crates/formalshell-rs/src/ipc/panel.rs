@@ -7,7 +7,7 @@ use fs_chrome::plugins::Kind;
 
 use super::registry::{Function, Reply, Target, Type, Value, ok, text};
 use crate::surfaces::panel;
-use crate::wayland::App;
+use crate::wayland::{App, live};
 
 pub fn target() -> Target<App> {
     Target {
@@ -67,7 +67,7 @@ fn toggle(app: &mut App, args: &[Value]) -> Reply {
     let open = app.panel_open() != Some(name);
     // A toggle hangs the card under the cell that owns it; `open` is the
     // anchorless route, at the line's end.
-    let anchor = app.bar.panel_anchor(name);
+    let anchor = live!(app).bar.panel_anchor(name);
     app.set_panel(name, open, anchor);
     ok()
 }

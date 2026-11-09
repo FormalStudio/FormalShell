@@ -6,7 +6,7 @@ use fs_types::Edge;
 use serde_json::json;
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
-use crate::wayland::App;
+use crate::wayland::{App, live};
 
 pub fn target() -> Target<App> {
     Target {
@@ -39,10 +39,10 @@ pub fn target() -> Target<App> {
 fn dump(app: &mut App, _: &[Value]) -> Reply {
     let h = &app.store.compositor;
     let c = &h.snapshot;
-    let edge = app.bar.edge();
-    let thickness = app.bar.thickness();
-    let frame = app.bar.frame_thickness() as i32;
-    let framed = app.bar.framed();
+    let edge = live!(app).bar.edge();
+    let thickness = live!(app).bar.thickness();
+    let frame = live!(app).bar.frame_thickness() as i32;
+    let framed = live!(app).bar.framed();
     let inset = |e: Edge| if e == edge { thickness } else if framed { frame } else { 0 };
     let theme = &app.store.theme.theme;
     let reach = fs_js::json_number(theme.card_radius());
@@ -51,7 +51,7 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
         Some((x, width)) => json!({"edge": edge.as_str(), "x": x, "width": width, "reach": reach, "screen": screen}),
         None => serde_json::Value::Null,
     };
-    let line: Vec<serde_json::Value> = app.bar.line_rects().iter().map(|r| r.to_json()).collect();
+    let line: Vec<serde_json::Value> = live!(app).bar.line_rects().iter().map(|r| r.to_json()).collect();
     let modals: Vec<serde_json::Value> = app
         .modals()
         .map(|m| {
@@ -97,12 +97,12 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
             "inFocus": phone.in_focus,
             "recentCount": phone.recent.len(),
         },
-        "bar": [{"screen": screen, "edge": edge.as_str(), "line": line, "paint": app.bar.paint_state(&app.store)}],
+        "bar": [{"screen": screen, "edge": edge.as_str(), "line": line, "paint": live!(app).bar.paint_state(&app.store)}],
         "join": join,
         "modals": modals,
         "toasts": toasts,
         "activity": app.store.activity.to_json(),
-        "frame": app.bar.frame_state(),
+        "frame": live!(app).bar.frame_state(),
         "captures": {
             "switcher": app.capture_sessions(crate::wayland::capture::Owner::Switcher),
             "spaces": app.capture_sessions(crate::wayland::capture::Owner::Preview),
@@ -150,7 +150,7 @@ fn join(app: &mut App, args: &[Value]) -> Reply {
         return Err("width must be positive".into());
     }
     // A join on an edge the strip is not on has no line to open.
-    app.set_debug_join((edge == app.bar.edge().as_str()).then_some((x, width)));
+    app.set_debug_join((edge == live!(app).bar.edge().as_str()).then_some((x, width)));
     ok()
 }
 

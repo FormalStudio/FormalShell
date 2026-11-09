@@ -338,7 +338,7 @@ impl App {
             compositor::send(Command::Cursor { hidden: true });
         }
         if phase == Phase::Arriving && !self.veil.lifting {
-            let bar = self.bar_surface.as_ref().map_or(self.bar.hidden(), |s| s.mapped());
+            let bar = live!(self).surface.as_ref().map_or(live!(self).bar.hidden(), |s| s.mapped());
             // With no picture to decode, the plain colour is the wallpaper.
             let plain = self.store.desktop().is_empty();
             let walls = self.heads.iter().all(|h| h.backdrop.as_ref().is_none_or(|b| b.landed.1 || (plain && b.landed.0)));

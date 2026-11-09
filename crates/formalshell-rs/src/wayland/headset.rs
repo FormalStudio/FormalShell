@@ -262,7 +262,7 @@ impl App {
             PointerEventKind::Release { .. } => {
                 if std::mem::take(&mut c.pressed) && c.popup.is_open() {
                     let panel = headset::face(&self.store, c.address).panel;
-                    let anchor = self.bar.length() as f64 / 2.0;
+                    let anchor = live!(self).bar.length() as f64 / 2.0;
                     self.headset_dismiss(now);
                     self.set_panel(panel, true, Some(anchor));
                 }

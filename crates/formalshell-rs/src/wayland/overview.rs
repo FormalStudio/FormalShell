@@ -101,7 +101,7 @@ impl App {
     fn overview_output(&self) -> Option<(WlOutput, String, (f64, f64), (f64, f64))> {
         let focused = &self.store.compositor.snapshot.focused_output_name;
         let name = if focused.is_empty() { self.bar_output_name() } else { focused.clone() };
-        let output = self.outputs.outputs().find(|o| self.output_name(o) == name).or_else(|| self.bar_wl.clone())?;
+        let output = self.outputs.outputs().find(|o| self.output_name(o) == name).or_else(|| self.bar_wl().cloned())?;
         let info = self.outputs.info(&output)?;
         let origin = info.logical_position.map_or((0.0, 0.0), |(x, y)| (f64::from(x), f64::from(y)));
         let size = info.logical_size.map(|(w, h)| (f64::from(w), f64::from(h)))?;

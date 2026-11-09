@@ -4,6 +4,14 @@
 //! the pointer and the keyboard, and which owner a configure, a frame
 //! callback or an input event belongs to.
 
+/// The live bar's window, whichever head it is on.
+macro_rules! live {
+    ($s:expr) => {
+        $s.bars.wins[$s.bars.live]
+    };
+}
+pub(crate) use live;
+
 mod atlas;
 pub mod backdrop;
 mod caffeinate;
@@ -230,16 +238,13 @@ pub struct App {
     pub overview: overview::State,
     pub atlas: atlas::State,
     peek: preview::State,
-    pub bar: Bar,
+    /// Every head's bar window, the live one among them.
+    pub bars: heads::Bars,
     /// Shapes and draws for every surface; rebuilt with the theme.
     pub kit: Kit,
-    bar_surface: Option<Surface>,
     /// The bar layer that holds the keyboard for the minimap, if one does.
     sidebar_keys: Option<wl_surface::WlSurface>,
-    /// The output the live bar is on.
-    bar_wl: Option<wl_output::WlOutput>,
     heads: Vec<heads::Head>,
-    zones: Vec<(Edge, PixelSurface)>,
     /// What opened the quick settings card last, which its chevron reads
     /// as open while that card is up.
     quick_from: quick::Origin,
@@ -270,7 +275,6 @@ pub struct App {
     pressed: Option<(Target, Press)>,
     /// Panel surfaces dropped since the pointer last entered one.
     dropped: Vec<wl_surface::WlSurface>,
-    bar_dirty: bool,
     pub battery_watch: surfaces::battery::Watch,
     pub hdr: crate::services::display::Hdr,
     wake: Option<Instant>,
@@ -373,12 +377,9 @@ impl App {
             overview: overview::State::default(),
             atlas: atlas::State::default(),
             peek: preview::State::default(),
-            bar,
-            bar_surface: None,
+            bars: heads::Bars::new(bar),
             sidebar_keys: None,
-            bar_wl: None,
             heads: Vec::new(),
-            zones: Vec::new(),
             quick_from: quick::Origin::Ipc,
             panel: None,
             tray_menu: None,
@@ -400,7 +401,6 @@ impl App {
             pointer_on: None,
             pressed: None,
             dropped: Vec::new(),
-            bar_dirty: true,
             battery_watch: Default::default(),
             wake: None,
             rims: Default::default(),
@@ -451,7 +451,7 @@ impl App {
     /// A layer surface that takes no input and reserves nothing, on the
     /// live bar's output.
     fn overlay(&self, namespace: &'static str, layer: Layer, anchor: Anchor, size: (u32, u32), zone: i32) -> LayerSurface {
-        self.overlay_on(namespace, layer, anchor, size, zone, self.bar_wl.as_ref())
+        self.overlay_on(namespace, layer, anchor, size, zone, self.bar_wl())
     }
 
     fn overlay_on(&self, namespace: &'static str, layer: Layer, anchor: Anchor, size: (u32, u32), zone: i32, output: Option<&wl_output::WlOutput>) -> LayerSurface {
@@ -496,7 +496,7 @@ impl App {
     /// While a focused fullscreen window covers the bar's output the bar,
     /// its frame zones and its cards leave the layers (`fullscreen.hideChrome`).
     pub(crate) fn sync_agents(&self) {
-        crate::services::agents::shown(!self.bar.hidden() && !self.saver.active && !self.lock.locked);
+        crate::services::agents::shown(!live!(self).bar.hidden() && !self.saver.active && !self.lock.locked);
     }
 
     /// The live bar's chrome on its output. `fullscreen.hideChrome` false
@@ -504,7 +504,7 @@ impl App {
     pub(crate) fn chrome(&self) -> Chrome {
         let hide = settings::HIDE_CHROME.get(&self.store.config);
         let covered = if hide { self.store.compositor.snapshot.fullscreen_outputs.clone() } else { Vec::new() };
-        Chrome::new(&self.bar, self.output_size(), self.store.theme.theme.frame_radius, covered)
+        Chrome::new(&live!(self).bar, self.output_size(), self.store.theme.theme.frame_radius, covered)
     }
 
     /// A fullscreen window holds `output`, so what lies under it (the
@@ -519,13 +519,13 @@ impl App {
     /// framed window and a strip never share a configure.
     fn place_chrome(&mut self) {
         let hidden = self.chrome().bar_covered();
-        self.bar.set_hidden(hidden);
+        live!(self).bar.set_hidden(hidden);
         self.sync_agents();
         if hidden {
-            if self.bar_surface.take().is_some() {
+            if live!(self).surface.take().is_some() {
                 self.log("bar unmapped under fullscreen");
             }
-            self.zones.clear();
+            live!(self).zones.clear();
             self.panel = None;
             self.drop_tray_menu();
             self.outgoing = None;
@@ -533,13 +533,9 @@ impl App {
             self.sync_join();
             return;
         }
-        let Some(output) = self.bar_wl.clone() else { return };
-        let (surface, zones) = self.build_chrome(&self.bar, &output);
-        self.bar.reserved = self.bar.zone();
-        self.bar.input_sent = None;
-        self.bar_surface = Some(surface);
-        self.zones = zones;
-        self.bar_dirty = true;
+        let Some(output) = self.bar_wl().cloned() else { return };
+        let (surface, zones) = self.build_chrome(&live!(self).bar, &output);
+        live!(self).mount(surface, zones);
     }
 
     /// A bar's window on `output` and, for a framed one, the four zones
@@ -608,7 +604,8 @@ impl App {
     /// The live bar's input region off what it last drew, and the open
     /// panel's hole for it following.
     fn sync_bar_input(&mut self) {
-        if self.bar_surface.as_ref().is_some_and(|s| Self::set_input_region_for(&self.compositor, &mut self.bar, s)) {
+        let win = &mut live!(self);
+        if win.surface.as_ref().is_some_and(|s| Self::set_input_region_for(&self.compositor, &mut win.bar, s)) {
             self.panel_dirty = true;
         }
     }
@@ -616,10 +613,10 @@ impl App {
     /// What of the live output the bar takes the pointer over, in the
     /// output's own coordinates.
     fn bar_input(&self) -> Vec<IRect> {
-        match self.bar.input_rects().filter(|_| self.bar.sidebar.is_some()) {
+        match live!(self).bar.input_rects().filter(|_| live!(self).bar.sidebar.is_some()) {
             Some(rects) => {
                 let chrome = self.chrome();
-                let (ox, oy) = chrome.origin(self.bar.thickness());
+                let (ox, oy) = chrome.origin(live!(self).bar.thickness());
                 rects.into_iter().map(|r| IRect::new(r.x + ox, r.y + oy, r.w, r.h)).collect()
             }
             None => vec![self.chrome().strip()],
@@ -631,7 +628,7 @@ impl App {
     fn apply_config(&mut self) {
         // A layout change leaves the theme as it was, so nothing else
         // restyles the strip for it.
-        if self.bar.chrome_layout() != settings::layout(&self.store.config) {
+        if live!(self).bar.chrome_layout() != settings::layout(&self.store.config) {
             self.set_bar_theme();
         }
         self.sync_hot_corners();
@@ -641,12 +638,8 @@ impl App {
         self.arm_caffeinate();
         self.arm_settle();
         let edge = self.chrome_edge();
-        let moved = self.bar.set_edge(edge);
-        for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
-            s.bar.set_edge(edge);
-            s.bar.set_layout(resolved.clone());
-        }
-        let relaid = self.bar.set_layout(resolved);
+        let moved = self.bars.apply(|b| b.set_edge(edge));
+        let relaid = self.bars.apply(|b| b.set_layout(resolved.clone()));
         if moved || relaid {
             self.panel = None;
             self.drop_tray_menu();
@@ -672,20 +665,17 @@ impl App {
     /// The bar repainted off the store's theme, re-placed when its framing
     /// or thickness moved with it.
     fn set_bar_theme(&mut self) {
-        let before = (self.bar.across(), self.bar.framed(), self.bar.frame_thickness(), self.bar.edge());
+        let before = (live!(self).bar.across(), live!(self).bar.framed(), live!(self).bar.frame_thickness(), live!(self).bar.edge());
         let edge = self.chrome_edge();
         let collapsed = self.store.state.data.sidebar_collapsed;
         self.kit.set_theme(&self.store.theme.theme);
         let layout = settings::layout(&self.store.config);
-        self.bar.set_theme(&self.store.theme.theme, layout);
-        self.bar.set_edge(edge);
-        self.bar.set_collapsed(collapsed);
-        for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
-            s.bar.set_theme(&self.store.theme.theme, layout);
-            s.bar.set_edge(edge);
-            s.bar.set_collapsed(collapsed);
-        }
-        if (self.bar.across(), self.bar.framed(), self.bar.frame_thickness(), self.bar.edge()) != before {
+        self.bars.each(|b| {
+            b.set_theme(&self.store.theme.theme, layout);
+            b.set_edge(edge);
+            b.set_collapsed(collapsed);
+        });
+        if (live!(self).bar.across(), live!(self).bar.framed(), live!(self).bar.frame_thickness(), live!(self).bar.edge()) != before {
             self.place_chrome();
             self.place_spares();
         }
@@ -698,7 +688,7 @@ impl App {
         for b in self.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
             b.repaint(&self.qh);
         }
-        self.bar_dirty = true;
+        live!(self).dirty = true;
         self.panel_dirty = true;
         self.toasts_dirty = true;
         self.launcher.dirty = true;
@@ -728,10 +718,7 @@ impl App {
     /// at their new thickness.
     fn sync_collapsed(&mut self) {
         let collapsed = self.store.state.data.sidebar_collapsed;
-        let mut moved = self.bar.set_collapsed(collapsed);
-        for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
-            moved |= s.bar.set_collapsed(collapsed);
-        }
+        let moved = self.bars.apply(|b| b.set_collapsed(collapsed));
         if moved {
             self.place_chrome();
             self.place_spares();
@@ -746,15 +733,16 @@ impl App {
             self.sync_collapsed();
         }
         if matches!(topic, None | Some(Topic::Compositor) | Some(Topic::Config)) {
-            if self.chrome().bar_covered() != self.bar.hidden() {
+            if self.chrome().bar_covered() != live!(self).bar.hidden() {
                 self.place_chrome();
             }
             self.sync_hot_corners();
         }
-        self.bar.update_paint(&mut self.kit, &self.store);
-        sync_zone(&mut self.bar, self.bar_surface.as_mut());
+        live!(self).bar.update_paint(&mut self.kit, &self.store);
+        let win = &mut live!(self);
+        sync_zone(&mut win.bar, win.surface.as_mut());
         self.request_paint();
-        self.bar.read(&mut self.kit, &self.store, topic, now);
+        live!(self).bar.read(&mut self.kit, &self.store, topic, now);
         // The card hanging off the strip lays out again with it; a topic
         // reaches the panel through its own reads.
         if topic.is_none() {
@@ -766,36 +754,40 @@ impl App {
         if matches!(topic, None | Some(Topic::Compositor | Topic::Wallpaper | Topic::Theme | Topic::Config | Topic::Display | Topic::State)) {
             self.sync_rims();
         }
-        self.bar_dirty = true;
+        live!(self).dirty = true;
     }
 
     /// The main output's wallpaper reading, for the wingpanel band.
     fn request_paint(&self) {
-        if !self.bar.reads_wallpaper() {
+        if !live!(self).bar.reads_wallpaper() {
             return;
         }
         let size = self.output_size();
         barpaint::sample(barpaint::Request {
             wallpaper: self.store.desktop(),
-            edge: self.bar.edge(),
-            thickness: self.bar.thickness() as f64,
+            edge: live!(self).bar.edge(),
+            thickness: live!(self).bar.thickness() as f64,
             screen: size,
-            output: self.bar.output.clone(),
+            output: live!(self).bar.output.clone(),
         });
     }
 
     /// The live bar's output, which every card hanging off it is sized to.
     fn output_size(&self) -> (f64, f64) {
-        self.bar_wl
-            .as_ref()
+        self.bar_wl()
             .and_then(|o| self.outputs.info(o))
             .and_then(|i| i.logical_size.or_else(|| i.modes.iter().find(|m| m.current).map(|m| m.dimensions)))
             .map_or((0.0, 0.0), |(w, h)| (w as f64, h as f64))
     }
 
+    /// The output the live bar is on.
+    fn bar_wl(&self) -> Option<&wl_output::WlOutput> {
+        self.heads.get(self.bars.live).map(|h| &h.output)
+    }
+
     /// The output the live bar's cells answer for.
     pub fn bar_output_name(&self) -> String {
-        self.bar_wl.as_ref().map(|o| self.output_name(o)).unwrap_or_default()
+        self.bar_wl().map(|o| self.output_name(o)).unwrap_or_default()
     }
 
     /// An IPC verb for the open panel `name`; `None` when it is not up or
@@ -836,7 +828,7 @@ impl App {
     fn sync_open(&mut self, now: Instant) {
         let panel = self.panel_open().map(str::to_owned);
         let overflow = self.overflow_open();
-        self.bar.set_open(&self.kit, panel.as_deref(), overflow, now);
+        live!(self).bar.set_open(&self.kit, panel.as_deref(), overflow, now);
         devices::earbuds::panel(panel.as_deref() == Some("earbuds"));
         devices::bluetooth::panel(panel.as_deref() == Some("bluetooth"));
         devices::audio::panel(panel.as_deref() == Some("audio"));
@@ -933,7 +925,7 @@ impl App {
     /// A card's own join wins over `debug join`'s while the card is up.
     fn sync_join(&mut self) {
         let mut joins = self.joins();
-        let edge = self.bar.edge();
+        let edge = live!(self).bar.edge();
         if !joins.iter().any(|j| j.edge == edge)
             && let Some((x, width)) = self.debug_join
         {
@@ -942,8 +934,8 @@ impl App {
         // One gap per edge: the strip's own goes to the first card on it.
         let mut seen = Vec::new();
         joins.retain(|j| if seen.contains(&j.edge) { false } else { seen.push(j.edge); true });
-        self.bar.set_joins(&joins);
-        self.bar_dirty = true;
+        live!(self).bar.set_joins(&joins);
+        live!(self).dirty = true;
     }
 
     /// Every card joined to the live bar's lines.
@@ -960,8 +952,8 @@ impl App {
             pixels: &self.pixels,
             shm: &self.shm,
             qh: &self.qh,
-            output: self.bar_wl.as_ref(),
-            scale: self.bar_wl.as_ref().map_or_else(|| scales.primary(), |o| scales.on(o)),
+            output: self.bar_wl(),
+            scale: self.bar_wl().map_or_else(|| scales.primary(), |o| scales.on(o)),
             started: self.started,
             theme: &self.store.theme.theme,
             chrome: self.chrome(),
@@ -1010,8 +1002,8 @@ impl App {
             self.close_panels();
         }
         let anchor = match from {
-            quick::Origin::Chevron(region) => self.bar.slots.iter().position(|s| s.name == "chevron" && s.region == region).map(|i| self.bar.slot_anchor(i)),
-            quick::Origin::Sidebar => self.bar.sidebar_anchor("overflow"),
+            quick::Origin::Chevron(region) => live!(self).bar.slots.iter().position(|s| s.name == "chevron" && s.region == region).map(|i| live!(self).bar.slot_anchor(i)),
+            quick::Origin::Sidebar => live!(self).bar.sidebar_anchor("overflow"),
             quick::Origin::Ipc => None,
         };
         self.set_panel_from(quick::ID, true, anchor, from);
@@ -1138,11 +1130,11 @@ impl App {
         menu.cap = cap.max(menu.width());
         let width = menu.width();
         let oriented = |h: f64| if vertical { (h, width) } else { (width, h) };
-        let anchor = anchor.unwrap_or(self.bar.length() as f64);
+        let anchor = anchor.unwrap_or(live!(self).bar.length() as f64);
         menu.anchor = anchor;
-        let size = Sizing::Card { size: oriented(menu.cap), anchor, length: self.bar.length() };
+        let size = Sizing::Card { size: oriented(menu.cap), anchor, length: live!(self).bar.length() };
         let mut card = Card::new(theme, CardSpec { role: fs_theme::style::Role::Menu, ..CardSpec::new(edge, line_at, size) }, self.motion_scale, self.cast);
-        card.resize(now, anchor, self.bar.length(), pad, oriented(menu.height().min(menu.cap)));
+        card.resize(now, anchor, live!(self).bar.length(), pad, oriented(menu.height().min(menu.cap)));
         menu.morph.jump(menu.height().min(menu.cap));
         let surface = self.popout_surface(&card, Layer::Overlay);
         let mut popout = Popout { win: CardWindow::new(card, surface), menu: Some(menu) };
@@ -1176,8 +1168,8 @@ impl App {
     /// The menu's card at the height its rows ask for, capped to the room.
     fn resize_menu(&mut self) {
         let now = Instant::now();
-        let vertical = self.bar.edge().is_vertical();
-        let length = self.bar.length();
+        let vertical = live!(self).bar.edge().is_vertical();
+        let length = live!(self).bar.length();
         let pad = self.store.theme.theme.space.screen_padding;
         if let Some(p) = &mut self.tray_menu {
             let mapped = p.win.card.is_open() && p.win.surface.mapped();
@@ -1200,8 +1192,8 @@ impl App {
 
     /// The menu's card on its way to the height its rows ask for, a frame at a time.
     fn step_menu(&mut self, now: Instant) {
-        let vertical = self.bar.edge().is_vertical();
-        let length = self.bar.length();
+        let vertical = live!(self).bar.edge().is_vertical();
+        let length = live!(self).bar.length();
         let pad = self.store.theme.theme.space.screen_padding;
         let Some(p) = &mut self.tray_menu else { return };
         let Some(m) = &p.menu else { return };
@@ -1317,12 +1309,12 @@ impl App {
 
     pub fn set_spinner(&mut self, on: bool) {
         let now = Instant::now();
-        for s in &mut self.bar.slots {
+        for s in &mut live!(self).bar.slots {
             if let Some(c) = s.cell.custom() {
                 c.spinner(on, now);
             }
         }
-        self.bar_dirty = true;
+        live!(self).dirty = true;
     }
 
     pub fn receive(&mut self, msg: Msg) {
@@ -1388,7 +1380,7 @@ impl App {
             }
             Action::Overflow(region) => {
                 let open = self.panel_open() != Some(quick::ID);
-                let from = if self.bar.sidebar.is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(region) };
+                let from = if live!(self).bar.sidebar.is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(region) };
                 self.set_panel_from(quick::ID, open, Some(anchor), from);
             }
             Action::Workspace(id) => compositor::focus_workspace(&id),
@@ -1462,10 +1454,7 @@ impl App {
         self.light_cards(now);
         self.sync_rasters(now);
         let idle = self.saver.active || self.lock.locked;
-        self.bar.set_idle(idle);
-        for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
-            s.bar.set_idle(idle);
-        }
+        self.bars.each(|b| b.set_idle(idle));
         for o in owner::LIFECYCLE {
             o.present(self, now);
         }
@@ -1475,16 +1464,11 @@ impl App {
     /// Every bar's cells made at its own surface's scale: a bar whose
     /// surface moved to another scale reads them all again.
     fn sync_rasters(&mut self, now: Instant) {
-        if let Some(scale) = self.bar_surface.as_ref().map(|s| s.scale()).filter(|k| *k != self.bar.raster) {
-            self.bar.raster = scale;
-            self.bar.read(&mut self.kit, &self.store, None, now);
-            self.bar_dirty = true;
-        }
-        for spare in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
-            let Some(scale) = spare.surface.as_ref().map(|s| s.scale()).filter(|k| *k != spare.bar.raster) else { continue };
-            spare.bar.raster = scale;
-            spare.bar.read(&mut self.kit, &self.store, None, now);
-            spare.dirty = true;
+        for win in &mut self.bars.wins {
+            let Some(scale) = win.surface.as_ref().map(|s| s.scale()).filter(|k| *k != win.bar.raster) else { continue };
+            win.bar.raster = scale;
+            win.bar.read(&mut self.kit, &self.store, None, now);
+            win.dirty = true;
         }
     }
 
@@ -1538,9 +1522,9 @@ impl App {
         self.wake = Some(at);
         let _ = handle.insert_source(Timer::from_deadline(at), |_, _, app: &mut App| {
             app.wake = None;
-            app.bar.tick(&mut app.kit, &app.store, Instant::now());
+            live!(app).bar.tick(&mut app.kit, &app.store, Instant::now());
             app.tick_spares(Instant::now());
-            app.bar_dirty = true;
+            live!(app).dirty = true;
             app.panel_dirty = true;
             TimeoutAction::Drop
         });
@@ -1554,7 +1538,7 @@ impl App {
         if let Some(p) = self.launcher_part(surface) {
             return Some(Target::Launcher(p));
         }
-        if self.bar_surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface) {
+        if live!(self).surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface) {
             return Some(Target::Bar);
         }
         if self.panel.as_ref().is_some_and(|p| p.win.owns(surface)) {
@@ -1599,7 +1583,7 @@ impl App {
         if let Some(i) = self.picker_owner(surface) {
             return Some(Target::Picker(i));
         }
-        if let Some(i) = self.zones.iter().position(|(_, z)| z.layer.wl_surface() == surface) {
+        if let Some(i) = live!(self).zones.iter().position(|(_, z)| z.layer.wl_surface() == surface) {
             return Some(Target::Zone(i));
         }
         // The compositor sends a press to the panel surface it still has
@@ -1625,16 +1609,16 @@ impl App {
 
     fn hover(&mut self, owner: Option<Target>, at: (f64, f64)) {
         let now = Instant::now();
-        let bar_hover = (owner == Some(Target::Bar)).then(|| self.bar.hit(at.0, at.1)).flatten();
-        if bar_hover != self.bar.hover {
-            self.bar.hover = bar_hover;
-            for s in &mut self.bar.slots {
+        let bar_hover = (owner == Some(Target::Bar)).then(|| live!(self).bar.hit(at.0, at.1)).flatten();
+        if bar_hover != live!(self).bar.hover {
+            live!(self).bar.hover = bar_hover;
+            for s in &mut live!(self).bar.slots {
                 s.dirty = true;
             }
-            self.bar_dirty = true;
+            live!(self).dirty = true;
         }
-        if self.bar.pointer(&mut self.kit, bar_hover, at, &self.store, Instant::now()) {
-            self.bar_dirty = true;
+        if live!(self).bar.pointer(&mut self.kit, bar_hover, at, &self.store, Instant::now()) {
+            live!(self).dirty = true;
         }
         if let Some(menu) = self.tray_menu.as_mut() {
             let hit = (owner == Some(Target::Menu)).then(|| menu.menu_hit(at.0, at.1)).flatten();
@@ -1656,7 +1640,7 @@ impl App {
         // coordinates.
         let ask = match owner {
             Some(Target::Bar) if opened => None,
-            Some(Target::Bar) => self.bar.tooltip().map(|(text, r, edge)| {
+            Some(Target::Bar) => live!(self).bar.tooltip().map(|(text, r, edge)| {
                 let (ox, oy) = self.chrome().window();
                 let rect = IRect::new(r.x + ox, r.y + oy, r.w, r.h);
                 tooltip::Ask { owner: format!("bar:{}:{}", rect.x, rect.y), text, rect, bar: Some(edge) }
@@ -1702,8 +1686,8 @@ impl App {
         let on_bar = self.bar_input().iter().any(|r| x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64);
         if matches!(owner, Some(Target::Panel | Target::Outgoing)) && on_bar {
             owner = Some(Target::Bar);
-            if !self.bar.framed() {
-                let (ox, oy) = self.chrome().origin(self.bar.thickness());
+            if !live!(self).bar.framed() {
+                let (ox, oy) = self.chrome().origin(live!(self).bar.thickness());
                 (x, y) = (x - ox as f64, y - oy as f64);
             }
         }
@@ -1715,8 +1699,8 @@ impl App {
                 self.set_cursor(true);
             }
             PointerEventKind::Motion { .. } => {
-                if matches!(self.pressed, Some((Target::Bar, _))) && self.bar.sidebar_motion((x, y)) {
-                    self.bar_dirty = true;
+                if matches!(self.pressed, Some((Target::Bar, _))) && live!(self).bar.sidebar_motion((x, y)) {
+                    live!(self).dirty = true;
                 }
                 self.pointer_on = owner;
                 self.hover(owner, (x, y));
@@ -1743,7 +1727,7 @@ impl App {
                     return;
                 }
                 let hit = match owner {
-                    Some(Target::Bar) => self.bar.hit(x, y).map(Press::Slot),
+                    Some(Target::Bar) => live!(self).bar.hit(x, y).map(Press::Slot),
                     Some(Target::Menu) => self.tray_menu.as_ref().and_then(|p| p.menu_hit(x, y)).map(Press::Menu),
                     _ => None,
                 };
@@ -1756,9 +1740,9 @@ impl App {
                 }
                 self.pressed = owner.zip(hit);
                 if let Some((Target::Bar, Press::Slot(i))) = self.pressed
-                    && self.bar.sidebar_press(i, (x, y))
+                    && live!(self).bar.sidebar_press(i, (x, y))
                 {
-                    self.bar_dirty = true;
+                    live!(self).dirty = true;
                 }
             }
             PointerEventKind::Release { button, .. } => {
@@ -1775,7 +1759,7 @@ impl App {
                     return;
                 }
                 if o == Target::Bar
-                    && let Some(commands) = self.bar.sidebar_release((x, y))
+                    && let Some(commands) = live!(self).bar.sidebar_release((x, y))
                 {
                     self.minimap_drop(commands);
                     return;
@@ -1808,12 +1792,12 @@ impl App {
                     }
                     return;
                 }
-                if let Some(i) = self.bar.hit(x, y).filter(|_| owner == Some(Target::Bar)) {
-                    let action = self.bar.wheel(i, v, h, &self.store);
-                    let anchor = self.bar.slot_anchor(i);
+                if let Some(i) = live!(self).bar.hit(x, y).filter(|_| owner == Some(Target::Bar)) {
+                    let action = live!(self).bar.wheel(i, v, h, &self.store);
+                    let anchor = live!(self).bar.slot_anchor(i);
                     self.act(action, anchor);
-                    if self.bar.sidebar.is_some() {
-                        self.bar_dirty = true;
+                    if live!(self).bar.sidebar.is_some() {
+                        live!(self).dirty = true;
                         self.request_paint();
                     }
                 }
@@ -1826,7 +1810,7 @@ impl App {
     fn set_cursor(&mut self, entered: bool) {
         let (Some(device), Some((serial, current))) = (&self.cursor_device, self.cursor) else { return };
         let hand = match self.pointer_on {
-            Some(Target::Bar) => self.bar.hover.is_some_and(|i| self.bar.clickable(i)),
+            Some(Target::Bar) => live!(self).bar.hover.is_some_and(|i| live!(self).bar.clickable(i)),
             Some(Target::Panel) => self.panel.as_ref().is_some_and(|h| h.hand()),
             Some(Target::Headset) => true,
             Some(Target::Profiles) => true,
@@ -1841,9 +1825,9 @@ impl App {
 
     fn click(&mut self, owner: Target, press: Press, button: Button, at: (f64, f64)) {
         match (owner, press) {
-            (Target::Bar, Press::Slot(i)) if self.bar.clickable(i) => {
-                let a = self.bar.click(i, button, at.0, at.1, &self.store);
-                let anchor = self.bar.slot_anchor(i);
+            (Target::Bar, Press::Slot(i)) if live!(self).bar.clickable(i) => {
+                let a = live!(self).bar.click(i, button, at.0, at.1, &self.store);
+                let anchor = live!(self).bar.slot_anchor(i);
                 self.act(a, anchor);
             }
             (Target::Menu, Press::Menu(hit)) => {
@@ -1917,7 +1901,7 @@ impl App {
                 self.run_ipc(&calls);
             }
             Out::Act(action) => {
-                let anchor = self.panel.as_ref().and_then(|h| h.place.anchor).unwrap_or(self.bar.length() as f64);
+                let anchor = self.panel.as_ref().and_then(|h| h.place.anchor).unwrap_or(live!(self).bar.length() as f64);
                 self.close_panels();
                 self.act(action, anchor);
             }
@@ -2084,18 +2068,18 @@ impl App {
     fn on_outputs(&mut self) {
         // Written before the surfaces below are made, which open at it; what
         // reads it reacts once they are.
-        let scales = self.store.display.scales.read(&self.outputs, self.bar_wl.as_ref());
+        let scales = self.store.display.scales.read(&self.outputs, self.bar_wl());
         let moved = self.store.apply(Diff::Display(crate::services::display::Diff::Scales(scales)));
         self.lock_outputs();
         self.sync_hot_corners();
         self.sync_heads();
         self.saver_outputs();
-        if self.bar_surface.is_none() && !self.bar.hidden() {
+        if live!(self).surface.is_none() && !live!(self).bar.hidden() {
             self.place_chrome();
         }
         let name = self.bar_output_name();
-        if name != self.bar.output {
-            self.bar.output = name;
+        if name != live!(self).bar.output {
+            live!(self).bar.output = name;
             self.refresh_bar(None);
         } else {
             self.request_paint();

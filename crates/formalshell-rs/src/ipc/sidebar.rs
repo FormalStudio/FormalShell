@@ -5,12 +5,12 @@
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::surfaces::sidebar;
-use crate::wayland::App;
+use crate::wayland::{App, live};
 
 const NO_SIDEBAR: &str = "layout is not sidebar";
 
 fn set(app: &mut App, collapsed: bool) -> Reply {
-    if app.bar.sidebar.is_none() {
+    if live!(app).bar.sidebar.is_none() {
         return Err(NO_SIDEBAR.into());
     }
     sidebar::set_collapsed(collapsed);
@@ -31,14 +31,14 @@ fn toggle(app: &mut App, _: &[Value]) -> Reply {
 }
 
 fn focus(app: &mut App, _: &[Value]) -> Reply {
-    if app.bar.sidebar.is_some() && app.store.state.data.sidebar_collapsed {
+    if live!(app).bar.sidebar.is_some() && app.store.state.data.sidebar_collapsed {
         return Err("sidebar is collapsed".into());
     }
     if app.sidebar_focus(true) { ok() } else { Err(NO_SIDEBAR.into()) }
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    app.bar.sidebar_status().ok_or_else(|| NO_SIDEBAR.into())
+    live!(app).bar.sidebar_status().ok_or_else(|| NO_SIDEBAR.into())
 }
 
 pub fn target() -> Target<App> {

@@ -8,7 +8,7 @@ use serde_json::json;
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::overview::Action;
-use crate::wayland::App;
+use crate::wayland::{App, live};
 
 pub fn target() -> Target<App> {
     Target {
@@ -44,7 +44,7 @@ fn overview(app: &mut App, args: &[Value]) -> Reply {
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    let Some(cell) = app.bar.workspaces_status() else {
+    let Some(cell) = live!(app).bar.workspaces_status() else {
         return Err("no workspaces cell on any bar".into());
     };
     Ok(json!({"output": cell["output"], "slots": cell["slots"], "preview": app.preview_status()}))

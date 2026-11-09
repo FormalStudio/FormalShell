@@ -7,7 +7,7 @@ use serde_json::{Map, json};
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::surfaces::panel::quick;
-use crate::wayland::App;
+use crate::wayland::{App, live};
 
 pub fn target() -> Target<App> {
     Target {
@@ -27,18 +27,18 @@ pub fn target() -> Target<App> {
 }
 
 fn chevron_regions(app: &App) -> Vec<Region> {
-    Region::ALL.into_iter().filter(|r| app.bar.has_chevron(*r)).collect()
+    Region::ALL.into_iter().filter(|r| live!(app).bar.has_chevron(*r)).collect()
 }
 
 fn act(app: &mut App, action: &str, region: &str) -> Reply {
     let Some(r) = Region::parse(region) else {
         return Err(format!("unknown region '{region}' (left|center|right)"));
     };
-    if !app.bar.has_chevron(r) {
+    if !live!(app).bar.has_chevron(r) {
         return Err(format!("no chevron in bar.layout.{region}"));
     }
     let open = app.overflow_open() == Some(r);
-    let origin = if app.bar.sidebar.is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(r) };
+    let origin = if live!(app).bar.sidebar.is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(r) };
     match action {
         "toggle" => app.set_quick(origin, !open),
         "expand" => app.set_quick(origin, true),
@@ -57,8 +57,8 @@ fn status(app: &App) -> Reply {
     for r in Region::ALL {
         // Under the sidebar the right region's chevron is the column's foot
         // button.
-        let chevron = app.bar.has_chevron(r);
-        let collapses: Vec<String> = if chevron { app.bar.overflow_entries(r).iter().map(|e| e.name()).collect() } else { Vec::new() };
+        let chevron = live!(app).bar.has_chevron(r);
+        let collapses: Vec<String> = if chevron { live!(app).bar.overflow_entries(r).iter().map(|e| e.name()).collect() } else { Vec::new() };
         regions.insert(
             r.as_str().into(),
             json!({
@@ -94,9 +94,9 @@ fn chevron_at(app: &mut App, args: &[Value]) -> Reply {
 
 /// One entry per mapped bar, as `debug dump`'s bars fan out.
 fn room(app: &mut App, _: &[Value]) -> Reply {
-    Ok(json!([app.bar.room(&app.kit)]))
+    Ok(json!([live!(app).bar.room(&app.kit)]))
 }
 
 fn paint(app: &mut App, _: &[Value]) -> Reply {
-    Ok(json!([{"screen": app.bar.output, "paint": app.bar.paint_state(&app.store)}]))
+    Ok(json!([{"screen": live!(app).bar.output, "paint": live!(app).bar.paint_state(&app.store)}]))
 }

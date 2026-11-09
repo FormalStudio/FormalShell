@@ -443,12 +443,12 @@ impl App {
     /// The sidebar's clock card handed the face keys and the bar's output's
     /// picture under the bar window; the subject to ask for, if any.
     fn sync_sidebar_clock(&mut self) -> Option<Key> {
-        if self.bar.sidebar.is_none() {
+        if live!(self).bar.sidebar.is_none() {
             self.desktop_clock.sidebar = Slot::default();
             return None;
         }
         let face = FaceSettings::read(&self.store.config);
-        let head = self.heads.iter().position(|h| Some(&h.output) == self.bar_wl.as_ref());
+        let head = self.heads.iter().position(|h| Some(&h.output) == self.bar_wl());
         let picture = head.and_then(|i| self.desktop_clock_picture(i));
         let (out_w, _) = self.output_size();
         let origin = self.bar_origin();
@@ -465,10 +465,10 @@ impl App {
             picture,
             origin,
         });
-        if let Some(sb) = &mut self.bar.sidebar
+        if let Some(sb) = &mut live!(self).bar.sidebar
             && sb.set_clock(under)
         {
-            self.bar_dirty = true;
+            live!(self).dirty = true;
         }
         ask
     }
@@ -525,10 +525,10 @@ impl App {
 
     /// The sidebar's clock card for `debug dump`, null under the bar.
     pub(crate) fn sidebar_clock_state(&self) -> serde_json::Value {
-        let Some(sb) = &self.bar.sidebar else { return serde_json::Value::Null };
+        let Some(sb) = &live!(self).bar.sidebar else { return serde_json::Value::Null };
         let mut v = sb.clock_state(&self.store);
         v["origin"] = serde_json::json!(self.bar_origin());
-        v["commits"] = serde_json::json!(self.bar_surface.as_ref().map_or(0, |s| s.commits()));
+        v["commits"] = serde_json::json!(live!(self).surface.as_ref().map_or(0, |s| s.commits()));
         v
     }
 }

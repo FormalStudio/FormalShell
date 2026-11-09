@@ -210,7 +210,7 @@ impl Owner for Heads {
     }
 
     fn present(&self, app: &mut App, now: Instant) {
-        app.present_heads(app.bar_dirty, now);
+        app.present_heads(live!(app).dirty, now);
     }
 
     fn wake(&self, app: &App, now: Instant) -> Option<Instant> {
@@ -245,7 +245,7 @@ struct Bar;
 
 impl Owner for Bar {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.bar_surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface)
+        live!(app).surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface)
     }
 
     /// Every slice but the launcher's own inputs and the inboxes other
@@ -274,12 +274,13 @@ impl Owner for Bar {
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, (width, height): (i32, i32)) {
-        let current = app.bar.scene.size;
+        let current = live!(app).bar.scene.size;
         let w = if width > 0 { width } else { current.w };
         let h = if height > 0 { height } else { current.h };
-        app.bar.resize(w, h);
-        let size = app.bar.scene.size;
-        if let Some(s) = &mut app.bar_surface {
+        live!(app).bar.resize(w, h);
+        let size = live!(app).bar.scene.size;
+        let win = &mut live!(app);
+        if let Some(s) = &mut win.surface {
             let first = !s.configured;
             if first {
                 crate::trace::phase("bar configured");
@@ -288,7 +289,7 @@ impl Owner for Bar {
             // The frame drawn while this configure was on its way
             // goes out now, ahead of anything else this turn holds.
             if first && s.drawn_ahead() && size == current {
-                s.present(&mut app.bar.scene, false, &app.qh);
+                s.present(&mut win.bar.scene, false, &app.qh);
             }
         }
         app.sync_bar_input();
@@ -303,34 +304,35 @@ impl Owner for Bar {
     }
 
     fn frame(&self, app: &mut App, _: &WlSurface, now: Instant) {
-        let Some(s) = &mut app.bar_surface else { return };
+        let Some(s) = &mut live!(app).surface else { return };
         // A callback only lets the next frame go; what that frame
         // draws is the present's to decide (a spinner needs no new
         // layout of the strip).
         if s.landed(now) {
-            app.bar_dirty = true;
+            live!(app).dirty = true;
         }
     }
 
     fn closed(&self, app: &mut App, _: &WlSurface) {
-        app.bar_surface = None;
-        app.zones.clear();
+        live!(app).surface = None;
+        live!(app).zones.clear();
     }
 
     fn present(&self, app: &mut App, now: Instant) {
         let qh = app.qh.clone();
-        let animating = app.bar.animating(&app.kit, now);
-        let stepping = animating || app.bar.marquee_due(&app.kit, now);
-        if app.bar_dirty || (stepping && !app.bar.step_in_place(&mut app.kit, now)) {
-            app.bar.layout(&mut app.kit, &app.store, now);
-            app.bar_dirty = false;
+        let animating = live!(app).bar.animating(&app.kit, now);
+        let stepping = animating || live!(app).bar.marquee_due(&app.kit, now);
+        if live!(app).dirty || (stepping && !live!(app).bar.step_in_place(&mut app.kit, now)) {
+            live!(app).bar.layout(&mut app.kit, &app.store, now);
+            live!(app).dirty = false;
             app.sync_sidebar_keys();
             app.sync_bar_input();
         }
-        if let Some(s) = &mut app.bar_surface {
-            s.present(&mut app.bar.scene, animating, &qh);
+        let win = &mut live!(app);
+        if let Some(s) = &mut win.surface {
+            s.present(&mut win.bar.scene, animating, &qh);
         }
-        if !app.faces_warmed && app.bar_surface.as_ref().is_some_and(|s| s.mapped()) {
+        if !app.faces_warmed && live!(app).surface.as_ref().is_some_and(|s| s.mapped()) {
             app.faces_warmed = true;
             crate::trace::phase("bar mapped");
             crate::trace::thread_ticks();
@@ -342,7 +344,7 @@ impl Owner for Bar {
     }
 
     fn wake(&self, app: &App, now: Instant) -> Option<Instant> {
-        app.bar.wake(&app.kit, now)
+        live!(app).bar.wake(&app.kit, now)
     }
 
     fn report(&self, app: &App, dump: &mut Map<String, Value>) {
@@ -350,7 +352,7 @@ impl Owner for Bar {
     }
 
     fn counts(&self, app: &App, out: &mut Vec<String>) {
-        out.extend(app.bar_surface.iter().map(|s| s.report()));
+        out.extend(live!(app).surface.iter().map(|s| s.report()));
     }
 }
 
@@ -1127,30 +1129,30 @@ struct Zones;
 
 impl Owner for Zones {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.zones.iter().any(|(_, z)| z.layer.wl_surface() == surface)
+        live!(app).zones.iter().any(|(_, z)| z.layer.wl_surface() == surface)
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
-        if let Some((_, z)) = app.zones.iter_mut().find(|(_, z)| z.layer.wl_surface() == surface) {
+        if let Some((_, z)) = live!(app).zones.iter_mut().find(|(_, z)| z.layer.wl_surface() == surface) {
             z.configure(width.max(1), height.max(1));
         }
     }
 
     fn frame(&self, app: &mut App, surface: &WlSurface, _: Instant) {
-        if let Some((_, z)) = app.zones.iter_mut().find(|(_, z)| z.layer.wl_surface() == surface) {
+        if let Some((_, z)) = live!(app).zones.iter_mut().find(|(_, z)| z.layer.wl_surface() == surface) {
             z.landed();
         }
     }
 
     fn present(&self, app: &mut App, _: Instant) {
         let qh = app.qh.clone();
-        for (_, z) in &mut app.zones {
+        for (_, z) in &mut live!(app).zones {
             z.present(0.0, false, &qh);
         }
     }
 
     fn counts(&self, app: &App, out: &mut Vec<String>) {
-        out.extend(app.zones.iter().map(|(_, z)| z.report()));
+        out.extend(live!(app).zones.iter().map(|(_, z)| z.report()));
     }
 }
 

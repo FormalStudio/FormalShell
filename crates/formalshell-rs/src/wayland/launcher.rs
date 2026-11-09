@@ -232,7 +232,7 @@ impl App {
             }
             P::Act(action) => {
                 self.menu_close();
-                self.act(action, self.bar.length() as f64);
+                self.act(action, live!(self).bar.length() as f64);
             }
         }
         self.launcher_resolve = true;

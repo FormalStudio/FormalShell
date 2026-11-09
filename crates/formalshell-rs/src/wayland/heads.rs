@@ -1,9 +1,9 @@
 //! What every output carries: its own wallpaper, and a bar of its own.
 //!
-//! One of those bars is live: it is `App::bar`, the one panels, menus,
+//! One of those bars is live: it is `Bars::live`, the one panels, menus,
 //! joins and tooltips hang off, and every other bar is a spare drawn from the
 //! same store at its own output's size. The live bar follows the focused
-//! output, swapping with that output's spare, but only while nothing hangs
+//! output, moving to that output's window, but only while nothing hangs
 //! off it, so a card is never left joined to a line that moved away. A pointer
 //! entering a spare promotes it on the spot, so the first click lands without
 //! waiting for the compositor's focus event.
@@ -35,17 +35,72 @@ use crate::surfaces::bar::Bar;
 pub(super) struct Head {
     pub output: WlOutput,
     pub backdrop: Option<Backdrop>,
-    /// None on the live bar's output, whose bar is `App::bar`.
-    pub spare: Option<Spare>,
     pub catcher: Option<PixelSurface>,
     pub clock: Option<super::desktop_clock::Clock>,
 }
 
-pub(super) struct Spare {
+/// A bar with the layer surface and frame zones it is drawn on.
+pub struct BarWindow {
     pub bar: Bar,
     pub surface: Option<Surface>,
     pub zones: Vec<(Edge, PixelSurface)>,
     pub dirty: bool,
+}
+
+impl BarWindow {
+    fn new(bar: Bar) -> Self {
+        Self { bar, surface: None, zones: Vec::new(), dirty: true }
+    }
+
+    /// A freshly built window in place: the reserved zone and the input
+    /// region start over, as the compositor has seen neither.
+    pub fn mount(&mut self, surface: Surface, zones: Vec<(Edge, PixelSurface)>) {
+        self.bar.reserved = self.bar.zone();
+        self.bar.input_sent = None;
+        self.surface = Some(surface);
+        self.zones = zones;
+        self.dirty = true;
+    }
+
+    /// The window gone, its bar kept.
+    fn unmount(&mut self) {
+        self.surface = None;
+        self.zones.clear();
+        self.dirty = true;
+    }
+}
+
+/// One window for each head, in head order (one alone before the first
+/// output), and which of them is live.
+pub struct Bars {
+    pub wins: Vec<BarWindow>,
+    pub live: usize,
+}
+
+impl Bars {
+    pub fn new(bar: Bar) -> Self {
+        Self { wins: vec![BarWindow::new(bar)], live: 0 }
+    }
+
+    /// `f` on every bar, whether any answered true.
+    pub fn apply(&mut self, mut f: impl FnMut(&mut Bar) -> bool) -> bool {
+        self.wins.iter_mut().fold(false, |any, w| f(&mut w.bar) | any)
+    }
+
+    pub fn each(&mut self, mut f: impl FnMut(&mut Bar)) {
+        self.wins.iter_mut().for_each(|w| f(&mut w.bar));
+    }
+
+    /// Every window but the live one, with its head's index.
+    fn spares(&self) -> impl Iterator<Item = (usize, &BarWindow)> {
+        let live = self.live;
+        self.wins.iter().enumerate().filter(move |(i, _)| *i != live)
+    }
+
+    fn spares_mut(&mut self) -> impl Iterator<Item = (usize, &mut BarWindow)> {
+        let live = self.live;
+        self.wins.iter_mut().enumerate().filter(move |(i, _)| *i != live)
+    }
 }
 
 /// Which part of a head a surface is.
@@ -76,22 +131,21 @@ impl App {
             self.veil_output(&output);
             let layer = self.overlay_on("formalshell:wallpaper", Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
             let backdrop = Some(Backdrop::new(layer, &self.shm, self.store.display.scales.on(&output)));
-            let spare = if self.bar_wl.is_none() {
-                self.bar_wl = Some(output.clone());
-                None
-            } else {
-                Some(Spare { bar: self.spare_bar(), surface: None, zones: Vec::new(), dirty: true })
-            };
-            self.heads.push(Head { output, backdrop, spare, catcher: None, clock: None });
-            if self.heads.last().is_some_and(|h| h.spare.is_some()) {
-                self.place_spare(self.heads.len() - 1);
-            } else {
+            let first = self.heads.is_empty();
+            if !first {
+                let bar = self.spare_bar();
+                self.bars.wins.push(BarWindow::new(bar));
+            }
+            self.heads.push(Head { output, backdrop, catcher: None, clock: None });
+            if first {
                 self.place_chrome();
+            } else {
+                self.place_spare(self.heads.len() - 1);
             }
         }
         let names: Vec<(usize, String)> = self.heads.iter().enumerate().map(|(i, h)| (i, self.output_name(&h.output))).collect();
         for (i, name) in names {
-            if let Some(s) = &mut self.heads[i].spare
+            if let Some((_, s)) = self.bars.spares_mut().find(|(j, _)| *j == i)
                 && s.bar.output != name
             {
                 s.bar.output = name;
@@ -103,8 +157,8 @@ impl App {
 
     /// A bar built the way the live one is: its edge, its layout and theme.
     fn spare_bar(&mut self) -> Bar {
-        let mut bar = Bar::new(self.bar.edge(), &self.store.theme.theme, crate::settings::layout(&self.store.config));
-        bar.set_layout(self.bar.resolved.clone());
+        let mut bar = Bar::new(live!(self).bar.edge(), &self.store.theme.theme, crate::settings::layout(&self.store.config));
+        bar.set_layout(live!(self).bar.resolved.clone());
         bar.set_collapsed(self.store.state.data.sidebar_collapsed);
         bar.update_paint(&mut self.kit, &self.store);
         bar
@@ -114,22 +168,24 @@ impl App {
     /// output's spare when it was the live one's.
     pub(super) fn drop_head(&mut self, output: &WlOutput) {
         let Some(i) = self.heads.iter().position(|h| h.output == *output) else { return };
-        let head = self.heads.remove(i);
-        if self.bar_wl.as_ref() != Some(output) {
-            return;
-        }
-        self.close_bar_cards();
-        self.bar_surface = None;
-        self.zones.clear();
-        self.bar_wl = None;
-        drop(head);
-        if let Some(j) = self.heads.iter().position(|h| h.spare.is_some()) {
-            let spare = self.heads[j].spare.take().expect("checked");
-            self.bar = spare.bar;
-            self.bar_surface = spare.surface;
-            self.zones = spare.zones;
-            self.bar_wl = Some(self.heads[j].output.clone());
-            if self.bar_surface.is_none() && !self.bar.hidden() {
+        let was_live = i == self.bars.live;
+        drop(self.heads.remove(i));
+        if self.heads.is_empty() {
+            // The one window outlives its output, unmapped.
+            self.close_bar_cards();
+            self.bars.wins[0].unmount();
+            self.bars.live = 0;
+        } else {
+            drop(self.bars.wins.remove(i));
+            if !was_live {
+                if i < self.bars.live {
+                    self.bars.live -= 1;
+                }
+                return;
+            }
+            self.close_bar_cards();
+            self.bars.live = 0;
+            if live!(self).surface.is_none() && !live!(self).bar.hidden() {
                 self.place_chrome();
             }
         }
@@ -147,27 +203,19 @@ impl App {
     /// The spare on head `i` made the live bar, when nothing hangs off the
     /// live one.
     pub(super) fn promote(&mut self, i: usize) -> bool {
-        if self.heads.get(i).is_none_or(|h| h.spare.is_none()) || self.bar_busy() {
+        if i >= self.heads.len() || i == self.bars.live || self.bar_busy() {
             return false;
         }
-        if let Some(sb) = self.bar.sidebar.as_mut() {
+        if let Some(sb) = live!(self).bar.sidebar.as_mut() {
             sb.map.cursor = None;
         }
         self.sync_sidebar_keys();
-        let mut spare = self.heads[i].spare.take().expect("checked");
-        std::mem::swap(&mut self.bar, &mut spare.bar);
-        std::mem::swap(&mut self.bar_surface, &mut spare.surface);
-        std::mem::swap(&mut self.zones, &mut spare.zones);
-        let old = self.bar_wl.replace(self.heads[i].output.clone());
+        live!(self).bar.hover = None;
+        live!(self).dirty = true;
+        self.bars.live = i;
+        live!(self).bar.hover = None;
         self.tip_card = None;
-        self.bar.hover = None;
-        spare.bar.hover = None;
-        spare.dirty = true;
-        match old.and_then(|o| self.heads.iter_mut().find(|h| h.output == o)) {
-            Some(h) => h.spare = Some(spare),
-            None => drop(spare),
-        }
-        self.log(&format!("bar live on {}", self.bar.output));
+        self.log(&format!("bar live on {}", live!(self).bar.output));
         self.refresh_bar(None);
         true
     }
@@ -175,10 +223,10 @@ impl App {
     /// The live bar onto the focused output, when it is elsewhere and free.
     pub(super) fn follow_focus(&mut self) {
         let focused = &self.store.compositor.snapshot.focused_output_name;
-        if focused.is_empty() || *focused == self.bar.output {
+        if focused.is_empty() || *focused == live!(self).bar.output {
             return;
         }
-        let Some(i) = self.heads.iter().position(|h| h.spare.as_ref().is_some_and(|s| s.bar.output == *focused)) else { return };
+        let Some((i, _)) = self.bars.spares().find(|(_, s)| s.bar.output == *focused) else { return };
         self.promote(i);
     }
 
@@ -206,7 +254,7 @@ impl App {
     /// and the spare is promoted so the press lands on its cell. A modal
     /// still joined to the old line while it closes keeps the press.
     pub(super) fn press_spare(&mut self, i: usize) -> bool {
-        if self.heads.get(i).is_none_or(|h| h.spare.is_none()) {
+        if i >= self.heads.len() || i == self.bars.live {
             return false;
         }
         if self.catches() {
@@ -226,8 +274,7 @@ impl App {
     pub(super) fn sync_catchers(&mut self) {
         let want = self.catches();
         for i in 0..self.heads.len() {
-            let live = self.bar_wl.as_ref() == Some(&self.heads[i].output);
-            if want && !live {
+            if want && i != self.bars.live {
                 if self.heads[i].catcher.is_none() {
                     let output = self.heads[i].output.clone();
                     let layer = self.overlay_on("formalshell:catcher", Layer::Overlay, Anchor::all(), (0, 0), -1, Some(&output));
@@ -247,7 +294,7 @@ impl App {
         let Some((w, h)) = head.catcher.as_ref().and_then(|c| c.size()) else { return };
         let Ok(region) = Region::new(&self.compositor) else { return };
         region.add(0, 0, w, h);
-        if let Some(s) = head.spare.as_ref().filter(|s| s.surface.is_some()) {
+        if let Some((_, s)) = self.bars.spares().find(|(j, s)| *j == i && s.surface.is_some()) {
             let t = s.bar.thickness();
             let band = match s.bar.edge() {
                 Edge::Top => IRect::new(0, 0, w, t),
@@ -290,7 +337,10 @@ impl App {
             if h.clock.as_ref().is_some_and(|c| c.surface.layer.wl_surface() == surface) {
                 return Some((i, Part::Clock));
             }
-            let s = h.spare.as_ref()?;
+            if i == self.bars.live {
+                return None;
+            }
+            let s = self.bars.wins.get(i)?;
             if s.surface.as_ref().is_some_and(|b| b.layer.wl_surface() == surface) {
                 return Some((i, Part::Bar));
             }
@@ -301,35 +351,37 @@ impl App {
     /// Head `i`'s spare window and zones as its output's fullscreen state
     /// wants them.
     pub(super) fn place_spare(&mut self, i: usize) {
-        let Some(mut spare) = self.heads.get_mut(i).and_then(|h| h.spare.take()) else { return };
+        let Some(win) = self.bars.wins.get(i) else { return };
         let output = self.heads[i].output.clone();
-        spare.bar.set_hidden(self.chrome().covered(&spare.bar.output));
-        (spare.surface, spare.zones) = if spare.bar.hidden() {
-            (None, Vec::new())
+        let hidden = self.chrome().covered(&win.bar.output);
+        self.bars.wins[i].bar.set_hidden(hidden);
+        if hidden {
+            self.bars.wins[i].unmount();
         } else {
-            let (surface, zones) = self.build_chrome(&spare.bar, &output);
-            spare.bar.reserved = spare.bar.zone();
-            spare.bar.input_sent = None;
-            (Some(surface), zones)
-        };
-        spare.dirty = true;
-        self.heads[i].spare = Some(spare);
+            let (surface, zones) = self.build_chrome(&self.bars.wins[i].bar, &output);
+            self.bars.wins[i].mount(surface, zones);
+        }
     }
 
     pub(super) fn place_spares(&mut self) {
         for i in 0..self.heads.len() {
-            self.place_spare(i);
+            if i != self.bars.live {
+                self.place_spare(i);
+            }
         }
     }
 
     /// The spares' share of `refresh_bar`.
     pub(super) fn refresh_spares(&mut self, topic: Option<Topic>, now: Instant) {
         for i in 0..self.heads.len() {
-            let Some(s) = &self.heads[i].spare else { continue };
+            if i == self.bars.live {
+                continue;
+            }
+            let s = &self.bars.wins[i];
             if self.chrome().covered(&s.bar.output) != s.bar.hidden() {
                 self.place_spare(i);
             }
-            let Some(s) = &mut self.heads[i].spare else { continue };
+            let s = &mut self.bars.wins[i];
             s.bar.update_paint(&mut self.kit, &self.store);
             super::sync_zone(&mut s.bar, s.surface.as_mut());
             s.bar.read(&mut self.kit, &self.store, topic, now);
@@ -338,14 +390,14 @@ impl App {
     }
 
     pub(super) fn tick_spares(&mut self, now: Instant) {
-        for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
+        for (_, s) in self.bars.spares_mut() {
             s.bar.tick(&mut self.kit, &self.store, now);
             s.dirty = true;
         }
     }
 
     pub(super) fn spares_wake(&self, now: Instant) -> Option<Instant> {
-        self.heads.iter().filter_map(|h| h.spare.as_ref()).filter_map(|s| s.bar.wake(&self.kit, now)).min()
+        self.bars.spares().filter_map(|(_, s)| s.bar.wake(&self.kit, now)).min()
     }
 
     pub(super) fn present_heads(&mut self, all: bool, now: Instant) {
@@ -355,7 +407,7 @@ impl App {
             c.present(0.0, false, &qh);
         }
         let mut moved = Vec::new();
-        for (i, s) in self.heads.iter_mut().enumerate().filter_map(|(i, h)| Some((i, h.spare.as_mut()?))) {
+        for (i, s) in self.bars.spares_mut() {
             let Some(surface) = &mut s.surface else { continue };
             let animating = s.bar.animating(&self.kit, now);
             let stepping = animating || s.bar.marquee_due(&self.kit, now);
@@ -576,14 +628,14 @@ impl App {
             }
             Part::Shards(_) => {}
             Part::Bar => {
-                let Some(s) = &mut head.spare else { return };
+                let Some((_, s)) = self.bars.spares_mut().find(|(j, _)| *j == i) else { return };
                 let Some(surface) = &mut s.surface else { return };
                 if surface.landed(now) {
                     s.dirty = true;
                 }
             }
             Part::Zone(z) => {
-                let Some((_, z)) = head.spare.as_mut().and_then(|s| s.zones.get_mut(z)) else { return };
+                let Some((_, z)) = self.bars.spares_mut().find(|(j, _)| *j == i).and_then(|(_, s)| s.zones.get_mut(z)) else { return };
                 z.landed();
             }
             Part::Catcher => {
@@ -613,7 +665,7 @@ impl App {
                 self.sync_shards();
             }
             Part::Bar => {
-                let Some(s) = &mut head.spare else { return };
+                let Some((_, s)) = self.bars.spares_mut().find(|(j, _)| *j == i) else { return };
                 let current = s.bar.scene.size;
                 let w = if width > 0 { width } else { current.w };
                 let h = if height > 0 { height } else { current.h };
@@ -624,14 +676,13 @@ impl App {
                 }
                 s.bar.read(&mut self.kit, &self.store, None, Instant::now());
                 s.dirty = true;
-                if let Some(s) = &mut self.heads[i].spare
-                    && let Some(surface) = &s.surface
-                {
+                let s = &mut self.bars.wins[i];
+                if let Some(surface) = &s.surface {
                     Self::set_input_region_for(&self.compositor, &mut s.bar, surface);
                 }
             }
             Part::Zone(z) => {
-                if let Some((_, z)) = head.spare.as_mut().and_then(|s| s.zones.get_mut(z)) {
+                if let Some((_, z)) = self.bars.spares_mut().find(|(j, _)| *j == i).and_then(|(_, s)| s.zones.get_mut(z)) {
                     z.configure(width.max(1), height.max(1));
                 }
             }
@@ -660,7 +711,7 @@ impl App {
                 }
             }
             Part::Bar => {
-                if let Some(s) = &mut head.spare {
+                if let Some((_, s)) = self.bars.spares_mut().find(|(j, _)| *j == i) {
                     s.surface = None;
                 }
             }

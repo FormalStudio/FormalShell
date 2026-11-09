@@ -44,14 +44,14 @@ impl App {
         let origin = self.bar_origin();
         let lit = self.rims.lit.clone().map(|l| (l, origin));
         let key = lit.as_ref().map(|(l, o)| (l.generation, o.0.to_bits(), o.1.to_bits()));
-        if let Some(sb) = &mut self.bar.sidebar
+        if let Some(sb) = &mut live!(self).bar.sidebar
             && self.rims.sidebar != key
         {
             self.rims.sidebar = key;
             sb.set_lit(lit);
-            self.bar_dirty = true;
+            live!(self).dirty = true;
         }
-        if self.bar.sidebar.is_none() {
+        if live!(self).bar.sidebar.is_none() {
             self.rims.sidebar = None;
         }
     }
@@ -72,7 +72,7 @@ impl App {
         if let Some(rgb) = wallpaper::flat(&wanted) {
             return Some(Arc::new(Sky::flat(rgb.map(|c| f32::from(c) / 255.0), logical)));
         }
-        let bar = self.bar_wl.as_ref()?;
+        let bar = self.bar_wl()?;
         let (pw, ph) = self.heads.iter().find(|h| &h.output == bar)?.backdrop.as_ref()?.pixels()?;
         let picture = self.store.wallpaper.sized(pw as u32, ph as u32).filter(|p| p.path == wanted)?.clone();
         let at = Arc::as_ptr(&picture) as usize;
