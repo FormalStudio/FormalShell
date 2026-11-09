@@ -91,24 +91,23 @@ pub fn command(cmd: Cmd) {
     let _ = commands().0.try_send(cmd);
 }
 
-/// One bridge action. They run one at a time: re-running a child still
-/// running would send the first and drop the rest.
-enum Action {
-    /// The panel's or IPC's: what it prints is read as bridge lines and a
-    /// non-zero exit reaches `last_error`.
-    Panel(Vec<String>),
-    /// A centre card's, whose outcome nothing reads.
-    Card(Vec<String>),
+/// Each queue runs one at a time: re-running a child still running would
+/// send the first and drop the rest.
+type Queue = (async_channel::Sender<Vec<String>>, async_channel::Receiver<Vec<String>>);
+
+/// The panel's or IPC's invokes: what they print is read as bridge lines and
+/// a non-zero exit reaches `last_error`.
+static PANEL: OnceLock<Queue> = OnceLock::new();
+/// A centre card's invokes, whose outcome nothing reads. Their own worker, so
+/// a slow panel invoke never holds a card's Answer or Decline.
+static CARD: OnceLock<Queue> = OnceLock::new();
+
+fn panel_queue() -> &'static Queue {
+    PANEL.get_or_init(async_channel::unbounded)
 }
 
-static ACTIONS: OnceLock<(async_channel::Sender<Action>, async_channel::Receiver<Action>)> = OnceLock::new();
-
-fn actions() -> &'static (async_channel::Sender<Action>, async_channel::Receiver<Action>) {
-    ACTIONS.get_or_init(async_channel::unbounded)
-}
-
-fn queue(action: Action) {
-    let _ = actions().0.try_send(action);
+fn card_queue() -> &'static Queue {
+    CARD.get_or_init(async_channel::unbounded)
 }
 
 fn invoke_argv(handle: &str, id: i64, positive: bool) -> Vec<String> {
@@ -119,7 +118,7 @@ fn invoke_argv(handle: &str, id: i64, positive: bool) -> Vec<String> {
 /// own record: the card outlives the panel's `recent` (Clear empties it).
 pub fn card_invoke(phone: &Phone, positive: bool) {
     if !phone.device_handle.is_empty() {
-        queue(Action::Card(invoke_argv(&phone.device_handle, phone.id, positive)));
+        let _ = card_queue().0.try_send(invoke_argv(&phone.device_handle, phone.id, positive));
     }
 }
 
@@ -513,7 +512,7 @@ fn handle(ctx: &Ctx, session: &mut Session, cmd: Cmd, inbox: &(async_channel::Se
             session.state.last_error = "The phone reconnected since this arrived, so it can no longer be acted on".into();
             return true;
         }
-        queue(Action::Panel(invoke_argv(&entry.device_handle, entry.id, positive)));
+        let _ = panel_queue().0.try_send(invoke_argv(&entry.device_handle, entry.id, positive));
         false
     };
     match cmd {
@@ -613,11 +612,13 @@ pub async fn run(ctx: Ctx) {
     let inbox = async_channel::unbounded::<Msg>();
     let worker_inbox = inbox.0.clone();
     ctx.spawn(async move {
-        while let Ok(action) = actions().1.recv().await {
-            match action {
-                Action::Panel(argv) => run_child(argv, worker_inbox.clone(), true).await,
-                Action::Card(argv) => run_quiet(argv).await,
-            }
+        while let Ok(argv) = panel_queue().1.recv().await {
+            run_child(argv, worker_inbox.clone(), true).await;
+        }
+    });
+    ctx.spawn(async move {
+        while let Ok(argv) = card_queue().1.recv().await {
+            run_quiet(argv).await;
         }
     });
     let mut session = Session::default();

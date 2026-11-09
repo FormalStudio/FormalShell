@@ -113,7 +113,7 @@ pub struct State {
     pub reminders: Vec<reminders::Entry>,
     reminders_seen: Option<Value>,
     reminder_serial: u64,
-    phone: iphone::Mirror,
+    pub phone: iphone::Mirror,
 }
 
 impl State {
@@ -214,10 +214,6 @@ impl State {
             m.popups.iter().chain(&m.pending).chain(&m.past).map(|e| e.id.as_str()).collect()
         };
         self.icons.retain(|k, _| live.contains(k.as_str()));
-    }
-
-    pub fn sync_config(&mut self, raw: Option<&Value>) {
-        self.phone.sync_config(raw);
     }
 
     /// Mirrors state.json's dnd and reminders whenever the file moved.
@@ -715,7 +711,7 @@ mod tests {
 
     fn mirrored() -> State {
         let mut s = State::default();
-        s.sync_config(None);
+        s.phone.sync_config(None);
         s
     }
 
