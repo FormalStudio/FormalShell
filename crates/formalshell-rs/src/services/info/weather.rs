@@ -11,8 +11,9 @@ use fs_info::location::{self, Fix, Placed};
 use fs_info::weather::{self, Error, Weather};
 
 use super::geoclue::{self, GeoFix};
-use super::{changed, idle, kicked, settings};
+use super::{idle, kicked};
 use crate::runtime::Ctx;
+use crate::services::config;
 use crate::services::proc;
 use crate::services::wants::Source;
 use crate::store;
@@ -33,7 +34,7 @@ struct Cfg {
 }
 
 fn read() -> Cfg {
-    let s = settings();
+    let s = config::current();
     Cfg { at: crate::settings::location(&s), interval: s.interval("weather.intervalMs", 900_000) }
 }
 
@@ -96,7 +97,7 @@ fn publish(ctx: &Ctx, state: State) {
 }
 
 pub async fn run(ctx: Ctx) {
-    let rx = changed();
+    let rx = config::subscribe();
     let kick = kicked(Source::Weather);
     let mut lookup: Option<Fix> = None;
     let mut geo: Option<GeoFix> = None;

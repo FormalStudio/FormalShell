@@ -11,7 +11,7 @@
 //! `selected` is the one piece of state the UI owns; every source's own
 //! state is published whole by its service.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use fs_media::media::{self as pick, LabelledRow, PlayerRow};
@@ -27,64 +27,6 @@ use super::devices::bluetooth;
 use super::{airplay, ams, kopuz, radio, visualizer};
 use crate::runtime::Ctx;
 use crate::store;
-
-/// The settings keys the media services act on, handed over by the UI thread
-/// whenever settings.json reads differently.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Settings {
-    pub airplay_enable: bool,
-    pub airplay_name: String,
-    pub iphone_enable: bool,
-    pub motion: bool,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self::read(&Value::Null)
-    }
-}
-
-impl Settings {
-    fn read(settings: &Value) -> Self {
-        use crate::settings::{AIRPLAY_ENABLE, AIRPLAY_NAME, IPHONE_ENABLE, MOTION};
-        Self {
-            airplay_enable: AIRPLAY_ENABLE.get(settings),
-            airplay_name: AIRPLAY_NAME.get(settings).to_owned(),
-            iphone_enable: IPHONE_ENABLE.get(settings),
-            motion: MOTION.get(settings),
-        }
-    }
-}
-
-struct Hub {
-    /// None until the first [`configure`], when subscribers get the defaults.
-    last: Option<Settings>,
-    subscribers: Vec<async_channel::Sender<Settings>>,
-}
-
-static HUB: Mutex<Hub> = Mutex::new(Hub { last: None, subscribers: Vec::new() });
-
-/// A service's stream of settings, seeded with the last ones handed over.
-pub fn subscribe() -> async_channel::Receiver<Settings> {
-    let (tx, rx) = async_channel::unbounded();
-    if let Ok(mut hub) = HUB.lock() {
-        let _ = tx.try_send(hub.last.clone().unwrap_or_default());
-        hub.subscribers.push(tx);
-    }
-    rx
-}
-
-/// The UI thread's side: called with the whole settings document.
-pub fn configure(settings: &Value) {
-    let next = Settings::read(settings);
-    visualizer::set_motion(next.motion);
-    let Ok(mut hub) = HUB.lock() else { return };
-    if hub.last.as_ref().unwrap_or(&Settings::default()) == &next {
-        return;
-    }
-    hub.last = Some(next.clone());
-    hub.subscribers.retain(|tx| tx.try_send(next.clone()).is_ok());
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Player {
@@ -1080,13 +1022,5 @@ mod tests {
         assert_eq!((s.output_id().as_str(), s.can_route()), ("sink-b", true));
         s.remotes = vec![remote(false)];
         assert_eq!(s.active_id(), "org.mpris.MediaPlayer2.mpv");
-    }
-
-    #[test]
-    fn settings_read_their_defaults() {
-        assert_eq!(Settings::read(&json!({})), Settings::default());
-        let s = Settings::read(&json!({"airplay": {"enable": true, "name": "Mac"}, "iphone": {"enable": false}, "motion": {"enabled": false}}));
-        assert!(s.airplay_enable && !s.iphone_enable && !s.motion);
-        assert_eq!(s.airplay_name, "Mac");
     }
 }

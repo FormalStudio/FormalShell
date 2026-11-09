@@ -15,8 +15,9 @@ use futures_lite::FutureExt;
 use serde_json::{Value, json};
 
 use super::monitor::now_ms;
-use super::{changed, idle, kicked, settings};
+use super::{idle, kicked};
 use crate::runtime::Ctx;
+use crate::services::config;
 use crate::services::compositor;
 use crate::services::proc;
 use crate::services::wants::Source;
@@ -91,7 +92,7 @@ impl State {
 }
 
 fn interval() -> Duration {
-    Duration::from_millis(settings().interval("monitor.processIntervalMs", 2000).as_millis().max(500) as u64)
+    Duration::from_millis(config::current().interval("monitor.processIntervalMs", 2000).as_millis().max(500) as u64)
 }
 
 /// What a tick compares itself to.
@@ -136,7 +137,7 @@ fn sample(prev: &mut Prev, sections: &std::collections::HashMap<String, String>)
 }
 
 pub async fn run(ctx: Ctx) {
-    let rx = changed();
+    let rx = config::subscribe();
     let kick = kicked(Source::Processes);
     while kick.try_recv().is_ok() {}
     let mut prev = Prev::default();

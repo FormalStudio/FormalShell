@@ -2,10 +2,12 @@
 //! settings UI's overrides (state.json's `settings`). The state is the
 //! resolved document (the overrides with settings.json merged over them)
 //! and a diff names the keys that changed; `crate::settings` types each key
-//! and holds its default.
+//! and holds its default. Services on the service thread [`subscribe`] to
+//! the same document rather than having the UI thread hand it on.
 
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 
 use futures_lite::future;
 
@@ -269,10 +271,107 @@ impl Resolver {
     }
 }
 
-/// The state service hands the overrides over here whenever they move, the
-/// first time as it reads state.json at start.
+/// The resolved document as a service holds it, cheap to clone.
+#[derive(Clone, Debug, Default)]
+pub struct Settings(Arc<Value>);
+
+impl crate::settings::Doc for Settings {
+    fn doc(&self) -> &Value {
+        &self.0
+    }
+}
+
+impl Settings {
+    pub fn get(&self, path: &str) -> Option<&Value> {
+        lookup(&self.0, path)
+    }
+
+    pub fn str(&self, path: &str) -> Option<&str> {
+        self.get(path)?.as_str()
+    }
+
+    pub fn f64(&self, path: &str) -> Option<f64> {
+        self.get(path)?.as_f64()
+    }
+
+    /// `default` unless the key is exactly `false` or `true`.
+    pub fn flag(&self, path: &str, default: bool) -> bool {
+        self.get(path).and_then(Value::as_bool).unwrap_or(default)
+    }
+
+    /// A poll interval: the key when it is a positive number, else `default_ms`.
+    pub fn interval(&self, path: &str, default_ms: u64) -> Duration {
+        let ms = self.f64(path).filter(|n| *n > 0.0).map_or(default_ms, |n| n as u64);
+        Duration::from_millis(ms)
+    }
+}
+
+/// The service-thread subscribers and the document last published to them.
+struct Hub {
+    last: Option<Settings>,
+    subscribers: Vec<async_channel::Sender<Settings>>,
+}
+
+impl Hub {
+    const fn new() -> Self {
+        Self { last: None, subscribers: Vec::new() }
+    }
+
+    fn subscribe(&mut self) -> async_channel::Receiver<Settings> {
+        let (tx, rx) = async_channel::unbounded();
+        if let Some(last) = &self.last {
+            let _ = tx.try_send(last.clone());
+        }
+        self.subscribers.push(tx);
+        rx
+    }
+
+    fn publish(&mut self, settings: Settings) {
+        self.subscribers.retain(|tx| tx.try_send(settings.clone()).is_ok());
+        self.last = Some(settings);
+    }
+}
+
+static HUB: Mutex<Hub> = Mutex::new(Hub::new());
+
+/// Every document config publishes from now on, starting with the last one
+/// when there was one. Nothing arrives before the first publish, which
+/// carries state.json's overrides.
+pub fn subscribe() -> async_channel::Receiver<Settings> {
+    HUB.lock().unwrap().subscribe()
+}
+
+/// The document last published, empty before the first.
+pub fn current() -> Settings {
+    HUB.lock().unwrap().last.clone().unwrap_or_default()
+}
+
+/// The next document off `rx` whose keys `read` picks out differ from
+/// `current`, so a service wakes only for its own keys; none once `rx`
+/// closes.
+pub async fn moved<K: PartialEq>(rx: &async_channel::Receiver<Settings>, current: &K, read: impl Fn(&Settings) -> K) -> Option<Settings> {
+    loop {
+        let next = rx.recv().await.ok()?;
+        if read(&next) != *current {
+            return Some(next);
+        }
+    }
+}
+
+/// State's first read of state.json, with the overrides it found. Config's
+/// first publish waits on it, so no subscriber ever acts on a document
+/// missing them.
+static STATE_READ: LazyLock<(async_channel::Sender<Value>, async_channel::Receiver<Value>)> =
+    LazyLock::new(|| async_channel::bounded(1));
+
+/// The overrides as they move after that first read.
 static OVERRIDES: LazyLock<(async_channel::Sender<Value>, async_channel::Receiver<Value>)> =
     LazyLock::new(async_channel::unbounded);
+
+/// The state service read state.json at start; called once.
+pub fn state_read(overrides: Value) {
+    let _ = STATE_READ.0.try_send(overrides);
+}
 
 pub fn overrides(value: Value) {
     let _ = OVERRIDES.0.try_send(value);
@@ -301,6 +400,12 @@ fn describe(diff: &Diff, what: &str) -> String {
     format!("config: {what}, {} key(s) changed [{}]", paths.len(), paths.join(", "))
 }
 
+/// The store first, then the service-thread subscribers.
+fn publish(ctx: &Ctx, resolver: &Resolver, diff: Diff) {
+    ctx.publish(store::Diff::Config(diff));
+    HUB.lock().unwrap().publish(Settings(Arc::new(resolver.settings.clone())));
+}
+
 pub fn start(ctx: &Ctx) {
     ctx.spawn(run(ctx.clone()));
 }
@@ -308,9 +413,10 @@ pub fn start(ctx: &Ctx) {
 async fn run(ctx: Ctx) {
     let path = settings_path();
     let mut resolver = Resolver::default();
-    // The first publish waits for the overrides, so a start never draws
-    // the defaults and then jumps to them.
-    if let Ok(first) = OVERRIDES.1.recv().await {
+    // The first publish waits for state's first read, so a start never
+    // draws the defaults and then jumps to the overrides, and no subscriber
+    // starts anything off a document without them.
+    if let Ok(first) = STATE_READ.1.recv().await {
         resolver.overrides(first);
     }
     let mut watch = match Watch::new(path.clone()) {
@@ -331,7 +437,7 @@ async fn run(ctx: Ctx) {
             if !diff.changes.is_empty() {
                 eprintln!("{}", describe(&diff, "settings.json read"));
             }
-            ctx.publish(store::Diff::Config(diff));
+            publish(&ctx, &resolver, diff);
         }
         loop {
             let file = async {
@@ -347,7 +453,7 @@ async fn run(ctx: Ctx) {
             let diff = resolver.overrides(next);
             if !diff.changes.is_empty() {
                 eprintln!("{}", describe(&diff, "overrides moved"));
-                ctx.publish(store::Diff::Config(diff));
+                publish(&ctx, &resolver, diff);
             }
         }
     }
@@ -489,6 +595,28 @@ mod tests {
         assert!(pinned(&json!({"bar": "x"}), "bar.style"));
         assert!(!pinned(&json!({"bar": {}}), "bar.style"));
         assert!(pinned(&json!({"bar": {"style": null}}), "bar.style"));
+    }
+
+    #[test]
+    fn a_subscriber_sees_nothing_before_the_first_publish() {
+        let mut hub = Hub::new();
+        let early = hub.subscribe();
+        assert!(early.try_recv().is_err());
+        hub.publish(Settings(Arc::new(json!({"a": 1}))));
+        assert_eq!(early.try_recv().unwrap().get("a"), Some(&json!(1)));
+        let late = hub.subscribe();
+        assert_eq!(late.try_recv().unwrap().get("a"), Some(&json!(1)), "a late subscriber starts on the last publish");
+        assert!(late.try_recv().is_err());
+    }
+
+    #[test]
+    fn settings_read_dotted_keys_with_defaults() {
+        let s = Settings(Arc::new(json!({"github": {"intervalMs": 1000}, "weather": {"intervalMs": 0}, "usage": {"claude": false}})));
+        assert_eq!(s.interval("github.intervalMs", 300_000), Duration::from_millis(1000));
+        assert_eq!(s.interval("weather.intervalMs", 900_000), Duration::from_millis(900_000));
+        assert_eq!(s.interval("tailscale.intervalMs", 60_000), Duration::from_millis(60_000));
+        assert!(!s.flag("usage.claude", true));
+        assert!(s.flag("usage.codex", true));
     }
 
     #[test]

@@ -16,7 +16,7 @@
 //! reads. Only a crossing acts, so an enable or a disable in between holds
 //! until the next one.
 
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
@@ -28,6 +28,7 @@ use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 use serde_json::Value;
 
+use super::config;
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -49,7 +50,7 @@ pub struct Settings {
 }
 
 impl Settings {
-    fn read(settings: &Value) -> Self {
+    fn read(settings: &(impl crate::settings::Doc + ?Sized)) -> Self {
         use crate::settings::{NIGHTLIGHT_SCHEDULE, NIGHTLIGHT_START_ON, location, nightlight_temp};
         Self {
             temp: nightlight_temp(settings),
@@ -121,7 +122,6 @@ fn on_line(phase: Phase, line: &str) -> (Phase, bool) {
 }
 
 enum Msg {
-    Settings(Settings),
     Enable,
     Disable,
     Toggle,
@@ -136,21 +136,9 @@ enum Event {
 }
 
 static CHANNEL: LazyLock<(Sender<Msg>, Receiver<Msg>)> = LazyLock::new(async_channel::unbounded);
-static LAST: Mutex<Option<Settings>> = Mutex::new(None);
 
 fn send(msg: Msg) {
     let _ = CHANNEL.0.try_send(msg);
-}
-
-/// The UI thread's side: called with the whole settings document.
-pub fn configure(settings: &Value) {
-    let next = Settings::read(settings);
-    let Ok(mut last) = LAST.lock() else { return };
-    if last.as_ref() == Some(&next) {
-        return;
-    }
-    *last = Some(next.clone());
-    send(Msg::Settings(next));
 }
 
 pub fn enable() {
@@ -376,6 +364,7 @@ impl Machine {
 
 enum Wake {
     Msg(Option<Msg>),
+    Settings(Option<config::Settings>),
     Timer,
 }
 
@@ -385,10 +374,15 @@ pub fn start(ctx: &Ctx) {
 
 async fn run(ctx: Ctx) {
     let rx = CHANNEL.1.clone();
+    let settings = config::subscribe();
     let mut m = Machine::new(ctx);
     m.publish();
     loop {
-        let recv = async { Wake::Msg(rx.recv().await.ok()) };
+        // Nothing until config's first publish, so `startOn` acts on the
+        // document with state.json's overrides in it.
+        let read = |s: &config::Settings| Some(Settings::read(s));
+        let current = m.loaded.then(|| m.settings.clone());
+        let recv = async { Wake::Msg(rx.recv().await.ok()) }.or(async { Wake::Settings(config::moved(&settings, &current, read).await) });
         let wake = match m.deadline() {
             Some(at) => {
                 let timer = async {
@@ -401,8 +395,9 @@ async fn run(ctx: Ctx) {
         };
         match wake {
             Wake::Msg(None) => return,
+            Wake::Settings(None) => return,
+            Wake::Settings(Some(s)) => m.settings(Settings::read(&s)),
             Wake::Msg(Some(msg)) => match msg {
-                Msg::Settings(s) => m.settings(s),
                 Msg::Enable => m.enable(),
                 Msg::Disable => m.disable(),
                 Msg::Toggle => {

@@ -6,8 +6,9 @@ use serde_json::Value;
 
 use futures_lite::FutureExt;
 
-use super::{changed, idle, kicked, settings};
+use super::{idle, kicked};
 use crate::runtime::Ctx;
+use crate::services::config;
 use crate::services::proc::{self, MISSING};
 use crate::services::wants::Source;
 use crate::store;
@@ -80,11 +81,11 @@ pub fn parse(code: i32, stdout: &str) -> State {
 }
 
 fn read() -> std::time::Duration {
-    settings().interval("github.intervalMs", 300_000)
+    config::current().interval("github.intervalMs", 300_000)
 }
 
 pub async fn run(ctx: Ctx) {
-    let rx = changed();
+    let rx = config::subscribe();
     let kick = kicked(Source::Github);
     while kick.try_recv().is_ok() {}
     loop {

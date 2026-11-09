@@ -61,7 +61,7 @@ use crate::ipc;
 use crate::paint::Kit;
 use crate::runtime::{Msg, Runtime};
 use crate::scene::{IRect, NodeId};
-use crate::services::{barpaint, commands, devices, compositor, info, media, nightlight, notifications, overnight, theme, tray};
+use crate::services::{barpaint, devices, compositor, notifications, overnight, theme, tray, visualizer};
 use crate::settings;
 use crate::store::{Diff, Moved, Store, Topic};
 use crate::surface::{Backend, PixelSurface, Pixels, Surface};
@@ -624,26 +624,13 @@ impl App {
         }
     }
 
-    /// The settings the bar is built from: its edge, its layout, its
-    /// modules. Anything structural re-creates the window.
+    /// The settings the bar is built from: its edge and its layout.
+    /// Anything structural re-creates the window.
     pub fn apply_config(&mut self) {
         self.sync_hot_corners();
         let bar_cfg = self.store.config.get("bar").cloned();
         let resolved = layout::resolve(bar_cfg.as_ref(), &self.store.plugins.bar_plugins());
-        let modules: Vec<commands::Module> = BarRegion::ALL
-            .iter()
-            .flat_map(|r| resolved.regions.get(*r).to_vec())
-            .filter_map(|e| match &e.kind {
-                layout::EntryKind::Module { id, module } if module.get("type").and_then(|t| t.as_str()) == Some("command") => {
-                    Some(commands::Module::from_json(id, module))
-                }
-                _ => None,
-            })
-            .collect();
-        commands::configure(modules);
-        media::configure(self.store.config.settings());
-        nightlight::configure(self.store.config.settings());
-        info::configure(self.store.config.settings());
+        visualizer::set_motion(settings::MOTION.get(&self.store.config));
         self.arm_caffeinate();
         self.arm_settle();
         let edge = self.chrome_edge();

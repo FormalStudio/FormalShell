@@ -10,8 +10,9 @@ use std::time::Duration;
 use fs_devices::tailscale::{self, Status};
 use futures_lite::FutureExt;
 
-use super::{changed, idle, kicked, settings};
+use super::{idle, kicked};
 use crate::runtime::Ctx;
+use crate::services::config;
 use crate::services::proc::{self, MISSING, TIMED_OUT};
 use crate::services::wants::Source;
 use crate::store;
@@ -58,7 +59,7 @@ pub fn parse(code: i32, stdout: &str) -> State {
 }
 
 fn read() -> Duration {
-    settings().interval("tailscale.intervalMs", 60_000)
+    config::current().interval("tailscale.intervalMs", 60_000)
 }
 
 thread_local! {
@@ -80,7 +81,7 @@ async fn poll(ctx: &Ctx) {
 }
 
 pub async fn run(ctx: Ctx) {
-    let rx = changed();
+    let rx = config::subscribe();
     let kick = kicked(Source::Tailscale);
     while kick.try_recv().is_ok() {}
     loop {

@@ -472,7 +472,7 @@ async fn run(ctx: Ctx) {
         shared.borrow_mut().written = Some(text.clone());
     }
     let first = shared.borrow().data.diff(&Data::default());
-    super::config::overrides(shared.borrow().data.settings.clone());
+    super::config::state_read(shared.borrow().data.settings.clone());
     ctx.publish(store::Diff::State(first));
     if absent {
         write(&ctx, &path, &shared).await;

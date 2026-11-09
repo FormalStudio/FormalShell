@@ -16,8 +16,9 @@ use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, AsyncWriteExt, FutureExt, StreamExt};
 use serde_json::json;
 
-use super::{changed, idle, kicked, settings};
+use super::{idle, kicked};
 use crate::runtime::Ctx;
+use crate::services::config;
 use crate::services::proc;
 use crate::services::wants::Source;
 use crate::store;
@@ -119,7 +120,7 @@ struct Cfg {
 }
 
 fn read() -> Cfg {
-    let s = settings();
+    let s = config::current();
     Cfg { claude: s.flag("usage.claude", true), codex: s.flag("usage.codex", true), interval: s.interval("usage.intervalMs", 900_000) }
 }
 
@@ -299,7 +300,7 @@ impl Poll {
 }
 
 pub async fn run(ctx: Ctx) {
-    let rx = changed();
+    let rx = config::subscribe();
     let kick = kicked(Source::Usage);
     while kick.try_recv().is_ok() {}
     let mut poll = Poll { ctx: ctx.clone(), state: Rc::new(RefCell::new(State::default())), last_refresh: None };

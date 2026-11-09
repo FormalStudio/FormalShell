@@ -39,8 +39,7 @@ use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, AsyncWriteExt, FutureExt, StreamExt};
 use serde_json::{Value, json};
 
-use super::info;
-use super::proc;
+use super::{config, proc};
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -371,7 +370,7 @@ pub fn directory() -> PathBuf {
 }
 
 fn disabled() -> Vec<String> {
-    info::settings()
+    config::current()
         .get("plugins.disabled")
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
@@ -602,11 +601,9 @@ pub fn start(ctx: &Ctx) {
 async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = CMDS.set(tx);
-    let settings = info::changed();
+    let settings = config::subscribe();
     // The disabled list is part of the scan, so wait for settings.json.
-    if !info::configured() {
-        let _ = settings.recv().await;
-    }
+    let _ = settings.recv().await;
     let mut hosts = Hosts::new();
     let mut draining = Draining::new();
     let mut off = disabled();

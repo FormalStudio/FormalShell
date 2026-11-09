@@ -17,9 +17,10 @@ use futures_lite::io::{AsyncBufReadExt, BufReader};
 use futures_lite::{FutureExt, StreamExt};
 use serde_json::{Value, json};
 
-use super::media::Settings;
+use super::config::{self, Settings};
 use super::watch::Watch;
 use crate::runtime::Ctx;
+use crate::settings::{AIRPLAY_ENABLE, AIRPLAY_NAME};
 use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(2);
@@ -95,12 +96,17 @@ enum Ev {
     File(Option<File>),
 }
 
+/// The keys the receiver runs off.
+fn keys(settings: &Settings) -> (bool, String) {
+    (AIRPLAY_ENABLE.get(settings), AIRPLAY_NAME.get(settings).to_owned())
+}
+
 pub fn start(ctx: &Ctx) {
     ctx.spawn(run(ctx.clone()));
 }
 
 async fn run(ctx: Ctx) {
-    let settings_rx = super::media::subscribe();
+    let settings_rx = config::subscribe();
     let dir = dir();
     let meta = dir.join("meta");
     let cover = dir.join("cover.jpg");
@@ -146,8 +152,8 @@ async fn run(ctx: Ctx) {
     let mut was_active = false;
 
     loop {
-        state.enabled = settings.airplay_enable;
-        state.name = airplay::resolve_name(&settings.airplay_name, &host);
+        state.enabled = AIRPLAY_ENABLE.get(&settings);
+        state.name = airplay::resolve_name(AIRPLAY_NAME.get(&settings), &host);
         let should_run = state.enabled && installed && dir_ready;
         if should_run && child.is_none() && retry_at.is_none() {
             backoff = BASE_BACKOFF;
@@ -192,7 +198,7 @@ async fn run(ctx: Ctx) {
             }
         };
         let event = {
-            let sets = async { Ev::Settings(settings_rx.recv().await.ok()) };
+            let sets = async { Ev::Settings(config::moved(&settings_rx, &keys(&settings), keys).await) };
             let file = async { Ev::File(files.recv().await.ok()) };
             let base = sets.or(file).or(timer);
             match child.as_mut() {

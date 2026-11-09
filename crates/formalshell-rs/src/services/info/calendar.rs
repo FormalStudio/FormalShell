@@ -12,8 +12,9 @@ use chrono::Local;
 use fs_info::calendar::ics::{self, Event};
 use futures_lite::FutureExt;
 
-use super::{changed, idle, kicked, settings};
+use super::{idle, kicked};
 use crate::runtime::Ctx;
+use crate::services::config;
 use crate::services::proc;
 use crate::services::wants::Source;
 use crate::store;
@@ -30,7 +31,7 @@ struct Cfg {
 }
 
 fn read() -> Cfg {
-    let s = settings();
+    let s = config::current();
     Cfg { dir: s.str("calendar.icsDir").unwrap_or_default().to_owned(), eds: s.flag("calendar.eds", true) }
 }
 
@@ -56,7 +57,7 @@ async fn eds() -> Vec<Event> {
 }
 
 pub async fn run(ctx: Ctx) {
-    let rx = changed();
+    let rx = config::subscribe();
     let kick = kicked(Source::Calendar);
     loop {
         let cfg = read();

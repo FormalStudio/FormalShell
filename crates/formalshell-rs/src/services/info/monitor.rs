@@ -13,8 +13,9 @@ use fs_system::monitor::gpu::{self, GfxMode, GpuRecord};
 use fs_system::monitor::sysinfo::{self, CoreLoad, CpuRecord, Disk, Fan, Load, Mem, NetRate, NetRow, Temp, Uptime};
 use serde_json::{Value, json};
 
-use super::{changed, idle, settings};
+use super::idle;
 use crate::runtime::Ctx;
+use crate::services::config;
 use crate::store;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -234,12 +235,12 @@ fn collect() -> HashMap<String, String> {
 }
 
 fn read() -> std::time::Duration {
-    let ms = settings().interval("monitor.intervalMs", 2000).as_millis().max(500);
+    let ms = config::current().interval("monitor.intervalMs", 2000).as_millis().max(500);
     std::time::Duration::from_millis(ms as u64)
 }
 
 pub async fn run(ctx: Ctx) {
-    let rx = changed();
+    let rx = config::subscribe();
     let mut prev = Prev::default();
     let tools = ctx.pool().run(|| (on_path("nvidia-offload"), on_path("prime-run"))).await.unwrap_or_default();
     loop {

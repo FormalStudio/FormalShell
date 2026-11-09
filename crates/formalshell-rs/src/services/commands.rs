@@ -1,16 +1,18 @@
-//! `bar.modules` entries of type `command`: each runs
-//! its argv every `interval` ms, and what it printed resolves through
-//! `Bar/commandOutput.js`'s rules. A run past `timeout` is killed and reads
-//! as an error.
+//! `bar.modules` entries of type `command` that the bar's layout places:
+//! each runs its argv every `interval` ms, and what it printed resolves
+//! through `Bar/commandOutput.js`'s rules. A run past `timeout` is killed
+//! and reads as an error.
 
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use async_io::Timer;
+use fs_chrome::bar::layout::{self, EntryKind};
+use fs_types::Region;
 use futures_lite::{AsyncReadExt, FutureExt};
 use serde_json::Value;
 
+use super::config::{self, Settings};
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -80,13 +82,18 @@ impl State {
     }
 }
 
-static MODULES: OnceLock<async_channel::Sender<Vec<Module>>> = OnceLock::new();
-
-/// The modules the bar now places; the previous set's runs stop.
-pub fn configure(modules: Vec<Module>) {
-    if let Some(tx) = MODULES.get() {
-        let _ = tx.try_send(modules);
-    }
+/// The command modules the bar places, region by region. Plugins never
+/// place a module, so the layout is resolved without them.
+fn placed(settings: &Settings) -> Vec<Module> {
+    let resolved = layout::resolve(settings.get("bar"), &[]);
+    Region::ALL
+        .iter()
+        .flat_map(|r| resolved.regions.get(*r).to_vec())
+        .filter_map(|e| match &e.kind {
+            EntryKind::Module { id, module } if module.get("type").and_then(Value::as_str) == Some("command") => Some(Module::from_json(id, module)),
+            _ => None,
+        })
+        .collect()
 }
 
 async fn once(module: &Module) -> Output {
@@ -139,14 +146,11 @@ pub fn start(ctx: &Ctx) {
 }
 
 async fn run(ctx: Ctx) {
-    let (tx, rx) = async_channel::unbounded();
-    let _ = MODULES.set(tx);
+    let settings = config::subscribe();
     let mut current: Vec<Module> = Vec::new();
     let mut stop: Option<async_channel::Sender<()>> = None;
-    while let Ok(modules) = rx.recv().await {
-        if modules == current {
-            continue;
-        }
+    while let Some(next) = config::moved(&settings, &current, placed).await {
+        let modules = placed(&next);
         // Dropping the sender closes the receiver every poll holds.
         stop.take();
         let (tx, gen_rx) = async_channel::bounded(1);

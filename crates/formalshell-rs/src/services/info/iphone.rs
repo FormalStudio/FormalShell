@@ -23,8 +23,8 @@ use fs_types::BtAddress;
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 
-use super::settings;
 use crate::runtime::Ctx;
+use crate::services::config;
 use crate::services::notifications;
 use crate::services::proc::MISSING;
 use crate::services::ams;
@@ -116,7 +116,7 @@ fn now_ms() -> f64 {
 }
 
 fn focus_window() -> f64 {
-    settings().f64("iphone.notifications.focusWindow").filter(|n| *n > 0.0).unwrap_or(iphone::DEFAULT_FOCUS_WINDOW)
+    config::current().f64("iphone.notifications.focusWindow").filter(|n| *n > 0.0).unwrap_or(iphone::DEFAULT_FOCUS_WINDOW)
 }
 
 impl Session {
@@ -155,7 +155,7 @@ impl Session {
                 self.state.recent = kept;
             }
             Event::Notification(entry) => {
-                let cfg = settings();
+                let cfg = config::current();
                 let route = iphone::RouteConfig {
                     enable: cfg.flag("iphone.notifications.enable", true),
                     block: block_list(),
@@ -224,7 +224,7 @@ impl Session {
 }
 
 fn block_list() -> Vec<String> {
-    settings()
+    config::current()
         .get("iphone.notifications.block")
         .and_then(|b| b.as_array())
         .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
@@ -508,7 +508,7 @@ pub async fn run(ctx: Ctx) {
     session.state.installed = on_path(BRIDGE);
     publish(&ctx, &session.state);
     loop {
-        if !settings().flag("iphone.enable", true) {
+        if !crate::settings::IPHONE_ENABLE.get(&config::current()) {
             Timer::after(MAX_BACKOFF).await;
             continue;
         }

@@ -15,8 +15,9 @@ use fs_devices::iphone::{self, AmsEvent};
 use futures_lite::io::{AsyncBufReadExt, BufReader};
 use futures_lite::{FutureExt, StreamExt};
 
-use super::media::Settings;
+use super::config::{self, Settings};
 use crate::runtime::Ctx;
+use crate::settings::IPHONE_ENABLE;
 use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(2);
@@ -174,7 +175,7 @@ pub fn start(ctx: &Ctx) {
 }
 
 async fn run(ctx: Ctx) {
-    let settings_rx = super::media::subscribe();
+    let settings_rx = config::subscribe();
     let (gate_tx, gate_rx) = async_channel::unbounded();
     let (cmd_tx, cmd_rx) = async_channel::unbounded();
     let (reply_tx, reply_rx) = async_channel::unbounded();
@@ -189,7 +190,7 @@ async fn run(ctx: Ctx) {
     let mut last = state.clone();
 
     loop {
-        let wanted = settings.iphone_enable && CONNECTED.lock().map(|c| *c).unwrap_or(false);
+        let wanted = IPHONE_ENABLE.get(&settings) && CONNECTED.lock().map(|c| *c).unwrap_or(false);
         if wanted && child.is_none() && retry_at.is_none() {
             backoff = BASE_BACKOFF;
             child = listen();
@@ -231,7 +232,7 @@ async fn run(ctx: Ctx) {
             }
         };
         let event = {
-            let sets = async { Ev::Settings(settings_rx.recv().await.ok()) };
+            let sets = async { Ev::Settings(config::moved(&settings_rx, &IPHONE_ENABLE.get(&settings), |s| IPHONE_ENABLE.get(s)).await) };
             let gate = async {
                 let _ = gate_rx.recv().await;
                 Ev::Gate
