@@ -28,6 +28,9 @@ const SETTINGS_ENABLE_PUSH: u16 = 0x2;
 /// The peer's default SETTINGS_MAX_FRAME_SIZE, which we never ask it to raise.
 const MAX_FRAME: usize = 16_384;
 
+/// How long a failed write waits for a GOAWAY already on its way in.
+const GOAWAY_WAIT: std::time::Duration = std::time::Duration::from_millis(100);
+
 const STREAM: u32 = 1;
 
 #[derive(Debug)]
@@ -203,15 +206,27 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Call<S> {
 
     /// Flushes `wbuf`. A peer that sent GOAWAY and closed fails the write
     /// before its GOAWAY is read, so a failed write reads what already
-    /// arrived and reports the GOAWAY in place of the broken pipe.
+    /// arrived and reports the GOAWAY in place of the broken pipe. The read
+    /// is bounded: a peer that stopped reading but keeps its end open would
+    /// hold it forever.
     async fn send(&mut self) -> Result<(), Error> {
         let Err(err) = self.flush().await else { return Ok(()) };
-        loop {
-            match self.read_frame().await {
-                Ok(frame) if frame.kind == GOAWAY => return Err(Error::GoAway(code(&frame.payload, 4))),
-                Ok(_) => {}
-                Err(_) => return Err(err),
+        let goaway = async {
+            loop {
+                match self.read_frame().await {
+                    Ok(frame) if frame.kind == GOAWAY => return Some(code(&frame.payload, 4)),
+                    Ok(_) => {}
+                    Err(_) => return None,
+                }
             }
+        };
+        let late = async {
+            async_io::Timer::after(GOAWAY_WAIT).await;
+            None
+        };
+        match futures_lite::future::or(goaway, late).await {
+            Some(c) => Err(Error::GoAway(c)),
+            None => Err(err),
         }
     }
 
