@@ -1,0 +1,307 @@
+target debug
+  function dump(): string
+  function join(edge: string, x: int, width: int): string
+  function joinClear(): string
+  function motionScale(percent: int): string
+  function query(q: string): string
+  function staleAudit(action: string): string
+  function skyAt(instant: string): string
+  function r0Spinner(on: bool): string
+  function r0Panel(action: string): string
+  function r0Scrim(on: bool): string
+  function r0Cast(on: bool): string
+target theme
+  function retheme(): string
+  function mode(m: string): string
+  function status(): string
+target wallpaper
+  function set(path: string): string
+  function pair(light: string, dark: string): string
+  function setFor(mode: string, path: string): string
+  function get(): string
+target bar
+  function chevron(action: string): string
+  function chevronAt(action: string, region: string): string
+  function room(): string
+  function paint(): string
+target panel
+  function open(name: string): string
+  function close(): string
+  function toggle(name: string): string
+  function toggleAt(n: int): string
+  function state(): string
+target media
+  function playPause(): string
+  function next(): string
+  function previous(): string
+  function shuffle(mode: string): string
+  function loop(mode: string): string
+  function volume(percent: int): string
+  function raise(): string
+  function select(id: string): string
+  function output(name: string): string
+  function outputs(): string
+  function players(): string
+  function status(): string
+  function lyrics(): string
+  function like(mode: string): string
+  function dontRecommend(): string
+target radio
+  function status(): string
+  function play(id: string): string
+  function toggle(): string
+  function random(): string
+  function stop(): string
+target airplay
+  function status(): string
+target bluetooth
+  function toggle(): string
+  function power(state: string): string
+  function trust(address: string): string
+  function untrust(address: string): string
+  function status(): string
+target visualizer
+  function style(name: string): string
+  function styles(): string
+  function status(): string
+target tray
+  function status(): string
+  function activate(id: string): string
+  function menu(id: string): string
+  function menucursor(delta: string): string
+  function menuactivate(): string
+target overnight
+  function toggle(): string
+  function enable(): string
+  function disable(): string
+  function status(): string
+target earbuds
+  function status(): string
+  function devices(): string
+  function select(key: string): string
+  function recenter(): string
+  function set(control: string, value: string): string
+target display
+  function scale(output: string, scale: real): string
+  function mirror(output: string, source: string): string
+  function enable(output: string, enabled: bool): string
+  function brightnessStep(delta: int): string
+target hdr
+  function toggle(): string
+  function enable(): string
+  function disable(): string
+  function setOutput(output: string, enabled: bool): string
+  function rule(output: string): string
+  function status(): string
+target workspaces
+  function peek(n: int): string
+  function close(): string
+  function overview(action: string): string
+  function status(): string
+target monitor
+  function status(): string
+  function processes(query: string): string
+  function kill(pid: string, signal: string): string
+  function restart(pid: string): string
+  function gpu(): string
+  function launch(desktopId: string, card: string): string
+target network
+  function status(): string
+  function connect(ssid: string, psk: string): string
+  function connectEap(ssid: string, identity: string, password: string): string
+  function forget(ssid: string): string
+  function wifi(enabled: bool): string
+  function speedtest(): string
+  function speedstatus(): string
+target plugins
+  function list(): string
+  function status(): string
+  function reload(): string
+target caffeinate
+  function toggle(): string
+  function enable(): string
+  function disable(): string
+  function status(): string
+target headset
+  function dismiss(): string
+target gallery
+  function open(): string
+  function close(): string
+  function toggle(): string
+  function status(): string
+target lock
+  function lock(): string
+  function session(): string
+  function isLocked(): string
+  function status(): string
+target power
+  function logout(): string
+target menu
+  function toggle(): string
+  function summon(route: string): string
+  function activate(index: int): string
+  function activateAlternate(index: int): string
+  function filter(text: string): string
+  function close(): string
+  function refresh(): string
+  function ping(): string
+  function status(): string
+  function abbreviations(): string
+  function actions(index: int): string
+  function runAction(index: int, action: string): string
+  function into(index: int): string
+  function select(prompt: string, optionsJson: string, token: string): string
+  function input(prompt: string, token: string): string
+target calendar
+  function select(date: string): string
+  function status(): string
+target iphone
+  function status(): string
+  function pair(): string
+  function invoke(id: string, action: string): string
+  function dismiss(id: string): string
+  function clear(): string
+  function markRead(): string
+target ipad
+  function status(): string
+  function switch(): string
+  function reconnect(): string
+  function position(edge: string): string
+  function stretch(start: real, end: real): string
+target console
+  function toggle(): string
+  function show(): string
+  function hide(): string
+  function status(): string
+target screensaver
+  function start(): string
+  function stop(): string
+  function status(): string
+  function frame(n: int): string
+  function frameInfo(): string
+target screenshot
+  function full(processing: string): string
+  function region(processing: string): string
+  function cancel(): string
+  function pick(mode: string, processing: string): string
+  function key(name: string): string
+  function pickerStatus(): string
+  function edit(path: string): string
+  function status(): string
+target capture
+  function text(): string
+  function color(): string
+  function textAt(geometry: string): string
+  function colorAt(geometry: string): string
+  function cancel(): string
+  function status(): string
+target record
+  function start(scope: string, audio: string): string
+  function startCapped(scope: string, audio: string, maxHeight: string): string
+  function startAt(geometry: string, audio: string): string
+  function stop(): string
+  function toggle(scope: string, audio: string): string
+  function gif(path: string): string
+  function status(): string
+target notifications
+  function status(): string
+  function dndState(): string
+  function toggleDnd(): string
+  function setDnd(on: bool): string
+  function showHistory(): string
+  function clear(): string
+  function clearPending(): string
+  function markAllSeen(): string
+  function dismissAll(): string
+  function dismissOne(): string
+  function invokeLast(): string
+  function expand(state: string): string
+target reminder
+  function set(duration: string, message: string): string
+  function show(): string
+  function clear(): string
+  function status(): string
+target activity
+  function status(): string
+  function seen(): string
+  function open(source: string): string
+  function dismiss(source: string): string
+  function retry(source: string): string
+  function launch(desktopId: string): string
+  function openApp(source: string): string
+target osd
+  function volume(): string
+  function brightness(): string
+  function media(text: string): string
+  function close(): string
+  function state(): string
+target nightlight
+  function toggle(): string
+  function enable(): string
+  function disable(): string
+  function status(): string
+target lights
+  function toggle(): string
+  function effect(id: string): string
+  function color(hex: string): string
+  function source(value: string): string
+  function speed(value: string): string
+  function brightness(level: string): string
+  function refresh(): string
+  function status(): string
+target switcher
+  function next(): string
+  function prev(): string
+  function commit(): string
+  function cancel(): string
+  function state(): string
+target sidebar
+  function collapse(): string
+  function expand(): string
+  function toggle(): string
+  function focus(): string
+  function status(): string
+target zen
+  function enter(): string
+  function exit(): string
+  function toggle(): string
+  function status(): string
+target packages
+  function status(): string
+  function check(): string
+  function apply(): string
+  function undo(): string
+target clipboard
+  function list(): string
+  function copy(id: string): string
+  function remove(id: string): string
+  function clear(): string
+target picker
+  function summon(): string
+  function select(directory: string, token: string): string
+  function choose(path: string): string
+  function chooseFor(path: string, mode: string): string
+  function close(): string
+  function status(): string
+target localsend
+  function status(): string
+  function peers(): string
+  function scan(): string
+  function send(peer: string, path: string): string
+target mirror
+  function toggle(): string
+  function open(): string
+  function close(): string
+  function next(): string
+  function previous(): string
+  function status(): string
+target settings
+  function get(key: string): string
+  function set(key: string, value: string): string
+  function reset(key: string): string
+  function list(): string
+target quicksettings
+  function status(): string
+  function activate(id: string): string
+  function menu(id: string): string
+  function back(): string

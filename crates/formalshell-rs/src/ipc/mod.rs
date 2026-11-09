@@ -4,8 +4,9 @@
 //! is non-blocking, so a slow or silent client only holds its own source;
 //! a reply the socket will not take whole is finished on the service thread.
 //!
-//! Each target is one module returning a [`registry::Target`], listed in
-//! [`registry`]; `formalshell-ipc` (`src/bin/formalshell-ipc.rs`) is the
+//! Each target is one module returning a [`registry::Target`], listed once in
+//! [`targets`], which dispatch and the golden replay both read;
+//! `formalshell-ipc` (`src/bin/formalshell-ipc.rs`) is the
 //! client.
 
 mod activity;
@@ -74,66 +75,68 @@ pub use wire::Request;
 
 use crate::runtime::Ctx;
 use crate::wayland::App;
-use registry::Registry;
+use registry::{Registry, Target};
 
 /// The most of one request the server reads.
 const MAX_REQUEST: usize = 1 << 20;
 
-fn registry() ->&'static Registry<App> {
+fn targets() -> Vec<Target<App>> {
+    vec![
+        debug::target(),
+        theme::target(),
+        theme::wallpaper(),
+        bar::target(),
+        panel::target(),
+        media::target(),
+        radio::target(),
+        airplay::target(),
+        bluetooth::target(),
+        visualizer::target(),
+        tray::target(),
+        overnight::target(),
+        earbuds::target(),
+        display::target(),
+        display::hdr(),
+        workspaces::target(),
+        monitor::target(),
+        network::target(),
+        plugins::target(),
+        caffeinate::target(),
+        headset::target(),
+        gallery::target(),
+        lock::target(),
+        power::target(),
+        menu::target(),
+        calendar::target(),
+        iphone::target(),
+        ipad::target(),
+        console::target(),
+        screensaver::target(),
+        screenshot::target(),
+        capture::target(),
+        record::target(),
+        notifications::target(),
+        notifications::reminder(),
+        activity::target(),
+        osd::target(),
+        nightlight::target(),
+        lights::target(),
+        switcher::target(),
+        sidebar::target(),
+        zen::target(),
+        packages::target(),
+        clipboard::target(),
+        picker::target(),
+        localsend::target(),
+        mirror::target(),
+        settings::target(),
+        quicksettings::target(),
+    ]
+}
+
+fn registry() -> &'static Registry<App> {
     static REGISTRY: OnceLock<Registry<App>> = OnceLock::new();
-    REGISTRY.get_or_init(|| Registry {
-        targets: vec![
-            debug::target(),
-            theme::target(),
-            theme::wallpaper(),
-            bar::target(),
-            panel::target(),
-            media::target(),
-            radio::target(),
-            airplay::target(),
-            bluetooth::target(),
-            visualizer::target(),
-            tray::target(),
-            overnight::target(),
-            earbuds::target(),
-            display::target(),
-            display::hdr(),
-            workspaces::target(),
-            monitor::target(),
-            network::target(),
-            plugins::target(),
-            caffeinate::target(),
-            headset::target(),
-            gallery::target(),
-            lock::target(),
-            power::target(),
-            menu::target(),
-            calendar::target(),
-            iphone::target(),
-            ipad::target(),
-            console::target(),
-            screensaver::target(),
-            screenshot::target(),
-            capture::target(),
-            record::target(),
-            notifications::target(),
-            notifications::reminder(),
-            activity::target(),
-            osd::target(),
-            nightlight::target(),
-            lights::target(),
-            switcher::target(),
-            sidebar::target(),
-            zen::target(),
-            packages::target(),
-            clipboard::target(),
-            picker::target(),
-            localsend::target(),
-            mirror::target(),
-            settings::target(),
-            quicksettings::target(),
-        ],
-    })
+    REGISTRY.get_or_init(|| Registry { targets: targets() })
 }
 
 pub fn dispatch(app: &mut App, request: &Request) -> String {

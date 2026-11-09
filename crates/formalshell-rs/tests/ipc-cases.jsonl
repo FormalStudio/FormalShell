@@ -1,0 +1,52 @@
+{"argv":["call","headset","show"],"live":true,"stdout":"target headset\n  function dismiss(): string\n","stderr":"","exit":0}
+{"argv":["call","headset","dismiss","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function dismiss(): string\n","stderr":"","exit":0}
+{"argv":["call","headset","nope"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}
+{"argv":["call","packages","show"],"live":true,"stdout":"target packages\n  function status(): string\n  function check(): string\n  function apply(): string\n  function undo(): string\n","stderr":"","exit":0}
+{"argv":["call","packages","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}
+{"argv":["call","packages","check","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function check(): string\n","stderr":"","exit":0}
+{"argv":["call","packages","apply","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function apply(): string\n","stderr":"","exit":0}
+{"argv":["call","packages","undo","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function undo(): string\n","stderr":"","exit":0}
+{"argv":["call","packages","nope"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}
+{"argv":["call","power","show"],"live":true,"stdout":"target power\n  function logout(): string\n","stderr":"","exit":0}
+{"argv":["call","power","logout","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function logout(): string\n","stderr":"","exit":0}
+{"argv":["call","power","nope"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}
+{"argv":["call","settings","show"],"live":true,"stdout":"target settings\n  function get(key: string): string\n  function set(key: string, value: string): string\n  function reset(key: string): string\n  function list(): string\n","stderr":"","exit":0}
+{"argv":["call","settings","get","x","x"],"live":true,"stdout":"Too many arguments provided (1 required but 2 were provided.)\nFunction definition: function get(key: string): string\n","stderr":"","exit":0}
+{"argv":["call","settings","get"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function get(key: string): string\n","stderr":"","exit":0}
+{"argv":["call","settings","set","x","x","x"],"live":true,"stdout":"Too many arguments provided (2 required but 3 were provided.)\nFunction definition: function set(key: string, value: string): string\n","stderr":"","exit":0}
+{"argv":["call","settings","set","x"],"live":true,"stdout":"Too few arguments provided (2 required but 1 were provided.)\nFunction definition: function set(key: string, value: string): string\n","stderr":"","exit":0}
+{"argv":["call","settings","reset","x","x"],"live":true,"stdout":"Too many arguments provided (1 required but 2 were provided.)\nFunction definition: function reset(key: string): string\n","stderr":"","exit":0}
+{"argv":["call","settings","reset"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function reset(key: string): string\n","stderr":"","exit":0}
+{"argv":["call","settings","list","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function list(): string\n","stderr":"","exit":0}
+{"argv":["call","settings","nope"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}
+{"argv":["call","sidebar","show"],"live":true,"stdout":"target sidebar\n  function collapse(): string\n  function expand(): string\n  function toggle(): string\n  function focus(): string\n  function status(): string\n","stderr":"","exit":0}
+{"argv":["call","sidebar","collapse","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function collapse(): string\n","stderr":"","exit":0}
+{"argv":["call","sidebar","expand","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function expand(): string\n","stderr":"","exit":0}
+{"argv":["call","sidebar","toggle","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function toggle(): string\n","stderr":"","exit":0}
+{"argv":["call","sidebar","focus","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function focus(): string\n","stderr":"","exit":0}
+{"argv":["call","sidebar","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}
+{"argv":["call","sidebar","nope"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}
+{"argv":["call","zen","show"],"live":true,"stdout":"target zen\n  function enter(): string\n  function exit(): string\n  function toggle(): string\n  function status(): string\n","stderr":"","exit":0}
+{"argv":["call","zen","enter","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function enter(): string\n","stderr":"","exit":0}
+{"argv":["call","zen","exit","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function exit(): string\n","stderr":"","exit":0}
+{"argv":["call","zen","toggle","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function toggle(): string\n","stderr":"","exit":0}
+{"argv":["call","zen","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}
+{"argv":["call","zen","nope"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}
+{"argv":["call","probe","i","+12"],"live":true,"stdout":"12\n","stderr":"","exit":0}
+{"argv":["call","probe","i","1000"],"live":true,"stdout":"1000\n","stderr":"","exit":0}
+{"argv":["call","probe","i"," 12 "],"live":true,"stdout":"12\n","stderr":"","exit":0}
+{"argv":["call","probe","i","-5"],"live":true,"stdout":"-5\n","stderr":"","exit":0}
+{"argv":["call","probe","i","0"],"live":true,"stdout":"0\n","stderr":"","exit":0}
+{"argv":["call","probe","i","-1"],"live":true,"stdout":"-1\n","stderr":"","exit":0}
+{"argv":["call","probe","i","--","-5"],"live":true,"stdout":"-5\n","stderr":"","exit":0}
+{"argv":["call","probe","r","0"],"live":true,"stdout":"0\n","stderr":"","exit":0}
+{"argv":["call","probe","r","0.5"],"live":true,"stdout":"0.5\n","stderr":"","exit":0}
+{"argv":["call","probe","is","0","new-window"],"live":true,"stdout":"[0][new-window]\n","stderr":"","exit":0}
+{"argv":["call","probe","is","-1","x"],"live":true,"stdout":"[-1][x]\n","stderr":"","exit":0}
+{"argv":["call","probe","is","x","open"],"live":true,"stdout":"Unable to parse argument 1 as \"int\". Provided argument: \"x\"\nFunction definition: function is(a: int, b: string): string\n","stderr":"","exit":0}
+{"argv":["call","probe","sirb","top","10","1.5","1"],"live":true,"stdout":"[top][10][1.5][true]\n","stderr":"","exit":0}
+{"argv":["call","probe","sirb","DP-1","-5","0","false"],"live":true,"stdout":"[DP-1][-5][0][false]\n","stderr":"","exit":0}
+{"argv":["call","probe","sirb","a","2.5","1","true"],"live":true,"stdout":"Unable to parse argument 2 as \"int\". Provided argument: \"2.5\"\nFunction definition: function sirb(a: string, b: int, c: real, d: bool): string\n","stderr":"","exit":0}
+{"argv":["call","probe","sirb","a","1","x","true"],"live":true,"stdout":"Unable to parse argument 3 as \"real\". Provided argument: \"x\"\nFunction definition: function sirb(a: string, b: int, c: real, d: bool): string\n","stderr":"","exit":0}
+{"argv":["call","probe","sirb","a","1","2","maybe"],"live":true,"stdout":"Unable to parse argument 4 as \"bool\". Provided argument: \"maybe\"\nFunction definition: function sirb(a: string, b: int, c: real, d: bool): string\n","stderr":"","exit":0}
+{"argv":["call","probe","sirb","a","1","2"],"live":true,"stdout":"Too few arguments provided (4 required but 3 were provided.)\nFunction definition: function sirb(a: string, b: int, c: real, d: bool): string\n","stderr":"","exit":0}
