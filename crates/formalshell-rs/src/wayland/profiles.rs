@@ -46,7 +46,7 @@ fn level_colour(b: &crate::services::devices::power::Battery) -> &'static str {
 }
 
 pub(super) struct Pill {
-    popup: Popup,
+    pub(super) popup: Popup,
     pressed: Option<String>,
 }
 

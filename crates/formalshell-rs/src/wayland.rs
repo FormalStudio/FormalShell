@@ -132,23 +132,40 @@ pub enum Role {
     Headset,
     Osd,
     Menu,
+    /// The power profile pill beside the sidebar's Settings tiles.
+    Profiles,
 }
 
 impl Role {
-    pub const ALL: [Role; 9] =
-        [Role::Panel, Role::Outgoing, Role::Launcher, Role::Atlas, Role::Polkit, Role::Overlay, Role::Headset, Role::Osd, Role::Menu];
+    pub const ALL: [Role; 10] = [
+        Role::Panel,
+        Role::Outgoing,
+        Role::Launcher,
+        Role::Atlas,
+        Role::Polkit,
+        Role::Overlay,
+        Role::Headset,
+        Role::Osd,
+        Role::Menu,
+        Role::Profiles,
+    ];
 
-    /// The card's rim reads the reactive rims' field. The headset card
-    /// keeps its flat border.
+    /// The card's rim reads the reactive rims' field. The headset card and
+    /// the profile pill keep their flat border.
     pub fn lit(self) -> bool {
-        self != Role::Headset
+        !matches!(self, Role::Headset | Role::Profiles)
     }
 
     /// The bar opens a gap in its line where the card joins it. A tray menu
     /// hung off the tray's panel buds off that card's edge, not the bar's
-    /// line.
+    /// line, and the profile pill hangs off the screen's edge.
     pub fn opens_gap(self) -> bool {
-        self != Role::Menu
+        !matches!(self, Role::Menu | Role::Profiles)
+    }
+
+    /// Drawn in the popover's look rather than the joined card's.
+    fn popover(self) -> bool {
+        matches!(self, Role::Headset | Role::Profiles)
     }
 }
 
@@ -700,7 +717,7 @@ impl App {
         let popover = crate::surfaces::card::popover_theme(&theme);
         let cast = self.cast;
         for role in Role::ALL {
-            let theme = if role == Role::Headset { &popover } else { &theme };
+            let theme = if role.popover() { &popover } else { &theme };
             if let Some(w) = self.card_mut(role) {
                 w.restyle(theme, cast, now);
             }
@@ -871,6 +888,7 @@ impl App {
             Role::Headset => self.headset.card.as_ref().map(|c| &c.popup.win),
             Role::Osd => self.osd.pill.as_ref().map(|p| &p.win),
             Role::Menu => self.menu.as_ref().map(|p| &p.win),
+            Role::Profiles => self.profiles.as_ref().map(|p| &p.popup.win),
             Role::Launcher | Role::Atlas | Role::Polkit | Role::Overlay => self.modal(role).map(|m| &m.win),
         }
     }
@@ -882,6 +900,7 @@ impl App {
             Role::Headset => self.headset.card.as_mut().map(|c| &mut c.popup.win),
             Role::Osd => self.osd.pill.as_mut().map(|p| &mut p.win),
             Role::Menu => self.menu.as_mut().map(|p| &mut p.win),
+            Role::Profiles => self.profiles.as_mut().map(|p| &mut p.popup.win),
             Role::Launcher | Role::Atlas | Role::Polkit | Role::Overlay => self.modal_mut(role).map(|m| &mut m.win),
         }
     }
