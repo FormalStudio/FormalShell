@@ -130,7 +130,7 @@ impl App {
     }
 
     /// The default sink moved: ours, or something else's.
-    pub fn osd_audio(&mut self) {
+    pub(super) fn osd_audio(&mut self) {
         let a = &self.store.audio;
         let reading = a.volume.map(|v| (v, a.muted));
         let before = std::mem::replace(&mut self.osd.audio_seen, reading);

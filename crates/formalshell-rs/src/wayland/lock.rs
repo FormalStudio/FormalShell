@@ -991,11 +991,13 @@ impl App {
         }
     }
 
+    /// A session lock is up, whatever its surfaces' state.
+    pub(super) fn lock_session_up(&self) -> bool {
+        self.lock.session.is_some()
+    }
+
     /// Redraws for what the lock shows; a new wallpaper is decoded again.
-    pub fn lock_changed(&mut self, topic: Topic) {
-        if self.lock.session.is_none() {
-            return;
-        }
+    pub(super) fn lock_changed(&mut self, topic: Topic) {
         match topic {
             Topic::Wallpaper => {
                 self.lock.backdrop.clear();

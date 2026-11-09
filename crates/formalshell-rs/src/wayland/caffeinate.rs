@@ -133,7 +133,7 @@ impl App {
 
     /// Run on every caffeinate change: the toggle and the cookies share one
     /// inhibitor.
-    pub fn hold_inhibitor(&mut self) {
+    pub(super) fn hold_inhibitor(&mut self) {
         let want = self.store.caffeinate.held();
         let held = self.caffeinate.held.is_some();
         if want && !held {

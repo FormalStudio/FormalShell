@@ -16,7 +16,6 @@ use vello_cpu::kurbo::Rect;
 
 use super::App;
 use crate::services::plugins;
-use crate::store::Topic;
 use crate::paint::Kit;
 use crate::surfaces::modal::{Modal, Part};
 use crate::surfaces::panel::plugin;
@@ -82,11 +81,9 @@ impl App {
         self.sync_join();
     }
 
-    pub fn overlay_changed(&mut self, topic: Topic) {
-        if matches!(topic, Topic::Plugins | Topic::PluginOutput | Topic::Theme) {
-            if let Some(w) = &mut self.plugin_overlay {
-                w.dirty = true;
-            }
+    pub(super) fn overlay_changed(&mut self) {
+        if let Some(w) = &mut self.plugin_overlay {
+            w.dirty = true;
         }
     }
 

@@ -18,7 +18,7 @@ use super::App;
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::wallpaper::{DepthCut, Picture};
 use crate::settings;
-use crate::store::{Store, Topic};
+use crate::store::Store;
 use crate::surface::{Backend, Surface};
 use crate::paint::{Kit, Painter};
 use crate::text::{Family, ShapedText, TextStyle};
@@ -383,10 +383,8 @@ impl App {
         }
     }
 
-    pub fn desktop_clock_changed(&mut self, topic: Topic) {
-        if topic == Topic::Depth {
-            self.desktop_clock.generation += 1;
-        }
+    pub(super) fn desktop_clock_changed(&mut self) {
+        self.desktop_clock.generation += 1;
     }
 
     /// Each output's clock made or dropped as the settings and its output's

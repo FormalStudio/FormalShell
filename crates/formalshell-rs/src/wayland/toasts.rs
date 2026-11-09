@@ -68,10 +68,6 @@ impl App {
         self.tick_notifications();
     }
 
-    pub(crate) fn toasts_changed(&mut self) {
-        self.toasts_dirty = true;
-    }
-
     /// Mapped for as long as the centre is shut, passive and empty when
     /// nothing is up: the centre suppresses the stack while it is open.
     /// Every layer unmap ends in a synthetic pointer motion to the window

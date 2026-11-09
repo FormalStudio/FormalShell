@@ -116,7 +116,7 @@ impl App {
 
     /// What landed in the store's atlas inbox, and the radio moving under
     /// an open atlas.
-    pub fn atlas_changed(&mut self, topic: crate::store::Topic) {
+    pub(super) fn atlas_changed(&mut self, topic: crate::store::Topic) {
         use crate::store::Topic;
         let now = Instant::now();
         match topic {

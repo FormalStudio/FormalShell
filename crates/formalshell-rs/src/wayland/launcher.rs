@@ -14,12 +14,27 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 use super::{App, Target};
 use crate::services::menu::{self as index, Ask};
 use crate::services::notifications;
-use crate::store::Diff;
+use crate::store::{Diff, Topic};
 use crate::surface::{Backend, Surface};
 use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
 use crate::surfaces::modal::{Modal, Part};
 use crate::text::{Family, TextStyle};
 use crate::ui::field::{self, Modifiers};
+
+/// The info slices the monitor view samples while it is the level.
+const INFO: &[Topic] = &[
+    Topic::Weather,
+    Topic::Github,
+    Topic::Usage,
+    Topic::SystemUpdate,
+    Topic::Tailscale,
+    Topic::Monitor,
+    Topic::Iphone,
+    Topic::Calendar,
+    Topic::Procs,
+    Topic::PowerFlow,
+    Topic::About,
+];
 
 /// How long the launcher's buffers outlive its last close.
 const KEPT_FOR: std::time::Duration = std::time::Duration::from_secs(300);
@@ -701,7 +716,7 @@ impl App {
     }
 
     /// The clipboard route's rows off the ledger.
-    pub fn launcher_clipboard(&mut self) {
+    pub(super) fn launcher_clipboard(&mut self) {
         if std::mem::take(&mut self.store.clipboard.captured) {
             use crate::services::clipssh;
             clipssh::command(clipssh::Cmd::AutoImage {
@@ -719,7 +734,7 @@ impl App {
 
     /// The picker grid's pictures, asked for once the listing's thumbnails
     /// are in the cache (or the warm gave up on them).
-    pub fn launcher_picker(&mut self) {
+    pub(super) fn launcher_picker(&mut self) {
         if self.launcher.open && self.launcher.on_picker() {
             use crate::services::picker::{self, Px};
             let theme = &self.store.theme.theme;
@@ -856,7 +871,7 @@ impl App {
 
     /// The mirror's stream follows the view: the current camera while it
     /// shows, nothing otherwise.
-    pub fn launcher_mirror(&mut self) {
+    pub(super) fn launcher_mirror(&mut self) {
         use crate::services::mirror::{self, Cmd};
         if self.launcher.open && self.launcher.on_mirror() && self.store.mirror.listed {
             let cams = &self.store.mirror.cameras;
@@ -911,13 +926,13 @@ impl App {
     }
 
     /// The clipssh route's rows off the saved aliases.
-    pub fn launcher_clipssh(&mut self) {
+    pub(super) fn launcher_clipssh(&mut self) {
         let rows = fs_menu::providers::clipssh_rows(&self.store.clipssh.aliases);
         self.apply(Diff::Menu(index::Diff::Source("clipssh".into(), rows)));
     }
 
     /// The device routes' rows, again from the store.
-    pub fn launcher_devices(&mut self) {
+    pub(super) fn launcher_devices(&mut self) {
         if let Some(r) = self.store.revealed.take() {
             self.wifi_revealed(r);
         }
@@ -931,7 +946,7 @@ impl App {
 
     /// The plugin modes' rows off what their plugins print, and any
     /// `actions` answers into the open column.
-    pub fn launcher_plugins(&mut self) {
+    pub(super) fn launcher_plugins(&mut self) {
         for (route, rows) in crate::surfaces::launcher::plugin_sources(&self.store) {
             self.apply(Diff::Menu(index::Diff::Source(route, rows)));
         }
@@ -947,8 +962,97 @@ impl App {
         self.launcher_inputs();
     }
 
+    /// The slices its index is built from, the rows it resolves off, the
+    /// monitor view's samples, and what a panel it holds declares.
+    pub(super) fn launcher_reads(&self, topic: Topic) -> bool {
+        let held = self.launcher.open && self.launcher.panel.as_ref().is_some_and(|p| p.module.reads().contains(&topic));
+        held || super::owner::DEVICES.contains(&topic)
+            || INFO.contains(&topic)
+            || matches!(
+                topic,
+                Topic::Menu
+                    | Topic::Packages
+                    | Topic::Config
+                    | Topic::State
+                    | Topic::Plugins
+                    | Topic::PluginOutput
+                    | Topic::Theme
+                    | Topic::Media
+                    | Topic::Tray
+                    | Topic::Notifications
+                    | Topic::Clipboard
+                    | Topic::Localsend
+                    | Topic::Activity
+                    | Topic::Mirror
+                    | Topic::Picker
+                    | Topic::Clipssh
+                    | Topic::Lights
+                    | Topic::NightLight
+                    | Topic::Ipad
+            )
+    }
+
+    /// What a topic it reads asks of it: its index's inputs and sources,
+    /// the rows again, and a redraw for a theme or for what a panel it
+    /// holds reads.
+    pub(super) fn launcher_changed(&mut self, topic: Topic) {
+        match topic {
+            Topic::Menu => {
+                crate::surfaces::packages::land(&mut self.store);
+                self.launcher_store_changed();
+            }
+            Topic::Packages => {
+                self.launcher.owner_answer(&self.store);
+                self.launcher_store_changed();
+            }
+            Topic::Config => self.launcher_inputs(),
+            Topic::State => {
+                self.launcher_inputs();
+                // The picker's Style previews show the slots.
+                self.launcher_picker();
+            }
+            Topic::Plugins => {
+                self.launcher_inputs();
+                self.launcher_plugins();
+            }
+            Topic::PluginOutput => self.launcher_plugins(),
+            Topic::Tray => self.launcher_tray(),
+            Topic::Notifications => self.launcher_store_changed(),
+            Topic::Clipboard => {
+                self.launcher_clipboard();
+                self.launcher_inputs();
+            }
+            Topic::Localsend | Topic::Lights | Topic::NightLight | Topic::Ipad => {
+                self.launcher_inputs();
+                self.launcher_store_changed();
+            }
+            Topic::Activity => {
+                if crate::surfaces::packages::land(&mut self.store) || self.launcher.level.as_deref() == Some(fs_menu::providers::INSTALL_ROUTE) {
+                    self.launcher_store_changed();
+                }
+            }
+            Topic::Mirror => self.launcher_mirror(),
+            Topic::Picker => self.launcher_picker(),
+            Topic::Clipssh => self.launcher_clipssh(),
+            Topic::Media => self.launcher_devices(),
+            t if super::owner::DEVICES.contains(&t) => self.launcher_devices(),
+            t if INFO.contains(&t) && self.launcher.open && self.launcher.level.as_deref() == Some(crate::surfaces::launcher::MONITOR_ROUTE) => {
+                self.launcher.monitor_sample(&self.store);
+                self.launcher_store_changed();
+            }
+            _ => {}
+        }
+        // Settings, plugins and a theme lay a held panel out again whatever
+        // it reads; a theme restyles the card it is in.
+        let held = self.launcher.open
+            && self.launcher.panel.as_ref().is_some_and(|p| p.module.reads().contains(&topic) || matches!(topic, Topic::Config | Topic::Plugins | Topic::Theme));
+        if held || (topic == Topic::Theme && self.launch.is_some()) {
+            self.launcher.dirty = true;
+        }
+    }
+
     /// The store moved under an open launcher: the rows again.
-    pub fn launcher_store_changed(&mut self) {
+    pub(super) fn launcher_store_changed(&mut self) {
         if self.launcher.open {
             self.launcher_resolve = true;
         } else {
@@ -1257,7 +1361,7 @@ impl App {
     }
 
     /// The tray route's rows, off the tray the bar already holds.
-    pub fn launcher_tray(&mut self) {
+    pub(super) fn launcher_tray(&mut self) {
         let items: Vec<fs_menu::providers::TrayItem> = self
             .store
             .tray
@@ -1270,7 +1374,7 @@ impl App {
     }
 
     /// What every store change the launcher's index reads asks of it.
-    pub fn launcher_inputs(&mut self) {
+    pub(super) fn launcher_inputs(&mut self) {
         let l = &self.store.lights;
         let inputs = index::BaseInputs {
             buttons: self.store.config.get("menu.customPowerButtons").cloned().unwrap_or_default(),

@@ -127,7 +127,7 @@ impl Drop for Shown {
 impl App {
     /// The Bluetooth audio devices moved: a disconnected one that is now
     /// connected earns a card.
-    pub fn headset_devices(&mut self) {
+    pub(super) fn headset_devices(&mut self) {
         let learned = headset::learned(&self.store);
         if !learned.is_empty() {
             let mut faces = self.store.state.data.earbuds_faces.clone();

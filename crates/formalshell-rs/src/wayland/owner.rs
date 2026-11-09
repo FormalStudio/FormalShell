@@ -1,7 +1,7 @@
 //! The window owners: which owner a configure, a frame callback or a close
-//! belongs to, the one order they come off screen, present, wake, rescale
-//! and report in, and the other order keys, pastes and the pointer reach
-//! them in.
+//! belongs to, the one order they come off screen, present, wake, rescale,
+//! report and take the store topics they read in, and the other order keys,
+//! pastes and the pointer reach them in.
 
 use std::time::Instant;
 
@@ -13,6 +13,7 @@ use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
 
 use super::{App, Target, heads, screensaver::SaverInput};
+use crate::store::Topic;
 use crate::surfaces;
 use crate::surfaces::modal::Part;
 use crate::surfaces::panel::host::Key;
@@ -42,6 +43,12 @@ pub(super) trait Owner: Sync {
     fn report(&self, _: &App, _: &mut Map<String, Value>) {}
     /// Its surfaces' commit and callback counts, for the exit line.
     fn counts(&self, _: &App, _: &mut Vec<String>) {}
+    /// The store topics it redraws or reacts on, as it stands now.
+    fn reads(&self, _: &App, _: Topic) -> bool {
+        false
+    }
+    /// A topic it reads moved.
+    fn changed(&self, _: &mut App, _: Topic) {}
     /// A key while it holds the keyboard. True when it took the key.
     fn key(&self, _: &mut App, _: &KeyEvent, _repeat: bool) -> bool {
         false
@@ -124,6 +131,29 @@ pub(super) static INPUT: &[&dyn Owner] = &[
     &Cards,
 ];
 
+/// A store change to every owner reading it, in the present order.
+pub(super) fn changed(app: &mut App, topic: Topic) {
+    for o in LIFECYCLE {
+        if o.reads(app, topic) {
+            o.changed(app, topic);
+        }
+    }
+}
+
+/// The device slices, which the osd, the headset card and the launcher's
+/// device routes all read again on any of them.
+pub(super) const DEVICES: &[Topic] = &[
+    Topic::Bluetooth,
+    Topic::Network,
+    Topic::Audio,
+    Topic::Power,
+    Topic::Earbuds,
+    Topic::PadLights,
+    Topic::Profiles,
+    Topic::Revealed,
+    Topic::Logind,
+];
+
 /// The owner of `surface`. A surface has one owner, so the walk's order
 /// decides nothing here.
 pub(super) fn of(app: &App, surface: &WlSurface) -> Option<&'static dyn Owner> {
@@ -195,6 +225,15 @@ impl Owner for Heads {
         app.drop_head(output);
     }
 
+    /// A depth map written: the desktop clocks cut their digits again.
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        topic == Topic::Depth
+    }
+
+    fn changed(&self, app: &mut App, _: Topic) {
+        app.desktop_clock_changed();
+    }
+
     fn report(&self, app: &App, dump: &mut Map<String, Value>) {
         dump.insert("backdrop".into(), app.backdrop_state());
         dump.insert("desktopClock".into(), app.desktop_clock_state());
@@ -207,6 +246,26 @@ struct Bar;
 impl Owner for Bar {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.bar_surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface)
+    }
+
+    /// Every slice but the launcher's own inputs and the inboxes other
+    /// owners drain: its cells declare which of them they show, and the
+    /// strip's paint, spares, backdrops and rims follow any of them.
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        !matches!(
+            topic,
+            Topic::Menu | Topic::Screensaver | Topic::Capture | Topic::Launch | Topic::Clipboard | Topic::Localsend | Topic::Mirror | Topic::Picker
+        )
+    }
+
+    /// Settings and plugins rebuild the strip and a theme restyles it, both
+    /// reading everything again; any other topic re-reads the cells.
+    fn changed(&self, app: &mut App, topic: Topic) {
+        match topic {
+            Topic::Config | Topic::Plugins => app.apply_config(),
+            Topic::Theme => app.set_bar_theme(),
+            _ => app.refresh_bar(Some(topic)),
+        }
     }
 
     /// The sidebar's map while it holds the keyboard.
@@ -305,6 +364,25 @@ impl Owner for Cards {
         app.panel.as_ref().is_some_and(|p| p.win.owns(surface))
             || app.tray_menu.as_ref().is_some_and(|p| p.win.owns(surface))
             || app.outgoing.as_ref().is_some_and(|p| p.win.owns(surface))
+    }
+
+    /// A theme restyles every card window on screen, a tray change reaches
+    /// the item's menu, the compositor the Spaces peek, and the open panel
+    /// redraws on what it declares.
+    fn reads(&self, app: &App, topic: Topic) -> bool {
+        matches!(topic, Topic::Theme | Topic::Tray | Topic::Compositor) || app.panel.as_ref().is_some_and(|p| p.module.reads().contains(&topic))
+    }
+
+    fn changed(&self, app: &mut App, topic: Topic) {
+        match topic {
+            Topic::Theme => app.restyle_cards(),
+            Topic::Tray => app.tray_changed(),
+            Topic::Compositor => app.preview_changed(),
+            _ => {}
+        }
+        if app.panel.as_ref().is_some_and(|p| topic == Topic::Theme || p.module.reads().contains(&topic)) {
+            app.panel_dirty = true;
+        }
     }
 
     /// Every key nothing ahead took: a tray item's menu over its panel
@@ -468,6 +546,14 @@ impl Owner for Launcher {
         app.launcher_part(surface).is_some()
     }
 
+    fn reads(&self, app: &App, topic: Topic) -> bool {
+        app.launcher_reads(topic)
+    }
+
+    fn changed(&self, app: &mut App, topic: Topic) {
+        app.launcher_changed(topic);
+    }
+
     fn key(&self, app: &mut App, event: &KeyEvent, repeat: bool) -> bool {
         app.launcher_key(event, repeat)
     }
@@ -520,6 +606,15 @@ impl Owner for Atlas {
         app.atlas_part(surface).is_some()
     }
 
+    /// Its inbox, the radio it plays, and the theme.
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        matches!(topic, Topic::Atlas | Topic::Media | Topic::Theme)
+    }
+
+    fn changed(&self, app: &mut App, topic: Topic) {
+        app.atlas_changed(topic);
+    }
+
     fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
         app.atlas_key(event)
     }
@@ -566,6 +661,17 @@ struct Switcher;
 impl Owner for Switcher {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.switcher.owns(surface)
+    }
+
+    /// The focused window whether or not it is up; while it is, every
+    /// change, since its cells show windows, icons and titles off many
+    /// slices.
+    fn reads(&self, app: &App, topic: Topic) -> bool {
+        topic == Topic::Compositor || app.switcher.model.open || app.switcher.win.is_some()
+    }
+
+    fn changed(&self, app: &mut App, topic: Topic) {
+        app.switcher_changed(topic);
     }
 
     fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
@@ -618,6 +724,15 @@ impl Owner for Overview {
         app.overview.owns(surface)
     }
 
+    /// Every change while it is open.
+    fn reads(&self, app: &App, _: Topic) -> bool {
+        app.overview.model.open()
+    }
+
+    fn changed(&self, app: &mut App, topic: Topic) {
+        app.overview_changed(topic);
+    }
+
     fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
         app.overview_key(event)
     }
@@ -665,6 +780,20 @@ struct Saver;
 impl Owner for Saver {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.saver_index(surface).is_some()
+    }
+
+    /// Its runs' frames, the idle state, the media guard and its settings.
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        matches!(topic, Topic::Screensaver | Topic::Caffeinate | Topic::Media | Topic::Config)
+    }
+
+    fn changed(&self, app: &mut App, topic: Topic) {
+        match topic {
+            Topic::Screensaver => app.saver_changed(),
+            Topic::Caffeinate => app.saver_idle_changed(),
+            Topic::Media => app.saver_update(),
+            _ => app.saver_config(),
+        }
     }
 
     /// A key pressed while it runs over an unlocked session dismisses it and
@@ -760,6 +889,18 @@ impl Owner for Toasts {
         app.toasts.as_ref().is_some_and(|t| t.surface.layer.wl_surface() == surface)
     }
 
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        matches!(topic, Topic::Theme | Topic::Notifications | Topic::Activity)
+    }
+
+    /// A theme casts the column's shadow again.
+    fn changed(&self, app: &mut App, topic: Topic) {
+        if topic == Topic::Theme {
+            app.toast_cast = None;
+        }
+        app.toasts_dirty = true;
+    }
+
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {
         let Some(t) = &mut app.toasts else { return };
         let size = t.scene.size;
@@ -807,6 +948,15 @@ impl Owner for Osd {
         app.osd_owns(surface)
     }
 
+    /// The default sink's volume and mute, which it shows when they move.
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        DEVICES.contains(&topic)
+    }
+
+    fn changed(&self, app: &mut App, _: Topic) {
+        app.osd_audio();
+    }
+
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {
         app.osd_configure();
     }
@@ -838,6 +988,14 @@ struct Headset;
 impl Owner for Headset {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.headset_owns(surface)
+    }
+
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        DEVICES.contains(&topic)
+    }
+
+    fn changed(&self, app: &mut App, _: Topic) {
+        app.headset_devices();
     }
 
     /// Its card's events, which go on to the strip's handling for the hover
@@ -1100,6 +1258,16 @@ impl Owner for Polkit {
         app.polkit_owns(surface)
     }
 
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        topic == Topic::Theme
+    }
+
+    fn changed(&self, app: &mut App, _: Topic) {
+        if let Some(d) = &mut app.polkit {
+            d.dirty = true;
+        }
+    }
+
     fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
         app.polkit_key(event)
     }
@@ -1131,6 +1299,15 @@ struct Overlay;
 impl Owner for Overlay {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.overlay_owns(surface)
+    }
+
+    /// What its plugin prints, the plugin list and the theme.
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        matches!(topic, Topic::Plugins | Topic::PluginOutput | Topic::Theme)
+    }
+
+    fn changed(&self, app: &mut App, _: Topic) {
+        app.overlay_changed();
     }
 
     fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
@@ -1169,6 +1346,16 @@ struct Lock;
 impl Owner for Lock {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.lock_owns(surface)
+    }
+
+    /// Every change while a session lock is up, since what it shows reads
+    /// across the store.
+    fn reads(&self, app: &App, _: Topic) -> bool {
+        app.lock_session_up()
+    }
+
+    fn changed(&self, app: &mut App, topic: Topic) {
+        app.lock_changed(topic);
     }
 
     fn key(&self, app: &mut App, event: &KeyEvent, repeat: bool) -> bool {
@@ -1245,6 +1432,15 @@ struct Caffeinate;
 impl Owner for Caffeinate {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.caffeinate_owns(surface)
+    }
+
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        topic == Topic::Caffeinate
+    }
+
+    /// The toggle and the cookies share its one inhibitor surface.
+    fn changed(&self, app: &mut App, _: Topic) {
+        app.hold_inhibitor();
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {

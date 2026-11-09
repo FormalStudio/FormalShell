@@ -229,7 +229,7 @@ impl App {
     }
 
     /// The compositor or an icon moved under the card.
-    pub fn switcher_changed(&mut self, topic: crate::store::Topic) {
+    pub(super) fn switcher_changed(&mut self, topic: crate::store::Topic) {
         use crate::store::Topic;
         if topic == Topic::Compositor {
             let id = self.store.compositor.snapshot.focused_window_id.clone();

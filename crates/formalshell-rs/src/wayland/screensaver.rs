@@ -257,7 +257,7 @@ impl App {
     }
 
     /// The banner follows `screensaver.asciiPath`, read off the loop.
-    pub fn saver_config(&mut self) {
+    pub(super) fn saver_config(&mut self) {
         let configured = settings::SAVER_ASCII_PATH.get(&self.store.config).to_owned();
         if let Some(rt) = &self.runtime {
             rt.service(move |ctx| service::load_banner(ctx, configured));
@@ -267,14 +267,14 @@ impl App {
 
     /// Real activity clears a dismissal's suppression; idle, the media
     /// guard and caffeinate decide the rest, live.
-    pub fn saver_idle_changed(&mut self) {
+    pub(super) fn saver_idle_changed(&mut self) {
         if !self.store.caffeinate.idle {
             self.saver.suppressed = false;
         }
         self.saver_update();
     }
 
-    pub fn saver_update(&mut self) {
+    pub(super) fn saver_update(&mut self) {
         let c = &self.store.caffeinate;
         let auto = c.idle && !self.saver.suppressed && (!self.saver_guard() || !self.media_playing()) && !c.held();
         let active = self.saver.forced || auto;
@@ -593,7 +593,7 @@ impl App {
     }
 
     /// Frames and ends from the runs on screen; anything older is ignored.
-    pub fn saver_changed(&mut self) {
+    pub(super) fn saver_changed(&mut self) {
         let frames = std::mem::take(&mut self.store.screensaver.frames);
         let ended = std::mem::take(&mut self.store.screensaver.ended);
         for (run, (_, frame)) in frames {

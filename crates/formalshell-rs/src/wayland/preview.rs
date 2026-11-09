@@ -220,10 +220,7 @@ impl App {
     }
 
     /// The workspace the card shows became the one on screen.
-    pub fn preview_changed(&mut self, topic: crate::store::Topic) {
-        if topic != crate::store::Topic::Compositor {
-            return;
-        }
+    pub(super) fn preview_changed(&mut self) {
         let focused = &self.store.compositor.snapshot.focused_workspace_id;
         if self.preview_up() && self.peek.open.as_ref().is_some_and(|o| !o.0.is_empty() && o.0 == *focused) {
             self.preview_close();

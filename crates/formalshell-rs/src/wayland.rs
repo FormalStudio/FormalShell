@@ -628,7 +628,7 @@ impl App {
 
     /// The settings the bar is built from: its edge and its layout.
     /// Anything structural re-creates the window.
-    pub fn apply_config(&mut self) {
+    fn apply_config(&mut self) {
         // A layout change leaves the theme as it was, so nothing else
         // restyles the strip for it.
         if self.bar.chrome_layout() != settings::layout(&self.store.config) {
@@ -671,7 +671,7 @@ impl App {
 
     /// The bar repainted off the store's theme, re-placed when its framing
     /// or thickness moved with it.
-    pub fn set_bar_theme(&mut self) {
+    fn set_bar_theme(&mut self) {
         let before = (self.bar.across(), self.bar.framed(), self.bar.frame_thickness(), self.bar.edge());
         let edge = self.chrome_edge();
         let collapsed = self.store.state.data.sidebar_collapsed;
@@ -704,11 +704,11 @@ impl App {
         self.launcher.dirty = true;
     }
 
-    /// Every card on screen across a theme change takes the new look, and
-    /// what it holds is laid out again in the new colours.
-    pub fn restyle_cards(&mut self) {
+    /// Every card window on screen across a theme change takes the new
+    /// look, the tray menu's rows with it. What each card holds redraws off
+    /// its owner's own `changed`.
+    pub(super) fn restyle_cards(&mut self) {
         let now = Instant::now();
-        self.toast_cast = None;
         let theme = self.store.theme.theme.clone();
         let popover = crate::surfaces::card::popover_theme(&theme);
         let cast = self.cast;
@@ -722,16 +722,6 @@ impl App {
             m.restyle(&theme);
         }
         self.resize_menu();
-        if let Some(d) = &mut self.polkit {
-            d.dirty = true;
-        }
-        if let Some(w) = &mut self.plugin_overlay {
-            w.dirty = true;
-        }
-        self.atlas.model.dirty |= self.atlas.win.is_some();
-        self.launcher.dirty |= self.launch.is_some();
-        self.panel_dirty |= self.panel.is_some();
-        self.bar_dirty = true;
     }
 
     /// state.json's `sidebarCollapsed` on every bar, the windows re-placed
@@ -750,7 +740,7 @@ impl App {
 
     /// The cells reading `topic` read again, and everything the strip draws
     /// with them.
-    pub fn refresh_bar(&mut self, topic: Option<Topic>) {
+    fn refresh_bar(&mut self, topic: Option<Topic>) {
         let now = Instant::now();
         if matches!(topic, None | Some(Topic::State)) {
             self.sync_collapsed();
@@ -765,11 +755,10 @@ impl App {
         sync_zone(&mut self.bar, self.bar_surface.as_mut());
         self.request_paint();
         self.bar.read(&mut self.kit, &self.store, topic, now);
-        if self.panel.as_ref().is_some_and(|p| topic.is_none_or(|t| p.module.reads().contains(&t) || t == Topic::Theme)) {
-            self.panel_dirty = true;
-        }
-        if self.launcher.open && self.launcher.panel.as_ref().is_some_and(|p| topic.is_none_or(|t| p.module.reads().contains(&t))) {
-            self.launcher.dirty = true;
+        // The card hanging off the strip lays out again with it; a topic
+        // reaches the panel through its own reads.
+        if topic.is_none() {
+            self.panel_dirty |= self.panel.is_some();
         }
         self.sync_open(now);
         self.refresh_spares(topic, now);
@@ -1225,7 +1214,7 @@ impl App {
 
     /// The tray changed: a menu waiting on its tree gets it, one whose item
     /// went away shuts.
-    pub fn tray_changed(&mut self) {
+    fn tray_changed(&mut self) {
         let Some(p) = &mut self.tray_menu else { return };
         let Some(menu) = &mut p.menu else { return };
         if self.store.tray.by_key(&menu.key).is_none() {
@@ -1366,6 +1355,11 @@ impl App {
             }
             surfaces::changed(self, topic);
         }
+    }
+
+    /// A store change to every window owner reading its topic.
+    pub fn owners_changed(&mut self, topic: Topic) {
+        owner::changed(self, topic);
     }
 
     /// One IPC call, answered here on the UI loop.

@@ -255,11 +255,8 @@ impl App {
     }
 
     /// The compositor or an icon moved under it.
-    pub fn overview_changed(&mut self, topic: crate::store::Topic) {
+    pub(super) fn overview_changed(&mut self, topic: crate::store::Topic) {
         use crate::store::Topic;
-        if !self.overview.model.open() {
-            return;
-        }
         if topic == Topic::Compositor {
             let rows = self.overview_rows();
             let m = &mut self.overview.model;
