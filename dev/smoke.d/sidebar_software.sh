@@ -29,8 +29,6 @@ leg_sidebar_software_flag="--sidebar-software"
 leg_sidebar_software_order=242
 leg_sidebar_software_needs="jq wlrctl git"
 
-need_git() { need_tool git_bin git git-core; }
-
 ss_dir="$shot_dir/sidebar-software"
 ss_shim_dir="$ss_dir/shim"
 ss_spec="$ss_dir/spec"

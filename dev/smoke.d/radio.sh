@@ -19,8 +19,6 @@ leg_radio_flag="--radio"
 leg_radio_order=175
 leg_radio_needs="ffmpeg wtype pactl mpv"
 
-need_pactl() { need_tool pactl_bin pactl pulseaudio-utils; }
-
 radio_track_path="$shot_dir/radio-station.mp3"
 radio_play_path="$shot_dir/radio-play.txt"
 radio_status_path="$shot_dir/radio-status.json"
@@ -33,7 +31,6 @@ radio_outputs_path="$shot_dir/radio-outputs.json"
 radio_output_path="$shot_dir/radio-output.txt"
 radio_routed_path="$shot_dir/radio-routed.json"
 radio_routed_media_path="$shot_dir/radio-routed-media.json"
-radio_module_path="$shot_dir/radio-sink-module.txt"
 radio_sink="formalshell-smoke-alt"
 radio_leftover_pid_path="$shot_dir/radio-leftover.pid"
 radio_leftover_after_path="$shot_dir/radio-leftover-after.txt"
@@ -66,7 +63,7 @@ leg_radio_drive() {
 #!/usr/bin/env bash
 "$ffmpeg_bin" -nostdin -loglevel error -re -i "$radio_track_path" -c copy -f mp3 \
   -listen 1 "http://127.0.0.1:$radio_port/station.mp3" &
-"$pactl_bin" load-module module-null-sink sink_name=$radio_sink sink_properties=device.description=SmokeAlt > "$radio_module_path"
+pw_load_module module-null-sink sink_name=$radio_sink sink_properties=device.description=SmokeAlt > /dev/null
 sleep 4
 if kill -0 "\$(cat "$radio_leftover_pid_path")" 2>/dev/null; then echo alive; else echo gone; fi > "$radio_leftover_after_path"
 $ipc call radio play "$radio_station_id" > "$radio_play_path" 2>&1
@@ -94,7 +91,6 @@ $ipc call radio stop > /dev/null 2>&1
 sleep 3
 $ipc call media status > "$radio_stopped_path" 2>&1
 EOF
-  add_cleanup "[ -s '$radio_module_path' ] && '$pactl_bin' unload-module \"\$(cat '$radio_module_path')\" 2>/dev/null || true"
   add_cleanup "kill \"\$(cat '$radio_leftover_pid_path')\" 2>/dev/null || true"
   add_cleanup "pkill -f 'listen 1 http://127.0.0.1:$radio_port' 2>/dev/null || true"
   hypr_exec_once "bash $script"

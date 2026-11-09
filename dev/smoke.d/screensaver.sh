@@ -18,17 +18,6 @@ leg_screensaver_flag="--screensaver"
 leg_screensaver_order=230
 leg_screensaver_needs="mpv ffmpeg jq convert wtype"
 
-# Shared with dev/smoke.d/visualizer.sh, which the scaffold sources on every
-# run. openSUSE's mpv-mpris installs the script where mpv never looks on its
-# own; the run's mpv wrapper in dev/smoke.sh passes it with --script=.
-need_mpv() {
-  need_tool mpv_bin mpv mpv
-  mpv_mpris=/usr/lib64/mpv/mpris.so
-  [ -f "$mpv_mpris" ] || { echo "SMOKE_FAIL: no MPRIS script for mpv at $mpv_mpris; install the openSUSE package mpv-mpris" >&2; exit 1; }
-}
-
-need_ffmpeg() { need_tool ffmpeg_bin ffmpeg ffmpeg; }
-
 # This leg's own clock, the same rule menu_t0 and lock_t0 draw: the screensaver
 # covers the whole output, so under --wallpaper it starts after that leg's last
 # frame (t=14). The guard holds until this clock runs out either way, since the
@@ -54,7 +43,6 @@ ss_chain_locked_path="$shot_dir/screensaver-chain-locked.txt"
 ss_chain_status_path="$shot_dir/screensaver-chain-status.json"
 ss_chain_unlocked_path="$shot_dir/screensaver-chain-unlocked.txt"
 ss_chain_path="$shot_dir/screensaver-chain-locked.png"
-ss_settings_path="$iso_home/.config/formalshell/settings.json"
 
 leg_screensaver_fixture() {
   local effect_json="" ascii_json="" ascii_path
@@ -120,7 +108,7 @@ EOF
 # Merged into the run's settings and written back through the same inode,
 # so the shell's own file watch sees it.
 settings_set() {
-  "$jq_bin" "\$1" "$ss_settings_path" > "$shot_dir/ss-settings.json" && cat "$shot_dir/ss-settings.json" > "$ss_settings_path"
+  "$jq_bin" "\$1" "$settings_path" > "$shot_dir/ss-settings.json" && cat "$shot_dir/ss-settings.json" > "$settings_path"
 }
 sleep $((t0 + 4))
 $ipc call screensaver status > "$ss_guard_status_path" 2>&1
@@ -179,7 +167,7 @@ $ipc call lock isLocked > "$ss_chain_locked_path" 2>&1
 $ipc call screensaver status > "$ss_chain_status_path" 2>&1
 "$grim_bin" "$ss_chain_path" > /dev/null 2>&1
 $ipc call screensaver stop > /dev/null 2>&1
-"$wtype_bin" "formalshell-test"
+"$wtype_bin" "$rig_password"
 "$wtype_bin" -k Return
 for i in \$(seq 1 40); do
   $ipc call lock isLocked > "$ss_chain_unlocked_path" 2>&1

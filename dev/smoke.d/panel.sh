@@ -13,14 +13,13 @@
 # edge, one inset level. A headerless card (the tray's second bar) is read
 # at panelRowInset with no header claim.
 leg_panel_flag="--panel <name>"
-leg_panel_needs="jq grim python3"
+leg_panel_needs="jq grim pil"
 leg_panel_order=60
 
 panel_open_path="$shot_dir/panel-open.txt"
 panel_state_path="$shot_dir/panel-state.txt"
 panel_dump_path="$shot_dir/panel-dump.json"
 panel_header_shot="$shot_dir/panel-header.png"
-panel_audio_modules="$shot_dir/panel-audio-modules.txt"
 
 leg_panel_validate() {
   if [ -z "$(leg_arg panel)" ]; then
@@ -48,9 +47,8 @@ leg_panel_drive() {
   # --panel audio photographs a real choice: a second null sink and a
   # virtual source beside the session's own, where pactl reaches PipeWire.
   if [ "$panel_name" = audio ] && command -v pactl > /dev/null; then
-    stage="pactl load-module module-null-sink sink_name=fs_smoke_speakers sink_properties=device.description=Speakers >> '$panel_audio_modules'
-pactl load-module module-null-sink sink_name=fs_smoke_mic media.class=Audio/Source/Virtual sink_properties=device.description=Microphone >> '$panel_audio_modules'"
-    add_cleanup "[ -s '$panel_audio_modules' ] && while read -r m; do pactl unload-module \"\$m\" 2>/dev/null; done < '$panel_audio_modules'; true"
+    stage="pw_load_module module-null-sink sink_name=fs_smoke_speakers sink_properties=device.description=Speakers > /dev/null
+pw_load_module module-null-sink sink_name=fs_smoke_mic media.class=Audio/Source/Virtual sink_properties=device.description=Microphone > /dev/null"
   fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash

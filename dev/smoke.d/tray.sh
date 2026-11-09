@@ -21,13 +21,6 @@ leg_tray_flag="--tray"
 leg_tray_order=170
 leg_tray_needs="python3"
 
-# The stub items are PyGObject.
-need_python3() {
-  need_tool python3_bin python3 python3
-  "$python3_bin" -c 'import gi' >/dev/null 2>&1 \
-    || { echo "SMOKE_FAIL: $python3_bin cannot import gi; install the openSUSE package python3-gobject" >&2; exit 1; }
-}
-
 tray_status_path="$shot_dir/tray-status.json"
 tray_strip_path="$shot_dir/tray-strip.png"
 tray_pids_path="$shot_dir/tray-pids.txt"

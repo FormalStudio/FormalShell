@@ -18,17 +18,6 @@ leg_media_flag="--media"
 leg_media_order=170
 leg_media_needs="mpv ffmpeg convert"
 
-# Neither binary is one the scaffold resolves for itself. Same shape as its
-# own need_* helpers: set once, absolute path, since every one of these is
-# embedded in a generated script.
-need_mpv() {
-  need_tool mpv_bin mpv mpv
-  mpv_mpris=/usr/lib64/mpv/mpris.so
-  [ -f "$mpv_mpris" ] || { echo "SMOKE_FAIL: no MPRIS script for mpv at $mpv_mpris; install the openSUSE package mpv-mpris" >&2; exit 1; }
-}
-
-need_ffmpeg() { need_tool ffmpeg_bin ffmpeg ffmpeg; }
-
 media_status_path="$shot_dir/media-status.json"
 media_status_long_path="$shot_dir/media-status-long.json"
 media_marquee_static_path="$shot_dir/media-marquee-static.png"

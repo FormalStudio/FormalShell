@@ -39,10 +39,6 @@ record_active_path="$shot_dir/record-active.png"
 record_finalize_status_path="$shot_dir/record-finalize-status.json"
 record_ffprobe_path="$shot_dir/record-ffprobe.txt"
 
-# ffprobe reads back what RecordingService's own finalize pass did to a real
-# captured file. The scaffold resolves leg_<n>_needs through need_<name>.
-need_ffprobe() { need_tool ffprobe_bin ffprobe ffmpeg; }
-
 leg_record_fixture() {
   settings_fragment ', "recording": {"noDmabuf": true, "webcam": true}'
 }

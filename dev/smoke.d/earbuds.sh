@@ -83,7 +83,6 @@
 leg_earbuds_flag="--earbuds"
 leg_earbuds_order=176
 leg_earbuds_needs="jq python3 pw-loopback pw-record"
-need_pw_record() { need_tool pw_record_bin pw-record pipewire-tools; }
 
 earbuds_dir="$shot_dir/earbuds"
 earbuds_shim_dir="$earbuds_dir/shim"

@@ -50,6 +50,14 @@ cd "$script_dir/.."
 # readable paths for the leg that coordinates with it.
 shot_dir=$(mktemp -d)
 iso_home=$(mktemp -d)
+# The settings file the shell reads, and the password PAM takes for the slot
+# users and the VM rig's guests (the lock, polkit and the greeter all ask).
+settings_path="$iso_home/.config/formalshell/settings.json"
+rig_password=formalshell-test
+# Every drive sources this (hypr_exec_once), written once the binaries are
+# resolved. pw_load_module lists the PipeWire modules a run loaded here.
+drive_lib="$shot_dir/drive-lib.sh"
+pw_modules_path="$shot_dir/pw-modules.txt"
 
 # The rig runs eight slot users side by side on one host, and a leg that
 # counts or kills processes by name would see every other slot's shell, cava
@@ -277,13 +285,45 @@ else
   dev/build.sh
 fi
 
-# Resolved once, on demand: a leg names what it needs in leg_<name>_needs
-# and the scaffold's own four are always resolved.
+# The tools a leg names in leg_<name>_needs, resolved once, on demand, into
+# <name>_bin (dashes as underscores): <name> <command> <openSUSE package>. A
+# need with more to it than a path is a need_<name> function below.
+tool_table="
+hyprland Hyprland hyprland
+hyprctl hyprctl hyprland
+grim grim grim
+foot foot foot
+notify_send notify-send libnotify-tools
+wlrctl wlrctl wlrctl
+wpctl wpctl wireplumber
+jq jq jq
+tesseract tesseract tesseract-ocr
+wl_copy wl-copy wl-clipboard
+wl_paste wl-paste wl-clipboard
+pactl pactl pulseaudio-utils
+ffmpeg ffmpeg ffmpeg
+ffprobe ffprobe ffmpeg
+pw_cat pw-cat pipewire-tools
+pw_record pw-record pipewire-tools
+pw_loopback pw-loopback pipewire-tools
+strace strace strace
+file file file
+git git git-core
+"
+
 need_bin() {
-  local name
+  local name row cmd pkg
   for name in "$@"; do
     [ -n "$name" ] || continue
-    "need_${name//-/_}"
+    name=${name//-/_}
+    if declare -F "need_$name" > /dev/null; then
+      "need_$name"
+      continue
+    fi
+    row=$(awk -v n="$name" '$1 == n' <<< "$tool_table")
+    [ -n "$row" ] || { echo "SMOKE_FAIL: no tool $name in dev/smoke.sh's tool table" >&2; exit 1; }
+    read -r _ cmd pkg <<< "$row"
+    need_tool "${name}_bin" "$cmd" "$pkg"
   done
 }
 
@@ -297,13 +337,6 @@ need_tool() {
   printf -v "$1" '%s' "$path"
 }
 
-need_hyprland() { need_tool hyprland_bin Hyprland hyprland; }
-need_hyprctl() { need_tool hyprctl_bin hyprctl hyprland; }
-need_grim() { need_tool grim_bin grim grim; }
-need_foot() { need_tool foot_bin foot foot; }
-need_notify_send() { need_tool notify_send_bin notify-send libnotify-tools; }
-need_wlrctl() { need_tool wlrctl_bin wlrctl wlrctl; }
-need_wpctl() { need_tool wpctl_bin wpctl wireplumber; }
 # openSUSE's ImageMagick policy refuses the TXT coder the legs read pixels
 # through, so `txt:-` goes to dev/im-txt.py, which prints the same
 # enumeration off the raw coders; every other call runs convert itself.
@@ -324,10 +357,55 @@ need_wtype() {
   printf '#!/bin/sh\nexec %s -s 100 "$@"\n' "$real" > "$wtype_bin"
   chmod 755 "$wtype_bin"
 }
-need_jq() { need_tool jq_bin jq jq; }
-need_tesseract() { need_tool tesseract_bin tesseract tesseract-ocr; }
-need_wl_copy() { need_tool wl_copy_bin wl-copy wl-clipboard; }
-need_wl_paste() { need_tool wl_paste_bin wl-paste wl-clipboard; }
+
+# openSUSE's mpv-mpris installs the script where mpv never looks on its own;
+# the run's mpv wrapper below passes it with --script=.
+need_mpv() {
+  need_tool mpv_bin mpv mpv
+  mpv_mpris=/usr/lib64/mpv/mpris.so
+  [ -f "$mpv_mpris" ] || { echo "SMOKE_FAIL: no MPRIS script for mpv at $mpv_mpris; install the openSUSE package mpv-mpris" >&2; exit 1; }
+}
+
+# python3 with PyGObject, which the D-Bus stubs (dev/sni-stub.py,
+# dev/bluez-stub.py, ...) import.
+need_python3() {
+  need_tool python3_bin python3 python3
+  "$python3_bin" -c 'import gi' >/dev/null 2>&1 \
+    || { echo "SMOKE_FAIL: $python3_bin cannot import gi; install the openSUSE package python3-gobject" >&2; exit 1; }
+}
+
+# python3 with PIL, which the frame readers (dev/panel-language.py, ...)
+# import.
+need_pil() {
+  need_tool python3_bin python3 python3
+  "$python3_bin" -c 'import PIL' >/dev/null 2>&1 \
+    || { echo "SMOKE_FAIL: $python3_bin cannot import PIL; install the openSUSE package python3-Pillow" >&2; exit 1; }
+}
+
+need_pipewire() {
+  need_tool pw_dump_bin pw-dump pipewire-tools
+  need_tool pw_cli_bin pw-cli pipewire-tools
+  need_tool pw_loopback_bin pw-loopback pipewire-tools
+}
+
+# No nix fallback: a pkexec built as a plain derivation has no setuid bit
+# (the store never preserves one), so it cannot escalate at all. This one has
+# to already be the wrapper-owned binary a real polkit host installs.
+need_pkexec() {
+  if [ -z "${pkexec_bin:-}" ]; then
+    if command -v pkexec >/dev/null 2>&1; then
+      pkexec_bin=$(command -v pkexec)
+    else
+      echo "SMOKE_FAIL: pkexec not found on PATH, this leg needs a real security.polkit.enablePkexecWrapper host (the setuid wrapper), not a nix fallback" >&2
+      exit 1
+    fi
+    # pkexec resets PATH to its own compiled-in secure default before exec'ing
+    # the target, which has no notion of the nix store, so a bare `true`
+    # 127s. `type -P`, not `command -v`: bash's own builtin shadows the real
+    # binary and command -v returns the bare word, which 127s just the same.
+    polkit_true_bin=$(type -P true)
+  fi
+}
 
 # A second, independent localsend-cli standing in for a real second device:
 # the one the result's helpers carry (dev/build.sh), the same build the
@@ -409,18 +487,31 @@ restore_host_env() {
     fi
   done
 }
+# pw_load_module <module> [args...]: a PipeWire module loaded through pactl
+# for the run, its id printed and listed. The slot's PipeWire outlives the
+# session, so pw_unload_modules runs at the session's teardown (shot.sh) and
+# again on exit, for a run that never reached it. Both reach a drive through
+# the drive library.
+pw_load_module() {
+  local id
+  id=$("${pactl_bin:-pactl}" load-module "$@") || return 1
+  echo "$id" >> "$pw_modules_path"
+  echo "$id"
+}
+pw_unload_modules() {
+  local id
+  [ -s "$pw_modules_path" ] || return 0
+  while read -r id; do "${pactl_bin:-pactl}" unload-module "$id" 2>/dev/null || true; done < "$pw_modules_path"
+  : > "$pw_modules_path"
+}
+
 system_bus_pid=""
 quiet_sink_module=""
 on_exit() {
   restore_host_env
   if [ -n "$system_bus_pid" ]; then kill "$system_bus_pid" 2>/dev/null || true; fi
   if [ -n "$quiet_sink_module" ]; then "$pactl_bin" unload-module "$quiet_sink_module" 2>/dev/null || true; fi
-  # The slot's PipeWire outlives the session, so modules a leg loaded go
-  # here too, for a run that never reached the session's own teardown.
-  if [ -s "${panel_audio_modules:-}" ]; then
-    while read -r m; do pactl unload-module "$m" 2>/dev/null || true; done < "$panel_audio_modules"
-    : > "$panel_audio_modules"
-  fi
+  pw_unload_modules
 }
 trap on_exit EXIT
 
@@ -431,7 +522,7 @@ trap on_exit EXIT
 # also loads the MPRIS script need_mpv found, and execs, so a leg's $! is
 # still mpv's own pid.
 if [ -n "${mpv_bin:-}" ]; then
-  need_pactl
+  need_bin pactl
   quiet_sink="fs_smoke_$$"
   quiet_sink_module=$("$pactl_bin" load-module module-null-sink "sink_name=$quiet_sink" sink_properties=device.description=SmokeQuiet)
   write_script "$shot_dir/mpv" <<WRAP
@@ -562,11 +653,13 @@ host_notifications_owner_before=$(host_notifications_owner)
 
 # The rig boots from a Lua config, the only format Hyprland is supported on.
 # Legs append to it through this helper, one autostart line per drive script.
+# A drive's bash sources the drive library through BASH_ENV, and so does
+# every bash it starts.
 hypr_exec_once() {
   local cmd="$1"
   if [ "${recording_drives:-}" = 1 ]; then
     printf '%s\n' "$1" >> "$shot_dir/drives.list"
-    cmd="bash $arrived_script; $1"
+    cmd="bash $arrived_script; BASH_ENV=$drive_lib $1"
   fi
   printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[%s]==]) end)\n' "$cmd"
 }
@@ -636,15 +729,15 @@ done
 # The top-left corner opens the overview by default, and most legs park the
 # pointer there to start their relative moves from a known place: it is off
 # unless a leg writes `hotCorners` (a later key wins) or deletes this one.
-cat > "$iso_home/.config/formalshell/settings.json" <<EOF
+cat > "$settings_path" <<EOF
 {"calendar": {"icsDir": "$iso_home/.local/share/formalshell/calendar"}, "location": {"latitude": 52.52, "longitude": 13.41}, "nightlight": {"schedule": "off"}, "hotCorners": {"topLeft": "none"}$settings_extra}
 EOF
 if [ ${#settings_pins[@]} -gt 0 ]; then
-  need_jq
+  need_bin jq
   pins=$(printf '%s | ' "${settings_pins[@]}")
-  "$jq_bin" -c "${pins% | }" "$iso_home/.config/formalshell/settings.json" > "$shot_dir/settings.pinned.json" \
+  "$jq_bin" -c "${pins% | }" "$settings_path" > "$shot_dir/settings.pinned.json" \
     || { echo "SMOKE_FAIL: the settings pins (${pins% | }) did not apply" >&2; exit 1; }
-  mv "$shot_dir/settings.pinned.json" "$iso_home/.config/formalshell/settings.json"
+  mv "$shot_dir/settings.pinned.json" "$settings_path"
 fi
 
 # The calendar leg's own events, dated at run time so the fixture never goes
@@ -845,6 +938,117 @@ for _ in \$(seq 1 150); do layer bar && break; sleep 0.1; done
 for _ in \$(seq 1 50); do layer veil || break; sleep 0.1; done
 EOF
 
+# pixel <png> <x> <y>: one pixel of a frame as "r g b", each 0 to 255.
+# patch_mean <png> [<w>x<h>+<x>+<y>]: the mean grey of a frame, or of that
+# crop of it, in thousandths (0 black, 1000 white). Both in the frame's own
+# pixels, a drive's and an assert's alike.
+pixel() {
+  "$convert_bin" "$1" -crop "1x1+$2+$3" +repage -format '%[fx:int(r*255+0.5)] %[fx:int(g*255+0.5)] %[fx:int(b*255+0.5)]' info: 2>/dev/null
+}
+patch_mean() {
+  local crop=()
+  [ -z "${2:-}" ] || crop=(-crop "$2" +repage)
+  "$convert_bin" "$1" ${crop[@]+"${crop[@]}"} -colorspace Gray -format '%[fx:int(mean*1000+0.5)]' info: 2>/dev/null
+}
+
+# The drive library: what drives share, sourced by each (hypr_exec_once).
+# The run's paths and every resolved *_bin first, read when a function runs,
+# so a function needing a tool needs it in the leg's leg_<n>_needs.
+{
+  echo '# shellcheck shell=bash'
+  echo '# Written per run by dev/smoke.sh; dev/smoke.d/README.md has the contract.'
+  for lib_var in shot_dir iso_home settings_path rig_password pw_modules_path $(compgen -v | grep '_bin$'); do
+    printf '%s=%q\n' "$lib_var" "${!lib_var}"
+  done
+  printf 'formalshell_ipc=%q\n' "$PWD/result/bin/formalshell-ipc"
+  declare -f pw_load_module pw_unload_modules pixel patch_mean
+  cat <<'LIB'
+# call <target> <fn> [args...]: the shell's IPC, as `$ipc call`.
+call() { "$formalshell_ipc" call "$@"; }
+# status <target> <path>: `<target> status` saved to <path>.
+status() { call "$1" status > "$2" 2>&1; }
+# shoot <path> [grim args...]: one frame, or with -g <box> or -o <output>
+# part of one.
+shoot() { "$grim_bin" "${@:2}" "$1" > /dev/null 2>&1; }
+# burst <prefix> <frames> [gap seconds] [grim args...]: frames back to back
+# as <prefix>-1.png on.
+burst() {
+  local prefix=$1 frames=$2 gap=${3:-0} i
+  for i in $(seq 1 "$frames"); do
+    "$grim_bin" "${@:4}" "$prefix-$i.png" > /dev/null 2>&1
+    [ "$gap" = 0 ] || sleep "$gap"
+  done
+}
+# park [x y]: the pointer into the top-left corner, then x y on from it in
+# logical pixels.
+park() {
+  "$wlrctl_bin" pointer move -8000 -8000 > /dev/null 2>&1
+  [ $# -lt 2 ] || "$wlrctl_bin" pointer move "$1" "$2" > /dev/null 2>&1
+}
+# click [button]: a real click where the pointer is, left by default.
+click() { "$wlrctl_bin" pointer click "${1:-left}" > /dev/null 2>&1; }
+# row_index <path> <id>: the launcher row <id>'s index in `menu status`,
+# saved to <path>, once it lists it (10s at most), or nothing.
+row_index() {
+  local i idx=""
+  for i in $(seq 1 20); do
+    call menu status > "$1" 2>&1
+    idx=$("$jq_bin" -r --arg id "$2" '.ids | index($id) // empty' "$1" 2>/dev/null)
+    [ -n "$idx" ] && break
+    sleep 0.5
+  done
+  echo "$idx"
+}
+# until_jq <seconds> <path> <jq claim> <command...>: the command's output
+# into <path> until the claim holds on it; non-zero once <seconds> are up.
+until_jq() {
+  local end=$((SECONDS + $1)) path=$2 claim=$3
+  shift 3
+  while :; do
+    "$@" > "$path" 2>&1
+    "$jq_bin" -e "$claim" "$path" > /dev/null 2>&1 && return 0
+    [ "$SECONDS" -lt "$end" ] || return 1
+    sleep 0.5
+  done
+}
+# walk_to <target> <cursor jq> <id> <trace> [key jq]: real keys until
+# `<target> status`'s cursor reads <id>, every cursor passed appended to
+# <trace> and the last status in <trace>.json. The key is Down, or what
+# <key jq> makes of the status with $at and $to bound.
+walk_to() {
+  local target=$1 cursor=$2 to=$3 trace=$4 key_jq=${5:-'"Down"'} n at key
+  : > "$trace"
+  for n in $(seq 1 16); do
+    call "$target" status > "$trace.json" 2>/dev/null
+    at=$("$jq_bin" -r "$cursor // \"\"" "$trace.json" 2>/dev/null)
+    echo "$at" >> "$trace"
+    [ "$at" = "$to" ] && return 0
+    key=$("$jq_bin" -r --arg at "$at" --arg to "$to" "$key_jq" "$trace.json" 2>/dev/null)
+    "$wtype_bin" -k "${key:-Down}"
+    sleep 0.3
+  done
+  return 1
+}
+# spawn_foot <app id> [exec rules] [title]: a foot window through the
+# compositor, so it is tracked from the moment it maps; the rules are
+# hl.exec_cmd's (`{ workspace = '2 silent' }`).
+spawn_foot() {
+  local rules=${2:+, $2} title=""
+  [ -z "${3:-}" ] || title=" --title='$3'"
+  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=$1$title sh -c 'sleep 300']==]$rules)" > /dev/null 2>&1
+}
+# settings_retarget <jq assignment>: settings.json as a symlink onto a new
+# generation carrying the change, which home-manager's activation does and
+# a write in place does not.
+settings_retarget() {
+  local gen
+  gen=$(mktemp --suffix=.json "$shot_dir/settings-gen-XXXXXX")
+  "$jq_bin" "$1" "$(readlink -f "$settings_path")" > "$gen" || return 1
+  ln -sfn "$gen" "$settings_path"
+}
+LIB
+} > "$drive_lib"
+
 # Not a subshell: a drive function writes its own scripts, echoes its
 # autostart lines onto the config, and may register a teardown line. The
 # scripts it starts land in drives.list for shot.sh to wait on.
@@ -926,6 +1130,8 @@ if shell_pid=\$(cat "$shot_dir/shell.pid" 2>/dev/null) && [ -r "/proc/\$shell_pi
 fi
 "$hyprctl_bin" monitors -j > "$output_end_json_path" 2>&1
 $fixture_cleanup
+. "$drive_lib"
+pw_unload_modules
 "$hyprctl_bin" dispatch "hl.dsp.exit()"
 EOF
 hypr_exec_once "bash $shot_script" >> "$cfg"
@@ -979,8 +1185,9 @@ if systemd-run --user --scope --quiet --collect --unit="$hypr_unit-probe" true >
   session_scope=(systemd-run --user --scope --quiet --collect --unit="$hypr_unit"
     -p TimeoutStopSec=5 -p RuntimeMaxSec=$((session_timeout + 60)) --)
 fi
+hypr_status=0
 env "${session_env[@]}" ${session_scope[@]+"${session_scope[@]}"} dbus-run-session -- \
-  timeout -k 10 "$session_timeout" $hyprland_bin --config "$cfg" > "$hypr_log_path" 2>&1 || true
+  timeout -k 10 "$session_timeout" $hyprland_bin --config "$cfg" > "$hypr_log_path" 2>&1 || hypr_status=$?
 # The shell goes with its compositor and takes every child it started with
 # it; read before the scopes below are stopped, which would kill them all
 # regardless.
@@ -1041,6 +1248,15 @@ root_rows_assert() {
   "$jq_bin" -e "$3" "$1" > /dev/null 2>&1 || fail "$4: $("$jq_bin" -c '.ids' "$1" 2>/dev/null)"
 }
 
+# expect_jq <path> <jq claim> <what failed> [jq excerpt]: the run fails
+# unless <path> is there and the claim holds on it, quoting what it read
+# (the excerpt, or the whole file, cut at 800 characters).
+expect_jq() {
+  [ -s "$1" ] || fail "$3: no $1"
+  "$jq_bin" -e "$2" "$1" > /dev/null 2>&1 \
+    || fail "$3, got $( ("$jq_bin" -c "${4:-.}" "$1" 2>/dev/null || cat "$1") | head -c 800)"
+}
+
 # One card's frame against the panel language (dev/panel-language.py), the
 # same claims for every panel and settings page: <name> <png> <card rect
 # json> <header yes|no> <the dump carrying panelSpace> <inset|rowInset>.
@@ -1051,6 +1267,10 @@ root_rows_assert() {
 # ($s, out_scale, read before any leg asserts), rounded out to whole
 # pixels. `scaled_jq` is jq with $s bound: scaled_jq -r "$geometry_jq .cardBox | geometry".
 geometry_jq='def geometry: (.x * $s | floor) as $x | (.y * $s | floor) as $y | "\(((.x + .width) * $s | ceil) - $x)x\(((.y + .height) * $s | ceil) - $y)+\($x)+\($y)";'
+# jq over `hyprctl -j layers`, which nests every surface under its monitor
+# and level: `layers` all of them in one list, `layer($ns)` the ones in a
+# namespace. "$jq_bin" "$layers_jq"'layer("formalshell:bar") | length' <path>
+layers_jq='def layers: [.[] | .levels[]?[]?]; def layer($ns): layers | map(select(.namespace == $ns));'
 scaled_jq() {
   "$jq_bin" --argjson s "${out_scale:-1}" "$@"
 }
@@ -1072,6 +1292,7 @@ frame_logical() {
 panel_language_failures=""
 panel_language_assert() {
   local inset row row_inset out status=0
+  need_bin pil
   inset=$("$jq_bin" -r ".panelSpace.$6 // empty" "$5" 2>/dev/null)
   [ -n "$inset" ] || fail "panel-language: $1: no panelSpace in $5"
   [ -s "$2" ] || fail "panel-language: $1: no frame $2"
@@ -1088,6 +1309,13 @@ panel_language_verdict() {
   [ -z "$panel_language_failures" ] || fail "panel-language: $panel_language_failures"
 }
 
+# timeout's own exit (137 once its SIGKILL went too): the session never
+# reached shot.sh's exit, so every drive still running was cut short.
+case $hypr_status in
+  124 | 137) fail "the session ran past its ${session_timeout}s and was killed (exit $hypr_status)" ;;
+  0) ;;
+  *) echo "hyprland exited $hypr_status" ;;
+esac
 
 if [ -n "$orphans" ]; then
   fail "the shell left children running after it was gone: $(echo "$orphans" | tr "\n" ";")"
@@ -1101,7 +1329,7 @@ fi
 
 # out_w and out_h are the output's size in the pixels grim captures,
 # out_scale its scale; every crop and probe a leg takes is cut from them.
-need_jq
+need_bin jq
 if ! read -r out_w out_h out_scale < <("$jq_bin" -r '.[0] | "\(.width) \(.height) \(.scale)"' "$output_json_path" 2>/dev/null) \
   || ! [[ "$out_w" =~ ^[0-9]+$ && "$out_h" =~ ^[0-9]+$ ]]; then
   fail "could not read the session's output size: $(cat "$output_json_path" 2>/dev/null)"
@@ -1123,7 +1351,7 @@ done
 # frame carries no token box and is not counted.
 token_reads=0
 token_files=$(grep -rl --include='*.json' '"tokenBox"' "$shot_dir" 2>/dev/null || true)
-[ -z "$token_files" ] || need_jq
+[ -z "$token_files" ] || need_bin jq
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   off=$("$jq_bin" -r 'select(type == "object" and .isOpen == true and .tokenBox != null) | if .fieldBox then (.tokenBox.y + .tokenBox.height / 2) - (.fieldBox.y + .fieldBox.height / 2) else "missing" end' "$f" 2>/dev/null) || continue
@@ -1144,7 +1372,7 @@ if [ ${#active_legs[@]} -eq 0 ]; then
   # this rig pins must read back, and a query answers with the launcher's
   # rows. Every other reply is matched byte for byte.
   [ -s "$rs_ipc_path" ] || fail "the rust drive wrote no debug replies"
-  need_jq
+  need_bin jq
   dump_keys='["compositor","available","workspaces","windows","focusedWindowId","heldFocusedWindowId","focusedWorkspaceId","fullscreenOutputs","configLoaded","audio","brightness","location","lyrics","agents","iphone","localsend","airplay","bar","join","modals","toasts","frame","render","theme"]'
   dumps=$(awk 'prev=="> debug dump"{print} {prev=$0}' "$rs_ipc_path")
   [ "$(printf '%s\n' "$dumps" | wc -l)" -eq 2 ] || fail "expected two debug dump replies in $rs_ipc_path"

@@ -34,11 +34,6 @@ leg_capture_needs="file jq"
 # leg's subject rather than something in the frame's way.
 leg_capture_fixture_window=keep
 
-# file(1) backs the PNG/container assertions in four of the capture legs.
-# The scaffold resolves leg_<n>_needs through need_<name> and sources every
-# leg file first, so a resolver a leg needs can live in the leg itself.
-need_file() { need_tool file_bin file file; }
-
 leg_capture_fixture() {
   # recording.noDmabuf is the one recording key software rendering makes
   # non-optional: there is no GPU buffer to import here, and without it

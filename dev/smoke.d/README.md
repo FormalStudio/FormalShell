@@ -6,7 +6,11 @@ frame, teardown) and sources every file here. A leg defines:
 
 - `leg_<n>_flag` `"--flag"` or `"--flag <arg>"` (`leg_arg <n>` reads it);
   `leg_<n>_order` its place in the flags, fragments, autostart lines and
-  results (default 500); `leg_<n>_needs` binaries to resolve.
+  results (default 500); `leg_<n>_needs` the tools it uses, each a row of
+  `dev/smoke.sh`'s tool table resolved into `<name>_bin`, or a
+  `need_<name>` there for one with more to it (`mpv` and its MPRIS script,
+  `python3` with PyGObject, `pil` for python3 with PIL). A new tool goes into
+  that table, never into a leg.
 - `leg_<n>_vm_only` `"<why>"` for a leg that needs root or a real system
   service (NetworkManager, logind, polkit): a nested run on a real host
   gets a private, empty system bus and refuses the leg with `SMOKE_FAIL`.
@@ -46,6 +50,20 @@ frame, teardown) and sources every file here. A leg defines:
   It runs with the build done, the binaries resolved and the bus baseline
   taken, and owns its own `SMOKE_OK` line.
 
+Every drive sources `$drive_lib` (`drive-lib.sh`, written per run): the
+run's paths and resolved `*_bin`, then `call <target> <fn> [args...]`,
+`status <target> <path>`, `shoot <path> [grim args]`, `burst <prefix>
+<frames> [gap] [grim args]`, `park [x y]`, `click [button]`, `row_index
+<path> <id>`, `until_jq <seconds> <path> <claim> <command...>`, `walk_to
+<target> <cursor jq> <id> <trace> [key jq]`, `spawn_foot <app id> [rules]
+[title]`, `settings_retarget <jq assignment>`, `pw_load_module <module>
+[args]` (unloaded at teardown and on exit), `pixel` and `patch_mean`. Each
+one's header in `dev/smoke.sh` is its contract. A leg's assert has
+`expect_jq <path> <claim> <what failed> [excerpt]`, `pixel <png> <x> <y>`
+("r g b"), `patch_mean <png> [crop]` (mean grey in thousandths),
+`$layers_jq` (`layers`, `layer($ns)`) beside `$geometry_jq`, and
+`panel_language_assert`.
+
 A leg reaches the shell only through `$ipc call <target> <fn> [args...]`,
 never by hand: `$ipc` is `formalshell-ipc`, shell-quoted to paste into a
 generated script unquoted.
@@ -59,9 +77,11 @@ A leg that moves a selection (keys, a wheel, a scroll) wraps the moves in
 calls `stale_audit_assert <label>` in its assert: every frame committed in
 between has to equal the same scene drawn whole (`debug staleAudit`).
 
-Exported: `shot_dir`, `iso_home`, `shell_bin`, `shell_log_path`, `*_bin`,
-`ipc`, `write_script`, `leg_on <n>`,
-`host_notifications_owner_after`. Legs sharing a surface wait
+Exported: `shot_dir`, `iso_home`, `settings_path`, `rig_password` (the
+password PAM takes on the rig), `drive_lib`, `shell_bin`, `shell_log_path`,
+`*_bin`, `ipc`, `write_script`, `leg_on <n>`,
+`host_notifications_owner_after`. A session that runs past its timeout
+fails the run. Legs sharing a surface wait
 on the owner's marker (`picker_done_path`); one covering the whole output
 starts at its `<n>_t0`, `cover_t0 <own start>`, past every desktop sampler in
 the run: a leg photographing the bare desktop declares

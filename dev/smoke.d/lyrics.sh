@@ -112,12 +112,6 @@ leg_lyrics_flag="--lyrics"
 leg_lyrics_order=175
 leg_lyrics_needs="mpv ffmpeg convert jq wlrctl pipewire"
 
-need_pipewire() {
-  need_tool pw_dump_bin pw-dump pipewire-tools
-  need_tool pw_cli_bin pw-cli pipewire-tools
-  need_tool pw_loopback_bin pw-loopback pipewire-tools
-}
-
 lyrics_track1_path="$shot_dir/lyrics-track1.flac"
 lyrics_track2_path="$shot_dir/lyrics-track2.flac"
 lyrics_track3_path="$shot_dir/lyrics-track3.flac"

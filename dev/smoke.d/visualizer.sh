@@ -10,9 +10,6 @@
 #
 # The fixture is a sine tone rather than --media's silent track, which would
 # leave cava with no signal and the widget stuck on its baseline row all run.
-#
-# need_mpv and need_ffmpeg are defined by dev/smoke.d/screensaver.sh, which
-# the scaffold sources on every run whether or not that leg is on.
 leg_visualizer_flag="--visualizer"
 leg_visualizer_order=220
 leg_visualizer_needs="mpv ffmpeg convert"

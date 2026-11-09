@@ -28,8 +28,6 @@ leg_bluez_player_flag="--bluez-player"
 leg_bluez_player_order=179
 leg_bluez_player_needs="python3 jq grim wtype wlrctl pactl pw_cat hyprctl"
 
-need_pw_cat() { need_tool pw_cat_bin pw-cat pipewire-tools; }
-
 bluez_player_dir="$shot_dir/bluez-player"
 bluez_player_bus="$bluez_player_dir/bus"
 bluez_player_log="$bluez_player_dir/calls.jsonl"

@@ -50,8 +50,6 @@ leg_quick_settings_needs="jq wtype wlrctl grim convert pactl pw-loopback python3
 quick_settings_dir="$shot_dir/quick-settings"
 quick_settings_settings="$iso_home/.config/formalshell/settings.json"
 
-need_pw_loopback() { need_tool pw_loopback_bin pw-loopback pipewire-tools; }
-
 quick_settings_module="$shot_dir/quick-settings-module.sh"
 
 leg_quick_settings_fixture() {

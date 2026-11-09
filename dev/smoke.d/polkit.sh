@@ -31,25 +31,6 @@ polkit_rc_path="$shot_dir/polkit-rc.txt"
 polkit_stderr_path="$shot_dir/polkit-stderr.txt"
 polkit_debug_path="$shot_dir/polkit-debug.log"
 
-# No nix fallback: a pkexec built as a plain derivation has no setuid bit
-# (the store never preserves one), so it cannot escalate at all. This one has
-# to already be the wrapper-owned binary a real polkit host installs.
-need_pkexec() {
-  if [ -z "${pkexec_bin:-}" ]; then
-    if command -v pkexec >/dev/null 2>&1; then
-      pkexec_bin=$(command -v pkexec)
-    else
-      echo "SMOKE_FAIL: pkexec not found on PATH, this leg needs a real security.polkit.enablePkexecWrapper host (the setuid wrapper), not a nix fallback" >&2
-      exit 1
-    fi
-    # pkexec resets PATH to its own compiled-in secure default before exec'ing
-    # the target, which has no notion of the nix store, so a bare `true`
-    # 127s. `type -P`, not `command -v`: bash's own builtin shadows the real
-    # binary and command -v returns the bare word, which 127s just the same.
-    polkit_true_bin=$(type -P true)
-  fi
-}
-
 # The dialog covers the whole output, so under --wallpaper this starts after
 # that leg's last frame rather than sampling the desktop through a scrim.
 polkit_t0() {

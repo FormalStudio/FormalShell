@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --lock-media: the lock surface's now-playing card and the clock's ink off
 # the wallpaper. One real MPRIS player (mpv carrying
-# mpris.lua, the --media leg's own need_mpv) loops a tagged fixture track
+# mpris.lua, the scaffold's need_mpv) loops a tagged fixture track
 # with a striped cover while the session locks in dark mode over a flat
 # white wallpaper; the card is photographed with its cover and title, then
 # driven by real

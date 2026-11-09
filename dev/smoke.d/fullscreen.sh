@@ -87,8 +87,6 @@ fullscreen_track_path="$shot_dir/fullscreen-tone.flac"
 fullscreen_mpv_pid_path="$shot_dir/fullscreen-mpv.pid"
 fullscreen_work_path="$shot_dir/fullscreen-work.txt"
 
-need_strace() { need_tool strace_bin strace strace; }
-
 leg_fullscreen_fixture() {
   "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=20" -ac 2 \
     -metadata "title=FormalShell Fullscreen Tone" -metadata "artist=FormalShell Test Artist" -c:a flac -y "$fullscreen_track_path"

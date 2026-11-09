@@ -46,8 +46,6 @@
 # assert does not survive that pair either.
 leg_tray_overflow_flag="--tray-overflow"
 leg_tray_overflow_order=172
-# need_python3 is tray.sh's (sourced first, alphabetically), the same shared
-# `need_<bin>` resolution every leg uses.
 leg_tray_overflow_needs="python3 jq wlrctl notify-send"
 
 tray_overflow_pids_path="$shot_dir/tray-overflow-pids.txt"
