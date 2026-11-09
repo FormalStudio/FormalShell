@@ -44,6 +44,10 @@ pub struct State {
     pub position_stale: bool,
     /// When the track changed, while no playback reading has come since.
     changed_at: Option<Instant>,
+    /// The elapsed and playback the bridge's last line carried, apart from
+    /// the extrapolation base, which a run-out wait resets to 0. A legacy
+    /// bridge's line is a reading only when it moves these.
+    sent: (f64, String),
     pub error: String,
 }
 
@@ -68,6 +72,7 @@ impl Default for State {
             at: Instant::now(),
             position_stale: false,
             changed_at: None,
+            sent: (0.0, String::new()),
             error: String::new(),
         }
     }
@@ -188,7 +193,9 @@ fn apply(state: &mut State, event: AmsEvent) {
 /// duration alone is the same track refined. Only a PlaybackInfo line moves
 /// the extrapolation base. A bridge that names no line's update (the hosts'
 /// pinned package before `packaging/iphone-ams-update.patch`) is read the
-/// old way: a line whose elapsed or playback moved is a reading.
+/// old way: a line whose elapsed or playback moved from the last line is a
+/// reading. That bridge cannot tell a seek back to the last elapsed it sent
+/// from a repeat, so such a seek goes unread until the patched bridge.
 fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
     match event {
         AmsEvent::Status { available } => {
@@ -204,7 +211,9 @@ fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
                 state.position_stale = true;
                 state.changed_at = Some(now);
             }
-            if reading.unwrap_or_else(|| (elapsed, &playback) != (state.elapsed, &state.playback)) {
+            let moved = (elapsed, &playback) != (state.sent.0, &state.sent.1);
+            state.sent = (elapsed, playback.clone());
+            if reading.unwrap_or(moved) {
                 (state.elapsed, state.at) = (elapsed, now);
                 state.position_stale = false;
                 state.changed_at = None;
@@ -460,6 +469,18 @@ mod tests {
         s.expire_reading(s.reading_wait().unwrap());
         assert!(!s.position_stale);
         assert_eq!(s.position(change + Duration::from_secs(2)), 2.0);
+    }
+
+    #[test]
+    fn a_legacy_repeat_after_the_wait_keeps_the_new_track_at_zero() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, legacy("One", 200.0, 150.0, "playing"), t0);
+        let change = t0 + Duration::from_secs(30);
+        apply_at(&mut s, legacy("Two", 200.0, 150.0, "playing"), change);
+        s.expire_reading(s.reading_wait().unwrap());
+        apply_at(&mut s, legacy("Two", 200.0, 150.0, "playing"), change + Duration::from_secs(3));
+        assert_eq!(s.position(change + Duration::from_secs(4)), 4.0, "the repeat is the old track's elapsed");
     }
 
     #[test]
