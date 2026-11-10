@@ -207,11 +207,6 @@ pub fn with_graph<R>(f: impl FnOnce(&Graph) -> R) -> Option<R> {
     CLIENT.with_borrow(|c| c.as_ref().map(|c| f(&c.graph)))
 }
 
-/// Held to 0..1: overdrive is the audio panel's, per stream.
-fn full_at_most(volume: Visual) -> Visual {
-    Visual::new(volume.get().clamp(0.0, 1.0))
-}
-
 fn apply(c: &Client, cmd: Cmd) {
     let node = |target| match target {
         Target::Sink => c.graph.default_sink(),
@@ -219,9 +214,8 @@ fn apply(c: &Client, cmd: Cmd) {
         Target::Node(id) => c.graph.nodes.get(&id),
     };
     let command = match cmd {
-        Cmd::Volume(Target::Node(node), volume) => Command::SetVolume { node, volume },
         Cmd::Volume(target, volume) => match node(target).filter(|n| n.audio.is_some()) {
-            Some(n) => Command::SetVolume { node: n.id, volume: full_at_most(volume) },
+            Some(n) => Command::SetVolume { node: n.id, volume: volume.held_for(&n.node_type) },
             None => return,
         },
         Cmd::Mute(node, muted) => Command::SetMuted { node, muted },

@@ -6,12 +6,11 @@
 //!
 //! One cursor walks every row: Left and Right step the slider under it by
 //! 5%, `m` mutes, Enter switches the default on a device row and mutes on a
-//! slider. Masters clamp to 0..1, streams
-//! to 0..1.5 with a notch at 1.0. The lists come from fs-audio's graph,
+//! slider. A stream's slider runs to `fs_audio::STREAM_MAX` with a notch
+//! at 1.0. The lists come from fs-audio's graph,
 //! published only while the panel is open.
 
-use fs_audio::Visual;
-use fs_system::audio::{clamp_device, clamp_stream};
+use fs_audio::{STREAM_MAX, Visual};
 
 use super::{Effect, Nav, Panel, View};
 use crate::services::devices::audio::{self, Cmd, Lists, Row, Target};
@@ -150,7 +149,7 @@ impl Panel for Audio {
         let l = a.lists.as_ref().unwrap_or(&empty);
         let mut out = Vec::new();
         if let Some(volume) = a.volume {
-            let volume = clamp_device(volume.as_f64());
+            let volume = volume.track().as_fraction();
             let hero = w::hero(
                 s,
                 w::Hero {
@@ -176,7 +175,7 @@ impl Panel for Audio {
             out.push(w::panel_section_n(s, "Output", l.outputs.len(), rows, ""));
         }
         if !l.inputs.is_empty() {
-            let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume.as_f64()), r.muted));
+            let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (r.volume.track().as_fraction(), r.muted));
             let track = w::slider(volume).on(Press::Volume(Line::Input));
             let master = mixer_row(s, Some(if muted { "mic-off" } else { "mic" }), "Level", volume, muted, Line::Input, track);
             let source = l.source.as_ref().map(|r| r.id);
@@ -193,7 +192,7 @@ impl Panel for Audio {
                 .map(|r| {
                     let line = Line::Stream(r.id);
                     let volume = r.volume.as_f64();
-                    let track = w::slider(volume / 1.5).notch(1.0 / 1.5).on(Press::Volume(line));
+                    let track = w::slider(volume / STREAM_MAX.as_f64()).notch(1.0 / STREAM_MAX.as_f64()).on(Press::Volume(line));
                     let label = if r.label.is_empty() { "Stream" } else { &r.label };
                     mixer_row(s, None, label, volume, r.muted, line, track).stop(line)
                 })
@@ -218,19 +217,19 @@ impl Panel for Audio {
                     Line::Output => {
                         if let Some(id) = l.sink {
                             let to = if let What::Fraction(f) = ev.what { f } else { step(a.volume.unwrap_or_default()) };
-                            set_volume(id, clamp_device(to));
+                            set_volume(id, to);
                         }
                     }
                     Line::Input => {
                         if let Some(r) = &l.source {
                             let to = if let What::Fraction(f) = ev.what { f } else { step(r.volume) };
-                            set_volume(r.id, clamp_device(to));
+                            set_volume(r.id, to);
                         }
                     }
                     Line::Stream(_) => {
                         if let Some(r) = row_of(&l, line) {
-                            let to = if let What::Fraction(f) = ev.what { f * 1.5 } else { step(r.volume) };
-                            set_volume(r.id, clamp_stream(to));
+                            let to = if let What::Fraction(f) = ev.what { f * STREAM_MAX.as_f64() } else { step(r.volume) };
+                            set_volume(r.id, to);
                         }
                     }
                     Line::OutputDevice(_) | Line::InputDevice(_) => {}
@@ -263,17 +262,17 @@ impl Panel for Audio {
         match line {
             Line::Output => {
                 if let (Some(id), Some(v)) = (l.sink, fx.store.audio.volume) {
-                    set_volume(id, clamp_device(v.as_f64() + d));
+                    set_volume(id, v.as_f64() + d);
                 }
             }
             Line::Input => {
                 if let Some(r) = &l.source {
-                    set_volume(r.id, clamp_device(r.volume.as_f64() + d));
+                    set_volume(r.id, r.volume.as_f64() + d);
                 }
             }
             Line::Stream(_) => {
                 if let Some(r) = row_of(&l, line) {
-                    set_volume(r.id, clamp_stream(r.volume.as_f64() + d));
+                    set_volume(r.id, r.volume.as_f64() + d);
                 }
             }
             Line::OutputDevice(_) | Line::InputDevice(_) => {}

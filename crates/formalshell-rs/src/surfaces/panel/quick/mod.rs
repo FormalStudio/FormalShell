@@ -1437,11 +1437,11 @@ impl QuickSettings {
         };
         match key {
             "volume" => {
-                let v = Visual::from_f64(at(a.volume.map_or(0.0, Visual::as_f64)));
+                let v = Visual::from_f64(to.unwrap_or(a.volume.map_or(0.0, Visual::as_f64) + by));
                 audio::send(audio::Cmd::Volume(audio::Target::Sink, v));
             }
             "microphone" => {
-                let v = Visual::from_f64(at(a.source_volume.map_or(0.0, Visual::as_f64)));
+                let v = Visual::from_f64(to.unwrap_or(a.source_volume.map_or(0.0, Visual::as_f64) + by));
                 audio::send(audio::Cmd::Volume(audio::Target::Source, v));
             }
             "brightness" => {

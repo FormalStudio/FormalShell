@@ -60,11 +60,21 @@ impl Visual {
         Linear(self.0 * self.0 * self.0)
     }
 
+    /// Held to the range a node of `kind` takes.
+    pub fn held_for(self, kind: &NodeType) -> Self {
+        Self(self.0.clamp(0.0, kind.volume_max().0))
+    }
+
     /// The share of a flat 0..1 track it fills; overdrive fills it whole.
     pub fn track(self) -> Fraction {
         Fraction::from_fraction(self.as_f64())
     }
 }
+
+/// A device's top: its flat track never overdrives past full.
+pub const DEVICE_MAX: Visual = Visual(1.0);
+/// A per-app stream's top, overdrive included, as omarchy's mixer allows.
+pub const STREAM_MAX: Visual = Visual(1.5);
 
 /// A `channelVolumes` value as the server holds it.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
@@ -128,6 +138,10 @@ impl NodeType {
             source,
             sink,
         }
+    }
+
+    pub fn volume_max(&self) -> Visual {
+        if self.stream { STREAM_MAX } else { DEVICE_MAX }
     }
 
     pub fn name(self) -> &'static str {
@@ -727,6 +741,16 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_volume_is_held_to_its_node_kind() {
+        let sink = NodeType::from_media_class("Audio/Sink");
+        let stream = NodeType::from_media_class("Stream/Output/Audio");
+        assert_eq!(Visual::new(1.4).held_for(&sink), DEVICE_MAX);
+        assert_eq!(Visual::new(1.4).held_for(&stream), Visual::new(1.4));
+        assert_eq!(Visual::new(2.0).held_for(&stream), STREAM_MAX);
+        assert_eq!(Visual::new(-0.2).held_for(&sink), Visual::new(0.0));
+    }
 
     fn props(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs

@@ -1,20 +1,5 @@
 //! Model groundwork for the audio panel's mixer: stream filtering, the label
-//! fallback chain, and the two volume clamps (device vs per-app overdrive).
-
-
-fn clamp(v: f64, lo: f64, hi: f64) -> f64 {
-    if v.is_nan() { v } else { lo.max(hi.min(v)) }
-}
-
-/// Master output/input sliders clamp to 1.0 (a flat track never overdrives past
-/// full); per-app streams allow 0..1.5 overdrive, per omarchy's mixer behavior.
-pub fn clamp_device(v: f64) -> f64 {
-    clamp(v, 0.0, 1.0)
-}
-
-pub fn clamp_stream(v: f64) -> f64 {
-    clamp(v, 0.0, 1.5)
-}
+//! fallback chain and the mic cell's state.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceState {
@@ -54,39 +39,6 @@ mod tests {
     // isPlaybackStream
 
     // streamLabel
-
-    // clampDevice / clampStream
-
-    #[test]
-    fn clamp_device_caps_at_one() {
-        assert_eq!(clamp_device(1.5), 1.0);
-    }
-
-    #[test]
-    fn clamp_device_floors_at_zero() {
-        assert_eq!(clamp_device(-0.2), 0.0);
-    }
-
-    #[test]
-    fn clamp_device_passes_through_mid_range() {
-        assert_eq!(clamp_device(0.42), 0.42);
-    }
-
-    #[test]
-    fn clamp_stream_allows_overdrive_up_to_one_point_five() {
-        assert_eq!(clamp_stream(1.5), 1.5);
-        assert_eq!(clamp_stream(1.3), 1.3);
-    }
-
-    #[test]
-    fn clamp_stream_caps_above_one_point_five() {
-        assert_eq!(clamp_stream(2.0), 1.5);
-    }
-
-    #[test]
-    fn clamp_stream_floors_at_zero() {
-        assert_eq!(clamp_stream(-0.5), 0.0);
-    }
 
     // sourceState
 
