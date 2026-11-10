@@ -44,9 +44,8 @@ pub struct Pickers {
 impl App {
     /// Runs `f` on the UI loop after `ms`.
     pub fn capture_after(&self, ms: u64, f: impl FnOnce(&mut App) + 'static) {
-        let Some(handle) = &self.handle else { return };
         let mut f = Some(f);
-        let _ = handle.insert_source(Timer::from_duration(Duration::from_millis(ms)), move |_, _, app: &mut App| {
+        let _ = self.handle.insert_source(Timer::from_duration(Duration::from_millis(ms)), move |_, _, app: &mut App| {
             if let Some(f) = f.take() {
                 f(app);
             }
@@ -74,8 +73,7 @@ impl App {
 
     /// A freeze's PNG decoded on the pool, landing as an event.
     pub fn capture_decode(&self, generation: u64, output: String, path: String) {
-        let Some(rt) = &self.runtime else { return };
-        rt.service(move |ctx| {
+        self.runtime.service(move |ctx| {
             let job = ctx.pool().run(move || {
                 let img = image::open(&path).ok()?.to_rgba8();
                 let (w, h) = img.dimensions();

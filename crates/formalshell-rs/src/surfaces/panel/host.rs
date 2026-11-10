@@ -748,7 +748,7 @@ impl Host {
     /// `Panel::start` with the store in reach, then the cursor's start
     /// asked again, since a panel may only know it once it has read the
     /// store.
-    pub fn start(&mut self, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
+    pub fn start(&mut self, store: &Store, runtime: &Runtime) -> Vec<Out> {
         self.wants.set(&self.module.wants(store));
         let mut fx = Effect::new(store, runtime);
         self.module.start(&mut fx);
@@ -761,7 +761,7 @@ impl Host {
     /// Enter on `stop` as though the cursor sat there: the stop drawn with
     /// its words where there is one, so an IPC verb naming a stop by its
     /// words reaches the panel's own value.
-    pub fn activate(&mut self, stop: On, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
+    pub fn activate(&mut self, stop: On, store: &Store, runtime: &Runtime) -> Vec<Out> {
         if !self.open {
             return Vec::new();
         }
@@ -789,7 +789,7 @@ impl Host {
     }
 
     /// The clipboard's text into the field holding the keyboard.
-    pub fn paste(&mut self, text: String, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
+    pub fn paste(&mut self, text: String, store: &Store, runtime: &Runtime) -> Vec<Out> {
         if !self.open || !self.module.editing() {
             return Vec::new();
         }
@@ -798,7 +798,7 @@ impl Host {
         fx.outs()
     }
 
-    pub fn key(&mut self, name: Key, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
+    pub fn key(&mut self, name: Key, store: &Store, runtime: &Runtime) -> Vec<Out> {
         if !self.open {
             return Vec::new();
         }
@@ -838,7 +838,7 @@ impl Host {
 
     /// The pointer moved, or left (`None`). True when what is under it
     /// changed.
-    pub fn pointer(&mut self, at: Option<(f64, f64)>, store: &Store, runtime: Option<&Runtime>) -> bool {
+    pub fn pointer(&mut self, at: Option<(f64, f64)>, store: &Store, runtime: &Runtime) -> bool {
         if let (Some((path, rect, inset)), Some((x, _))) = (self.dragging.clone(), at) {
             if let Some(on) = self.body.hits.iter().chain(self.head.hits.iter()).find(|h| h.path == path).and_then(|h| h.on.clone()) {
                 let f = ui::track_fraction(rect, inset, x);
@@ -889,7 +889,7 @@ impl Host {
         find(&self.body).or_else(|| find(&self.head))
     }
 
-    pub fn press(&mut self, x: f64, y: f64, store: &Store, runtime: Option<&Runtime>) {
+    pub fn press(&mut self, x: f64, y: f64, store: &Store, runtime: &Runtime) {
         let hit = self.hit_at(x, y);
         self.pressed = hit.as_ref().map(|(_, h)| h.path.clone());
         self.body.pressed = self.pressed.clone();
@@ -906,7 +906,7 @@ impl Host {
         }
     }
 
-    pub fn release(&mut self, x: f64, y: f64, button: Button, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
+    pub fn release(&mut self, x: f64, y: f64, button: Button, store: &Store, runtime: &Runtime) -> Vec<Out> {
         let pressed = self.pressed.take();
         self.body.pressed = None;
         self.head.pressed = None;
@@ -947,7 +947,7 @@ impl Host {
     /// vertically by `travel`, the same frame read as a wheel's or a
     /// touchpad's.
     #[allow(clippy::too_many_arguments)]
-    pub fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, travel: Travel, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
+    pub fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, travel: Travel, store: &Store, runtime: &Runtime) -> Vec<Out> {
         let (view, ms) = (self.viewport.h as f64, Clock::SpatialFast.ms(&store.theme.theme));
         if let Travel::Lift(_) = travel {
             let max = (self.content_h - view).max(0.0);

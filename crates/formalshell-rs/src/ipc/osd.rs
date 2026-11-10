@@ -14,9 +14,7 @@ fn volume(app: &mut App, _: &[Value]) -> Reply {
 }
 
 fn show_brightness(app: &mut App, _: &[Value]) -> Reply {
-    if let Some(rt) = &app.runtime {
-        rt.service(display::refresh_backlight);
-    }
+    app.runtime.service(display::refresh_backlight);
     app.osd_brightness_read();
     app.osd_show(Kind::Brightness, "");
     ok()

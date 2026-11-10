@@ -260,9 +260,7 @@ impl App {
     /// The banner follows `screensaver.asciiPath`, read off the loop.
     pub(super) fn saver_config(&mut self) {
         let configured = settings::SAVER_ASCII_PATH.get(&self.store.config).to_owned();
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| service::load_banner(ctx, configured));
-        }
+        self.runtime.service(move |ctx| service::load_banner(ctx, configured));
         self.saver_update();
     }
 
@@ -353,15 +351,14 @@ impl App {
     /// Continued inactivity under the screensaver chains into the lock; 0
     /// (the default) leaves it off.
     fn saver_arm_chain(&mut self) {
-        if let (Some(t), Some(h)) = (self.saver.chain.take(), &self.handle) {
-            h.remove(t);
+        if let Some(t) = self.saver.chain.take() {
+            self.handle.remove(t);
         }
         let seconds = settings::SAVER_LOCK_AFTER_SECONDS.get(&self.store.config);
         if !self.saver.active || seconds <= 0.0 {
             return;
         }
-        let Some(handle) = &self.handle else { return };
-        let token = handle.insert_source(Timer::from_duration(Duration::from_secs_f64(seconds)), |_, _, app: &mut App| {
+        let token = self.handle.insert_source(Timer::from_duration(Duration::from_secs_f64(seconds)), |_, _, app: &mut App| {
             app.saver.chain = None;
             if app.saver.active {
                 let _ = app.lock();
@@ -542,18 +539,16 @@ impl App {
     }
 
     fn saver_stop_run(&self, run: u64) {
-        if let Some(rt) = self.runtime.as_ref().filter(|_| run != 0) {
-            rt.service(move |ctx| service::stop_run(ctx, run));
+        if run != 0 {
+            self.runtime.service(move |ctx| service::stop_run(ctx, run));
         }
     }
 
     /// Every overlay's ttfx run restarted for the effect and seed in force,
     /// or stopped.
     fn saver_start_runs(&mut self) {
-        if self.saver.overlays.is_empty()
-            && let Some(rt) = &self.runtime
-        {
-            rt.service(service::stop);
+        if self.saver.overlays.is_empty() {
+            self.runtime.service(service::stop);
         }
         for i in 0..self.saver.overlays.len() {
             self.saver_start_run(i);
@@ -567,7 +562,7 @@ impl App {
         let old = std::mem::take(&mut o.run);
         o.ended = false;
         self.saver_stop_run(old);
-        if self.runtime.is_none() || columns <= 0 || rows <= 0 || !self.saver.active || !self.saver_ttfx() {
+        if columns <= 0 || rows <= 0 || !self.saver.active || !self.saver_ttfx() {
             return;
         }
         self.saver.run += 1;
@@ -583,9 +578,7 @@ impl App {
         };
         let run = self.saver.run;
         self.saver.overlays[i].run = run;
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| service::play(ctx, run, opts, pinned));
-        }
+        self.runtime.service(move |ctx| service::play(ctx, run, opts, pinned));
     }
 
     /// Every overlay's run has ended on its own.
@@ -636,17 +629,16 @@ impl App {
     }
 
     fn saver_cancel_hold(&mut self) {
-        if let (Some(t), Some(h)) = (self.saver.hold.take(), &self.handle) {
-            h.remove(t);
+        if let Some(t) = self.saver.hold.take() {
+            self.handle.remove(t);
         }
     }
 
     /// The shared hold between one converged effect and the next.
     fn saver_arm_hold(&mut self) {
         self.saver_cancel_hold();
-        let Some(handle) = &self.handle else { return };
         let ms = (self.saver_hold_seconds() * 1000.0).max(1.0);
-        let token = handle.insert_source(Timer::from_duration(Duration::from_secs_f64(ms / 1000.0)), |_, _, app: &mut App| {
+        let token = self.handle.insert_source(Timer::from_duration(Duration::from_secs_f64(ms / 1000.0)), |_, _, app: &mut App| {
             app.saver.hold = None;
             app.saver_reroll();
             TimeoutAction::Drop
@@ -671,8 +663,7 @@ impl App {
         let want = !self.saver_ttfx() && effect::auto_timer_should_run(self.saver.active, self.saver.pinned);
         match (want, self.saver.tick.is_some()) {
             (true, false) => {
-                let Some(handle) = &self.handle else { return };
-                let token = handle.insert_source(Timer::from_duration(FRAME_INTERVAL), |_, _, app: &mut App| {
+                let token = self.handle.insert_source(Timer::from_duration(FRAME_INTERVAL), |_, _, app: &mut App| {
                     if !(!app.saver_ttfx() && effect::auto_timer_should_run(app.saver.active, app.saver.pinned)) {
                         app.saver.tick = None;
                         return TimeoutAction::Drop;
@@ -689,8 +680,8 @@ impl App {
                 self.saver.tick = token.ok();
             }
             (false, true) => {
-                if let (Some(t), Some(h)) = (self.saver.tick.take(), &self.handle) {
-                    h.remove(t);
+                if let Some(t) = self.saver.tick.take() {
+                    self.handle.remove(t);
                 }
             }
             _ => {}
@@ -820,9 +811,7 @@ impl App {
                 self.saver_stop_run(o.run);
             }
             crate::trace::mapped(crate::trace::Surface::Screensaver, crate::trace::State::Unmapped);
-            if let Some(runtime) = &self.runtime {
-                runtime.pool().submit(crate::trace::trim_heap);
-            }
+            self.runtime.pool().submit(crate::trace::trim_heap);
             // Dismissed inside the lock, the corner is still covered: the
             // unlock reports the end.
             if !self.lock_drawn() {

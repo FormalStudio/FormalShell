@@ -88,9 +88,7 @@ impl App {
         Self::set_popout_input(&self.compositor, &mut popout);
         self.tray_menu = Some(popout);
         let (key, largest) = (item.key, self.store.display.scales.largest());
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| tray::open_menu(ctx, key, largest));
-        }
+        self.runtime.service(move |ctx| tray::open_menu(ctx, key, largest));
         crate::trace::mapped(crate::trace::Surface::TrayMenu, crate::trace::State::Mapped);
         Ok(())
     }
@@ -101,8 +99,8 @@ impl App {
         let Some(p) = self.tray_menu.as_mut().filter(|p| p.win.card.is_open()) else { return };
         p.win.card.set_open(now, false);
         let key = p.menu.as_ref().map(|m| m.key.clone());
-        if let (Some(key), Some(rt)) = (key, &self.runtime) {
-            rt.service(move |ctx| tray::close_menu(ctx, key));
+        if let Some(key) = key {
+            self.runtime.service(move |ctx| tray::close_menu(ctx, key));
         }
     }
 
@@ -171,15 +169,13 @@ impl App {
         match outcome {
             Outcome::None => {}
             Outcome::Click(id) => {
-                if let Some(rt) = &self.runtime {
-                    rt.service(move |ctx| tray::menu_click(ctx, key, id));
-                }
+                self.runtime.service(move |ctx| tray::menu_click(ctx, key, id));
                 self.close_tray_menu();
             }
             Outcome::Toggled(id, opened) => {
-                if let (true, Some(rt)) = (opened, &self.runtime) {
+                if opened {
                     let largest = self.store.display.scales.largest();
-                    rt.service(move |ctx| tray::menu_about_to_show(ctx, key, id, largest));
+                    self.runtime.service(move |ctx| tray::menu_about_to_show(ctx, key, id, largest));
                 }
                 self.resize_menu();
             }
@@ -194,9 +190,7 @@ impl App {
     pub fn tray_activate(&self, id: &str) -> Result<(), String> {
         let Some(item) = self.store.tray.by_id(id) else { return Err(format!("no tray item with id '{id}'")) };
         let key = item.key.clone();
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| tray::activate(ctx, key));
-        }
+        self.runtime.service(move |ctx| tray::activate(ctx, key));
         Ok(())
     }
 

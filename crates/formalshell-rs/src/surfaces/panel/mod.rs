@@ -148,12 +148,12 @@ pub enum Verb {
 /// What a panel may do from an input.
 pub struct Effect<'a> {
     pub store: &'a Store,
-    pub runtime: Option<&'a Runtime>,
+    pub runtime: &'a Runtime,
     outs: Vec<Out>,
 }
 
 impl<'a> Effect<'a> {
-    pub fn new(store: &'a Store, runtime: Option<&'a Runtime>) -> Self {
+    pub fn new(store: &'a Store, runtime: &'a Runtime) -> Self {
         Self { store, runtime, outs: Vec::new() }
     }
 
@@ -163,9 +163,7 @@ impl<'a> Effect<'a> {
 
     /// Runs `f` on the service thread.
     pub fn service(&self, f: impl FnOnce(&crate::runtime::Ctx) + Send + 'static) {
-        if let Some(rt) = self.runtime {
-            rt.service(f);
-        }
+        self.runtime.service(f);
     }
 
     /// What the panel asked for, in the order it asked.

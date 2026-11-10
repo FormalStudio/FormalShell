@@ -198,8 +198,7 @@ impl App {
         if self.console.timer.is_some() {
             return;
         }
-        let Some(handle) = &self.handle else { return };
-        let token = handle.insert_source(Timer::from_duration(TICK), |_, _, app: &mut App| {
+        let token = self.handle.insert_source(Timer::from_duration(TICK), |_, _, app: &mut App| {
             if app.console_step() {
                 TimeoutAction::ToDuration(TICK)
             } else {

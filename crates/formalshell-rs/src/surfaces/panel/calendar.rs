@@ -265,17 +265,24 @@ impl Panel for Calendar {
 mod tests {
     use super::*;
 
+    use crate::runtime::{Publisher, Runtime};
     use crate::ui::{Button, What};
 
+    /// A runtime running no services, for an effect nothing here sends on.
+    fn runtime() -> Runtime {
+        let (tx, _) = calloop::channel::channel();
+        Runtime::start(Publisher::new(tx), |_| {})
+    }
+
     fn click(c: &mut Calendar, on: impl Into<On>) {
-        let store = Store::default();
-        let mut fx = Effect::new(&store, None);
+        let (store, rt) = (Store::default(), runtime());
+        let mut fx = Effect::new(&store, &rt);
         c.event(&Event { on: on.into(), what: What::Click, button: Button::Left }, &mut fx);
     }
 
     fn press(c: &mut Calendar, text: &str) {
-        let store = Store::default();
-        let mut fx = Effect::new(&store, None);
+        let (store, rt) = (Store::default(), runtime());
+        let mut fx = Effect::new(&store, &rt);
         c.key(None, text, &mut fx);
     }
 

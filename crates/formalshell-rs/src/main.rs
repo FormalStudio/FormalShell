@@ -77,10 +77,6 @@ fn main() {
     let handle = event_loop.handle();
     WaylandSource::new(conn.clone(), queue).insert(handle.clone()).expect("wayland source");
 
-    let mut app = App::new(conn.display(), &globals, &qh, started, motion_scale(), prompter);
-    app.warm_bar_faces();
-    trace::phase("app");
-
     let (sender, inbox) = channel::channel::<Msg>();
     handle
         .insert_source(inbox, |event, _, app| {
@@ -92,9 +88,11 @@ fn main() {
     let runtime = Runtime::start(Publisher::new(sender), |ctx| {
         services::start(ctx);
     });
-    app.runtime = Some(runtime);
     trace::phase("runtime");
-    app.set_handle(handle.clone());
+
+    let mut app = App::new(conn.display(), &globals, &qh, handle.clone(), runtime, started, motion_scale(), prompter);
+    app.warm_bar_faces();
+    trace::phase("app");
     gpu::watch(&handle, App::gpu_up);
     ipc::listen(&handle);
 

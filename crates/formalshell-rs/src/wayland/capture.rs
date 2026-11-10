@@ -296,13 +296,11 @@ impl App {
         let (size, scale) = (t.size, t.scale);
         if c.landed.is_none() {
             let (tx, rx) = channel::channel::<Landed>();
-            if let Some(handle) = &self.handle {
-                let _ = handle.insert_source(rx, |event, _, app: &mut App| {
-                    if let ChannelEvent::Msg(l) = event {
-                        app.capture_landed(l);
-                    }
-                });
-            }
+            let _ = self.handle.insert_source(rx, |event, _, app: &mut App| {
+                if let ChannelEvent::Msg(l) = event {
+                    app.capture_landed(l);
+                }
+            });
             self.thumbnails.landed = Some(tx);
         }
         let Some(tx) = self.thumbnails.landed.clone() else { return };
@@ -310,10 +308,7 @@ impl App {
             let image = fit(&pixels, (w, h), opaque, size).at(scale);
             let _ = tx.send(Landed { key, image });
         };
-        match &self.runtime {
-            Some(rt) => rt.pool().submit(job),
-            None => job(),
-        }
+        self.runtime.pool().submit(job);
         if self.thumbnails.thumbs.iter().any(|t| t.key == key && t.live) {
             self.capture_frame(key);
         }

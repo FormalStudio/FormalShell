@@ -224,9 +224,8 @@ impl App {
     fn start_dwell(&mut self, i: usize) {
         self.stop_dwell(i);
         let delay = self.hot.config.as_ref().map_or(corners::DEFAULT_DELAY_MS, |c| c.delay_ms);
-        let Some(handle) = &self.handle else { return };
         let surface = self.hot.wins[i].layer.wl_surface().clone();
-        let token = handle.insert_source(Timer::from_duration(Duration::from_millis(delay as u64)), move |_, _, app: &mut App| {
+        let token = self.handle.insert_source(Timer::from_duration(Duration::from_millis(delay as u64)), move |_, _, app: &mut App| {
             if let Some(i) = app.corner_of(&surface) {
                 app.hot.wins[i].dwell = None;
                 app.fire_corner(i);
@@ -237,8 +236,8 @@ impl App {
     }
 
     fn stop_dwell(&mut self, i: usize) {
-        if let (Some(handle), Some(t)) = (&self.handle, self.hot.wins[i].dwell.take()) {
-            handle.remove(t);
+        if let Some(t) = self.hot.wins[i].dwell.take() {
+            self.handle.remove(t);
         }
     }
 
@@ -282,9 +281,9 @@ impl App {
     pub fn hot_corner_action_ended(&mut self, action: &str) {
         let at = self.corner_ms();
         self.hot.ended_at.insert(action.to_owned(), at);
-        let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
+        let Some(tx) = self.lock.tx.clone() else { return };
         let action = action.to_owned();
-        rt.service(move |ctx| {
+        self.runtime.service(move |ctx| {
             ctx.spawn(async move {
                 let pos = compositor::cursor_pos().await;
                 let _ = tx.send(LockMsg::ActionEnded { action, at, cursor: pos });

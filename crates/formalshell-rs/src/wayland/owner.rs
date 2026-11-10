@@ -507,7 +507,7 @@ impl Owner for Cards {
             return true;
         }
         let Some(h) = &mut app.panel else { return true };
-        let outs = h.key(key, &app.store, app.runtime.as_ref());
+        let outs = h.key(key, &app.store, &app.runtime);
         app.panel_outs(Holder::Host, outs);
         true
     }
@@ -515,7 +515,7 @@ impl Owner for Cards {
     /// Into the open panel's field, while one is being edited.
     fn paste(&self, app: &mut App, text: &str) -> bool {
         let Some(h) = app.panel.as_mut().filter(|h| h.editing()) else { return false };
-        let outs = h.paste(text.to_owned(), &app.store, app.runtime.as_ref());
+        let outs = h.paste(text.to_owned(), &app.store, &app.runtime);
         app.panel_outs(Holder::Host, outs);
         true
     }
@@ -528,7 +528,7 @@ impl Owner for Cards {
         match (e.kind.clone(), target) {
             (PointerEventKind::Press { .. }, Some(Target::Panel)) => {
                 if let Some(h) = &mut app.panel {
-                    h.press(x, y, &app.store, app.runtime.as_ref());
+                    h.press(x, y, &app.store, &app.runtime);
                 }
                 app.pressed = Some((Target::Panel, Press::Whole));
                 app.panel_dirty = true;
@@ -552,7 +552,7 @@ impl Owner for Cards {
                 Some((Target::Panel, _)) => {
                     app.pressed = None;
                     let button = crate::input::button(button);
-                    let outs = app.panel.as_mut().map_or(Vec::new(), |h| h.release(x, y, button, &app.store, app.runtime.as_ref()));
+                    let outs = app.panel.as_mut().map_or(Vec::new(), |h| h.release(x, y, button, &app.store, &app.runtime));
                     app.panel_outs(Holder::Host, outs);
                     Pointer::Taken
                 }
@@ -578,7 +578,7 @@ impl Owner for Cards {
                 let (dx, dy) = (crate::scroll::notches(&horizontal), crate::scroll::notches(&vertical));
                 let travel = crate::scroll::travel(&vertical, source, time);
                 if let Some(h) = app.panel.as_mut().filter(|_| dx != 0.0 || dy != 0.0 || travel != crate::scroll::Travel::None) {
-                    let outs = h.scroll(x, y, dx, dy, travel, &app.store, app.runtime.as_ref());
+                    let outs = h.scroll(x, y, dx, dy, travel, &app.store, &app.runtime);
                     app.panel_outs(Holder::Host, outs);
                 }
                 app.panel_dirty = true;

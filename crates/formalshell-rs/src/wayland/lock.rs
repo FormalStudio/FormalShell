@@ -391,9 +391,8 @@ fn via_logind(app: &App) -> bool {
 impl App {
     /// The lock's own channel.
     pub(super) fn start_lock(&mut self) {
-        let Some(handle) = &self.handle else { return };
         let (tx, rx) = channel::channel::<LockMsg>();
-        let inserted = handle.insert_source(rx, |event, _, app: &mut App| {
+        let inserted = self.handle.insert_source(rx, |event, _, app: &mut App| {
             if let channel::Event::Msg(msg) = event {
                 app.lock_msg(msg);
             }
@@ -432,21 +431,17 @@ impl App {
     /// the same Lock signal every other locker sends. With no logind
     /// session found, the lock itself.
     pub fn lock_session(&mut self) -> Result<(), String> {
-        match (&self.runtime, self.lock.logind.is_some()) {
-            (Some(rt), true) => {
-                rt.service(|ctx| {
-                    crate::services::session::request(ctx);
-                });
-                Ok(())
-            }
-            _ => self.lock(),
+        if self.lock.logind.is_none() {
+            return self.lock();
         }
+        self.runtime.service(|ctx| {
+            crate::services::session::request(ctx);
+        });
+        Ok(())
     }
 
     fn locked_hint(&self, locked: bool) {
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| crate::services::session::locked_hint(ctx, locked));
-        }
+        self.runtime.service(move |ctx| crate::services::session::locked_hint(ctx, locked));
     }
 
     /// A `lock.command` that is loginctl comes back as logind's Lock, which
@@ -456,8 +451,8 @@ impl App {
     }
 
     /// The boot's lock, called before any other surface is made and before
-    /// the services start: the session lock and a surface per output, the
-    /// rest left to [`Self::start_lock`].
+    /// the loop hands the shell its first service message: the session lock
+    /// and a surface per output, the rest left to [`Self::start_lock`].
     ///
     /// The marker is spent here, not at the unlock: it lives in the user's
     /// runtime directory, which outlives the compositor that read it, and a
@@ -631,14 +626,14 @@ impl App {
 
     /// The avatar and the scrimmed wallpaper, decoded on the pool.
     fn load_lock_pictures(&mut self) {
-        let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
+        let Some(tx) = self.lock.tx.clone() else { return };
         let path = crate::settings::avatar_path(&self.store.config);
         let size = login::picture_size(&self.store.theme.theme);
         self.lock.avatar.clear();
         self.lock.shards.clear();
         for scale in self.store.display.scales.all() {
             let (path, tx) = (path.clone(), tx.clone());
-            rt.pool().submit(move || {
+            self.runtime.pool().submit(move || {
                 let _ = tx.send(LockMsg::Avatar(cover::avatar(&path, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale))));
             });
         }
@@ -648,13 +643,13 @@ impl App {
     /// The scrimmed wallpaper and its foreground, decoded on the pool. What
     /// is on screen stays until its replacement lands.
     fn load_lock_backdrops(&mut self) {
-        let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
+        let Some(tx) = self.lock.tx.clone() else { return };
         let cut = DepthCut::read(&self.store.config, "lock", Some(DepthCut::THRESHOLD));
         self.lock.depth_cut = cut;
         let path = self.store.wallpaper.latest().map(|p| p.path.clone());
         for p in self.store.wallpaper.all().filter(|p| Some(&p.path) == path.as_ref()).cloned() {
             let tx = tx.clone();
-            rt.pool().submit(move || {
+            self.runtime.pool().submit(move || {
                 let (b, front) = view::backdrop(&p, cut);
                 let _ = tx.send(LockMsg::Backdrop(cut, b, front));
             });
@@ -663,7 +658,7 @@ impl App {
 
     /// The clock redraws on the minute, and on nothing else.
     fn arm_lock_clock(&mut self) {
-        let Some(handle) = &self.handle else { return };
+        let handle = &self.handle;
         if let Some(t) = self.lock.clock.take() {
             handle.remove(t);
         }
@@ -824,7 +819,7 @@ impl App {
     /// thread left to finish into an attempt nobody waits on, and the
     /// field asks again.
     fn arm_check_deadline(&mut self, attempt: u64) {
-        let Some(handle) = &self.handle else { return };
+        let handle = &self.handle;
         if let Some(t) = self.lock.check_deadline.take() {
             handle.remove(t);
         }
@@ -847,8 +842,8 @@ impl App {
     fn end_check(&mut self) {
         self.lock.checking = false;
         self.lock.dirty = true;
-        if let (Some(handle), Some(t)) = (&self.handle, self.lock.check_deadline.take()) {
-            handle.remove(t);
+        if let Some(t) = self.lock.check_deadline.take() {
+            self.handle.remove(t);
         }
         self.lock.idle = false;
         if let Some(w) = self.lock.idle_watch.take() {
@@ -935,8 +930,8 @@ impl App {
             self.lock.splash.clear();
             drop(self.lock.prompter.lock().unwrap_or_else(|e| e.into_inner()).take());
         }
-        if let (Some(handle), Some(t)) = (&self.handle, self.lock.clock.take()) {
-            handle.remove(t);
+        if let Some(t) = self.lock.clock.take() {
+            self.handle.remove(t);
         }
         self.lift_handover();
     }
@@ -1000,7 +995,7 @@ impl App {
     /// authorization: no polkit agent can show over the lock.
     fn lock_button(&mut self, b: Button) {
         self.lock.error.clear();
-        let Some(rt) = &self.runtime else { return };
+        let rt = &self.runtime;
         eprintln!("lock: {} confirmed", b.id());
         match b {
             Button::Power(action) => {
@@ -1061,11 +1056,11 @@ impl App {
         if !url.starts_with("file://") && !url.starts_with("data:") {
             return;
         }
-        let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
+        let Some(tx) = self.lock.tx.clone() else { return };
         let size = login::picture_size(&self.store.theme.theme);
         for scale in self.store.display.scales.all() {
             let (url, tx) = (url.clone(), tx.clone());
-            rt.pool().submit(move || {
+            self.runtime.pool().submit(move || {
                 let art = cover::read_local(&url).and_then(|bytes| cover::decode(&bytes, crate::scene::pixels_at(size, scale), 0.0)).map(|b| b.at(scale));
                 let _ = tx.send(LockMsg::Art(url, art));
             });
@@ -1217,12 +1212,10 @@ impl App {
         if self.lock.splashed_at.is_none() && self.lock.outs.iter().any(|o| o.splashed) {
             crate::trace::phase("login lock splash");
             self.lock.splashed_at = Some(Instant::now());
-            if let Some(handle) = &self.handle {
-                let _ = handle.insert_source(Timer::from_duration(BOOT_WAIT), |_, _, app: &mut App| {
-                    app.lock.dirty = true;
-                    TimeoutAction::Drop
-                });
-            }
+            let _ = self.handle.insert_source(Timer::from_duration(BOOT_WAIT), |_, _, app: &mut App| {
+                app.lock.dirty = true;
+                TimeoutAction::Drop
+            });
         }
         self.lock.dirty = true;
     }
@@ -1440,9 +1433,7 @@ impl App {
             return;
         }
         if !self.lock_before_sleep() {
-            if let Some(rt) = &self.runtime {
-                rt.service(|_| crate::services::sleep::release());
-            }
+            self.runtime.service(|_| crate::services::sleep::release());
             return;
         }
         if self.lock.sleep.preparing {
@@ -1483,8 +1474,7 @@ impl App {
             None
         };
         let Some(why) = why else {
-            let Some(handle) = &self.handle else { return };
-            let _ = handle.insert_source(Timer::from_duration(Duration::from_millis(50)), |_, _, app: &mut App| {
+            let _ = self.handle.insert_source(Timer::from_duration(Duration::from_millis(50)), |_, _, app: &mut App| {
                 app.check_sleep_release();
                 TimeoutAction::Drop
             });
@@ -1497,9 +1487,7 @@ impl App {
         if let Some(last) = &mut self.lock.sleep.last {
             last.released = Some((why, crate::runtime::now_ms()));
         }
-        if let Some(rt) = &self.runtime {
-            rt.service(|_| crate::services::sleep::release());
-        }
+        self.runtime.service(|_| crate::services::sleep::release());
     }
 }
 

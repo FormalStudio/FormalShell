@@ -166,16 +166,13 @@ impl App {
     /// used now and then opens on warm buffers, one left alone for long
     /// gives their memory back.
     fn release_kept_later(&mut self) {
-        let Some(handle) = &self.handle else { return };
         self.launch.kept_generation += 1;
         let generation = self.launch.kept_generation;
-        let _ = handle.insert_source(Timer::from_duration(KEPT_FOR), move |_, _, app| {
+        let _ = self.handle.insert_source(Timer::from_duration(KEPT_FOR), move |_, _, app| {
             if app.launch.kept_generation == generation && app.launch.win.is_none() {
                 app.launch.kept = None;
                 app.launch.layer_kept = None;
-                if let Some(runtime) = &app.runtime {
-                    runtime.pool().submit(crate::trace::trim_heap);
-                }
+                app.runtime.pool().submit(crate::trace::trim_heap);
             }
             TimeoutAction::Drop
         });
@@ -184,13 +181,12 @@ impl App {
     /// The first open's pool and canvas, faulted in while the launcher is
     /// shut; every later open takes over the last one's.
     pub(super) fn prefault_launcher(&mut self) {
-        let Some(runtime) = &self.runtime else { return };
         if self.launch.kept.is_some() || self.launch.win.is_some() {
             return;
         }
         let (w, h) = self.output_size();
         let size = (w as i32, h as i32);
-        self.launch.kept = crate::surface::Kept::prefaulted(&self.shm, size, self.store.display.scales.primary(), runtime.pool());
+        self.launch.kept = crate::surface::Kept::prefaulted(&self.shm, size, self.store.display.scales.primary(), self.runtime.pool());
         self.release_kept_later();
     }
 
@@ -272,7 +268,7 @@ impl App {
         p.wants.set(&p.module.wants(&self.store));
         if !p.started {
             p.started = true;
-            let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
+            let mut fx = crate::surfaces::panel::Effect::new(&self.store, &self.runtime);
             p.module.start(&mut fx);
             let outs = fx.outs();
             self.panel_outs(super::Holder::Launcher, outs);
@@ -322,7 +318,7 @@ impl App {
         let back = key == Key::Back;
         let Some(w) = &self.launch.win else { return };
         let Some(p) = self.launcher.panel.as_mut() else { return };
-        let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
+        let mut fx = crate::surfaces::panel::Effect::new(&self.store, &self.runtime);
         let driven = drive(p.module.as_mut(), &mut p.cursor, w.shown.stops(), key, &mut fx);
         let outs = fx.outs();
         match driven {
@@ -777,19 +773,17 @@ impl App {
         };
         let mut argv = crate::services::proc::argv(&["sh", "-c", "command -v wtype >/dev/null 2>&1 || exit 127; exec wtype \"$@\"", "sh"]);
         argv.extend(keys);
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| {
-                ctx.spawn(async move {
-                    async_io::Timer::after(std::time::Duration::from_millis(150)).await;
-                    let done = crate::services::proc::capture(&argv, std::time::Duration::from_secs(5)).await;
-                    match done.code {
-                        0 => {}
-                        127 => eprintln!("Menu: wtype not on PATH, copied but not pasted"),
-                        c => eprintln!("Menu: wtype failed (exit {c}), copied but not pasted"),
-                    }
-                });
+        self.runtime.service(move |ctx| {
+            ctx.spawn(async move {
+                async_io::Timer::after(std::time::Duration::from_millis(150)).await;
+                let done = crate::services::proc::capture(&argv, std::time::Duration::from_secs(5)).await;
+                match done.code {
+                    0 => {}
+                    127 => eprintln!("Menu: wtype not on PATH, copied but not pasted"),
+                    c => eprintln!("Menu: wtype failed (exit {c}), copied but not pasted"),
+                }
             });
-        }
+        });
     }
 
     /// The clipboard route's rows off the ledger.
@@ -1174,7 +1168,6 @@ impl App {
     /// drew in (the theme's row styles before its first open), so an open
     /// finds them in the shared cache instead of shaping on this thread.
     fn warm_launcher_text(&mut self) {
-        let Some(runtime) = &self.runtime else { return };
         let styles = if self.launch.styles.is_empty() { warm_styles(&self.kit.look, &self.store.theme.theme.font_size) } else { self.launch.styles.clone() };
         let words: Vec<String> = self
             .launcher
@@ -1189,7 +1182,7 @@ impl App {
             .flat_map(|st| words.iter().map(move |w| (w.clone(), *st)))
             .collect();
         let text = self.kit.text.clone();
-        runtime.pool().submit(move || text.warm(&jobs));
+        self.runtime.pool().submit(move || text.warm(&jobs));
     }
 
     /// Every face and size the launcher draws its words in, warmed once the
@@ -1197,13 +1190,12 @@ impl App {
     /// shaper's lock is never held for more than one outline. Glyph by
     /// glyph across every style, so each face exists after the first round.
     pub(super) fn warm_faces(&mut self) {
-        let Some(runtime) = &self.runtime else { return };
         let sample = "aABCDEFGHIJKLMNOPQRSTUVWXYZbcdefghijklmnopqrstuvwxyz0123456789.,:;-_/()'";
         let styles = warm_styles(&self.kit.look, &self.store.theme.theme.font_size);
         let jobs: Vec<(String, TextStyle)> =
             sample.chars().flat_map(|c| styles.iter().map(move |st| (c.to_string(), *st))).collect();
         let text = self.kit.text.clone();
-        runtime.pool().submit(move || text.warm(&jobs));
+        self.runtime.pool().submit(move || text.warm(&jobs));
     }
 
     /// The launcher's frame, its scrim on the card's own pose.
@@ -1240,14 +1232,12 @@ impl App {
             if let Some(call) = self.launcher.after_unmap.take() {
                 let id = self.launcher.grab.hold(call);
                 self.display.sync(&self.qh, AfterUnmap(id));
-                if let Some(handle) = &self.handle {
-                    let _ = handle.insert_source(Timer::from_duration(GRAB_WAIT), move |_, _, app: &mut App| {
-                        if let Some(call) = app.launcher.grab.take(id) {
-                            eprintln!("Launcher: dropped {}.{}: the compositor did not answer the sync within {GRAB_WAIT:?}", call.target, call.function);
-                        }
-                        TimeoutAction::Drop
-                    });
-                }
+                let _ = self.handle.insert_source(Timer::from_duration(GRAB_WAIT), move |_, _, app: &mut App| {
+                    if let Some(call) = app.launcher.grab.take(id) {
+                        eprintln!("Launcher: dropped {}.{}: the compositor did not answer the sync within {GRAB_WAIT:?}", call.target, call.function);
+                    }
+                    TimeoutAction::Drop
+                });
             }
             return;
         }
@@ -1301,12 +1291,11 @@ impl App {
         w.shown.modal.present(animating, now, &qh);
         // The rest of a sliced frame on the next turn, after whatever the
         // loop has waiting (the bar's callback first).
-        if (w.shown.modal.win.surface.rastering()
+        if w.shown.modal.win.surface.rastering()
             || w.shown.modal.layer.as_ref().is_some_and(|l| l.surface.rastering())
-            || w.shown.modal.look_rastering())
-            && let Some(handle) = &self.handle
+            || w.shown.modal.look_rastering()
         {
-            handle.insert_idle(|_| {});
+            self.handle.insert_idle(|_| {});
         }
         crate::trace::slow(
             "launcher",
@@ -1416,7 +1405,7 @@ impl App {
                     && let Some(e) = w.shown.panel_event(x, y, crate::input::button(button))
                 {
                     if let Some(p) = self.launcher.panel.as_mut() {
-                        let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
+                        let mut fx = crate::surfaces::panel::Effect::new(&self.store, &self.runtime);
                         p.module.event(&e, &mut fx);
                         p.cursor.take(p.module.as_mut(), w.shown.stops());
                         let outs = fx.outs();

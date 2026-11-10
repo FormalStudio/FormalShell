@@ -181,9 +181,8 @@ impl App {
         held.layer.commit();
         held.buffer = Some(buffer);
         let generation = held.generation;
-        let Some(handle) = &self.handle else { return };
         let started = Instant::now() + INHIBIT_AFTER;
-        let _ = handle.insert_source(Timer::from_deadline(started), move |_, _, app: &mut App| {
+        let _ = self.handle.insert_source(Timer::from_deadline(started), move |_, _, app: &mut App| {
             app.enable_inhibitor(generation);
             TimeoutAction::Drop
         });

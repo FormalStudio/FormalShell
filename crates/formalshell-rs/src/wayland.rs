@@ -216,8 +216,8 @@ pub struct App {
     idle_notifier: Option<ExtIdleNotifierV1>,
     display: WlDisplay,
     qh: QueueHandle<Self>,
-    handle: Option<LoopHandle<'static, App>>,
-    pub runtime: Option<Runtime>,
+    handle: LoopHandle<'static, App>,
+    pub runtime: Runtime,
     pub store: Store,
     caffeinate: caffeinate::Caffeinate,
     settle: settle::Settle,
@@ -297,7 +297,17 @@ pub struct App {
 
 impl App {
     /// `started` is the clock every logged `t=` counts from.
-    pub fn new(display: WlDisplay, globals: &GlobalList, qh: &QueueHandle<Self>, started: Instant, motion_scale: f64, prompter: Option<fs_auth::prompter::Prompter>) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        display: WlDisplay,
+        globals: &GlobalList,
+        qh: &QueueHandle<Self>,
+        handle: LoopHandle<'static, App>,
+        runtime: Runtime,
+        started: Instant,
+        motion_scale: f64,
+        prompter: Option<fs_auth::prompter::Prompter>,
+    ) -> Self {
         let compositor = CompositorState::bind(globals, qh).expect("wl_compositor is not available");
         let layer_shell = LayerShell::bind(globals, qh).expect("zwlr_layer_shell_v1 is not available");
         let shm = Shm::bind(globals, qh).expect("wl_shm is not available");
@@ -318,8 +328,8 @@ impl App {
             idle_notifier: globals.bind(qh, 1..=2, crate::surface::Ignore).ok(),
             display,
             qh: qh.clone(),
-            handle: None,
-            runtime: None,
+            handle,
+            runtime,
             store,
             kit,
             caffeinate: caffeinate::Caffeinate::bind(globals, qh),
@@ -382,13 +392,9 @@ impl App {
         app.raise_login_lock();
         app.begin_arrival();
         app.sync_heads();
+        app.start_lock();
+        app.start_veil();
         app
-    }
-
-    pub fn set_handle(&mut self, handle: LoopHandle<'static, App>) {
-        self.handle = Some(handle);
-        self.start_lock();
-        self.start_veil();
     }
 
     /// A layer surface that takes no input and reserves nothing, on the
@@ -978,17 +984,15 @@ impl App {
                 if self.store.tray.by_key(&key).is_none() {
                     return;
                 }
-                if let Some(rt) = &self.runtime {
-                    rt.service(move |ctx| match click {
-                        TrayClick::Secondary => tray::secondary_activate(ctx, key),
-                        _ => tray::activate(ctx, key),
-                    });
-                }
+                self.runtime.service(move |ctx| match click {
+                    TrayClick::Secondary => tray::secondary_activate(ctx, key),
+                    _ => tray::activate(ctx, key),
+                });
             }
             Action::Caffeinate(on) => self.set_caffeinated(on),
             Action::OvernightOff => {
-                if let (Some(rt), Some(record)) = (&self.runtime, self.store.state.data.overnight.clone()) {
-                    rt.service(move |ctx| overnight::disable(ctx, record));
+                if let Some(record) = self.store.state.data.overnight.clone() {
+                    self.runtime.service(move |ctx| overnight::disable(ctx, record));
                 }
             }
             Action::RecordStop => {
@@ -1095,9 +1099,8 @@ impl App {
         if self.wake.is_some_and(|w| w <= at && w > now) {
             return;
         }
-        let Some(handle) = &self.handle else { return };
         self.wake = Some(at);
-        let _ = handle.insert_source(Timer::from_deadline(at), |_, _, app: &mut App| {
+        let _ = self.handle.insert_source(Timer::from_deadline(at), |_, _, app: &mut App| {
             app.wake = None;
             live!(app).bar.tick(&mut app.kit, &app.store, Instant::now());
             app.tick_spares(Instant::now());
@@ -1138,7 +1141,7 @@ impl App {
         self.hover_toasts((owner == Some(Target::Toasts)).then_some(at));
         if let Some(h) = &mut self.panel {
             let point = (owner == Some(Target::Panel)).then_some(at);
-            if h.pointer(point, &self.store, self.runtime.as_ref()) {
+            if h.pointer(point, &self.store, &self.runtime) {
                 self.panel_dirty = true;
             }
         }
@@ -1332,10 +1335,7 @@ impl SeatHandler for App {
         if capability == Capability::Keyboard && self.keyboard.is_none() {
             // Repeats come off the loop, so a held arrow glides the cursor.
             let repeat: smithay_client_toolkit::seat::keyboard::repeat::RepeatCallback<App> = Box::new(|app, _, event| app.key_event_from(event, true));
-            self.keyboard = match self.handle.clone() {
-                Some(handle) => self.seats.get_keyboard_with_repeat(qh, &seat, None, handle, repeat).ok(),
-                None => self.seats.get_keyboard(qh, &seat, None).ok(),
-            };
+            self.keyboard = self.seats.get_keyboard_with_repeat(qh, &seat, None, self.handle.clone(), repeat).ok();
         }
     }
 

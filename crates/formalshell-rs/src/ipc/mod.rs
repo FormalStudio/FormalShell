@@ -263,8 +263,8 @@ fn reply_to(app: &App, stream: &UnixStream, reply: Vec<u8>) {
     if sent == reply.len() {
         return;
     }
-    let (Some(runtime), Ok(stream)) = (&app.runtime, stream.try_clone()) else { return };
-    runtime.service(move |ctx| {
+    let Ok(stream) = stream.try_clone() else { return };
+    app.runtime.service(move |ctx| {
         ctx.spawn(async move {
             if let Ok(mut stream) = Async::new(stream) {
                 let _ = stream.write_all(&reply[sent..]).await;

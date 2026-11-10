@@ -99,11 +99,11 @@ impl App {
                     text: field(),
                     dirty: true,
                 });
-                if own && let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) {
+                if own && let Some(tx) = self.lock.tx.clone() {
                     let path = crate::settings::avatar_path(&self.store.config);
                     let scale = self.polkit.as_ref().map_or_else(|| self.store.display.scales.primary(), |d| d.modal.win.surface.scale());
                     let px = crate::scene::pixels_at((self.store.theme.theme.space.lg * 2.0).round(), scale);
-                    rt.pool().submit(move || {
+                    self.runtime.pool().submit(move || {
                         let _ = tx.send(LockMsg::PolkitAvatar(crate::services::cover::avatar(&path, px).map(|b| b.at(scale))));
                     });
                 }

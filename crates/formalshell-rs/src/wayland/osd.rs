@@ -91,10 +91,8 @@ impl App {
         };
         let pct = display::clamp_percent(&id, base + delta);
         self.osd.step = Some((id.clone(), pct, now));
-        if let Some(rt) = &self.runtime {
-            let max = device.max;
-            rt.service(move |ctx| display::set_percent(ctx, &id, pct as f64, max));
-        }
+        let max = device.max;
+        self.runtime.service(move |ctx| display::set_percent(ctx, &id, pct as f64, max));
         self.osd_show(Kind::Brightness, "");
         Ok(())
     }

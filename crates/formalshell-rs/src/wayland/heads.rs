@@ -519,10 +519,8 @@ impl App {
             let qh = &self.qh;
             let Some(b) = self.bars.heads[i].backdrop.as_mut() else { continue };
             if made.is_some() || (!animate && has == Some(true)) {
-                if let Some(token) = b.shards.as_mut().and_then(|s| s.timer.take())
-                    && let Some(h) = &self.handle
-                {
-                    h.remove(token);
+                if let Some(token) = b.shards.as_mut().and_then(|s| s.timer.take()) {
+                    self.handle.remove(token);
                 }
                 b.animate(made);
             }
@@ -536,11 +534,9 @@ impl App {
             let Some(s) = b.shards.as_mut() else { continue };
             match (running, s.timer.take()) {
                 (true, Some(token)) => s.timer = Some(token),
-                (true, None) => s.timer = self.handle.as_ref().and_then(|h| shard_beat(h, output)),
+                (true, None) => s.timer = shard_beat(&self.handle, output),
                 (false, Some(token)) => {
-                    if let Some(h) = &self.handle {
-                        h.remove(token);
-                    }
+                    self.handle.remove(token);
                 }
                 (false, None) => {}
             }

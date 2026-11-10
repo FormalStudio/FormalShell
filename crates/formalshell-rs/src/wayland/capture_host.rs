@@ -131,11 +131,9 @@ fn notify_with(app: &mut App, summary: &str, body: &str, actions: Vec<(&'static 
     let urgency = fs_info::notifications::Urgency::Normal;
     app.apply(Op::NotifyRunning { summary: summary.into(), body: body.into(), urgency, actions, image: url });
     let id = app.store.notifications.newest_local();
-    if !image.is_empty()
-        && let Some(rt) = &app.runtime
-    {
+    if !image.is_empty() {
         let path = image.to_owned();
-        rt.service(move |ctx| svc::picture(ctx, id, path));
+        app.runtime.service(move |ctx| svc::picture(ctx, id, path));
     }
 }
 
@@ -158,9 +156,7 @@ pub fn flush(app: &mut App) {
 }
 
 pub fn spawn(app: &App, run: Run) {
-    if let Some(rt) = &app.runtime {
-        rt.service(move |ctx| svc::start(ctx, run));
-    }
+    app.runtime.service(move |ctx| svc::start(ctx, run));
 }
 
 pub fn runtime_dir() -> String {
@@ -432,9 +428,8 @@ fn crop_shot(app: &mut App, r: Rect, c: &Cands) {
     };
     let g = app.capture.generation();
     app.capture.shot.grab = Some(g);
-    let Some(rt) = &app.runtime else { return };
     let crop = svc::Crop { src, dest, x0, y0, x1, y1 };
-    rt.service(move |ctx| svc::crop(ctx, g, crop));
+    app.runtime.service(move |ctx| svc::crop(ctx, g, crop));
 }
 
 /// The crop landed: the clipboard step runs as the grab, so its exit posts

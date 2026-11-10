@@ -30,9 +30,7 @@ fn processes(app: &mut App, args: &[Value]) -> Reply {
 
 fn signal(app: &mut App, args: &[Value]) -> Reply {
     let (n, sig) = procs::begin_signal(args[0].str(), args[1].str())?;
-    if let Some(rt) = &app.runtime {
-        rt.service(move |ctx| procs::run_signal(ctx, n, sig));
-    }
+    app.runtime.service(move |ctx| procs::run_signal(ctx, n, sig));
     text(format!("ok: {sig} sent to {n}"))
 }
 
@@ -40,9 +38,7 @@ fn restart(app: &mut App, args: &[Value]) -> Reply {
     let pid = args[0].str();
     let kernel = fs_system::monitor::procs::parse_pid(pid).and_then(|n| app.store.procs.row(n)).is_some_and(|r| r.kernel);
     let n = procs::begin_restart(pid, kernel)?;
-    if let Some(rt) = &app.runtime {
-        rt.service(move |ctx| procs::run_restart(ctx, n));
-    }
+    app.runtime.service(move |ctx| procs::run_restart(ctx, n));
     text(format!("ok: restarting {n}"))
 }
 

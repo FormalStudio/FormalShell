@@ -141,9 +141,8 @@ impl App {
         if self.rims.polling || !self.rim_card_open() {
             return;
         }
-        let Some(handle) = &self.handle else { return };
         self.rims.polling = true;
-        let _ = handle.insert_source(Timer::from_duration(POLL), |_, _, app: &mut App| {
+        let _ = self.handle.insert_source(Timer::from_duration(POLL), |_, _, app: &mut App| {
             if !app.rim_card_open() {
                 app.rims.polling = false;
                 return TimeoutAction::Drop;

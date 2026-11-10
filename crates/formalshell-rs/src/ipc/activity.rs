@@ -20,7 +20,7 @@ fn seen(_: &mut App, _: &[Value]) -> Reply {
 }
 
 fn verb(app: &mut App, verb: Verb, source: &str) -> Reply {
-    match activity::act(&app.store, app.runtime.as_ref(), verb, source) {
+    match activity::act(&app.store, &app.runtime, verb, source) {
         Ok(Done::Panel) => {
             if !app.shows(PanelId::Activity) {
                 app.set_panel(PanelId::Activity, true, None);

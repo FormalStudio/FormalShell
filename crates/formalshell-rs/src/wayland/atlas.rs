@@ -59,10 +59,8 @@ impl App {
             self.menu_close();
         }
         let now = Instant::now();
-        if self.atlas.model.want_countries()
-            && let Some(rt) = &self.runtime
-        {
-            rt.service(|ctx| {
+        if self.atlas.model.want_countries() {
+            self.runtime.service(|ctx| {
                 let job = ctx.pool().run(crate::services::countries::load);
                 let publisher = ctx.publisher().clone();
                 ctx.spawn(async move {
@@ -72,10 +70,8 @@ impl App {
                 });
             });
         }
-        if self.atlas.model.want_earth()
-            && let Some(rt) = &self.runtime
-        {
-            rt.service(|ctx| {
+        if self.atlas.model.want_earth() {
+            self.runtime.service(|ctx| {
                 let (pool, publisher) = (ctx.pool().clone(), ctx.publisher().clone());
                 let spawn: earth::Spawn = Box::new(move |job| pool.submit(job));
                 let tiles = publisher.clone();

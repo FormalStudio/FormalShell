@@ -127,18 +127,16 @@ fn sh(script: &str, args: &[String]) -> Vec<String> {
 
 
 /// Overnight turned on or off from the UI thread; nothing while it already is.
-pub fn set(store: &crate::store::Store, runtime: Option<&crate::runtime::Runtime>, want: bool) {
+pub fn set(store: &crate::store::Store, runtime: &crate::runtime::Runtime, want: bool) {
     let active = store.state.data.overnight.as_ref();
     if active.is_some() == want {
         return;
     }
     let snap = active.cloned().unwrap_or_default();
-    if let Some(rt) = runtime {
-        if want {
-            rt.service(enable);
-        } else {
-            rt.service(move |ctx| disable(ctx, snap));
-        }
+    if want {
+        runtime.service(enable);
+    } else {
+        runtime.service(move |ctx| disable(ctx, snap));
     }
 }
 

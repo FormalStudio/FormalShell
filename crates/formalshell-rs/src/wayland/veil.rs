@@ -116,7 +116,7 @@ impl App {
 
     /// The arrival's wait, and logind's shutdown signal on the service thread.
     pub(super) fn start_veil(&mut self) {
-        let Some(handle) = &self.handle else { return };
+        let handle = &self.handle;
         let _ = handle.insert_source(Timer::from_deadline(self.started + ARRIVE_WAIT), |_, _, _: &mut App| TimeoutAction::Drop);
         let (tx, rx) = channel::channel::<bool>();
         let inserted = handle.insert_source(rx, |event, _, app: &mut App| {
@@ -124,10 +124,8 @@ impl App {
                 app.prepare_for_shutdown(going);
             }
         });
-        if inserted.is_ok()
-            && let Some(rt) = &self.runtime
-        {
-            rt.service(move |ctx| crate::services::shutdown::start(ctx, tx));
+        if inserted.is_ok() {
+            self.runtime.service(move |ctx| crate::services::shutdown::start(ctx, tx));
         }
     }
 
@@ -217,15 +215,13 @@ impl App {
         if self.veil.handover.is_empty() {
             return false;
         }
-        if let Some(handle) = &self.handle {
-            let _ = handle.insert_source(Timer::from_duration(HANDOVER_WAIT), |_, _, app: &mut App| {
-                if app.lock_unlocking() {
-                    eprintln!("lock: the unlock picture not committed in {}ms, unlocking without it", HANDOVER_WAIT.as_millis());
-                    app.finish_unlock();
-                }
-                TimeoutAction::Drop
-            });
-        }
+        let _ = self.handle.insert_source(Timer::from_duration(HANDOVER_WAIT), |_, _, app: &mut App| {
+            if app.lock_unlocking() {
+                eprintln!("lock: the unlock picture not committed in {}ms, unlocking without it", HANDOVER_WAIT.as_millis());
+                app.finish_unlock();
+            }
+            TimeoutAction::Drop
+        });
         true
     }
 
@@ -267,15 +263,13 @@ impl App {
         self.fade_veils(1.0, DEPART_MS);
         compositor::send(Command::Cursor { hidden: true });
         let generation = self.veil.generation;
-        if let Some(handle) = &self.handle {
-            let _ = handle.insert_source(Timer::from_duration(DEPART_WAIT), move |_, _, app: &mut App| {
-                if app.veil.generation == generation && !app.veil.ended {
-                    eprintln!("veil: not shown in {}ms, going on under it", DEPART_WAIT.as_millis());
-                    app.end_departure();
-                }
-                TimeoutAction::Drop
-            });
-        }
+        let _ = self.handle.insert_source(Timer::from_duration(DEPART_WAIT), move |_, _, app: &mut App| {
+            if app.veil.generation == generation && !app.veil.ended {
+                eprintln!("veil: not shown in {}ms, going on under it", DEPART_WAIT.as_millis());
+                app.end_departure();
+            }
+            TimeoutAction::Drop
+        });
     }
 
     fn lift(&mut self) {
@@ -289,9 +283,7 @@ impl App {
         self.veil.ended = true;
         match self.veil.phase {
             Some(Phase::Departing) => {
-                if let Some(rt) = &self.runtime {
-                    rt.service(|_| crate::services::shutdown::release());
-                }
+                self.runtime.service(|_| crate::services::shutdown::release());
             }
             Some(Phase::Leaving) => compositor::send(Command::Exit),
             Some(Phase::Arriving) | None => {}

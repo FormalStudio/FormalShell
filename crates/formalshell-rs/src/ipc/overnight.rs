@@ -25,7 +25,7 @@ fn active(app: &App) -> bool {
 }
 
 fn on(app: &mut App, want: bool) {
-    overnight::set(&app.store, app.runtime.as_ref(), want);
+    overnight::set(&app.store, &app.runtime, want);
 }
 
 fn toggle(app: &mut App, _: &[Value]) -> Reply {

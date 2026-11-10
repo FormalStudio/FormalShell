@@ -169,7 +169,7 @@ impl App {
         if let Some(tx) = &self.desktop_clock.tx {
             return Some(tx.clone());
         }
-        let handle = self.handle.as_ref()?;
+        let handle = &self.handle;
         let (tx, rx) = channel::channel::<Msg>();
         handle
             .insert_source(rx, |event, _, app: &mut App| {
@@ -238,10 +238,9 @@ impl App {
             return;
         }
         let Some(tx) = self.desktop_clock_channel() else { return };
-        let Some(rt) = &self.runtime else { return };
         for key in asks {
             let tx = tx.clone();
-            rt.pool().submit(move || {
+            self.runtime.pool().submit(move || {
                 let p = &key.picture;
                 let subject = crate::services::wallpaper::depth_mask(&p.path, p.width, p.height, key.cut).map(|m| Arc::new(Subject::new(m, p.width, p.height)));
                 let _ = tx.send(Msg { key, subject });

@@ -504,10 +504,8 @@ pub enum Done {
     Panel,
 }
 
-fn notify(runtime: Option<&Runtime>, op: Op) {
-    if let Some(rt) = runtime {
-        rt.service(move |ctx| ctx.publish(store::Diff::Notifications(notifications::Diff::Op(op))));
-    }
+fn notify(runtime: &Runtime, op: Op) {
+    runtime.service(move |ctx| ctx.publish(store::Diff::Notifications(notifications::Diff::Op(op))));
 }
 
 /// The window of desktop entry `app`, else the entry launched.
@@ -532,7 +530,7 @@ fn spawn(retry: Retry) {
 }
 
 /// Runs `verb` on the live group `source`. The error is the IPC reply.
-pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -> Result<Done, String> {
+pub fn act(store: &Store, runtime: &Runtime, verb: Verb, source: &str) -> Result<Done, String> {
     let activity = &store.activity.activity;
     let groups = activity.groups();
     let Some(g) = groups.iter().find(|g| g.source == source) else { return Err(format!("no activity from '{source}'")) };
