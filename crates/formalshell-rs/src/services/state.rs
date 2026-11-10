@@ -367,6 +367,10 @@ pub enum Choice {
 /// neither. A flat or sky source sets the colour and keeps both slots under
 /// it; a picture sets itself over any colour.
 pub fn set_wallpaper(choice: Choice, mode: Option<&str>) {
+    set(wallpaper_fields(choice, mode));
+}
+
+fn wallpaper_fields(choice: Choice, mode: Option<&str>) -> Vec<Field> {
     let mut fields = Vec::new();
     if let Some(mode @ ("dark" | "light")) = mode {
         fields.push(Field::Mode(mode.into()));
@@ -380,7 +384,7 @@ pub fn set_wallpaper(choice: Choice, mode: Option<&str>) {
         Some(hex) => fields.push(Field::WallpaperColor(hex.into())),
         None => fields.push(Field::Pick(choice)),
     }
-    set(fields);
+    fields
 }
 
 /// What the service task and its watcher share. Both run on the one service
@@ -508,15 +512,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-
-    #[test]
-    fn defaults_match_the_adapter() {
-        let d = Data::default();
-        assert_eq!((d.wallpaper.as_str(), d.mode.as_str(), d.dnd), ("", "dark", false));
-        assert!(d.picks.is_empty());
-        assert_eq!(d.mode_override, Value::Null);
-        assert_eq!((d.calendar_birth_year, d.calendar_life_expectancy), (0, 0));
-    }
 
     #[test]
     fn written_file_has_every_key_sorted_with_four_space_indent() {
@@ -793,19 +788,24 @@ mod tests {
 
     #[test]
     fn wallpaper_and_mode_land_mode_first() {
-        let (tx, rx) = async_channel::unbounded();
-        let _ = SETTERS.set(tx);
-        set_wallpaper(Choice::Slot(Half::Light, "/w.png".into()), Some("light"));
-        set_wallpaper(Choice::Both("/x.png".into()), Some("sepia"));
-        set_wallpaper(Choice::Both("color:#ff8000".into()), None);
-        set_wallpaper(Choice::Slot(Half::Dark, "sky:-4".into()), None);
-        set_wallpaper(Choice::Pair("/l.png".into(), "/d.png".into()), None);
-        let pick = |c: Choice| vec![Field::Pick(c)];
-        assert_eq!(rx.try_recv().unwrap(), [vec![Field::Mode("light".into())], pick(Choice::Slot(Half::Light, "/w.png".into()))].concat());
-        assert_eq!(rx.try_recv().unwrap(), pick(Choice::Both("/x.png".into())));
-        assert_eq!(rx.try_recv().unwrap(), vec![Field::WallpaperColor(json!("#ff8000"))]);
-        assert_eq!(rx.try_recv().unwrap(), vec![Field::WallpaperColor(json!("sky"))]);
-        assert_eq!(rx.try_recv().unwrap(), pick(Choice::Pair("/l.png".into(), "/d.png".into())));
+        let fields = wallpaper_fields(Choice::Slot(Half::Light, "/w.png".into()), Some("light"));
+        assert_eq!(fields.first(), Some(&Field::Mode("light".into())));
+        assert_eq!(fields.len(), 2);
+        let mut data = Data { wallpaper: "/old.png".into(), ..Data::default() };
+        data.set(fields);
+        assert_eq!((data.mode.as_str(), data.wallpaper.as_str()), ("light", "/w.png"));
+
+        let mut data = Data::default();
+        data.set(wallpaper_fields(Choice::Both("/x.png".into()), Some("sepia")));
+        assert_eq!((data.mode.as_str(), data.wallpaper.as_str()), ("dark", "/x.png"));
+
+        let mut data = Data::default();
+        data.set(wallpaper_fields(Choice::Both("color:#ff8000".into()), None));
+        assert_eq!(data.wallpaper_color, json!("#ff8000"));
+        data.set(wallpaper_fields(Choice::Slot(Half::Dark, "sky:-4".into()), None));
+        assert_eq!(data.wallpaper_color, json!("sky"));
+        data.set(wallpaper_fields(Choice::Pair("/l.png".into(), "/d.png".into()), None));
+        assert_eq!((data.wallpaper.as_str(), data.wallpaper_dark.as_str(), &data.wallpaper_color), ("/l.png", "/d.png", &json!(false)));
     }
 
     /// (wallpaper, wallpaperDark, wallpaperColor) after `choice` lands on

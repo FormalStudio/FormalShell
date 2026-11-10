@@ -295,7 +295,7 @@ fn follow(ctx: &Ctx, path: PathBuf, tx: &Sender<Input>, followed: &std::rc::Rc<s
     }
     let (tx, followed) = (tx.clone(), followed.clone());
     ctx.spawn(async move {
-        read_operation(&path, &tx).await;
+        read_operation(&path, &tx, QUIET).await;
         followed.borrow_mut().remove(&path);
     });
 }
@@ -332,12 +332,12 @@ struct Conn {
 }
 
 impl Conn {
-    /// Reads one chunk, or nothing for `QUIET`, sending every line it completes.
-    async fn step(&mut self, seen: &mut Seen, tx: &Sender<Input>) -> Got {
+    /// Reads one chunk, or nothing for `quiet`, sending every line it completes.
+    async fn step(&mut self, seen: &mut Seen, tx: &Sender<Input>, quiet: Duration) -> Got {
         let mut chunk = [0u8; 8192];
         let read = async { Some(self.stream.read(&mut chunk).await) };
         let n = match futures_lite::future::or(read, async {
-            Timer::after(QUIET).await;
+            Timer::after(quiet).await;
             None
         })
         .await
@@ -362,12 +362,12 @@ impl Conn {
 }
 
 /// A second connection that has answered with at least one line.
-async fn ask_again(path: &Path, seen: &mut Seen, tx: &Sender<Input>) -> Option<(Conn, usize)> {
+async fn ask_again(path: &Path, seen: &mut Seen, tx: &Sender<Input>, quiet: Duration) -> Option<(Conn, usize)> {
     let stream = Async::<UnixStream>::connect(path).await.ok()?;
     let mut fresh = Conn { stream, pending: Vec::new() };
     // A snapshot can arrive in pieces: read on until a whole line lands.
     loop {
-        match fresh.step(seen, tx).await {
+        match fresh.step(seen, tx, quiet).await {
             Got::Lines(0) => {}
             Got::Lines(n) => return Some((fresh, n)),
             Got::Quiet | Got::Closed => return None,
@@ -378,7 +378,7 @@ async fn ask_again(path: &Path, seen: &mut Seen, tx: &Sender<Input>) -> Option<(
 /// Reads one operation until it ends. A connection cut short (a reader
 /// that fell behind) is reconnected while the socket still exists; one
 /// that ends with no final state and no socket to go back to is a death.
-async fn read_operation(path: &Path, tx: &Sender<Input>) {
+async fn read_operation(path: &Path, tx: &Sender<Input>, quiet: Duration) {
     let mut seen = Seen::default();
     let mut empty = 0;
     loop {
@@ -386,11 +386,11 @@ async fn read_operation(path: &Path, tx: &Sender<Input>) {
         let mut conn = Conn { stream, pending: Vec::new() };
         let mut lines = 0;
         loop {
-            match conn.step(&mut seen, tx).await {
+            match conn.step(&mut seen, tx, quiet).await {
                 Got::Lines(n) => lines += n,
                 Got::Closed => break,
                 Got::Quiet => {
-                    if let Some((fresh, n)) = ask_again(path, &mut seen, tx).await {
+                    if let Some((fresh, n)) = ask_again(path, &mut seen, tx, quiet).await {
                         (conn, lines) = (fresh, n);
                     }
                 }
@@ -598,6 +598,10 @@ mod tests {
         )
     }
 
+    /// Short enough to keep the silent-connection test quick, and ten times
+    /// the pause inside a split snapshot, which must not read as silence.
+    const TEST_QUIET: Duration = Duration::from_millis(300);
+
     fn drain(rx: &Receiver<Input>) -> Vec<String> {
         let mut out = Vec::new();
         while let Ok(input) = rx.try_recv() {
@@ -624,7 +628,7 @@ mod tests {
             s.write_all(b"{\"v\":1,\"type\":\"upd\n").unwrap();
             s.write_all(line("a", "succeeded", 4).as_bytes()).unwrap();
         });
-        block_on(read_operation(&path, &tx));
+        block_on(read_operation(&path, &tx, TEST_QUIET));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 25", "succeeded 100"]);
     }
@@ -644,7 +648,7 @@ mod tests {
             s.write_all(line("b", "succeeded", 4).trim_end().as_bytes()).unwrap();
             std::fs::remove_file(&gone).unwrap();
         });
-        block_on(read_operation(&path, &tx));
+        block_on(read_operation(&path, &tx, TEST_QUIET));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 50", "died fspec:b"]);
     }
@@ -666,7 +670,7 @@ mod tests {
             s.write_all(line("c", "running", 3).as_bytes()).unwrap();
             s.write_all(line("c", "failed", 3).as_bytes()).unwrap();
         });
-        block_on(read_operation(&path, &tx));
+        block_on(read_operation(&path, &tx, TEST_QUIET));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 25", "running 75", "failed 75"]);
     }
@@ -687,7 +691,7 @@ mod tests {
             s.write_all(line("e", "succeeded", 4).as_bytes()).unwrap();
             drop(stranded);
         });
-        block_on(read_operation(&path, &tx));
+        block_on(read_operation(&path, &tx, TEST_QUIET));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 25", "running 100", "succeeded 100"]);
     }
@@ -710,10 +714,9 @@ mod tests {
             std::fs::remove_file(&gone).unwrap();
             drop(second);
             drop(listener);
-            std::thread::sleep(Duration::from_millis(200));
             drop(first);
         });
-        block_on(read_operation(&path, &tx));
+        block_on(read_operation(&path, &tx, TEST_QUIET));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 25", "succeeded 100"]);
     }
@@ -733,12 +736,12 @@ mod tests {
             let snapshot = line("g", "running", 3);
             let (head, tail) = snapshot.split_at(snapshot.len() / 2);
             s.write_all(head.as_bytes()).unwrap();
-            std::thread::sleep(Duration::from_millis(200));
+            std::thread::sleep(TEST_QUIET / 10);
             s.write_all(tail.as_bytes()).unwrap();
             s.write_all(line("g", "succeeded", 4).as_bytes()).unwrap();
             drop(stranded);
         });
-        block_on(read_operation(&path, &tx));
+        block_on(read_operation(&path, &tx, TEST_QUIET));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 25", "running 75", "succeeded 100"]);
     }
@@ -749,7 +752,7 @@ mod tests {
         let path = dir.path().join("d.sock");
         drop(UnixListener::bind(&path).unwrap());
         let (tx, rx) = async_channel::unbounded();
-        block_on(read_operation(&path, &tx));
+        block_on(read_operation(&path, &tx, TEST_QUIET));
         assert!(drain(&rx).is_empty());
     }
 

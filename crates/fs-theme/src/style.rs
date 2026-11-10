@@ -497,15 +497,20 @@ pub fn motion(style: &Value, key: &str, m: &Motion) -> Clock {
         Some(Value::Array(points)) if points.first().is_some_and(Value::is_array) => {
             stops(points).map_or_else(spatial, Easing::Stops)
         }
-        // A bezier needs one whole segment (two control points and the end).
-        Some(Value::Array(points)) if points.len() >= 6 => {
-            Easing::Bezier(points.iter().map(|p| p.as_f64().unwrap_or(f64::NAN)).collect())
-        }
+        Some(Value::Array(points)) => bezier(points).map_or_else(spatial, Easing::Bezier),
         Some(Value::String(s)) => tokens::curve(s).map_or_else(spatial, |c| Easing::Bezier(c.to_vec())),
         _ => spatial(),
     };
     let stagger = num(raw.and_then(|r| r.get("stagger"))).unwrap_or(0.0);
     Clock { duration, curve, stagger }
+}
+
+/// A bezier as a table writes it: `None` unless it is one or two whole
+/// segments (two control points and the end each, two being what the
+/// shell's curve holds) of numbers, ending on (1, 1).
+pub fn bezier(raw: &[Value]) -> Option<Vec<f64>> {
+    let points = raw.iter().map(Value::as_f64).collect::<Option<Vec<_>>>()?;
+    (matches!(points.len(), 6 | 12) && points.ends_with(&[1.0, 1.0])).then_some(points)
 }
 
 /// A stop list as a table writes it, `[[t, v], ...]`: `None` unless every
@@ -1433,12 +1438,22 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_bezier_without_a_whole_segment_falls_back_to_spatial() {
+    fn a_malformed_bezier_falls_back_to_spatial() {
         let families = tokens::motion_tokens(true);
         let spatial = Easing::Bezier(tokens::curve("spatial").unwrap().to_vec());
-        for curve in [json!([]), json!([0.1]), json!([0.1, 0.2, 0.3, 0.4, 1.0])] {
+        for curve in [
+            json!([]),
+            json!([0.1]),
+            json!([0.1, 0.2, 0.3, 0.4, 1.0]),
+            json!([0.1, 0.2, 0.3, 0.4, 1.0, 1.0, 0.5]),
+            json!([0.1, 0.2, 0.3, "0.4", 1.0, 1.0]),
+            json!([0.1, 0.2, 0.3, 0.4, 0.8, 1.0]),
+            json!([0.1, 0.2, 0.3, 0.4, 0.5, 0.5, 0.6, 0.6, 0.7, 0.7, 0.8, 0.8, 0.9, 0.9, 1.0, 1.0, 1.0, 1.0]),
+        ] {
             let table = json!({ "motion": { "emerge": { "curve": curve } } });
             assert_eq!(motion(&table, "emerge", &families).curve, spatial, "{curve}");
         }
+        let table = json!({ "motion": { "emerge": { "curve": [0.2, 0.0, 0.0, 1.0, 1.0, 1.0] } } });
+        assert_eq!(motion(&table, "emerge", &families).curve, Easing::Bezier(vec![0.2, 0.0, 0.0, 1.0, 1.0, 1.0]));
     }
 }

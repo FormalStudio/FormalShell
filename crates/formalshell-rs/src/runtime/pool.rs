@@ -64,11 +64,6 @@ impl Pool {
         });
         async move { rx.recv().await.ok() }
     }
-
-    #[cfg(test)]
-    pub fn threads(&self) -> usize {
-        self.inner.queue.lock().unwrap().threads
-    }
 }
 
 fn worker(inner: Arc<Inner>) {

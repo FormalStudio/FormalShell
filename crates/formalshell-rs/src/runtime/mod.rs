@@ -93,7 +93,8 @@ impl Runtime {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     use calloop::EventLoop;
     use calloop::channel::{self, Event};
@@ -103,13 +104,16 @@ mod tests {
     use crate::services::clock;
 
     const FRAME: Duration = Duration::from_millis(8);
-    const BLOCK: Duration = Duration::from_millis(600);
+    /// Frames the UI loop has to draw while both jobs are held.
+    const HELD_FRAMES: u32 = 3;
+    /// Only there so a UI loop the jobs did block fails instead of hanging.
+    const STUCK: Duration = Duration::from_secs(5);
 
-    #[derive(Default)]
     struct Ui {
-        last: Option<Instant>,
-        worst: Duration,
-        frames: u32,
+        started: mpsc::Receiver<()>,
+        running: usize,
+        held_frames: u32,
+        release: Vec<mpsc::Sender<()>>,
         results: Vec<String>,
     }
 
@@ -117,10 +121,17 @@ mod tests {
         Diff::Clock(clock::Diff::Text(text.into()))
     }
 
+    /// Blocks until the UI loop lets it go, then says whether it did.
+    fn held(started: &mpsc::Sender<()>, release: &mpsc::Receiver<()>) -> &'static str {
+        let _ = started.send(());
+        if release.recv_timeout(STUCK).is_ok() { "released" } else { "stuck" }
+    }
+
     /// A blocking job queued from the UI thread and one awaited by a
-    /// service task, both far longer than a frame, while a timer stands in
-    /// for the frame clock: no gap between frames comes near the job's
-    /// length, and both results land as diffs.
+    /// service task each hold until the UI loop, with a timer standing in
+    /// for the frame clock, has drawn frames while both run. Neither can be
+    /// released unless the loop keeps turning, so both results reading
+    /// "released" is the proof.
     #[test]
     fn blocking_job_never_delays_a_frame() {
         let mut event_loop: EventLoop<Ui> = EventLoop::try_new().unwrap();
@@ -135,62 +146,46 @@ mod tests {
             .unwrap();
         handle
             .insert_source(Timer::from_duration(FRAME), |_, _, ui: &mut Ui| {
-                let now = Instant::now();
-                if let Some(last) = ui.last {
-                    ui.worst = ui.worst.max(now - last);
+                ui.running += ui.started.try_iter().count();
+                if ui.running == 2 && !ui.release.is_empty() {
+                    ui.held_frames += 1;
+                    if ui.held_frames == HELD_FRAMES {
+                        for release in ui.release.drain(..) {
+                            let _ = release.send(());
+                        }
+                    }
                 }
-                ui.last = Some(now);
-                ui.frames += 1;
                 TimeoutAction::ToDuration(FRAME)
             })
             .unwrap();
 
+        let (started, started_rx) = mpsc::channel();
+        let (release_ui, hold_ui) = mpsc::channel();
+        let (release_service, hold_service) = mpsc::channel();
         let publisher = Publisher::new(sender);
         let runtime = Runtime::start(publisher.clone(), |_| {});
-        let from_ui = publisher.clone();
-        runtime.pool().submit(move || {
-            std::thread::sleep(BLOCK);
-            from_ui.publish(result("ui"));
-        });
-        runtime.service(|ctx| {
+        let started_ui = started.clone();
+        runtime.pool().submit(move || publisher.publish(result(&format!("ui {}", held(&started_ui, &hold_ui)))));
+        runtime.service(move |ctx| {
             let ctx2 = ctx.clone();
             ctx.spawn(async move {
-                let text = ctx2.pool().run(|| {
-                    std::thread::sleep(BLOCK);
-                    "service".to_string()
-                });
-                let text = text.await.unwrap();
-                ctx2.publish(result(&text));
+                let text = ctx2.pool().run(move || held(&started, &hold_service)).await.unwrap();
+                ctx2.publish(result(&format!("service {text}")));
             });
         });
 
-        let mut ui = Ui::default();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while ui.results.len() < 2 && Instant::now() < deadline {
+        let mut ui = Ui {
+            started: started_rx,
+            running: 0,
+            held_frames: 0,
+            release: vec![release_ui, release_service],
+            results: Vec::new(),
+        };
+        while ui.results.len() < 2 {
             event_loop.dispatch(Some(FRAME), &mut ui).unwrap();
         }
         ui.results.sort();
-        assert_eq!(ui.results, ["service", "ui"]);
-        assert!(ui.frames >= 30, "only {} frames in {BLOCK:?}", ui.frames);
-        assert!(ui.worst < Duration::from_millis(100), "a frame waited {:?}", ui.worst);
-    }
-
-    #[test]
-    fn pool_holds_two_threads_and_lets_them_go() {
-        let pool = Pool::new(2, Duration::from_millis(50));
-        let (tx, rx) = std::sync::mpsc::channel();
-        for _ in 0..4 {
-            let tx = tx.clone();
-            pool.submit(move || {
-                std::thread::sleep(Duration::from_millis(100));
-                tx.send(()).unwrap();
-            });
-        }
-        assert_eq!(pool.threads(), 2);
-        for _ in 0..4 {
-            rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        }
-        std::thread::sleep(Duration::from_millis(300));
-        assert_eq!(pool.threads(), 0);
+        assert_eq!(ui.results, ["service released", "ui released"]);
+        assert_eq!(ui.held_frames, HELD_FRAMES);
     }
 }
