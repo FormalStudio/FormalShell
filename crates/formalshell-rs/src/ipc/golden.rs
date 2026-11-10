@@ -54,9 +54,7 @@ fn fixture(name: &str) -> Reply {
                 title: "Artist - Song".into(),
                 ..radio::State::default()
             };
-            let mut status = tuned.status();
-            status["atlas"] = crate::surfaces::atlas::Atlas::default().status(&tuned);
-            Ok(status)
+            Ok(super::radio::snapshot(&tuned, &crate::surfaces::atlas::Atlas::default()))
         }
         "notifications" => Ok(notifications::status(&notifications::State::default(), (0.0, 0.0, false))),
         other => panic!("no fixture {other}"),

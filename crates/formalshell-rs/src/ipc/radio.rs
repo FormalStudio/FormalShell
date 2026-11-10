@@ -3,8 +3,9 @@
 //! or a recent one), so a key can be bound to one station. Opening the atlas
 //! is `panel toggle radio`.
 
-use super::registry::{Function, Reply, Target, Type, Value, ok};
+use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
 use crate::services::radio::{self, Cmd};
+use crate::surfaces::atlas::Atlas;
 use crate::wayland::App;
 
 pub fn target() -> Target<App> {
@@ -22,9 +23,14 @@ pub fn target() -> Target<App> {
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    let mut status = app.store.media.radio.status();
-    status["atlas"] = app.atlas.model.status(&app.store.media.radio);
-    Ok(status)
+    Ok(snapshot(&app.store.media.radio, &app.atlas.model))
+}
+
+/// `radio status`'s reply: the player with the atlas block in it.
+pub(super) fn snapshot(state: &radio::State, atlas: &Atlas) -> Json {
+    let mut status = state.status();
+    status["atlas"] = atlas.status(state);
+    status
 }
 
 fn play(app: &mut App, args: &[Value]) -> Reply {
