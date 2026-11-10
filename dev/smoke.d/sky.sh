@@ -43,25 +43,27 @@ leg_sky_drive() {
 #!/usr/bin/env bash
 $ipc call debug dump > "$shot_dir/sky-dump-start.json" 2>&1
 $ipc call wallpaper set "$sky_picture" > /dev/null 2>&1
-sleep 3
+until_wallpaper "$sky_picture"
 $ipc call debug dump > "$shot_dir/sky-dump-picture.json" 2>&1
 $ipc call debug skyAt 2026-10-30T11:45:00Z > /dev/null 2>&1
 $ipc call wallpaper set sky > "$shot_dir/sky-set.txt" 2>&1
 phase() {
-  sleep 7
+  until_wallpaper "sky:\$2"
+  until_settled
   $ipc call debug dump > "$shot_dir/sky-dump-\$1.json" 2>&1
   cp "$sky_theme_json" "$shot_dir/sky-theme-\$1.json" 2>/dev/null
   "$grim_bin" "$shot_dir/sky-\$1.png" > /dev/null 2>&1
 }
-phase noon
+phase noon 24
 cp "$sky_state_json" "$shot_dir/sky-state.json" 2>/dev/null
 $ipc call debug skyAt 2026-10-30T15:50:00Z > /dev/null 2>&1
-phase low
+phase low 2
 $ipc call debug skyAt 2026-10-30T16:40:00Z > /dev/null 2>&1
-phase dusk
+phase dusk -4
 $ipc call debug skyAt 2026-10-30T21:00:00Z > /dev/null 2>&1
-phase night
+phase night -18
 grep -c 'commit surface=wallpaper' "$shell_log_path" > "$shot_dir/sky-commits-before.txt"
+# The window the still sky is read over.
 sleep 6
 grep -c 'commit surface=wallpaper' "$shell_log_path" > "$shot_dir/sky-commits-after.txt"
 EOS

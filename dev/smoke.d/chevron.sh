@@ -115,7 +115,8 @@ leg_chevron_drive() {
   #
   # The bright wallpaper and the shell's own reading of the band over it.
   local paint_step="$ipc call wallpaper set \"$chevron_bright_wp\" > /dev/null 2>&1
-sleep 8
+until_wallpaper \"$chevron_bright_wp\"
+until_settled
 $ipc call bar paint > \"$chevron_paint_path\" 2>&1"
   write_script "$script" <<EOF
 #!/usr/bin/env bash

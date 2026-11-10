@@ -90,18 +90,22 @@ leg_wallpaper_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call wallpaper set "$wp_path" > /dev/null 2>&1
-sleep 3
+until_wallpaper "$wp_path"
+until_settled
 $ipc call theme status > "$theme_status_path" 2>&1
-sleep 2
 "$grim_bin" "$wallpaper_solid_path" > /dev/null 2>&1
-sleep 1
 $ipc call wallpaper set "$wp2_path" > /dev/null 2>&1
-sleep 4
+until_wallpaper "$wp2_path"
+until_settled
 $ipc call wallpaper get > "$wallpaper_get_path" 2>&1
-sleep 1
 "$grim_bin" "$wallpaper_gradient_path" > /dev/null 2>&1
-sleep 2
-"$hyprctl_bin" getoption general:col.active_border > "$hypr_border_path" 2>&1
+# The shell's reload reaches the compositor after the palette lands.
+primary=\$("$jq_bin" -r '.primary // empty' "$theme_json_path" 2>/dev/null | tr -d '#')
+for _ in \$(seq 1 20); do
+  "$hyprctl_bin" getoption general:col.active_border > "$hypr_border_path" 2>&1
+  [ -n "\$primary" ] && grep -qiF "\$primary" "$hypr_border_path" && break
+  sleep 0.5
+done
 EOF
   hypr_exec_once "bash $script"
   # The compositor half of the palette, wired the way docs/USAGE.md tells a

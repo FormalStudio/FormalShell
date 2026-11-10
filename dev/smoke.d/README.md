@@ -76,7 +76,8 @@ run's paths and resolved `*_bin`, then `call <target> <fn> [args...]`,
 <frames> [gap] [grim args]`, `park [x y]`, `click [button]`, `row_index
 <path> <id>`, `until_jq <seconds> <path> <claim> <command...>`, `walk_to
 <target> <cursor jq> <id> <trace> [key jq]`, `spawn_foot <app id> [rules]
-[title]`, `until_window <app id> [seconds]`, `settings_retarget <jq assignment>`, `pw_load_module <module>
+[title]`, `until_window <app id> [seconds]`, `until_settled [surface...]`,
+`until_wallpaper <path> [mode]`, `settings_retarget <jq assignment>`, `pw_load_module <module>
 [args]` (unloaded at teardown and on exit), the frame reads below, and
 `$out_scale` (the asked scale). Each one's header in `dev/smoke.sh` is its
 contract. A leg's assert has `expect_jq <path> <claim> <what failed>
@@ -118,5 +119,8 @@ its part of the turn. A drive waits on the shell's state, never on another
 leg's clock: what the previous turn left (a panel open, a toast up) is
 there when its turn starts, and a leg that needs something of its own (the
 lock, a player, a window) makes it and waits for it (`until_jq`,
-`until_window`). Each turn's start and end, in seconds into the session,
+`until_window`). A card, a fade or a recolour is waited out the same way
+(`until_settled`, `until_wallpaper`), never slept through; a sleep is
+left only where it paces a burst taken mid-motion or waits on something
+outside the shell, and says which. Each turn's start and end, in seconds into the session,
 are printed as `drive <leg> start|end <s>`.

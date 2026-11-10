@@ -47,7 +47,8 @@ leg_wallpaper_pair_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 call wallpaper pair "$wallpaper_pair_light" "$wallpaper_pair_dark" > "$shot_dir/pair-call.txt" 2>&1
-sleep 5
+until_wallpaper "$wallpaper_pair_dark" dark
+until_settled
 call theme status > "$shot_dir/pair-status-dark.json" 2>&1
 call wallpaper get > "$shot_dir/pair-get-dark.txt" 2>&1
 cp "$wallpaper_pair_theme_json" "$shot_dir/pair-theme-dark.json" 2>/dev/null
@@ -56,9 +57,9 @@ cp "$wallpaper_pair_state_json" "$shot_dir/pair-state.json" 2>/dev/null
 call debug motionScale 1000 > "$shot_dir/pair-scale.txt" 2>&1
 call theme mode toggle > /dev/null 2>&1
 burst "$shot_dir/pair-tolight" $wallpaper_pair_frames $wallpaper_pair_gap
-sleep 2
 call debug motionScale 100 > /dev/null 2>&1
-sleep 4
+until_wallpaper "$wallpaper_pair_light" light
+until_settled
 call theme status > "$shot_dir/pair-status-light.json" 2>&1
 call wallpaper get > "$shot_dir/pair-get-light.txt" 2>&1
 cp "$wallpaper_pair_theme_json" "$shot_dir/pair-theme-light.json" 2>/dev/null
@@ -66,12 +67,13 @@ cp "$wallpaper_pair_theme_json" "$shot_dir/pair-theme-light.json" 2>/dev/null
 call debug motionScale 1000 > /dev/null 2>&1
 call theme mode toggle > /dev/null 2>&1
 burst "$shot_dir/pair-todark" $wallpaper_pair_frames $wallpaper_pair_gap
-sleep 2
 call debug motionScale 100 > /dev/null 2>&1
-sleep 4
+until_wallpaper "$wallpaper_pair_dark" dark
+until_settled
 call theme status > "$shot_dir/pair-status-dark-2.json" 2>&1
 call lock lock > /dev/null 2>&1
-sleep 3
+until_jq 10 "$shot_dir/pair-locked.json" '.locked and .secure' call lock status
+until_settled
 "$grim_bin" "$shot_dir/pair-lock-dark.png" > /dev/null 2>&1
 "$wtype_bin" -s 300 "$rig_password"
 "$wtype_bin" -s 300 -k Return

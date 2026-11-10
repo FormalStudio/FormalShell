@@ -73,10 +73,11 @@ leg_lock_media_drive() {
 echo \$! > "$lock_media_pid"
 $ipc call theme mode dark > /dev/null 2>&1
 $ipc call wallpaper set "$lock_media_bright_wp" > /dev/null 2>&1
-sleep 6
-$ipc call media status > "$lock_media_before_json" 2>&1
+until_wallpaper "$lock_media_bright_wp" dark
+until_jq 15 "$lock_media_before_json" '.isPlaying and (.title // "") != ""' call media status
 $ipc call lock lock > /dev/null 2>&1
-sleep 5
+until_jq 10 "$shot_dir/lock-media-locked.json" '.locked and .secure' call lock status
+until_settled
 $ipc call lock status > "$lock_media_bright_json" 2>&1
 "$grim_bin" "$lock_media_bright_png" > /dev/null 2>&1
 "$wtype_bin" -k Tab
@@ -89,11 +90,13 @@ $ipc call lock status > "$lock_media_cursor_json" 2>&1
 sleep 2
 $ipc call media status > "$lock_media_paused_json" 2>&1
 $ipc call wallpaper set "$lock_media_dark_wp" > /dev/null 2>&1
-sleep 7
+until_wallpaper "$lock_media_dark_wp"
+until_settled
 $ipc call lock status > "$lock_media_dark_json" 2>&1
 "$grim_bin" "$lock_media_dark_png" > /dev/null 2>&1
 $ipc call theme mode light > /dev/null 2>&1
-sleep 7
+until_wallpaper "$lock_media_dark_wp" light
+until_settled
 $ipc call lock status > "$lock_media_light_json" 2>&1
 "$grim_bin" "$lock_media_light_png" > /dev/null 2>&1
 "$wtype_bin" "$rig_password"

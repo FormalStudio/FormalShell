@@ -38,15 +38,17 @@ leg_glass_drive() {
 wp="$glass_bright"
 $ipc call theme status 2>/dev/null | jq -e '.mode == "light"' > /dev/null && wp="$glass_dark"
 $ipc call wallpaper set "\$wp" > /dev/null 2>&1
-sleep 8
+until_wallpaper "\$wp"
 "$notify_send_bin" -t 0 "Glass" "A card over a flat field"
+until_jq 10 "$shot_dir/glass-notified.json" '.popups > 0' call notifications status
 $ipc call panel open audio > /dev/null 2>&1
-sleep 1.5
+until_settled
 $ipc call debug dump > "$glass_dump_opaque" 2>&1
 "$grim_bin" "$glass_opaque_path" > /dev/null 2>&1
 sed -i 's/blur = { enabled = false }/blur = { enabled = true }/' "$cfg"
 "$hyprctl_bin" reload > /dev/null 2>&1
-sleep 2
+until_jq 10 "$glass_dump_clear" '.theme.blur' call debug dump
+until_settled
 $ipc call debug dump > "$glass_dump_clear" 2>&1
 "$grim_bin" "$glass_clear_path" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1

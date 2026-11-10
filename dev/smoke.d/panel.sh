@@ -56,7 +56,7 @@ sleep 3"
 #!/usr/bin/env bash
 $stage
 $ipc call panel open "$panel_name" > "$panel_open_path" 2>&1
-sleep 2
+until_settled
 $ipc call panel state > "$panel_state_path" 2>&1
 $ipc call debug dump > "$panel_dump_path" 2>&1
 "$grim_bin" "$panel_header_shot" > /dev/null 2>&1
