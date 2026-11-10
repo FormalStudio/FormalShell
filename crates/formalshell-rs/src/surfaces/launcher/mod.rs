@@ -21,7 +21,7 @@ use fs_menu::actions::{Action, IpcCall, Run, SubjectId, TargetKind};
 use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir};
 use fs_menu::intent::Intent;
-use fs_menu::node::{ActionEntry, Kind as NodeKind, Node, Provider};
+use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
 use fs_menu::toggles::{self, Snapshot};
 use crate::ui::confirm::Armed;
 use fs_types::{Edge, WindowId};
@@ -1061,7 +1061,7 @@ impl Model {
             Mode::Menu if children.is_some() => children.map_or_else(Vec::new, |c| match &c.into {
                 Into::Windows(id) => window_rows(store, id, q),
                 Into::Folder(path) => folder_rows(store, path, q),
-                Into::Network(ssid) => network_rows(store, ssid, q),
+                Into::Network(ssid) => index::network_rows(store, ssid, q),
             }),
             Mode::Menu if picker => self.picker_rows(store, q),
             Mode::Menu if monitor => monitor_rows(store, q),
@@ -1083,13 +1083,13 @@ impl Model {
                 let reply = store.menu.binds.as_ref().map(|r| r.as_deref().map_err(|_| ()));
                 fs_menu::keybinds::rows_for(reply, q)
             }
-            Mode::Menu if level == Some("radio.search") => radio_search_rows(store, q),
+            Mode::Menu if level == Some("radio.search") => index::radio_search_rows(store, q),
             Mode::Menu if level == Some(fs_menu::providers::INSTALL_ROUTE) => crate::surfaces::packages::install_rows(store, q),
             // The plugin ranks its own rows against the query it was sent.
             Mode::Menu if plugin => model::visible_children(nodes, level, cond).into_iter().cloned().collect(),
             Mode::Menu if q.is_empty() && level.is_none() => {
-                let outside = |id: &str| outside_subject(store, id);
-                let rest = model::root_rest(nodes, &store.state.data.recent_pinned, &store.state.data.picks, now_ms(), model::RECENT_MAX, cond, outside);
+                let outside = |id: &str| index::outside_subject(store, id);
+                let rest = model::root_rest(nodes, &store.state.data.recent_pinned, &store.state.data.picks, crate::runtime::now_ms() as f64, model::RECENT_MAX, cond, outside);
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
                 if view == View::AppGrid && recent {
                     rest.into_iter().filter(|r| r.kind != NodeKind::App).collect()
@@ -1107,7 +1107,7 @@ impl Model {
             }
             Mode::Menu if level == Some("calc") => fs_menu::calc::result_node(q).into_iter().collect(),
             Mode::Menu => {
-                let boost = fs_menu::search::Boost { abbrev: Some(&self.lookup), picks: &store.state.data.picks, now: now_ms() };
+                let boost = fs_menu::search::Boost { abbrev: Some(&self.lookup), picks: &store.state.data.picks, now: crate::runtime::now_ms() as f64 };
                 fs_menu::search::rows_for_query(nodes, q, cond, level, boost)
             }
         };
@@ -1151,8 +1151,7 @@ impl Model {
         if self.mode != Mode::Menu {
             return Default::default();
         }
-        let book = index::abbreviation_book(store);
-        fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, self.list_text(), now_ms(), |id| resolves(store, id))
+        index::abbreviation_lookup(store, self.list_text(), crate::runtime::now_ms() as f64)
     }
 
     /// Commits the rows, their headings and the cursor.
@@ -2123,7 +2122,7 @@ impl Model {
                     continue;
                 }
                 let label = if a.label.is_empty() { a.id.clone() } else { a.label.clone() };
-                let mut action = Action::new(&a.id, label, Run::Intent(plugin_send(&id, &plugins::action_event(&subject, &a.id))));
+                let mut action = Action::new(&a.id, label, Run::Intent(index::plugin_send(&id, &plugins::action_event(&subject, &a.id))));
                 action.icon = Some(a.icon.clone()).filter(|i| !i.is_empty());
                 c.actions.push(action);
             }
@@ -2338,9 +2337,7 @@ impl Model {
     pub fn edit_answer(&mut self, store: &Store, value: Option<String>, cancelled: bool) {
         let Some((subject, old)) = self.editing.take() else { return };
         let Some(new) = value.filter(|_| !cancelled).as_deref().and_then(fs_menu::abbrev::key) else { return };
-        let book = fs_menu::abbrev::forget(&index::abbreviation_book(store), &old, &subject);
-        let book = fs_menu::abbrev::pin(&book, &new, &subject);
-        state::set(vec![state::Field::Abbreviations(Some(book))]);
+        index::move_abbreviation(store, &old, &new, &subject);
     }
 
     /// Enter: the row's first action.
@@ -2375,45 +2372,10 @@ impl Model {
         }
     }
 
-    /// One pick of `node` into the picks ledger, and the query it was
-    /// picked under taught to the learned abbreviations, unless the query
-    /// already names it exactly or the subject never ranks in the tree (an
-    /// emoji, a folder's entry). An emoji's grid order keeps its own ledger.
     fn picked(&self, store: &Store, node: &Node) {
-        if self.mode != Mode::Menu {
-            return;
+        if self.mode == Mode::Menu {
+            index::record_pick(store, node, self.list_text(), crate::runtime::now_ms() as f64);
         }
-        let subject = fs_menu::actions::subject_id(node);
-        let id = subject.to_string();
-        let file = match &subject {
-            SubjectId::File(path) => Some(path.as_str()),
-            _ => None,
-        };
-        if file.is_none() && !resolves(store, &id) {
-            return;
-        }
-        if let Some(path) = file {
-            index::ask(Ask::Stat(vec![path.to_owned()]));
-        }
-        let now = now_ms();
-        // Only an uninstalled app, once the apps scan has landed, and a
-        // deleted file are pruned: a provider's rows (a network out of
-        // range, a stopped player) come back, and before the scan no app
-        // resolves at all.
-        let apps_known = !store.menu.exec.apps.is_empty();
-        let gone = |id: &str| match SubjectId::parse(id) {
-            SubjectId::File(path) => store.menu.files.get(&path) == Some(&None),
-            SubjectId::App(_) => apps_known && !resolves(store, id),
-            SubjectId::Emoji(_) | SubjectId::Node(_) => false,
-        };
-        let held: Vec<fs_menu::frecency::Record> = store.state.data.picks.iter().filter(|r| !gone(&r.id)).cloned().collect();
-        let mut fields = vec![state::Field::Picks(fs_menu::frecency::record(&held, &id, now, None))];
-        let q = self.list_text();
-        if !fs_menu::search::is_exact(node, q) && fs_menu::abbrev::key(q).is_some() && store.menu.nodes().contains_key(&node.id) {
-            let book = fs_menu::abbrev::learn(&index::abbreviation_book(store), q, &id, now);
-            fields.push(state::Field::Abbreviations(Some(book)));
-        }
-        state::set(fields);
     }
 
     /// Whether a confirm action on row `id` is armed.
@@ -2470,13 +2432,7 @@ impl Model {
                 // teach the pair straight back.
                 Intent::AbbrevForget(q) | Intent::AbbrevPin(q) => {
                     let subject = fs_menu::actions::subject_id(node).to_string();
-                    let book = index::abbreviation_book(store);
-                    let book = if matches!(intent, Intent::AbbrevPin(_)) {
-                        fs_menu::abbrev::pin(&book, q, &subject)
-                    } else {
-                        fs_menu::abbrev::forget(&book, q, &subject)
-                    };
-                    state::set(vec![state::Field::Abbreviations(Some(book))]);
+                    index::set_abbreviation(store, q, &subject, matches!(intent, Intent::AbbrevPin(_)));
                     self.dirty = true;
                     if action.keep_open {
                         return Out::None;
@@ -2486,11 +2442,7 @@ impl Model {
                 }
                 // A pin is no pick either: it would count twice.
                 Intent::RecentPin(id) | Intent::RecentUnpin(id) => {
-                    let mut pinned: Vec<String> = store.state.data.recent_pinned.iter().filter(|p| *p != id).cloned().collect();
-                    if matches!(intent, Intent::RecentPin(_)) {
-                        pinned.push(id.clone());
-                    }
-                    state::set(vec![state::Field::RecentPinned(pinned)]);
+                    index::set_recent_pinned(store, id, matches!(intent, Intent::RecentPin(_)));
                     self.dirty = true;
                     if action.keep_open {
                         return Out::None;
@@ -2572,10 +2524,6 @@ impl Model {
             self.paste = true;
         }
         self.picked(store, node);
-        if node.id.starts_with("emoji.") {
-            let next = fs_menu::frecency::record(&store.state.data.emoji_uses, &node.id, now_ms(), None);
-            state::set(vec![state::Field::EmojiUses(next)]);
-        }
         if action.keep_open {
             return out;
         }
@@ -2588,10 +2536,6 @@ impl Model {
 
     /// One key, through `keys::key_action`, or into the field as `edit`.
     pub fn key(&mut self, store: &Store, key: keys::Key, edit: field::Key, mods: field::Modifiers, repeat: bool, text: Option<&str>) -> Out {
-        if self.on_mirror() && matches!(key, keys::Key::Tab | keys::Key::Return | keys::Key::Enter) {
-            self.mirror_cycle(store, 1);
-            return Out::None;
-        }
         let column = self.column.is_some();
         let caret_end = self.query.caret() == self.query.text().len() && self.query.selection().is_none();
         let into = key == keys::Key::Right
@@ -2609,6 +2553,7 @@ impl Model {
             level: self.level.is_some() || !self.children.is_empty(),
             column,
             into,
+            mirror: self.on_mirror(),
         };
         let action = keys::key_action(key, mods, repeat, &ctx);
         if column {
@@ -2652,6 +2597,10 @@ impl Model {
             }
             KeyAction::Clear => {
                 self.set_query(store, "");
+                Out::None
+            }
+            KeyAction::MirrorNext => {
+                self.mirror_cycle(store, 1);
                 Out::None
             }
             KeyAction::Pop => self.pop(store),
@@ -2713,7 +2662,7 @@ impl Model {
                 let reply = store.menu.binds.as_ref().map(|r| r.as_deref().map_err(|_| ()));
                 return noted(fs_menu::keybinds::rows_for(reply, q));
             }
-            Some("radio.search") => return noted(radio_search_rows(store, q)),
+            Some("radio.search") => return noted(index::radio_search_rows(store, q)),
             Some(fs_menu::providers::INSTALL_ROUTE) => {
                 crate::services::packages::search_for(store, q);
                 return noted(crate::surfaces::packages::install_rows(store, q));
@@ -2721,9 +2670,8 @@ impl Model {
             _ => {}
         }
         let snap = snapshot(store);
-        let book = index::abbreviation_book(store);
-        let lookup = fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, q, now_ms(), |id| resolves(store, id));
-        let boost = fs_menu::search::Boost { abbrev: Some(&lookup), picks: &store.state.data.picks, now: now_ms() };
+        let lookup = index::abbreviation_lookup(store, q, crate::runtime::now_ms() as f64);
+        let boost = fs_menu::search::Boost { abbrev: Some(&lookup), picks: &store.state.data.picks, now: crate::runtime::now_ms() as f64 };
         let rows = fs_menu::search::rows_for_query(nodes, q, &store.menu.cond, level, boost).into_iter().map(|n| {
             if n.id == fs_menu::calc::RESULT_ID {
                 return json!({"id": n.id, "label": n.label, "kind": n.kind.as_str()});
@@ -2734,41 +2682,6 @@ impl Model {
             })
         });
         Value::Array(rows.collect())
-    }
-}
-
-pub fn now_ms() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
-}
-
-/// `menu.abbreviations` in settings.json, query to subject id.
-pub fn configured_abbreviations(store: &Store) -> std::collections::HashMap<String, String> {
-    match store.config.get("menu.abbreviations") {
-        Some(Value::Object(map)) => {
-            map.iter().filter_map(|(q, id)| Some((fs_menu::abbrev::key(q)?, id.as_str()?.to_owned()))).collect()
-        }
-        _ => Default::default(),
-    }
-}
-
-/// Whether a subject id names something now: in the tree, or a file still
-/// on disk, or an emoji in the dataset.
-fn resolves(store: &Store, id: &str) -> bool {
-    model::subject_node(store.menu.nodes(), id).is_some() || outside_subject(store, id).is_some()
-}
-
-/// A subject id naming no tree node, as a row: a file or folder still on
-/// disk, an emoji in the dataset. Windows are left out: their ids do not
-/// outlive the window.
-fn outside_subject(store: &Store, id: &str) -> Option<Node> {
-    match SubjectId::parse(id) {
-        SubjectId::File(path) => {
-            // Read off the service's stat of the picks, never the disk here.
-            let dir = (*store.menu.files.get(&path)?)?;
-            Some(fs_menu::providers::recent_subject(&path, dir, &std::env::var("HOME").unwrap_or_default()))
-        }
-        SubjectId::Emoji(ch) => store.menu.emoji.as_ref()?.row_for(&ch, crate::settings::CLIPBOARD_PASTE.get(&store.config)),
-        SubjectId::App(_) | SubjectId::Node(_) => None,
     }
 }
 

@@ -884,7 +884,7 @@ impl App {
         if let Some(r) = self.store.revealed.take() {
             self.wifi_revealed(r);
         }
-        for (name, rows) in crate::surfaces::launcher::device_sources(&self.store) {
+        for (name, rows) in index::device_sources(&self.store) {
             self.apply(Diff::Menu(index::Diff::Source(name, rows)));
         }
         if self.launcher.open {
@@ -895,7 +895,7 @@ impl App {
     /// The plugin modes' rows off what their plugins print, and any
     /// `actions` answers into the open column.
     pub(super) fn launcher_plugins(&mut self) {
-        for (route, rows) in crate::surfaces::launcher::plugin_sources(&self.store) {
+        for (route, rows) in index::plugin_sources(&self.store) {
             self.apply(Diff::Menu(index::Diff::Source(route, rows)));
         }
         if self.launcher.plugin_answers(&self.store) {
@@ -1356,7 +1356,7 @@ impl App {
                     },
                 })
             },
-            plugin_modes: crate::surfaces::launcher::plugin_modes(&self.store),
+            plugin_modes: index::plugin_modes(&self.store),
         };
         if self.menu_buttons.as_ref() != Some(&inputs) || !self.store.config.loaded {
             self.menu_buttons = Some(inputs.clone());

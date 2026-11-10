@@ -20,7 +20,8 @@ use fs_types::Bind;
 use fs_menu::base::BaseInputs;
 use fs_menu::model::{entries_from_value, parse_jsonc};
 use fs_menu::actions::Run;
-use fs_menu::node::{DesktopEntry, Entries, Kind, Node, Provider, Tree};
+use fs_menu::intent::Intent;
+use fs_menu::node::{ActionEntry, DesktopEntry, Entries, Kind, Node, Provider, Tree};
 use fs_menu::providers::{self, Listed, Peeked};
 
 use super::{appicon, icons, proc};
@@ -628,6 +629,257 @@ async fn watch_entries(tx: async_channel::Sender<Ask>) {
 
 #[cfg(not(target_os = "linux"))]
 async fn watch_entries(_tx: async_channel::Sender<Ask>) {}
+
+
+pub fn radio_station(s: &fs_media::radio::stations::Station) -> fs_menu::providers::RadioStation {
+    fs_menu::providers::RadioStation { uuid: s.uuid.clone(), name: s.name.clone(), country: s.country.clone(), codec: s.codec.clone() }
+}
+
+/// RadioSearchProvider.rowsFor: the answer for `q` once it is in, a
+/// searching row until then. Asking is idempotent; the service debounces.
+pub fn radio_search_rows(store: &store::Store, q: &str) -> Vec<Node> {
+    use fs_menu::providers as p;
+    let q = q.trim();
+    if q.chars().count() < 2 {
+        return Vec::new();
+    }
+    super::radio::send(super::radio::Cmd::Search(q.to_owned()));
+    let radio = &store.media.radio;
+    match &radio.search {
+        Some((answered, found)) if answered == q => match found {
+            None => vec![p::radio_failed_row()],
+            Some(v) if v.is_empty() => vec![p::radio_no_results_row()],
+            Some(v) => {
+                let favs: std::collections::HashSet<String> = radio.favorites.iter().map(|s| s.uuid.clone()).collect();
+                let list: Vec<_> = v.iter().take(50).map(radio_station).collect();
+                p::radio_result_rows(&list, &favs)
+            }
+        },
+        _ => vec![p::radio_searching_row()],
+    }
+}
+
+pub fn wifi_network(r: &super::devices::network::Row) -> fs_menu::providers::WifiNetwork {
+    fs_menu::providers::WifiNetwork {
+        name: r.ssid.clone(),
+        known: r.known,
+        connected: r.connected,
+        secured: r.secured,
+        enterprise: r.enterprise,
+        in_range: r.in_range,
+        signal: r.signal.as_fraction(),
+        security: r.security.clone(),
+        addresses: r.addresses.clone(),
+    }
+}
+
+/// A network stepped into: its details off the live scan, a note once it
+/// is no longer listed.
+pub fn network_rows(store: &store::Store, ssid: &str, q: &str) -> Vec<Node> {
+    let Some(row) = store.network.row(ssid) else { return vec![Node::note("wifi.details.gone", "No longer listed")] };
+    let q = q.trim().to_lowercase();
+    fs_menu::providers::wifi_details(&wifi_network(row)).into_iter().filter(|n| q.is_empty() || n.label.to_lowercase().contains(&q)).collect()
+}
+
+/// The four device routes' rows, off the store.
+pub fn device_sources(store: &store::Store) -> Vec<(Provider, Vec<Node>)> {
+    use fs_menu::providers as p;
+    let n = &store.network;
+    let wifi = p::WifiState {
+        has_device: n.wifi_device.is_some(),
+        enabled: n.wifi_enabled,
+        networks: n.rows.iter().map(wifi_network).collect(),
+        action_ssid: n.action.as_ref().map(|(_, s)| s.clone()).unwrap_or_default(),
+        action_kind: n.action.as_ref().map(|(k, _)| k.as_str().to_owned()).unwrap_or_default(),
+        failure_ssid: n.failure.as_ref().map(|f| f.ssid.clone()).unwrap_or_default(),
+        failure_text: n.failure.as_ref().map(|f| f.text.clone()).unwrap_or_default(),
+    };
+    let b = &store.bluetooth;
+    let bluetooth = p::BluetoothState { available: b.powered.is_some(), enabled: b.powered == Some(true), devices: b.devices.clone() };
+    let audio: Vec<p::AudioDevice> =
+        store.audio.devices.iter().map(|(name, label, sink)| p::AudioDevice { name: name.clone(), label: label.clone(), is_sink: *sink }).collect();
+    let r = &store.media.radio;
+    let radio = p::RadioState { running: r.running(), favorites: r.favorites.iter().map(radio_station).collect() };
+    vec![
+        (Provider::Wifi, p::wifi_rows(&wifi)),
+        (Provider::Bluetooth, p::bluetooth_rows(&bluetooth)),
+        (Provider::Audio, p::audio_rows(&audio)),
+        (Provider::Radio, p::radio_rows(&radio)),
+    ]
+}
+
+/// Every launcher plugin with a mode, as `(route id, name)`.
+pub fn plugin_modes(store: &store::Store) -> Vec<(String, String)> {
+    fs_chrome::plugins::launcher_plugins(&store.plugins.resolved.plugins)
+        .filter_map(|p| Some((fs_chrome::plugins::surface_key(p), p.mode.clone()?)))
+        .collect()
+}
+
+/// Each plugin mode's rows off what its plugin last printed, or the one dim
+/// row that says why there are none.
+pub fn plugin_sources(store: &store::Store) -> Vec<(Provider, Vec<Node>)> {
+    use super::plugins::Run as Printed;
+    let state = &store.plugins;
+    fs_chrome::plugins::launcher_plugins(&state.resolved.plugins)
+        .filter(|p| p.mode.is_some())
+        .map(|p| {
+            let route = fs_chrome::plugins::surface_key(p);
+            // Only the mode's own view shows why it has no rows.
+            let note = |text: String| vec![Node { local_only: true, ..Node::note(format!("{route}.note"), text) }];
+            let rows = match state.runs.get(&p.id) {
+                None => note(format!("Loading {}", p.name)),
+                Some(Printed::Failed(why)) => note(format!("{} failed: {why}", p.name)),
+                Some(Printed::Live(d)) => {
+                    let rows = plugin_rows(&p.id, &route, &d.rows);
+                    if rows.is_empty() { note("No results".into()) } else { rows }
+                }
+            };
+            (Provider::Plugin(route), rows)
+        })
+        .collect()
+}
+
+/// The verb that writes `line` to plugin `id`'s stdin.
+pub fn plugin_send(id: &str, line: &str) -> Intent {
+    Intent::PluginSend(id.to_owned(), line.to_owned())
+}
+
+/// A plugin mode's rows: each activates its row, then its own actions; a
+/// `label` row heads the rows under it.
+pub fn plugin_rows(id: &str, route: &str, rows: &[super::plugins::Row]) -> Vec<Node> {
+    use super::plugins::RowKind;
+    let mut section = None;
+    let mut out = Vec::new();
+    for r in rows {
+        if r.kind == RowKind::Label {
+            section = Some(r.text.clone()).filter(|t| !t.is_empty());
+            continue;
+        }
+        let toggle = r.kind == RowKind::Toggle;
+        let activate = super::plugins::activate_event(&r.id, toggle.then_some(!r.checked));
+        let mut n = Node::new(format!("{route}.{}", r.id), r.text.clone(), Kind::Action).with_action(plugin_send(id, &activate));
+        n.icon = r.icon.clone();
+        n.desc = if toggle { Some(if r.checked { "On" } else { "Off" }.to_owned()) } else { Some(r.detail.clone()).filter(|d| !d.is_empty()) };
+        n.verb = toggle.then(|| "Toggle".to_owned());
+        n.keep_open = toggle.then_some(true);
+        n.section = section.clone();
+        n.actions = r
+            .actions
+            .iter()
+            .map(|a| {
+                let label = if a.label.is_empty() { &a.id } else { &a.label };
+                let run = plugin_send(id, &super::plugins::action_event(&r.id, &a.id));
+                ActionEntry { icon: Some(a.icon.clone()).filter(|i| !i.is_empty()), ..ActionEntry::new(&a.id, label, run) }
+            })
+            .collect();
+        out.push(n);
+    }
+    out
+}
+
+/// `menu.abbreviations` in settings.json, query to subject id.
+pub fn configured_abbreviations(store: &store::Store) -> HashMap<String, String> {
+    match store.config.get("menu.abbreviations") {
+        Some(serde_json::Value::Object(map)) => {
+            map.iter().filter_map(|(q, id)| Some((fs_menu::abbrev::key(q)?, id.as_str()?.to_owned()))).collect()
+        }
+        _ => Default::default(),
+    }
+}
+
+/// Whether a subject id names something now: in the tree, or a file still
+/// on disk, or an emoji in the dataset.
+pub fn resolves(store: &store::Store, id: &str) -> bool {
+    fs_menu::model::subject_node(store.menu.nodes(), id).is_some() || outside_subject(store, id).is_some()
+}
+
+/// A subject id naming no tree node, as a row: a file or folder still on
+/// disk, an emoji in the dataset. Windows are left out: their ids do not
+/// outlive the window.
+pub fn outside_subject(store: &store::Store, id: &str) -> Option<Node> {
+    use fs_menu::actions::SubjectId;
+    match SubjectId::parse(id) {
+        SubjectId::File(path) => {
+            // Read off the service's stat of the picks, never the disk here.
+            let dir = (*store.menu.files.get(&path)?)?;
+            Some(providers::recent_subject(&path, dir, &std::env::var("HOME").unwrap_or_default()))
+        }
+        SubjectId::Emoji(ch) => store.menu.emoji.as_ref()?.row_for(&ch, crate::settings::CLIPBOARD_PASTE.get(&store.config)),
+        SubjectId::App(_) | SubjectId::Node(_) => None,
+    }
+}
+
+/// What typing `q` resolves to: the configured abbreviations over the
+/// learned ones, a subject that no longer resolves dropped.
+pub fn abbreviation_lookup(store: &store::Store, q: &str, now: f64) -> fs_menu::abbrev::Lookup {
+    fs_menu::abbrev::lookup(&configured_abbreviations(store), &abbreviation_book(store), q, now, |id| resolves(store, id))
+}
+
+/// `subject` pinned under `q`, or forgotten from it.
+pub fn set_abbreviation(store: &store::Store, q: &str, subject: &str, pin: bool) {
+    let book = abbreviation_book(store);
+    let book = if pin { fs_menu::abbrev::pin(&book, q, subject) } else { fs_menu::abbrev::forget(&book, q, subject) };
+    super::state::set(vec![super::state::Field::Abbreviations(Some(book))]);
+}
+
+/// `subject` pinned under `new` and forgotten from `old`.
+pub fn move_abbreviation(store: &store::Store, old: &str, new: &str, subject: &str) {
+    let book = fs_menu::abbrev::forget(&abbreviation_book(store), old, subject);
+    let book = fs_menu::abbrev::pin(&book, new, subject);
+    super::state::set(vec![super::state::Field::Abbreviations(Some(book))]);
+}
+
+/// `id` pinned to the root's Recent section, or unpinned.
+pub fn set_recent_pinned(store: &store::Store, id: &str, pin: bool) {
+    let mut pinned: Vec<String> = store.state.data.recent_pinned.iter().filter(|p| *p != id).cloned().collect();
+    if pin {
+        pinned.push(id.to_owned());
+    }
+    super::state::set(vec![super::state::Field::RecentPinned(pinned)]);
+}
+
+/// One pick of `node` into the picks ledger, and the query it was
+/// picked under taught to the learned abbreviations, unless the query
+/// already names it exactly or the subject never ranks in the tree (an
+/// emoji, a folder's entry). An emoji row also moves its own grid ledger,
+/// which orders the emoji grid and nothing else.
+pub fn record_pick(store: &store::Store, node: &Node, query: &str, now: f64) {
+    use fs_menu::actions::SubjectId;
+    use super::state::{self, Field};
+    let subject = fs_menu::actions::subject_id(node);
+    if let SubjectId::Emoji(_) = subject {
+        let next = fs_menu::frecency::record(&store.state.data.emoji_uses, &node.id, now, None);
+        state::set(vec![Field::EmojiUses(next)]);
+    }
+    let id = subject.to_string();
+    let file = match &subject {
+        SubjectId::File(path) => Some(path.as_str()),
+        _ => None,
+    };
+    if file.is_none() && !resolves(store, &id) {
+        return;
+    }
+    if let Some(path) = file {
+        ask(Ask::Stat(vec![path.to_owned()]));
+    }
+    // Only an uninstalled app, once the apps scan has landed, and a
+    // deleted file are pruned: a provider's rows (a network out of
+    // range, a stopped player) come back, and before the scan no app
+    // resolves at all.
+    let apps_known = !store.menu.exec.apps.is_empty();
+    let gone = |id: &str| match SubjectId::parse(id) {
+        SubjectId::File(path) => store.menu.files.get(&path) == Some(&None),
+        SubjectId::App(_) => apps_known && !resolves(store, id),
+        SubjectId::Emoji(_) | SubjectId::Node(_) => false,
+    };
+    let held: Vec<Record> = store.state.data.picks.iter().filter(|r| !gone(&r.id)).cloned().collect();
+    let mut fields = vec![Field::Picks(fs_menu::frecency::record(&held, &id, now, None))];
+    if !fs_menu::search::is_exact(node, query) && fs_menu::abbrev::key(query).is_some() && store.menu.nodes().contains_key(&node.id) {
+        let book = fs_menu::abbrev::learn(&abbreviation_book(store), query, &id, now);
+        fields.push(Field::Abbreviations(Some(book)));
+    }
+    state::set(fields);
+}
 
 #[cfg(test)]
 mod tests {

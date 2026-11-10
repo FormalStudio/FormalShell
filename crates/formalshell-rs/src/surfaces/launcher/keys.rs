@@ -51,6 +51,8 @@ pub struct KeyCtx {
     /// → would step into the selected subject: a row list, the caret at
     /// the query's end, a subject with children.
     pub into: bool,
+    /// The camera mirror is the view: Tab and Enter step to the next camera.
+    pub mirror: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +90,8 @@ pub enum KeyAction {
     Back,
     /// →: into the selected subject's children.
     Into,
+    /// Tab and Enter on the mirror: the next camera.
+    MirrorNext,
 }
 
 #[cfg(test)]
@@ -122,6 +126,7 @@ impl KeyAction {
             KeyAction::Actions => "actions",
             KeyAction::Back => "back",
             KeyAction::Into => "into",
+            KeyAction::MirrorNext => "mirrorNext",
         }
     }
 }
@@ -133,6 +138,10 @@ impl KeyAction {
 pub fn key_action(key: Key, mods: Modifiers, auto_repeat: bool, ctx: &KeyCtx) -> KeyAction {
     let plain = !mods.ctrl && !mods.shift && !mods.alt;
     let input = ctx.mode == KeyMode::Input;
+
+    if ctx.mirror && matches!(key, Key::Tab | Key::Return | Key::Enter) {
+        return KeyAction::MirrorNext;
+    }
 
     if ctx.column {
         return match key {
@@ -243,11 +252,20 @@ mod tests {
     const SHIFT: Modifiers = Modifiers { ctrl: false, shift: true, alt: false };
 
     fn ctx() -> KeyCtx {
-        KeyCtx { mode: KeyMode::Menu, query: false, grid: false, app_view: false, scrollable: false, sections: false, level: false, column: false, into: false }
+        KeyCtx { mode: KeyMode::Menu, query: false, grid: false, app_view: false, scrollable: false, sections: false, level: false, column: false, into: false, mirror: false }
     }
 
     fn act(key: Key, mods: Modifiers, repeat: bool, ctx: KeyCtx) -> &'static str {
         key_action(key, mods, repeat, &ctx).as_str()
+    }
+
+    #[test]
+    fn the_mirror_steps_cameras_on_tab_and_enter() {
+        let mirror = KeyCtx { mirror: true, ..ctx() };
+        assert_eq!(act(Key::Tab, NONE, false, mirror), "mirrorNext");
+        assert_eq!(act(Key::Tab, CTRL, false, mirror), "mirrorNext");
+        assert_eq!(act(Key::Return, SHIFT, false, mirror), "mirrorNext");
+        assert_eq!(act(Key::Escape, NONE, false, mirror), "pop");
     }
 
     #[test]
