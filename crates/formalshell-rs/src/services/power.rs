@@ -127,7 +127,7 @@ async fn run(ctx: Ctx) {
             match call(method).await {
                 Ok(()) => eprintln!("power: {method} accepted"),
                 Err(err) => {
-                    eprintln!("power: {method}: {err}");
+                    crate::trace::power_refused(method, &err);
                     let body = match &err {
                         zbus::Error::MethodError(_, Some(msg), _) => msg.clone(),
                         other => other.to_string(),

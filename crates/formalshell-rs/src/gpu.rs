@@ -65,7 +65,7 @@ static LOST: AtomicBool = AtomicBool::new(false);
 static FAILED: Mutex<Option<String>> = Mutex::new(None);
 
 fn fail(reason: String) {
-    eprintln!("formalshell: render: {reason}; drawing on the CPU");
+    crate::trace::render_fallback(&reason);
     FAILED.lock().unwrap().get_or_insert(reason);
     LOST.store(true, Ordering::Relaxed);
 }

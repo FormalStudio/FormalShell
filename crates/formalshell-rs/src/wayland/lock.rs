@@ -754,7 +754,7 @@ impl App {
                 self.lock.logind = id;
             }
             Logind::Lock(true) => {
-                eprintln!("lock: logind asked for the lock");
+                crate::trace::logind_lock(true);
                 if via_logind(self) {
                     let _ = self.raise_lock();
                 } else if !self.lock.locked || self.lock_external() {
@@ -764,7 +764,7 @@ impl App {
             // ext-session-lock takes an unlock only once the compositor has
             // said the session is locked.
             Logind::Lock(false) if self.lock.session.is_some() && self.lock.secure => {
-                eprintln!("lock: logind asked for the unlock");
+                crate::trace::logind_lock(false);
                 // A password check still running belongs to this lock: its
                 // answer must not lift the next one.
                 self.lock.attempt += 1;
@@ -808,11 +808,7 @@ impl App {
             let _ = tx.send(LockMsg::Pam(attempt, outcome));
             // After the lock has its answer, never before it (fs_auth::keyring).
             if unlocked {
-                match keyring::unlock_login(&keyring_password, KEYRING_DEADLINE) {
-                    keyring::Unlock::Unlocked => eprintln!("lock: login keyring unlocked"),
-                    keyring::Unlock::NoDaemon => {}
-                    other => eprintln!("lock: login keyring left locked: {other:?}"),
-                }
+                crate::trace::keyring(&keyring::unlock_login(&keyring_password, KEYRING_DEADLINE));
             }
         });
         if spawned.is_err() {

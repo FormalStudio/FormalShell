@@ -58,7 +58,7 @@ fn take_over(stream: UnixStream) {
     if reader.read_line(&mut line).is_err() || !line.starts_with("formalshell ") {
         return;
     }
-    log("live instance found, requesting takeover");
+    crate::trace::instance_takeover();
     let _ = (&stream).write_all(format!("takeover {}\n", std::process::id()).as_bytes());
     // The old shell's end closes when it exits.
     let mut rest = String::new();
@@ -84,7 +84,7 @@ fn serve(listener: UnixListener) {
         let _ = stream.set_read_timeout(Some(TAKEOVER_WAIT));
         let mut line = String::new();
         if BufReader::new(&stream).read_line(&mut line).is_ok() && line.starts_with("takeover") {
-            log(&format!("being replaced ({}), quitting", line.trim_end()));
+            crate::trace::instance_replaced(line.trim_end());
             std::process::exit(0);
         }
     }

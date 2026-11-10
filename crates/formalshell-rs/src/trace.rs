@@ -186,6 +186,54 @@ pub fn line(args: Arguments) {
     write(args);
 }
 
+/// `lock: logind asked for the lock` (or `the unlock`): logind's Lock or
+/// Unlock signal for this session.
+pub fn logind_lock(lock: bool) {
+    write(format_args!("lock: logind asked for the {}", if lock { "lock" } else { "unlock" }));
+}
+
+/// `lock: login keyring unlocked`, or `lock: login keyring left locked:
+/// denied` / `failed, <why>`. No daemon listening writes nothing.
+pub fn keyring(outcome: &fs_auth::keyring::Unlock) {
+    use fs_auth::keyring::Unlock;
+    match outcome {
+        Unlock::Unlocked => write(format_args!("lock: login keyring unlocked")),
+        Unlock::NoDaemon => {}
+        Unlock::Denied => write(format_args!("lock: login keyring left locked: denied")),
+        Unlock::Failed(why) => write(format_args!("lock: login keyring left locked: failed, {why}")),
+    }
+}
+
+/// `power: <method>: <err>`: logind refused a power call.
+pub fn power_refused(method: &str, err: impl Display) {
+    write(format_args!("power: {method}: {err}"));
+}
+
+/// `formalshell: render: <reason>; drawing on the CPU`: the GPU path gave up.
+pub fn render_fallback(reason: &str) {
+    write(format_args!("formalshell: render: {reason}; drawing on the CPU"));
+}
+
+/// `formalshell: instance lock: live instance found, requesting takeover`.
+pub fn instance_takeover() {
+    write(format_args!("formalshell: instance lock: live instance found, requesting takeover"));
+}
+
+/// `formalshell: instance lock: being replaced (<by>), quitting`.
+pub fn instance_replaced(by: &str) {
+    write(format_args!("formalshell: instance lock: being replaced ({by}), quitting"));
+}
+
+/// `RecordingService: webcam overlay did not settle in time, recording anyway`.
+pub fn webcam_unsettled() {
+    write(format_args!("RecordingService: webcam overlay did not settle in time, recording anyway"));
+}
+
+/// `earbuds: heart check skipped, <why>`.
+pub fn heart_check_skipped(why: &str) {
+    write(format_args!("earbuds: heart check skipped, {why}"));
+}
+
 /// One step of the cold start, on the same zero as every `t=` in the log.
 pub fn phase(name: &str) {
     let t = STARTED.get().map_or(0, |s| s.elapsed().as_micros());

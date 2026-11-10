@@ -122,8 +122,8 @@ leg_lock_assert() {
   echo "lock unlock over a stuck keyring: ${ms:-none} ms ($(cat "$lock_keyring_path" 2>/dev/null))"
   if grep -q '^stuck$' "$lock_keyring_path" 2>/dev/null; then
     [ "${ms:-99999}" -lt 6000 ] || fail "the unlock waited on a keyring daemon that never accepts: ${ms:-none} ms"
-    grep -q "lock: login keyring left locked" "$shell_log_path" \
-      || fail "no 'login keyring left locked' in the shell log: $(grep -E 'lock:' "$shell_log_path" | tail -8)"
+    grep -q "lock: login keyring left locked: failed, " "$shell_log_path" \
+      || fail "no 'login keyring left locked: failed' in the shell log: $(grep -E 'lock:' "$shell_log_path" | tail -8)"
   fi
   # The swappable-locker half: this run writes no `lock.command`, so
   # the built-in surface is the one that came up and `external` has to say so.

@@ -717,7 +717,7 @@ impl Airpods {
         };
         if let Some(why) = skip {
             if self.skipped.replace(why) != Some(why) {
-                eprintln!("earbuds: heart check skipped, {why}");
+                crate::trace::heart_check_skipped(why);
             }
             return;
         }

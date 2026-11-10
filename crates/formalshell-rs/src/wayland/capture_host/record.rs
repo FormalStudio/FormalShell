@@ -483,7 +483,7 @@ fn webcam_settle_poll(app: &mut App, g: u64) {
         }
         if r.webcam_attempts >= 40 {
             r.webcam_settle = None;
-            eprintln!("RecordingService: webcam overlay did not settle in time, recording anyway");
+            crate::trace::webcam_unsettled();
             let device = r.webcam_audio_device.clone();
             notify(app, "WEBCAM UNPLACED", "the camera did not settle in time");
             launch(app, device);
