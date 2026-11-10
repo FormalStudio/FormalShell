@@ -82,7 +82,8 @@ radio_atlas_vpointer="$PWD/dev/vpointer.py"
 # Twelve 15px steps a frame apart, about 940 px/s.
 radio_atlas_steps=$(for _ in $(seq 12); do printf 'move 15 0 wait 16 '; done)
 radio_atlas_name="FormalShell Atlas Radio"
-radio_atlas_port=18098
+# A port per slot user, as --radio picks its own.
+radio_atlas_port=$((21000 + $(id -u) % 1000))
 
 leg_radio_atlas_timing() {
   leg_timing 140

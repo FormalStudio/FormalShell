@@ -37,7 +37,9 @@ radio_leftover_pid_path="$shot_dir/radio-leftover.pid"
 radio_leftover_after_path="$shot_dir/radio-leftover-after.txt"
 radio_station_id="smoke-radio-1"
 radio_station_name="FormalShell Smoke Radio"
-radio_port=18099
+# The slot users share the host's loopback: a port per uid, so two runs
+# side by side never play each other's listener.
+radio_port=$((20000 + $(id -u) % 1000))
 
 leg_radio_timing() {
   leg_timing 45
