@@ -20,13 +20,6 @@ pub const EFFECT_NAMES: [&str; 37] = [
     "wipe",
 ];
 
-/// The two effects ttfx's own README calls out as gated on wall-clock time
-/// rather than frame count. At --frame-rate 0 (the deterministic pin path)
-/// they emit as many frames as the machine can produce inside that fixed
-/// duration, which is not reproducible across hosts, so they are never
-/// recorded frame by frame.
-pub const TIMED_EFFECTS: [&str; 2] = ["matrix", "thunderstorm"];
-
 /// A pinned (frame-stepped) run re-generates the effect from scratch and
 /// counts frames until it reaches the requested one, so a single pathological
 /// run can't stream unbounded output. 600 frames is ~10s of animation at
@@ -35,10 +28,6 @@ pub const PIN_FRAME_CAP: usize = 600;
 
 pub fn is_known_effect(name: &str) -> bool {
     EFFECT_NAMES.contains(&name)
-}
-
-pub fn is_timed_effect(name: &str) -> bool {
-    TIMED_EFFECTS.contains(&name)
 }
 
 /// A known (pinned) name replays itself; anything else, "random", the
@@ -234,25 +223,6 @@ fn byte(value: &str) -> u8 {
     n as u8
 }
 
-/// Flattens a parsed frame back to plain per-row strings, honouring each
-/// run's `col` rather than assuming runs are contiguous.
-pub fn rows_to_text(rows: &Frame) -> Vec<String> {
-    rows.iter()
-        .map(|runs| {
-            let mut line = String::new();
-            let mut len = 0usize;
-            for run in runs {
-                while len < run.col {
-                    line.push(' ');
-                    len += 1;
-                }
-                line.push_str(&run.text);
-                len += run.text.chars().count();
-            }
-            line
-        })
-        .collect()
-}
 
 /// Splits ttfx's stdout into frames on the delimiter, fed chunk by chunk.
 /// A chunk may end anywhere, mid escape sequence or mid UTF-8 character, so
@@ -302,6 +272,26 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 mod tests {
     use super::*;
 
+    /// Flattens a parsed frame back to plain per-row strings, honouring each
+    /// run's `col` rather than assuming runs are contiguous.
+    fn rows_to_text(rows: &Frame) -> Vec<String> {
+        rows.iter()
+            .map(|runs| {
+                let mut line = String::new();
+                let mut len = 0usize;
+                for run in runs {
+                    while len < run.col {
+                        line.push(' ');
+                        len += 1;
+                    }
+                    line.push_str(&run.text);
+                    len += run.text.chars().count();
+                }
+                line
+            })
+            .collect()
+    }
+
     const ESC: &str = "\u{1b}";
 
     fn opts(effect: &str, columns: u32, rows: u32, frame_rate: u32, background: &str, seed: i64) -> Opts {
@@ -335,12 +325,6 @@ mod tests {
         assert!(is_known_effect("scattered"));
     }
 
-    #[test]
-    fn timed_effects_are_the_two_wall_clock_gated_ones() {
-        assert!(is_timed_effect("matrix"));
-        assert!(is_timed_effect("thunderstorm"));
-        assert!(!is_timed_effect("decrypt"));
-    }
 
     #[test]
     fn reroll_replays_a_pinned_effect() {

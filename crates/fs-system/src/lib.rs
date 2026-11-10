@@ -16,4 +16,3 @@ pub mod lights;
 pub mod monitor;
 pub mod overnight;
 pub mod power;
-pub mod proc;

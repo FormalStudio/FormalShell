@@ -12,7 +12,6 @@ use std::sync::LazyLock;
 use icu_collator::options::CollatorOptions;
 use icu_collator::{Collator, CollatorBorrowed};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use regex::Regex;
 use serde_json::Value;
 
 /// The whitespace set of JS `\s` and `String.prototype.trim`.
@@ -238,29 +237,6 @@ pub fn parse_int(s: &str) -> f64 {
 /// losing precision past u64.
 pub fn parse_digits(s: &str) -> u64 {
     s.parse::<u64>().unwrap_or(u64::MAX)
-}
-
-static FLOAT_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(
-        r"^[{SPACE}]*([+-]?(?:Infinity|[0-9]+\.?[0-9]*(?:[eE][+-]?[0-9]+)?|\.[0-9]+(?:[eE][+-]?[0-9]+)?))"
-    ))
-    .unwrap()
-});
-
-/// `parseFloat`: the longest numeric prefix, NaN when there is none.
-pub fn parse_float(s: &str) -> f64 {
-    let Some(m) = FLOAT_PREFIX.captures(s) else {
-        return f64::NAN;
-    };
-    let text = &m[1];
-    let (sign, body) = match text.strip_prefix('-') {
-        Some(rest) => (-1.0, rest),
-        None => (1.0, text.strip_prefix('+').unwrap_or(text)),
-    };
-    if body == "Infinity" {
-        return sign * f64::INFINITY;
-    }
-    body.parse::<f64>().map(|v| sign * v).unwrap_or(f64::NAN)
 }
 
 // encodeURIComponent leaves A-Z a-z 0-9 - _ . ! ~ * ' ( ) alone.
@@ -504,16 +480,6 @@ mod tests {
         assert_eq!(parse_digits("99999999999999999999999"), u64::MAX);
     }
 
-    #[test]
-    fn parse_float_takes_the_numeric_prefix() {
-        assert_eq!(parse_float("12abc"), 12.0);
-        assert_eq!(parse_float("  -1.5e2x"), -150.0);
-        assert_eq!(parse_float(".5"), 0.5);
-        assert_eq!(parse_float("5."), 5.0);
-        assert!(parse_float("abc").is_nan());
-        assert!(parse_float("").is_nan());
-        assert!(parse_float("\u{85}1").is_nan());
-    }
 
     #[test]
     fn uri_component_matches_js() {
