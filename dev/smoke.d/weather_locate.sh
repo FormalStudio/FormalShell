@@ -63,7 +63,7 @@ for _ in \$(seq 1 100); do
 done
 sleep 2
 $ipc call panel open weather > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call debug dump > "$weather_locate_dump" 2>&1
 "$grim_bin" "$weather_locate_png" > /dev/null 2>&1
 EOF

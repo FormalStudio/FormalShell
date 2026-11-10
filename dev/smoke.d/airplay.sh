@@ -91,7 +91,7 @@ leg_airplay_drive() {
 $ipc call airplay status > "$airplay_status_connected_path" 2>&1
 $ipc call media status > "$airplay_media_connected_path" 2>&1
 $ipc call panel open media > /dev/null 2>&1
-sleep 1
+until_settled
 "$grim_bin" "$airplay_active_png" > /dev/null 2>&1
 "$grim_bin" "$airplay_panel_png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1

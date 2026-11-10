@@ -153,7 +153,7 @@ $ipc call tray status > "$tray_overflow_status_path" 2>&1
 "$grim_bin" "$tray_overflow_strip_path" > /dev/null 2>&1
 sleep 1
 $ipc call panel toggle trayoverflow > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call tray status > "$tray_overflow_open_path" 2>&1
 $ipc call debug dump > "$tray_overflow_bar_dump_path" 2>&1
 "$hyprctl_bin" -j layers > "$tray_overflow_layers_path" 2>&1

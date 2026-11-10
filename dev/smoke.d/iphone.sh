@@ -277,12 +277,13 @@ $ipc call iphone status > "$iphone_status_ams_recovered_path" 2>&1
 # The panel: Recent carrying all five phone-side entries and Now playing
 # off the ams shim's own line.
 $ipc call panel open iphone > "$iphone_panel_open_path" 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$iphone_panel_png" > /dev/null 2>&1
 
 # The media panel on the phone as its source: no audio reaches cava, so the
 # spectrum is the tempo frame, which moves between two reads.
 $ipc call panel open media > /dev/null 2>&1
+# The tempo frame keeps the panel moving, so its rest is never reported.
 sleep 2
 $ipc call visualizer status > "$iphone_visualizer_a_path" 2>&1
 sleep 0.3
@@ -306,7 +307,7 @@ sleep 2
 cp "$iphone_ams_runs_path" "$iphone_ams_runs_stale_path"
 $ipc call iphone status > "$iphone_status_stale_path" 2>&1
 $ipc call panel open iphone > /dev/null 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$iphone_stale_png" > /dev/null 2>&1
 
 $ipc call iphone pair > "$iphone_pair_reply_path" 2>&1

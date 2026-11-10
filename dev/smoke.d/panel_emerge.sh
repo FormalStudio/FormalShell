@@ -122,10 +122,10 @@ leg_panel_emerge_drive() {
 # The card's resting place, and then the same output without it: between them
 # they say where the card is and what the desktop under it looks like.
 $ipc call panel open network > "$panel_emerge_open_path" 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$panel_emerge_rest_path" > /dev/null 2>&1
 $ipc call panel toggle network > "$panel_emerge_close_path" 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$panel_emerge_bare_path" > /dev/null 2>&1
 $ipc call debug motionScale $panel_emerge_scale > /dev/null 2>&1
 sleep 1

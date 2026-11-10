@@ -72,7 +72,7 @@ fi
 until_jq 30 "\$d/ready.json" '.networks[] | select(.name == "FORMALTEST") | .known and (.connected | not) and (.stateChanging | not)' call network status
 
 call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 status quicksettings "\$d/status-open.json"
 call quicksettings menu bluetooth > "\$d/menu-bluetooth.txt" 2>&1
 call quicksettings menu wifi > "\$d/menu-wifi.txt" 2>&1
@@ -95,7 +95,7 @@ call panel close > /dev/null 2>&1
 sleep 1.2
 
 call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 status quicksettings "\$d/status-reopen.json"
 nmcli radio wifi > "\$d/radio-before.txt" 2>&1
 call quicksettings activate wifi > "\$d/activate-off.txt" 2>&1

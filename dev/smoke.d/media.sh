@@ -89,8 +89,9 @@ EOF
 
   write_script "$open_script" <<EOF
 #!/usr/bin/env bash
-sleep 3
+until_jq 15 "$media_status_path" '.available' call media status
 $ipc call panel open media > /dev/null 2>&1
+# A playing track keeps the panel moving, so its rest is never reported.
 sleep 1
 $ipc call media status > "$media_status_path" 2>&1
 EOF

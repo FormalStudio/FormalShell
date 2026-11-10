@@ -58,7 +58,7 @@ leg_tray_drive() {
 $ipc call debug query "Tray Fixture 2" > "$tray_query_root_path" 2>&1
 sleep 1
 $ipc call menu summon tray > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call debug query "Tray Fixture 2" > "$tray_query_route_path" 2>&1
 sleep 1
 $ipc call menu close > /dev/null 2>&1

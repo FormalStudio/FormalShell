@@ -69,7 +69,7 @@ press() {
 
 call ipad status > "\$d/status-absent.json" 2>&1
 call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 qs absent
 shot absent
 call panel close > /dev/null 2>&1
@@ -80,7 +80,7 @@ echo \$! > "$ipad_pid"
 until_jq 10 "\$d/status-present.json" '.available' call ipad status
 
 call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 qs present
 shot tile
 $(stale_audit_start)
@@ -107,7 +107,7 @@ sleep 0.8
 sleep 1
 
 call menu summon ipad > "\$d/summon.txt" 2>&1
-sleep 1.5
+until_settled
 call menu status > "\$d/menu-route.json" 2>&1
 shot launcher
 $(stale_audit_start)
@@ -127,13 +127,13 @@ sleep 1
 kill -9 "\$(cat "$ipad_pid")"
 until_jq 10 "\$d/status-gone.json" '.available == false' call ipad status
 call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 qs gone
 shot gone
 call panel close > /dev/null 2>&1
 sleep 0.5
 call menu summon ipad > "\$d/summon-gone.txt" 2>&1
-sleep 1
+until_settled
 call menu status > "\$d/menu-gone.json" 2>&1
 call menu close > /dev/null 2>&1
 echo done > "\$d/drive-done"

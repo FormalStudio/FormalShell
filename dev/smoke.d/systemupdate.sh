@@ -43,7 +43,7 @@ leg_systemupdate_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call panel open systemupdate > "$systemupdate_open_reply_path" 2>&1
-sleep 1
+until_settled
 $ipc call panel state > "$systemupdate_state_path" 2>&1
 sleep 20
 "$grim_bin" "$systemupdate_panel_png" > /dev/null 2>&1

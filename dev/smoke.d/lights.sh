@@ -97,7 +97,7 @@ ipc color '#FF0000' > /dev/null 2>&1
 sleep 1.5
 st 3
 $ipc call menu summon lights.effect > /dev/null 2>&1
-sleep 1.5
+until_settled
 "$grim_bin" "$lights_menu_png" > /dev/null 2>&1
 $ipc call menu status > "$shot_dir/lights-menu-status.json" 2>&1
 $ipc call menu close > /dev/null 2>&1

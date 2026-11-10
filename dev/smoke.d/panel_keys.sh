@@ -40,7 +40,7 @@ leg_panel_keys_drive() {
 # first, which makes the assertion below one direction every run.
 "$wpctl_bin" set-mute @DEFAULT_AUDIO_SINK@ 0 > /dev/null 2>&1
 $ipc call panel open audio > /dev/null 2>&1
-sleep 1
+until_settled
 "$wpctl_bin" get-volume @DEFAULT_AUDIO_SINK@ > "$panel_keys_mute_before_path" 2>&1
 "$grim_bin" "$panel_keys_baseline_path" > /dev/null 2>&1
 "$wtype_bin" -k Down -k Down -k Return

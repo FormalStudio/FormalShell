@@ -64,7 +64,7 @@ while [ "\$SECONDS" -lt 8 ]; do
 done
 pgrep -f -- "cava -p" > "$spectrum_pgrep_before_path" 2>&1 || true
 $ipc call panel open media > /dev/null 2>&1
-sleep 2
+for _ in \$(seq 1 20); do pgrep -f -- "cava -p" > /dev/null && break; sleep 0.25; done
 pgrep -f -- "cava -p" > "$spectrum_pgrep_open_path" 2>&1 || true
 "$grim_bin" "$spectrum_open_png_path" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1

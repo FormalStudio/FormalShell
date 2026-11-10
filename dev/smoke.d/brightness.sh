@@ -221,7 +221,7 @@ overnight_cycle() {
   if [ "\$1" = a ]; then
     # The panel reads both devices again, dimmed.
     call panel open display > /dev/null 2>&1
-    sleep 3
+    until_settled
     call panel close > /dev/null 2>&1
     "$hyprctl_bin" output create headless HDMI-A-2 > /dev/null 2>&1
   fi

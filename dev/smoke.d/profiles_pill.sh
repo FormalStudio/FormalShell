@@ -48,7 +48,7 @@ for _ in \$(seq 1 40); do
 done
 active > "\$d/before.txt"
 $ipc call panel open settings > /dev/null 2>&1
-sleep 2
+until_settled
 pill open
 "$grim_bin" "\$d/profiles-pill-open.png" > /dev/null 2>&1
 chip profile:0 open

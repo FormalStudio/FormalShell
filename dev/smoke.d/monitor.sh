@@ -46,7 +46,7 @@ leg_monitor_drive() {
   local script="$shot_dir/monitor-drive.sh"
   local menu_lines="sleep 1
 $ipc call menu summon monitor > \"$monitor_menu_reply_path\" 2>&1
-sleep 3
+until_settled
 $ipc call menu status > \"$monitor_menu_status_path\" 2>&1
 \"$grim_bin\" \"$monitor_view_png\" > /dev/null 2>&1"
   write_script "$script" <<EOF
@@ -59,7 +59,7 @@ $ipc call debug dump > "$monitor_dump_path" 2>&1
 "$grim_bin" "$monitor_bar_png" > /dev/null 2>&1
 sleep 1
 $ipc call panel open monitor > "$monitor_panel_reply_path" 2>&1
-sleep 2
+until_settled
 $ipc call panel state > "$monitor_panel_state_path" 2>&1
 "$grim_bin" "$monitor_panel_png" > /dev/null 2>&1
 sleep 1

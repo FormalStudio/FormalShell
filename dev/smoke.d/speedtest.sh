@@ -25,7 +25,7 @@ leg_speedtest_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call panel open network > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call network speedtest > /dev/null 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 25 ]; do

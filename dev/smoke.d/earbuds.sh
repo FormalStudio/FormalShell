@@ -255,7 +255,8 @@ scq_paired() { cp "\$1" "$earbuds_scq_paired"; }
 none='[]'
 
 call panel open earbuds > /dev/null 2>&1
-sleep 3
+until_jq 15 "$earbuds_devices_b175" 'map(.key) == ["nothing:$earbuds_b175_address"]' call earbuds devices
+until_settled
 call earbuds devices > "$earbuds_devices_b175" 2>&1
 call earbuds status > "$earbuds_status_b175" 2>&1
 "$grim_bin" "$earbuds_b175_png" > /dev/null 2>&1
@@ -270,7 +271,8 @@ nothing_list "\$none"
 scq_paired "$earbuds_dir/soundcore-paired-fixture.json"
 sleep 1
 call panel open earbuds > /dev/null 2>&1
-sleep 4
+until_jq 15 "$earbuds_devices_soundcore" 'map(.key) == ["soundcore:$earbuds_scq_address"]' call earbuds devices
+until_settled
 call earbuds devices > "$earbuds_devices_soundcore" 2>&1
 "$grim_bin" "$earbuds_soundcore_png" > /dev/null 2>&1
 echo "mode: \$(call earbuds set mode NoiseCanceling 2>&1)" >> "$earbuds_replies"
@@ -280,7 +282,8 @@ call panel close > /dev/null 2>&1
 nothing_list '[{"address":"$earbuds_b175_address","name":"CMF Headphone Pro","connected":true}]'
 sleep 1
 call panel open earbuds > /dev/null 2>&1
-sleep 5
+until_jq 15 "$earbuds_devices_both" 'map(.key) | sort == ["nothing:$earbuds_b175_address", "soundcore:$earbuds_scq_address"]' call earbuds devices
+until_settled
 call earbuds devices > "$earbuds_devices_both" 2>&1
 "$grim_bin" "$earbuds_both_png" > /dev/null 2>&1
 call panel close > /dev/null 2>&1
@@ -295,6 +298,7 @@ stub=\$!
 sleep 1
 commits() { grep -c '^commit surface=panel ' "$shell_log_path"; }
 call panel open earbuds > /dev/null 2>&1
+# Inside the stub's warm-up, before its heart rate settles.
 sleep 1.2
 "$grim_bin" "$earbuds_heart_measuring_png" > /dev/null 2>&1
 sleep 1.8
@@ -352,6 +356,7 @@ for _ in \$(seq 60); do
 done
 call earbuds status > "$earbuds_dir/airpods-status-point.json" 2>&1
 call panel open earbuds > /dev/null 2>&1
+# Before the open's own heart rate watch has a sample to draw.
 sleep 0.8
 "$grim_bin" "$earbuds_heart_point_png" > /dev/null 2>&1
 sleep 1
@@ -369,8 +374,11 @@ rm -f "$state_dir/status.json"
   2>> "$earbuds_librepods_err" &
 stub=\$!
 sleep 1
+watched=\$(grep -c '^motion:watch' "$earbuds_librepods_motion" 2>/dev/null)
 call panel open earbuds > /dev/null 2>&1
-sleep 3
+until_jq 15 "$earbuds_dir/wait.json" '.device != null' call earbuds status
+for _ in \$(seq 1 40); do [ "\$(grep -c '^motion:watch' "$earbuds_librepods_motion" 2>/dev/null)" -gt "\${watched:-0}" ] && break; sleep 0.25; done
+until_settled
 call earbuds status > "$earbuds_dir/airpods-motion-error.json" 2>&1
 call panel close > /dev/null 2>&1
 sleep 1
@@ -388,14 +396,16 @@ head_stop() {
 }
 head_stub --motion-silent --fixture "$earbuds_dir/airpods-status-moterr.json"
 call panel open earbuds > /dev/null 2>&1
-sleep 2.5
+until_jq 15 "$earbuds_dir/wait.json" '.device != null' call earbuds status
+until_settled
 "$grim_bin" "$earbuds_head_waiting_png" > /dev/null 2>&1
 call panel close > /dev/null 2>&1
 sleep 1
 head_stop
 head_stub --fixture "$earbuds_dir/airpods-status-head-nobud.json"
 call panel open earbuds > /dev/null 2>&1
-sleep 2.5
+until_jq 15 "$earbuds_dir/wait.json" '.device != null' call earbuds status
+until_settled
 "$grim_bin" "$earbuds_head_nobud_png" > /dev/null 2>&1
 call panel close > /dev/null 2>&1
 sleep 1
@@ -439,7 +449,8 @@ head_stop
 stub=\$!
 sleep 9
 call panel open earbuds > /dev/null 2>&1
-sleep 3
+until_jq 15 "$earbuds_dir/wait.json" '.device != null' call earbuds status
+until_settled
 call earbuds status > "$earbuds_dir/airpods-noheart-status.json" 2>&1
 # Conversation awareness off while something records, back on after.
 setsid "$pw_loopback_bin" -n ea-mic -i "{ media.class=Audio/Sink node.name=ea_mic_in }" \
@@ -472,6 +483,7 @@ rm -f "$state_dir/status.json"
 nothing_list '[{"address":"$earbuds_refused_address","name":"Ear (3)","connected":true}]'
 sleep 1
 call panel open earbuds > /dev/null 2>&1
+# The refused device's watch has 12s to be started again; it must not be.
 sleep 12
 call earbuds devices > "$earbuds_devices_refused" 2>&1
 "$grim_bin" "$earbuds_refused_png" > /dev/null 2>&1

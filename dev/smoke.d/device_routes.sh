@@ -53,7 +53,7 @@ leg_device_routes_drive() {
 net() { call network status > "\$1" 2>&1; }
 route() {
   call menu summon "\$1" > /dev/null 2>&1
-  sleep 1.5
+  until_settled
   [ -n "\$2" ] && call menu filter "\$2" > /dev/null 2>&1
   sleep 1
 }
@@ -182,7 +182,7 @@ sleep 1
 # A root query reaches what is saved, sunk or a favourite, never what is
 # merely nearby.
 call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 call debug query FORMALTEST > "$shot_dir/device-routes-root-wifi.json" 2>&1
 call debug query FORMALTEST-EAP > "$shot_dir/device-routes-root-nearby.json" 2>&1
 call debug query RoutesSink > "$shot_dir/device-routes-root-audio.json" 2>&1
@@ -227,7 +227,7 @@ call menu status > "$shot_dir/device-routes-bluetooth.json" 2>&1
 call menu close > /dev/null 2>&1
 sleep 1
 call panel open bluetooth > "$shot_dir/device-routes-bluetooth-panel-open.txt" 2>&1
-sleep 1
+until_settled
 call panel state > "$shot_dir/device-routes-bluetooth-panel.json" 2>&1
 call panel close > /dev/null 2>&1
 
@@ -256,7 +256,7 @@ call menu close > /dev/null 2>&1
 call radio stop > /dev/null 2>&1
 
 call menu summon "" > /dev/null 2>&1
-sleep 1.5
+until_settled
 call debug query ':r jazz' > "$shot_dir/device-routes-radio-search.json" 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 20 ]; do

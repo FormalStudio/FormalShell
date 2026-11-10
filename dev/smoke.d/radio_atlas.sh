@@ -111,7 +111,7 @@ leg_radio_atlas_drive() {
 "${radio_atlas_track_path%.mp3}-server.sh" &
 sleep 5
 $ipc call panel open radio > "$radio_atlas_open_path" 2>&1
-sleep 4
+until_settled
 SECONDS=0
 while [ "\$SECONDS" -lt 10 ]; do
   $ipc call radio status > "$radio_atlas_imagery_path" 2>&1
@@ -191,7 +191,7 @@ pid=\$(cat "$shot_dir/shell.pid")
 rss() { awk '/^VmRSS/{print \$2}' "/proc/\$pid/status"; }
 echo "closed_before \$(rss)" > "$radio_atlas_rss_path"
 $ipc call panel open radio > /dev/null 2>&1
-sleep 3
+until_settled
 "$wtype_bin" -k Return
 sleep 5
 park

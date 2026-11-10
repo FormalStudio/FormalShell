@@ -50,14 +50,14 @@ leg_panel_anchor_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call panel toggle audio > "$panel_anchor_toggle_reply_path" 2>&1
-sleep 2
+until_settled
 $ipc call panel state > "$panel_anchor_toggle_state_path" 2>&1
 "$grim_bin" "$panel_anchor_anchored_path" > /dev/null 2>&1
 "$grim_bin" -g "$panel_anchor_crop_geometry" "$panel_anchor_anchored_crop_path" > /dev/null 2>&1
 $ipc call panel toggle audio > "$panel_anchor_close_reply_path" 2>&1
-sleep 2
+until_settled
 $ipc call panel open audio > "$panel_anchor_open_reply_path" 2>&1
-sleep 2
+until_settled
 $ipc call panel state > "$panel_anchor_open_state_path" 2>&1
 "$grim_bin" "$panel_anchor_anchorless_path" > /dev/null 2>&1
 "$grim_bin" -g "$panel_anchor_crop_geometry" "$panel_anchor_anchorless_crop_path" > /dev/null 2>&1

@@ -107,12 +107,12 @@ leg_panel_handoff_drive() {
 # The audio card's own resting place, captured before anything hands over,
 # so the settled frame at the end has something to be equal to.
 $ipc call panel toggle audio > "$panel_handoff_audio_open_path" 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$panel_handoff_audio_rest_path" > /dev/null 2>&1
 $ipc call panel toggle audio > "$panel_handoff_audio_close_path" 2>&1
-sleep 2
+until_settled
 $ipc call panel toggle network > "$panel_handoff_network_open_path" 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$panel_handoff_network_rest_path" > /dev/null 2>&1
 $ipc call panel state > "$panel_handoff_network_state_path" 2>&1
 $arm

@@ -120,7 +120,7 @@ done
 $ipc call panel close > /dev/null 2>&1
 sleep 1
 $ipc call panel open network > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call network status > "$wifi_ghost_closed_status_path" 2>&1
 "$grim_bin" "$wifi_ghost_closed_path" > /dev/null 2>&1
 # Nothing is connected here, so the stops end Known networks, Share network,

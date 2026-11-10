@@ -43,6 +43,7 @@ leg_panel_at_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call panel toggleAt $n > "$panel_at_toggle_path" 2>&1
+# The power panel never reports rest, even with no power source to draw.
 sleep 2
 $ipc call panel state > "$panel_at_state_path" 2>&1
 "$grim_bin" "$panel_at_shot_path" > /dev/null 2>&1

@@ -75,7 +75,7 @@ read -r s1 c1 < <(at idle-end)
 printf 'signals_before %s\ncalls_before %s\nsignals_after %s\ncalls_after %s\n' "\$s0" "\$c0" "\$s1" "\$c1" > "$bluez_rssi_results_path"
 $ipc call bluetooth status > "$shot_dir/bluez-status-shut.json" 2>&1
 $ipc call panel open bluetooth > /dev/null 2>&1
-sleep 3
+until_settled
 $ipc call bluetooth status > "$shot_dir/bluez-status-open.json" 2>&1
 $ipc call panel close > /dev/null 2>&1
 EOF

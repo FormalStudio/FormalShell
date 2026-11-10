@@ -40,7 +40,7 @@ leg_toggles_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call menu summon toggles > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call menu status > "$toggles_menu_status1_path" 2>&1
 $ipc call nightlight status > "$toggles_nl_status1_path" 2>&1
 $ipc call debug query nightlight > "$toggles_nl_query1_path" 2>&1

@@ -71,6 +71,7 @@ while [ "\$SECONDS" -lt 10 ]; do
 done
 $ipc call media status > "$radio_media_status_path" 2>&1
 $ipc call panel open media > /dev/null 2>&1
+# A playing station keeps the panel moving, so its rest is never reported.
 sleep 2
 $ipc call media players > "$radio_players_path" 2>&1
 "$grim_bin" "$radio_panel_png_path" > /dev/null 2>&1

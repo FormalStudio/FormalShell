@@ -157,7 +157,7 @@ EOF
 
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@" >> "$panel_morph_replies_path" 2>&1; }
+logged() { $ipc call "\$@" >> "$panel_morph_replies_path" 2>&1; }
 # Both of the rig's own hostapd SSIDs in the station's own scan list, which
 # is what gives the card the two rows this leg measures the collapse of.
 scanned() {
@@ -173,7 +173,7 @@ scanned() {
   done
   return 1
 }
-call debug motionScale 1000
+logged debug motionScale 1000
 "$grim_bin" "$panel_morph_bare_path" > /dev/null 2>&1
 
 # The radio is NetworkManager's own setting and lives outside the isolated
@@ -181,41 +181,42 @@ call debug motionScale 1000
 # empty list and nothing to measure. On, then wait for the station to see the
 # rig's own APs again, which it does within a few seconds of the radio coming
 # back. The cleanup below puts it back on whatever happens here.
-call network wifi true
+logged network wifi true
 scanned 20
 
 # The Wi-Fi card at its full height, both networks listed.
-call panel open network
-sleep 12
+logged panel open network
+until_settled
 "$grim_bin" "$panel_morph_rest_full_path" > /dev/null 2>&1
 $ipc call debug dump > "$panel_morph_dump_path" 2>&1
 
 $(panel_morph_arm settled "${panel_morph_settled_sleeps[@]}")
-call network wifi false
+logged network wifi false
 wait
 sleep 10
 "$grim_bin" "$panel_morph_rest_off_path" > /dev/null 2>&1
 
 # And the same change landing while the card is still on its way out.
-call panel close
+logged panel close
 sleep 8
-call network wifi true
+logged network wifi true
 scanned 15
 sleep 3
 
 $(panel_morph_arm emerging "${panel_morph_emerging_sleeps[@]}")
-call panel open network
+logged panel open network
+# Two seconds into the five-second emerge, on purpose.
 sleep 2
-call network wifi false
+logged network wifi false
 wait
 sleep 12
 "$grim_bin" "$panel_morph_rest_end_path" > /dev/null 2>&1
 
 # The now-playing card, growing from its honest empty state to a real track.
-call panel close
+logged panel close
 sleep 8
-call panel open media
-sleep 12
+logged panel open media
+until_settled
 "$grim_bin" "$panel_morph_rest_quiet_path" > /dev/null 2>&1
 
 $(panel_morph_arm media "${panel_morph_media_sleeps[@]}")
@@ -225,8 +226,8 @@ echo \$! > "$panel_morph_pid_path"
 # outlives the burst by five minutes.
 sleep 14
 "$grim_bin" "$panel_morph_rest_playing_path" > /dev/null 2>&1
-call network wifi true
-call debug motionScale 100
+logged network wifi true
+logged debug motionScale 100
 EOF
   hypr_exec_once "bash $script"
 }

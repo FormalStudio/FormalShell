@@ -28,6 +28,7 @@ leg_radio_atlas_cold_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call panel open radio > /dev/null 2>&1
+# The early frame is one second in, while the stations may still be on the way.
 sleep 1
 "$grim_bin" "$radio_atlas_cold_early_png" > /dev/null 2>&1
 SECONDS=0

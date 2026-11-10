@@ -29,7 +29,7 @@ for m in CanSuspend CanReboot CanPowerOff; do
   busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager "\$m" > "\$p-\$m.txt" 2>&1
 done
 $ipc call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 $ipc call quicksettings menu power > "\$p-menu.txt" 2>&1
 for i in \$(seq 1 20); do
   $ipc call quicksettings status 2>/dev/null | "$jq_bin" -e '.menu.content == 1' > /dev/null 2>&1 && break
