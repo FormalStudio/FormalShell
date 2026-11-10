@@ -137,6 +137,39 @@ flat_wallpaper() {
   "$convert_bin" -size "${out_w}x${out_h}" "xc:$2" "$1"
 }
 
+# radio_station <port> <track.mp3>: a station on loopback, from a leg's
+# fixture. Writes a minute of 440 Hz to <track> and `<track>-server.sh`
+# beside it, which a drive starts in the background: ffmpeg's listener
+# serves one client and exits, so it loops to let the station be tuned
+# again. It closes every inherited fd above stderr first (the caller's
+# flock fd among them).
+radio_station() {
+  local port="$1" track="$2" server="${2%.mp3}-server.sh"
+  "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=44100" -t 60 \
+    -c:a libmp3lame -b:a 128k -y "$track"
+  write_script "$server" <<EOF
+#!/usr/bin/env bash
+for fd in /proc/\$\$/fd/*; do n=\${fd##*/}; [ "\$n" -gt 2 ] && eval "exec \$n>&-"; done 2>/dev/null
+while true; do
+  "$ffmpeg_bin" -nostdin -loglevel error -re -i "$track" -c copy -f mp3 \
+    -listen 1 "http://127.0.0.1:$port/station.mp3"
+  sleep 0.5
+done
+EOF
+  add_cleanup "pkill -f '$server' 2>/dev/null || true"
+  add_cleanup "pkill -f 'listen 1 http://127.0.0.1:$port' 2>/dev/null || true"
+}
+
+# radio_favourite <id> <name> <port>: Radio Atlas's saved state holding one
+# favourite, the radio_station on <port>.
+radio_favourite() {
+  local state_dir="$iso_home/.local/state/formalshell"
+  mkdir -p "$state_dir"
+  cat > "$state_dir/radio-atlas.json" <<EOF
+{"favorites":[{"uuid":"$1","name":"$2","url":"http://127.0.0.1:$3/station.mp3","homepage":"","favicon":"","country":"","countryCode":"","state":"","language":"","tags":"","codec":"MP3","bitrate":128,"votes":0,"clicks":0,"latitude":null,"longitude":null}],"recent":[],"volume":40,"output":""}
+EOF
+}
+
 # The session's output scale: the g815 panel's 1.25 unless the run asks
 # for one (FS_SMOKE_SCALE) or carries a leg declaring leg_<n>_scale1, one
 # whose probes still read fixed pixels. Set before the legs are sourced,

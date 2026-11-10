@@ -38,13 +38,8 @@ device_routes_station_name="FormalShell Routes Radio"
 device_routes_port=18100
 
 leg_device_routes_fixture() {
-  local state_dir="$iso_home/.local/state/formalshell"
-  mkdir -p "$state_dir"
-  cat > "$state_dir/radio-atlas.json" <<EOF
-{"favorites":[{"uuid":"$device_routes_station_id","name":"$device_routes_station_name","url":"http://127.0.0.1:$device_routes_port/station.mp3","homepage":"","favicon":"","country":"","countryCode":"","state":"","language":"","tags":"","codec":"MP3","bitrate":128,"votes":0,"clicks":0,"latitude":null,"longitude":null}],"recent":[],"volume":40,"output":""}
-EOF
-  "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=44100" -t 60 \
-    -c:a libmp3lame -b:a 128k -y "$device_routes_track_path"
+  radio_favourite "$device_routes_station_id" "$device_routes_station_name" "$device_routes_port"
+  radio_station "$device_routes_port" "$device_routes_track_path"
 }
 
 leg_device_routes_timing() {
@@ -52,17 +47,7 @@ leg_device_routes_timing() {
 }
 
 leg_device_routes_drive() {
-  local script="$shot_dir/device-routes-drive.sh" server="$shot_dir/device-routes-server.sh"
-  # ffmpeg's listener serves one client and exits; the loop is what lets the
-  # station be tuned again.
-  write_script "$server" <<EOF
-#!/usr/bin/env bash
-while true; do
-  "$ffmpeg_bin" -nostdin -loglevel error -re -i "$device_routes_track_path" -c copy -f mp3 \
-    -listen 1 "http://127.0.0.1:$device_routes_port/station.mp3"
-  sleep 0.5
-done
-EOF
+  local script="$shot_dir/device-routes-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 net() { call network status > "\$1" 2>&1; }
@@ -73,7 +58,7 @@ route() {
   sleep 1
 }
 
-bash "$server" &
+"${device_routes_track_path%.mp3}-server.sh" &
 sleep 3
 
 "$pactl_bin" get-default-sink > "$device_routes_default_before_path" 2>&1
@@ -283,8 +268,6 @@ call debug query jazz > "$shot_dir/device-routes-root-jazz.json" 2>&1
 call menu close > /dev/null 2>&1
 EOF
   add_cleanup "'$pactl_bin' set-default-sink \"\$(cat '$device_routes_default_before_path' 2>/dev/null)\" 2>/dev/null || true"
-  add_cleanup "pkill -f 'device-routes-server.sh' 2>/dev/null || true"
-  add_cleanup "pkill -f 'listen 1 http://127.0.0.1:$device_routes_port' 2>/dev/null || true"
   hypr_exec_once "bash $script"
 }
 

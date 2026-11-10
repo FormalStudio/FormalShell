@@ -45,13 +45,8 @@ leg_radio_timing() {
 }
 
 leg_radio_fixture() {
-  local state_dir="$iso_home/.local/state/formalshell"
-  mkdir -p "$state_dir"
-  cat > "$state_dir/radio-atlas.json" <<EOF
-{"favorites":[{"uuid":"$radio_station_id","name":"$radio_station_name","url":"http://127.0.0.1:$radio_port/station.mp3","homepage":"","favicon":"","country":"","countryCode":"","state":"","language":"","tags":"","codec":"MP3","bitrate":128,"votes":0,"clicks":0,"latitude":null,"longitude":null}],"recent":[],"volume":40,"output":""}
-EOF
-  "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=44100" -t 60 \
-    -c:a libmp3lame -b:a 128k -y "$radio_track_path"
+  radio_favourite "$radio_station_id" "$radio_station_name" "$radio_port"
+  radio_station "$radio_port" "$radio_track_path"
   local socket_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/formalshell-radio-atlas"
   mkdir -p -m 700 "$socket_dir"
   setsid "$mpv_bin" --no-config --idle=yes --no-terminal \
@@ -63,8 +58,7 @@ leg_radio_drive() {
   local script="$shot_dir/radio-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-"$ffmpeg_bin" -nostdin -loglevel error -re -i "$radio_track_path" -c copy -f mp3 \
-  -listen 1 "http://127.0.0.1:$radio_port/station.mp3" &
+"${radio_track_path%.mp3}-server.sh" &
 pw_load_module module-null-sink sink_name=$radio_sink sink_properties=device.description=SmokeAlt > /dev/null
 sleep 4
 if kill -0 "\$(cat "$radio_leftover_pid_path")" 2>/dev/null; then echo alive; else echo gone; fi > "$radio_leftover_after_path"
@@ -94,7 +88,6 @@ sleep 3
 $ipc call media status > "$radio_stopped_path" 2>&1
 EOF
   add_cleanup "kill \"\$(cat '$radio_leftover_pid_path')\" 2>/dev/null || true"
-  add_cleanup "pkill -f 'listen 1 http://127.0.0.1:$radio_port' 2>/dev/null || true"
   hypr_exec_once "bash $script"
 }
 

@@ -66,7 +66,6 @@ radio_atlas_globe_path="$shot_dir/radio-atlas-globe.txt"
 radio_atlas_tip_before_path="$shot_dir/radio-atlas-tip-before.json"
 radio_atlas_tip_after_path="$shot_dir/radio-atlas-tip-after.json"
 radio_atlas_tip_png="$shot_dir/radio-atlas-tooltip.png"
-radio_atlas_loop_pid_path="$shot_dir/radio-atlas-loop.pid"
 radio_atlas_drag_before_path="$shot_dir/radio-atlas-drag-before.json"
 radio_atlas_drag_released_path="$shot_dir/radio-atlas-drag-released.json"
 radio_atlas_drag_settled_path="$shot_dir/radio-atlas-drag-settled.json"
@@ -102,23 +101,14 @@ EOF
   ln -sfn "$tiles" "$radio_atlas_tiles_link"
   ln -sfn "$tiles" "$radio_atlas_tiles_link.saved"
   shell_env="${shell_env:+$shell_env }FS_EARTH_TILES=$radio_atlas_tiles_link"
-  "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=44100" -t 60 \
-    -c:a libmp3lame -b:a 128k -y "$radio_atlas_track_path"
+  radio_station "$radio_atlas_port" "$radio_atlas_track_path"
 }
 
 leg_radio_atlas_drive() {
   local script="$shot_dir/radio-atlas-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-# ffmpeg's listener takes one client and exits; the station is played twice.
-# The loop closes every inherited fd above stderr first (the caller's flock
-# fd among them) and its pid is recorded so cleanup can stop the respawning.
-( for fd in /proc/\$BASHPID/fd/*; do n=\${fd##*/}; [ "\$n" -gt 2 ] && eval "exec \$n>&-"; done 2>/dev/null
-  while true; do
-  "$ffmpeg_bin" -nostdin -loglevel error -re -i "$radio_atlas_track_path" -c copy -f mp3 \
-    -listen 1 "http://127.0.0.1:$radio_atlas_port/station.mp3"
-done ) &
-echo \$! > "$radio_atlas_loop_pid_path"
+"${radio_atlas_track_path%.mp3}-server.sh" &
 sleep 5
 $ipc call panel open radio > "$radio_atlas_open_path" 2>&1
 sleep 4
@@ -251,8 +241,6 @@ sleep 3
 sleep 1
 $ipc call radio stop > /dev/null 2>&1
 EOF
-  add_cleanup "kill \$(cat '$radio_atlas_loop_pid_path' 2>/dev/null) 2>/dev/null || true"
-  add_cleanup "pkill -f 'listen 1 http://127.0.0.1:$radio_atlas_port' 2>/dev/null || true"
   add_cleanup "pkill -f 'radio-atlas-drive.sh' 2>/dev/null || true"
   hypr_exec_once "bash $script"
 }
