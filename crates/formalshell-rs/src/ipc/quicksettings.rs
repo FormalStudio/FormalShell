@@ -30,80 +30,13 @@ fn open(app: &App) -> bool {
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    let state: Option<Json> = app.panel_status(ID);
     let host = app.panel.as_ref().filter(|h| h.is_open() && h.panel() == Some(ID));
     let boxes = host.map(|h| h.quick_boxes()).unwrap_or_default();
-    let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| json!(r));
-    let parsed = state.clone().unwrap_or(Json::Null);
-    let shown = parsed["shown"].as_str();
-    let mut rows: Vec<Json> = quick::tiles_with(&app.store, shown)
-        .into_iter()
-        .map(|t| {
-            json!({
-                "id": t.id,
-                "kind": t.kind.as_str(),
-                "title": t.title,
-                "subtitle": t.subtitle,
-                "on": t.on,
-                "available": t.available(),
-                "reason": t.reason,
-                "value": t.value,
-                "rect": boxed(t.id),
-                "icon": boxed(&format!("{}:icon", t.id)),
-                "arrow": boxed(&format!("{}:menu", t.id)),
-            })
-        })
-        .collect();
-    // The info tiles as the card last drew them, after the toggles and
-    // before Background.
-    let at = rows.iter().position(|r| r["kind"] == "background").unwrap_or(rows.len());
-    let extras = parsed["extras"].as_array().cloned().unwrap_or_default();
-    let info = extras.iter().map(|x| {
-        let id = x["id"].as_str().unwrap_or_default();
-        json!({
-            "id": id,
-            "kind": quick::Kind::Info.as_str(),
-            "title": x["title"],
-            "subtitle": x["subtitle"],
-            "glyph": x["icon"],
-            "tone": x["tone"],
-            "panel": x["panel"],
-            "on": false,
-            "available": true,
-            "reason": null,
-            "value": null,
-            "rect": boxed(id),
-            "icon": null,
-            "arrow": null,
-        })
-    });
-    rows.splice(at..at, info);
-    let (menu, dim) = match &state {
-        Some(state) => {
-            let (mut menu, dim) = quick::status_menu(&app.store, state);
-            if menu["id"].is_null() && menu["shown"].is_null() {
-                menu = Json::Null;
-            } else {
-                menu["rect"] = boxed("menu");
-                if let Some(rows) = menu["rows"].as_array_mut() {
-                    for r in rows {
-                        r["rect"] = r["id"].as_str().map_or(Json::Null, boxed);
-                    }
-                }
-            }
-            (menu, dim)
-        }
-        None => (Json::Null, false),
-    };
-    let out = json!({
-        "open": host.is_some(),
-        "from": host.map(|h| h.from.label()),
-        "card": host.map_or(Json::Null, |h| json!(h.win.card.rest_rect())),
-        "cursor": host.and_then(|h| h.viewport().3.map(|(k, _)| k.to_owned())),
-        "rows": rows,
-        "menu": menu,
-        "dim": dim,
-    });
+    let mut out = quick::report(&app.store, app.panel_ref::<QuickSettings>(ID), &boxes);
+    out["open"] = json!(host.is_some());
+    out["from"] = json!(host.map(|h| h.from.label()));
+    out["card"] = host.map_or(Json::Null, |h| json!(h.win.card.rest_rect()));
+    out["cursor"] = json!(host.and_then(|h| h.viewport().3.map(|(k, _)| k.to_owned())));
     Ok(out)
 }
 
@@ -127,9 +60,8 @@ fn activate(app: &mut App, args: &[Value]) -> Reply {
 }
 
 /// Whether `id` is an info tile the open card drew last.
-fn extra(app: &mut App, id: &str) -> bool {
-    let state: Json = app.panel_status(ID).unwrap_or(Json::Null);
-    state["extras"].as_array().is_some_and(|x| x.iter().any(|x| x["id"] == id))
+fn extra(app: &App, id: &str) -> bool {
+    app.panel_ref::<QuickSettings>(ID).is_some_and(|q| quick::drew(q, id))
 }
 
 fn menu(app: &mut App, args: &[Value]) -> Reply {

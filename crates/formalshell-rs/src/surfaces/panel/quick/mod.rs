@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use fs_audio::Visual;
 use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
 use fs_chrome::bar::panels::PanelId;
-use fs_types::{BtAddress, Edge, Region};
+use fs_types::{BtAddress, Edge, IRect, Region};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
 use fs_system::power::model::{battery_icon, charge_threshold_active};
@@ -1155,21 +1155,6 @@ impl Panel for QuickSettings {
         self.menu.get_mut().close()
     }
 
-    /// The menu asked for and drawn, its clocks' shares, and the info
-    /// tiles as last drawn.
-    fn status(&self) -> Json {
-        let m = self.menu.borrow();
-        let now = std::time::Instant::now();
-        let share = |a: &Animated| (a.value(now).clamp(0.0, 1.0) * 1000.0).round() / 1000.0;
-        let extras: Vec<Json> = self
-            .drawn
-            .borrow()
-            .iter()
-            .map(|x| json!({ "id": x.id, "title": x.summary.name, "subtitle": x.summary.value, "icon": x.summary.icon, "tone": x.summary.tone.as_str(), "panel": x.panel.map(PanelId::as_str) }))
-            .collect();
-        json!({ "menu": m.want, "shown": m.shown, "armed": m.armed.get(), "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras })
-    }
-
     fn nav(&self, stop: Option<&On>) -> Nav {
         let steps = match stop.and_then(|s| s.get::<Hit>()) {
             Some(Hit::Tile(id)) => matches!(id.as_str(), "volume" | "microphone" | "brightness"),
@@ -1515,14 +1500,61 @@ fn mute(target: audio::Target) {
     audio::send(audio::Cmd::ToggleMute(target));
 }
 
-/// The open menu for `quicksettings status`: its id, its lines and the
-/// armed row, off the module's own [`Panel::status`].
-pub fn status_menu(store: &Store, state: &Json) -> (Json, bool) {
-    let id = state["menu"].as_str();
-    let armed = state["armed"].as_str();
-    let open = id.and_then(|id| menu(store, id, armed));
-    let lines = open.as_ref().map(|m| {
-        m.lines
+/// `quicksettings status`'s `rows`, `menu` and `dim`: `card` the open card
+/// and `boxes` the rects it last drew by key, none while it is closed.
+pub fn report(store: &Store, card: Option<&QuickSettings>, boxes: &[(String, IRect)]) -> Json {
+    let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| json!(r));
+    let m = card.map(|q| q.menu.borrow());
+    let shown = m.as_ref().and_then(|m| m.shown.clone());
+    let mut rows: Vec<Json> = tiles_with(store, shown.as_deref())
+        .into_iter()
+        .map(|t| {
+            json!({
+                "id": t.id,
+                "kind": t.kind.as_str(),
+                "title": t.title,
+                "subtitle": t.subtitle,
+                "on": t.on,
+                "available": t.available(),
+                "reason": t.reason,
+                "value": t.value,
+                "rect": boxed(t.id),
+                "icon": boxed(&Hit::Icon(t.id.to_owned()).to_string()),
+                "arrow": boxed(&Hit::Arrow(t.id.to_owned()).to_string()),
+            })
+        })
+        .collect();
+    // The info tiles as the card last drew them, after the toggles and
+    // before Background.
+    let at = rows.iter().position(|r| r["kind"] == Kind::Background.as_str()).unwrap_or(rows.len());
+    let drawn = card.map(|q| q.drawn.borrow());
+    let info = drawn.iter().flat_map(|d| d.iter()).map(|x| {
+        json!({
+            "id": x.id,
+            "kind": Kind::Info.as_str(),
+            "title": x.summary.name,
+            "subtitle": x.summary.value,
+            "glyph": x.summary.icon,
+            "tone": x.summary.tone.as_str(),
+            "panel": x.panel.map(PanelId::as_str),
+            "on": false,
+            "available": true,
+            "reason": null,
+            "value": null,
+            "rect": boxed(&x.id),
+            "icon": null,
+            "arrow": null,
+        })
+    });
+    rows.splice(at..at, info);
+    let Some(m) = m.filter(|m| m.want.is_some() || m.shown.is_some()) else {
+        return json!({ "rows": rows, "menu": null, "dim": false });
+    };
+    let now = std::time::Instant::now();
+    let share = |a: &Animated| (a.value(now).clamp(0.0, 1.0) * 1000.0).round() / 1000.0;
+    let open = m.want.as_deref().and_then(|id| menu(store, id, m.armed.get().copied()));
+    let lines = open.as_ref().map(|v| {
+        v.lines
             .iter()
             .filter_map(|l| match l {
                 Line::Row { key, title, detail, checked, armed, .. } => Some(json!({ "id": key.to_string(), "title": title, "detail": detail, "checked": checked, "armed": armed })),
@@ -1530,16 +1562,32 @@ pub fn status_menu(store: &Store, state: &Json) -> (Json, bool) {
                 Line::Task { key, task } => Some(json!({ "id": key.to_string(), "title": task.title, "detail": task.state, "stop": task.stop.map(|(_, word)| word) })),
                 Line::Note(_) | Line::Separator => None,
             })
-            .chain(m.settings.map(|(label, hand)| match hand {
-                Hand::Panel(p) => json!({ "id": "m:settings", "title": label, "panel": p.as_str() }),
-                Hand::Route(r) => json!({ "id": "m:settings", "title": label, "route": r }),
+            .chain(v.settings.map(|(label, hand)| match hand {
+                Hand::Panel(p) => json!({ "id": Hit::Settings.to_string(), "title": label, "panel": p.as_str() }),
+                Hand::Route(r) => json!({ "id": Hit::Settings.to_string(), "title": label, "route": r }),
             }))
+            .map(|mut r| {
+                r["rect"] = r["id"].as_str().map_or(Json::Null, boxed);
+                r
+            })
             .collect::<Vec<_>>()
     });
-    let notes: Option<Vec<&str>> = open.as_ref().map(|m| m.lines.iter().filter_map(|l| if let Line::Note(t) = l { Some(t.as_str()) } else { None }).collect());
-    let header = open.as_ref().map(|m| json!({ "title": m.title, "on": m.on }));
-    (
-        json!({ "id": id, "shown": state["shown"], "height": state["height"], "content": state["content"], "header": header, "rows": lines, "notes": notes }),
-        state["dim"].as_bool().unwrap_or(false),
-    )
+    let notes: Option<Vec<&str>> = open.as_ref().map(|v| v.lines.iter().filter_map(|l| if let Line::Note(t) = l { Some(t.as_str()) } else { None }).collect());
+    let header = open.as_ref().map(|v| json!({ "title": v.title, "on": v.on }));
+    let menu = json!({
+        "id": m.want,
+        "shown": m.shown,
+        "height": share(&m.height),
+        "content": share(&m.content),
+        "header": header,
+        "rows": lines,
+        "notes": notes,
+        "rect": boxed("menu"),
+    });
+    json!({ "rows": rows, "menu": menu, "dim": m.want.is_some() })
+}
+
+/// Whether the open card last drew an info tile for `id`.
+pub fn drew(card: &QuickSettings, id: &str) -> bool {
+    card.drawn.borrow().iter().any(|x| x.id == id)
 }

@@ -3,8 +3,11 @@
 
 use fs_chrome::bar::panels::PanelId;
 
+use serde_json::json;
+
 use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
 use crate::services::devices::network::{self as net, Network, Secret};
+use crate::surfaces::panel::network::Network as NetworkPanel;
 use crate::wayland::App;
 
 pub fn target() -> Target<App> {
@@ -36,8 +39,8 @@ fn state(app: &App) -> &Network {
 fn status(app: &mut App, _: &[Value]) -> Reply {
     // The panel's "Known networks" disclosure and the SSID whose passphrase
     // step is open, both null while the panel is closed.
-    let panel = app.panel_status(PanelId::Network).unwrap_or(Json::Null);
-    Ok(state(app).status(panel["knownOpen"].clone(), panel["prompt"].clone()))
+    let panel = app.panel_ref::<NetworkPanel>(PanelId::Network);
+    Ok(state(app).status(panel.map_or(Json::Null, |p| json!(p.known_open())), panel.map_or(Json::Null, |p| json!(p.prompt()))))
 }
 
 /// A network action already in flight is refused rather than queued.

@@ -748,10 +748,15 @@ impl App {
 
     /// The open panel `id`'s own [`panel::Panel::status`]; `None` when it
     /// is not up.
-    pub fn panel_status(&mut self, id: PanelId) -> Option<serde_json::Value> {
-        let status = self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(id))?.module.status();
-        self.panel_dirty = true;
-        Some(status)
+    pub fn panel_status(&self, id: PanelId) -> Option<serde_json::Value> {
+        Some(self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(id))?.module.status())
+    }
+
+    /// The open panel `id` as its module `T`, read without drawing it again.
+    pub fn panel_ref<T: panel::Panel>(&self, id: PanelId) -> Option<&T> {
+        let host = self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(id))?;
+        let module: &dyn std::any::Any = &*host.module;
+        module.downcast_ref::<T>()
     }
 
     /// The open panel `id` as its module `T`, for a verb only that panel

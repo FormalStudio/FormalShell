@@ -68,6 +68,16 @@ pub struct Network {
 }
 
 impl Network {
+    /// Whether the "Known networks" disclosure is open.
+    pub fn known_open(&self) -> bool {
+        self.known_open
+    }
+
+    /// The SSID whose passphrase step is open.
+    pub fn prompt(&self) -> Option<&str> {
+        self.prompt.as_deref()
+    }
+
     fn state<'a>(fx: &'a Effect) -> &'a net::Network {
         &fx.store.network
     }
@@ -342,10 +352,6 @@ impl Panel for Network {
 
     fn editing(&self) -> bool {
         self.prompt.is_some()
-    }
-
-    fn status(&self) -> serde_json::Value {
-        serde_json::json!({ "knownOpen": self.known_open, "prompt": self.prompt })
     }
 
     fn edit(&mut self, e: Edit, fx: &mut Effect) {
