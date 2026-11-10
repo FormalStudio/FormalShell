@@ -365,9 +365,14 @@ leg_sidebar_assert() {
 
 _sidebar_clock() { "$jq_bin" -r "$1" "$sidebar_clock_dump"; }
 
-# The mean of channel $2 (r, g or b) over the open frame's $1 crop.
-_sidebar_clock_mean() {
-  $convert_bin "$sidebar_open_png" -crop "$1" +repage -format "%[fx:mean.$2]" info:
+# "<n> <r-g>" over the open frame's $1 crop: how many pixels are ink (chroma
+# past 0.15, which the card's grey or white fill never reaches) and their
+# mean red less green, so the read holds whichever digits are showing.
+_sidebar_clock_ink() {
+  local ink='(max(r,max(g,b)) - min(r,min(g,b)) > 0.15)' n a
+  n=$($convert_bin "$sidebar_open_png" -crop "$1" +repage -alpha off -fx "$ink" -format '%[fx:mean*w*h]' info:)
+  a=$($convert_bin "$sidebar_open_png" -crop "$1" +repage -alpha off -fx "$ink * (r - g + 1) / 2" -format '%[fx:mean*w*h]' info:)
+  awk -v n="$n" -v a="$a" 'BEGIN { printf "%d %.4f", n + 0.5, (n > 0 ? (2 * a - n) / n : 0) }'
 }
 
 # $1 and $2: the time card's x and width in the window.
@@ -385,13 +390,16 @@ sidebar_clock_assert() {
   [ "$w" -gt 20 ] && [ "$h" -gt 8 ] || fail "sidebar: the clock card's digits are ${w}x${h}"
   # Each end of the digits, a quarter of their width: the red half of the
   # wallpaper under the left one, the green under the right.
-  q=$((w / 4))
-  left=$(awk -v r="$(_sidebar_clock_mean "${q}x${h}+${x}+${y}" r)" -v g="$(_sidebar_clock_mean "${q}x${h}+${x}+${y}" g)" 'BEGIN { printf "%.4f", r - g }')
-  right=$(awk -v r="$(_sidebar_clock_mean "${q}x${h}+$((x + w - q))+${y}" r)" -v g="$(_sidebar_clock_mean "${q}x${h}+$((x + w - q))+${y}" g)" 'BEGIN { printf "%.4f", r - g }')
+  local ln rn fx fy fw fh
+  fx=$(logical_px "$x") fy=$(logical_px "$y") fw=$(logical_px "$w") fh=$(logical_px "$h")
+  q=$((fw / 4))
+  read -r ln left <<< "$(_sidebar_clock_ink "${q}x${fh}+${fx}+${fy}")"
+  read -r rn right <<< "$(_sidebar_clock_ink "${q}x${fh}+$((fx + fw - q))+${fy}")"
   mid=$(pixel "$sidebar_open_png" 41 "$((y + h / 2))")
-  echo "SMOKE_SIDEBAR_CLOCK_FROST rect=${x},${y},${w},${h} left_r-g=$left right_r-g=$right band=$mid"
-  awk -v l="$left" -v r="$right" 'BEGIN { exit !(l - r > 0.03) }' \
-    || fail "sidebar: the digits' ends read r-g $left and $right: one flat tint, not the wallpaper under them"
+  echo "SMOKE_SIDEBAR_CLOCK_FROST rect=${x},${y},${w},${h} left_ink=$ln left_r-g=$left right_ink=$rn right_r-g=$right band=$mid"
+  [ "$ln" -ge 8 ] && [ "$rn" -ge 8 ] || fail "sidebar: the digits' ends carry $ln and $rn ink pixels"
+  awk -v l="$left" -v r="$right" 'BEGIN { exit !(l > 0.03 && r < -0.03) }' \
+    || fail "sidebar: the digits' ink reads r-g $left at the left end and $right at the right: not red over green, the wallpaper under them"
   read -r mr mg mb <<< "$mid"
   [ "$mr" -gt 180 ] && [ "$mg" -gt 70 ] && [ "$mg" -lt 170 ] && [ "$mb" -lt 90 ] \
     || fail "sidebar: the band's subject is not over the digits at x 41: rgb $mid"
