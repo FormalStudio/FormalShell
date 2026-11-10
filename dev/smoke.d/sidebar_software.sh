@@ -136,7 +136,7 @@ until_pkgs() {
 at() {
   local origin status
   status=\$($ipc call sidebar status)
-  origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"')
+  origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r "\$layers_jq"'bar_origin')
   read -r ox oy <<< "\$origin"
   "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" \
     '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' <<< "\$status" | head -1

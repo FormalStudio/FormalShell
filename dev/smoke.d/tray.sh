@@ -69,7 +69,7 @@ STEPS
     sidebar_steps=$(cat <<STEPS
 cp "$tray_activate_path" "$tray_activate_before_path"
 $ipc call sidebar status > "$tray_sidebar_status_path" 2>&1
-origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"')
+origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r "\$layers_jq"'bar_origin')
 read -r ox oy <<< "\$origin"
 read -r tx ty <<< "\$("$jq_bin" -r --argjson ox "\$ox" --argjson oy "\$oy" '.hits[] | select(.on == "panel:trayoverflow") | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' "$tray_sidebar_status_path" | head -1)"
 to() { park "\$1" "\$2"; sleep 0.4; }

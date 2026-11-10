@@ -74,8 +74,8 @@ EOF
 # the card's own 8px above and below, moved by the layer's origin.
 sa_crop() {
   local status=$1 png=$2 out=$3 geom
-  geom=$("$jq_bin" -r --slurpfile layers "$sa_marks-layers.json" '
-    ([$layers[0][] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first) as $l
+  geom=$("$jq_bin" -r --slurpfile layers "$sa_marks-layers.json" "$layers_jq"'
+    ($layers[0] | layer("formalshell:bar") | first) as $l
     | [.hits[] | select(.on | startswith("open:"))] as $h
     | ($h | map(.y) | min) as $y0 | ($h | map(.y + .h) | max) as $y1
     | "\(.width - 8)x\($y1 - $y0 + 16)+\($l.x + 4)+\($l.y + $y0 - 8)"' "$status")

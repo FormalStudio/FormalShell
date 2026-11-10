@@ -93,7 +93,7 @@ leg_tray_overflow_drive() {
   if leg_on sidebar; then
     tail_steps=$(cat <<STEPS
 sidebar_at() { $ipc call sidebar status 2>/dev/null | "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' | head -n 1; }
-origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"')
+origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r "\$layers_jq"'bar_origin')
 read -r ox oy <<< "\$origin"
 check() { echo "\$1 open=\$($ipc call tray status 2>/dev/null | "$jq_bin" -c '.overflow.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$tray_overflow_clicks_path"; }
 park \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check clicked-open
@@ -223,7 +223,7 @@ leg_tray_overflow_assert() {
   if [ "$open" != "true" ]; then
     fail "panel toggle trayoverflow did not open the second bar, got: $(cat "$tray_overflow_open_path")"
   fi
-  panels=$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:panel")] | length' "$tray_overflow_layers_path" 2>/dev/null)
+  panels=$("$jq_bin" -r "$layers_jq"'layer("formalshell:panel") | length' "$tray_overflow_layers_path" 2>/dev/null)
   echo "panel layers while the second bar is open: $panels"
   if [ "${panels:-0}" -lt 1 ]; then
     fail "the second bar reported itself open with no formalshell:panel layer mapped"

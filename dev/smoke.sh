@@ -1065,13 +1065,19 @@ colour_px() {
   "$convert_bin" "$1" ${crop[@]+"${crop[@]}"} -fuzz "$3" -fill black +opaque "$2" -fill white -opaque "$2" -format '%[fx:mean*w*h]' info: 2>/dev/null | awk '{ printf "%d", $1 }'
 }
 
+# jq over `hyprctl -j layers`, which nests every surface under its monitor
+# and level: `layers` all of them in one list, `layer($ns)` the ones in a
+# namespace, `layer_on($o; $ns)` those on output $o, and `bar_origin` the
+# bar layer's "x y". "$jq_bin" "$layers_jq"'layer("formalshell:bar") | length' <path>
+layers_jq='def layers: [.[] | .levels[]?[]?]; def layer($ns): layers | map(select(.namespace == $ns)); def layer_on($o; $ns): [.[$o].levels[]?[]? | select(.namespace == $ns)]; def bar_origin: layer("formalshell:bar") | first | "\(.x) \(.y)";'
+
 # The drive library: what drives share, sourced by each (hypr_exec_once).
 # The run's paths and every resolved *_bin first, read when a function runs,
 # so a function needing a tool needs it in the leg's leg_<n>_needs.
 {
   echo '# shellcheck shell=bash'
   echo '# Written per run by dev/smoke.sh; dev/smoke.d/README.md has the contract.'
-  for lib_var in shot_dir iso_home settings_path rig_password pw_modules_path out_scale out_w out_h $(compgen -v | grep '_bin$'); do
+  for lib_var in shot_dir iso_home settings_path rig_password pw_modules_path out_scale out_w out_h layers_jq $(compgen -v | grep '_bin$'); do
     printf '%s=%q\n' "$lib_var" "${!lib_var}"
   done
   printf 'formalshell_ipc=%q\n' "$PWD/result/bin/formalshell-ipc"
@@ -1430,10 +1436,6 @@ expect_jq() {
 # ($s, out_scale, read before any leg asserts), rounded out to whole
 # pixels. `scaled_jq` is jq with $s bound: scaled_jq -r "$geometry_jq .cardBox | geometry".
 geometry_jq='def geometry: (.x * $s | floor) as $x | (.y * $s | floor) as $y | "\(((.x + .width) * $s | ceil) - $x)x\(((.y + .height) * $s | ceil) - $y)+\($x)+\($y)";'
-# jq over `hyprctl -j layers`, which nests every surface under its monitor
-# and level: `layers` all of them in one list, `layer($ns)` the ones in a
-# namespace. "$jq_bin" "$layers_jq"'layer("formalshell:bar") | length' <path>
-layers_jq='def layers: [.[] | .levels[]?[]?]; def layer($ns): layers | map(select(.namespace == $ns));'
 scaled_jq() {
   "$jq_bin" --argjson s "${out_scale:-1}" "$@"
 }

@@ -54,7 +54,7 @@ leg_config_reload_drive() {
 # One box for the formalshell:bar layer, or empty while it has not mapped.
 bar_box() {
   "$hyprctl_bin" -j layers 2>/dev/null \\
-    | "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\\(.x) \\(.y) \\(.w) \\(.h)"' 2>/dev/null \\
+    | "$jq_bin" -r "\$layers_jq"'layer("formalshell:bar") | first | "\\(.x) \\(.y) \\(.w) \\(.h)"' 2>/dev/null \\
     | grep -v null
 }
 

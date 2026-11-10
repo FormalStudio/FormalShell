@@ -40,7 +40,7 @@ leg_hotcorner_drive() {
 # A leg before this one may end on removing an output of its own, which
 # reaches the shell after hyprctl has answered: the corners settle on three
 # once the shell has handled it.
-until_jq 5 "$hotcorner_layers_path" '[.[] | .levels[]?[]? | select(.namespace == "formalshell:hotcorner")] | length == 3' "$hyprctl_bin" -j layers
+until_jq 5 "$hotcorner_layers_path" "\$layers_jq"'layer("formalshell:hotcorner") | length == 3' "$hyprctl_bin" -j layers
 # Hyprland lays outputs out in logical pixels: the first one's width over
 # its scale.
 width=\$("$hyprctl_bin" -j monitors | "$jq_bin" '.[0] | .width / .scale | round')
@@ -79,7 +79,7 @@ leg_hotcorner_assert() {
   fi
   [ -s "$hotcorner_pair_path" ] || fail "no layer dump with the second output up"
   local corners
-  corners=$("$jq_bin" -c --arg second "$hotcorner_second" '[to_entries[] | .key as $m | .value.levels[]?[]? | select(.namespace == "formalshell:hotcorner") | {m: (if $m == $second then "second" else "first" end), x, y}]' "$hotcorner_pair_path")
+  corners=$("$jq_bin" -c --arg second "$hotcorner_second" "$layers_jq"'[keys[] as $m | layer_on($m; "formalshell:hotcorner")[] | {m: (if $m == $second then "second" else "first" end), x, y}]' "$hotcorner_pair_path")
   echo "hot corners with the second output up: $corners"
   [ "$("$jq_bin" '[.[] | select(.m == "first")] | length' <<< "$corners")" = 3 ] || fail "the first output lost a corner of its own beside the second: $corners"
   [ "$("$jq_bin" '[.[] | select(.m == "second")] | length' <<< "$corners")" = 1 ] || fail "the second output carries a corner on the edge it shares with the first: $corners"

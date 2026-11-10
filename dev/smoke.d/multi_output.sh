@@ -134,7 +134,7 @@ sleep 3
 "$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:formalshell-multi-full' })" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
 sleep 2
-"$hyprctl_bin" -j layers | "$jq_bin" -r --arg s "$multi_output_second" '"bars under fullscreen: \([.[\$s].levels[]?[]? | select(.namespace == "formalshell:bar")] | length)"' >> "$multi_output_hidden" 2>&1
+"$hyprctl_bin" -j layers | "$jq_bin" -r --arg s "$multi_output_second" "\$layers_jq"'"bars under fullscreen: \(layer_on(\$s; "formalshell:bar") | length)"' >> "$multi_output_hidden" 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.close()" > /dev/null 2>&1
 sleep 3
@@ -181,7 +181,7 @@ EOF
 
 # Surfaces on output $2 under namespace $3 in layers dump $1.
 _multi_output_count() {
-  "$jq_bin" -r --arg o "$2" --arg ns "$3" '[.[$o].levels[]?[]? | select(.namespace == $ns)] | length' "$1" 2>/dev/null
+  "$jq_bin" -r --arg o "$2" --arg ns "$3" "$layers_jq"'layer_on($o; $ns) | length' "$1" 2>/dev/null
 }
 
 # Every output in dump $1 carrying one wallpaper, one bar and the frame zones
@@ -239,7 +239,7 @@ leg_multi_output_assert() {
   n=$(_multi_output_count "$multi_output_layers_open" "$multi_output_second" "formalshell:catcher")
   [ "$n" = 1 ] || fail "with a panel open on the first output, $multi_output_second carries $n catchers, want 1"
   [ -z "$(_multi_output_state clicked)" ] || fail "a click on $multi_output_second left the panel open: '$(_multi_output_state clicked)'"
-  n=$("$jq_bin" -r '[.[] | .levels[]?[]? | select(.namespace == "formalshell:catcher")] | length' "$multi_output_layers_closed")
+  n=$("$jq_bin" -r "$layers_jq"'layer("formalshell:catcher") | length' "$multi_output_layers_closed")
   [ "$n" = 0 ] || fail "$n catchers still mapped once the panel closed"
   echo "SMOKE_MULTI_OUTPUT_CLICK a click on $multi_output_second closed the panel open on the first output"
   [ "$(_multi_output_state reopen)" = network ] || fail "the panel did not open again on the first output: '$(_multi_output_state reopen)'"
@@ -299,7 +299,7 @@ leg_multi_output_assert() {
   echo "SMOKE_MULTI_OUTPUT_SAVER_FIRST $multi_output_saver_first_png"
   echo "SMOKE_MULTI_OUTPUT_SAVER_SECOND $multi_output_saver_second_png"
   grep -q '^status moved: .*"active":false' "$multi_output_saver" || fail "a pointer move on $multi_output_second did not dismiss the screensaver: $(grep '^status moved' "$multi_output_saver")"
-  n=$("$jq_bin" -r '[.[] | .levels[]?[]? | select(.namespace == "formalshell:screensaver")] | length' "$multi_output_saver_dismissed")
+  n=$("$jq_bin" -r "$layers_jq"'layer("formalshell:screensaver") | length' "$multi_output_saver_dismissed")
   [ "$n" = 0 ] || fail "$n screensaver layers still mapped after the pointer move dismissed it"
   echo "SMOKE_MULTI_OUTPUT_SAVER_DISMISS a pointer move on $multi_output_second took the screensaver off both outputs"
   n=$(_multi_output_count "$multi_output_layers_gone" "$("$jq_bin" -r 'keys[0]' "$multi_output_layers_gone")" "formalshell:screensaver")

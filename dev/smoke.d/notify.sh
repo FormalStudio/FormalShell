@@ -115,8 +115,8 @@ leg_notify_assert() {
   # Read as one string so a missing key cannot pass by comparing null with
   # null, and checked against the monitor dev/smoke.sh pins rather than
   # against itself, in the logical pixels hyprctl reports layers in.
-  collapsed_size=$("$jq_bin" -r '[.[].levels[]?[]? | select(.namespace == "formalshell:notifications")][0] | "\(.w)x\(.h)"' "$notify_layers_collapsed_path")
-  expanded_size=$("$jq_bin" -r '[.[].levels[]?[]? | select(.namespace == "formalshell:notifications")][0] | "\(.w)x\(.h)"' "$notify_layers_expanded_path")
+  collapsed_size=$("$jq_bin" -r "$layers_jq"'layer("formalshell:notifications")[0] | "\(.w)x\(.h)"' "$notify_layers_collapsed_path")
+  expanded_size=$("$jq_bin" -r "$layers_jq"'layer("formalshell:notifications")[0] | "\(.w)x\(.h)"' "$notify_layers_expanded_path")
   echo "toast layer size collapsed: $collapsed_size, expanded: $expanded_size"
   if [ "${collapsed_size%x*}" -ge "$logical_w" ] 2>/dev/null || [ "${collapsed_size#*x}" != "$logical_h" ]; then
     fail "the toast layer surface is not a column the output's height, got $collapsed_size"

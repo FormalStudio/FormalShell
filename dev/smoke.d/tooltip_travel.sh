@@ -68,7 +68,7 @@ EOF
 }
 
 tooltip_travel_count() {
-  "$jq_bin" '[.[].levels[]?[]? | select(.namespace == "formalshell:tooltip")] | length' "$1" 2>/dev/null
+  "$jq_bin" "$layers_jq"'layer("formalshell:tooltip") | length' "$1" 2>/dev/null
 }
 
 leg_tooltip_travel_assert() {

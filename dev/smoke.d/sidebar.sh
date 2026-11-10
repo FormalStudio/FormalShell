@@ -160,7 +160,7 @@ fi
 # layer's own origin.
 at() {
   local origin
-  origin=\$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"' "\$2")
+  origin=\$("$jq_bin" -r "\$layers_jq"'bar_origin' "\$2")
   read -r ox oy <<< "\$origin"
   "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" \
     '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' "\$3" | head -1
@@ -182,7 +182,7 @@ vclick() {
   "$python3_bin" "$sidebar_vpointer" down wait 60 up > /dev/null 2>&1
 }
 $ipc call sidebar status > "$sidebar_status_panel" 2>&1
-read -r ox oy <<< "\$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"' "$sidebar_layers_open")"
+read -r ox oy <<< "\$("$jq_bin" -r "\$layers_jq"'bar_origin' "$sidebar_layers_open")"
 mx=\$(( ox + \$("$jq_bin" '.width / 2 | floor' "$sidebar_status_panel") ))
 read -r g0 g1 <<< "\$("$jq_bin" -r -f "$sidebar_gaps_jq" "$sidebar_status_panel" | head -1)"
 read -r w0 w1 <<< "\$("$jq_bin" -r -f "$sidebar_gaps_jq" "$sidebar_status_panel" | awk '{ print \$2 - \$1, \$0 }' | sort -n | tail -1 | cut -d' ' -f2-)"
@@ -240,7 +240,7 @@ sleep 1
 # its top left corner: \$1 names the column, \$2 its status, \$3 its layers.
 cardclicks() {
   local on x y w h where px py ox oy
-  read -r ox oy <<< "\$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"' "\$3")"
+  read -r ox oy <<< "\$("$jq_bin" -r "\$layers_jq"'bar_origin' "\$3")"
   while read -r -u 3 on x y w h; do
     for where in centre corner; do
       if [ "\$where" = centre ]; then px=\$((ox + x + w / 2)) py=\$((oy + y + h / 2)); else px=\$((ox + x + 4)) py=\$((oy + y + 4)); fi
@@ -299,7 +299,7 @@ EOS
 }
 
 sidebar_box() {
-  "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y) \(.w) \(.h)"' "$1" 2>/dev/null
+  "$jq_bin" -r "$layers_jq"'layer("formalshell:bar") | first | "\(.x) \(.y) \(.w) \(.h)"' "$1" 2>/dev/null
 }
 
 leg_sidebar_assert() {
@@ -475,7 +475,7 @@ sidebar_more_assert() {
   # The card off the column's inner edge: its left edge past the column and
   # within a card's margin of it.
   local col cx
-  col=$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | .x + .w' "$sidebar_layers_open")
+  col=$("$jq_bin" -r "$layers_jq"'layer("formalshell:bar") | first | .x + .w' "$sidebar_layers_open")
   cx=$("$jq_bin" -r '.card.x' "$sidebar_more_status")
   echo "sidebar more card: x=$cx off the column's edge at $col"
   [ "$cx" -ge "$col" ] && [ "$cx" -le "$((col + 24))" ] \

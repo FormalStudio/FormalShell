@@ -144,7 +144,7 @@ _switcher_bare_address() {
 }
 
 _switcher_count_layers() {
-  "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:switcher")] | length' \
+  "$jq_bin" -r "$layers_jq"'layer("formalshell:switcher") | length' \
     "$1" 2>/dev/null
 }
 

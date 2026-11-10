@@ -307,7 +307,7 @@ brightness_step_assert() {
   for o in HDMI-A-1 eDP-1; do
     "$jq_bin" -e --arg o "$o" '.[] | select(.name == $o and .focused)' "$brightness_step_monitors-$o.json" > /dev/null \
       || fail "$o was not the focused output for its burst"
-    "$jq_bin" -e --arg o "$o" '.[$o].levels[][]? | select(.namespace == "formalshell:osd")' "$brightness_step_layers-$o.json" > /dev/null \
+    "$jq_bin" -e --arg o "$o" "$layers_jq"'layer_on($o; "formalshell:osd") | first' "$brightness_step_layers-$o.json" > /dev/null \
       || fail "the OSD was not on $o during its burst"
   done
   [ "$(grep -c '^ok$' "$brightness_step_first")" = 2 ] || fail "brightnessStep did not answer ok: $(cat "$brightness_step_first")"

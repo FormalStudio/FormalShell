@@ -85,7 +85,8 @@ contract. A leg's assert has `expect_jq <path> <claim> <what failed>
 <crop>` ("r g b"), `card_box <bare> <frame> <top> <threshold>`, `diff_px
 <a> <b> <threshold> [crop]`, `colour_px <png> <hex> <fuzz> [crop]`,
 `logical_px <n>` and `frame_logical <n>`,
-`$layers_jq` (`layers`, `layer($ns)`) beside `$geometry_jq`, and
+`$layers_jq` (`layers`, `layer($ns)`, `layer_on($o; $ns)`, `bar_origin`,
+in drives too) beside `$geometry_jq`, and
 `panel_language_assert`.
 
 A leg reaches the shell only through `$ipc call <target> <fn> [args...]`,

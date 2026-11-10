@@ -54,7 +54,7 @@ leg_switcher_off_assert() {
   # carries no layer surface to find.
   local mapped
   [ -s "$switcher_off_layers" ] || fail "no layer dump produced at $switcher_off_layers"
-  mapped=$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:switcher")] | length' \
+  mapped=$("$jq_bin" -r "$layers_jq"'layer("formalshell:switcher") | length' \
     "$switcher_off_layers" 2>/dev/null)
   echo "layers: formalshell:switcher=$mapped"
   [ "${mapped:-0}" -eq 0 ] || fail "a switcher surface is mapped with switcher.enabled false ($mapped)"
