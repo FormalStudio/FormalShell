@@ -10,18 +10,17 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::model::{self as rm, Feature, KineticOptions, KineticState, Rot, View, light};
+use super::model::{self as rm, KineticOptions, KineticState, Rot, View, light};
 use fs_media::radio::stations::Station;
 use fs_theme::color::Rgba;
 use vello_cpu::Pixmap;
 use vello_cpu::kurbo::{self, BezPath, Circle, Shape as _};
 
 use super::earth::{self as sampler, ATMOSPHERE};
+use crate::services::countries::{Countries, unit};
 use crate::services::earth::{Earth, Stats};
 use crate::scene::{Brush, VOp};
 use crate::scroll::Velocity;
-
-const COUNTRIES: &str = include_str!("../../../data/countries.json");
 
 pub const HIT_RADIUS: f64 = 12.0;
 const MINIMUM_SCALE: f64 = 0.72;
@@ -32,62 +31,6 @@ const DECELERATION: f64 = 1800.0;
 const MAXIMUM_FRAME_TIME: f64 = 0.1;
 /// QStyleHints::startDragDistance, past which a press is a drag.
 const DRAG_THRESHOLD: f64 = 10.0;
-
-struct Ring {
-    world: Vec<[f64; 3]>,
-    centroid: [f64; 3],
-}
-
-struct Outline {
-    code: String,
-    rings: Vec<Ring>,
-}
-
-/// countries.json parsed and turned into unit vectors, done once, off the
-/// UI thread.
-pub struct Countries {
-    pub features: Vec<Feature>,
-    outlines: Vec<Outline>,
-}
-
-impl std::fmt::Debug for Countries {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Countries({})", self.features.len())
-    }
-}
-
-fn unit(latitude: f64, longitude: f64) -> Option<[f64; 3]> {
-    let (lat, lon) = (latitude * PI / 180.0, longitude * PI / 180.0);
-    if !lat.is_finite() || !lon.is_finite() {
-        return None;
-    }
-    Some([lat.cos() * lon.cos(), lat.cos() * lon.sin(), lat.sin()])
-}
-
-pub fn load() -> Countries {
-    let features = rm::parse_features(COUNTRIES);
-    let mut outlines = Vec::new();
-    for f in &features {
-        let Some(polygons) = &f.polygons else { continue };
-        let mut rings = Vec::new();
-        for polygon in polygons {
-            let Some(ring) = polygon.first() else { continue };
-            let world: Vec<[f64; 3]> = ring.iter().filter_map(|p| unit(p[1], p[0])).collect();
-            if world.len() < 3 {
-                continue;
-            }
-            let c = world.iter().fold([0.0; 3], |a, p| [a[0] + p[0], a[1] + p[1], a[2] + p[2]]);
-            let length = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
-            let length = if length == 0.0 { 1.0 } else { length };
-            rings.push(Ring { world, centroid: [c[0] / length, c[1] / length, c[2] / length] });
-        }
-        if !rings.is_empty() {
-            let code = f.properties.as_ref().map(|p| p.code.to_uppercase()).unwrap_or_default();
-            outlines.push(Outline { code, rings });
-        }
-    }
-    Countries { features, outlines }
-}
 
 const SPACE: Rgba = Rgba { r: 0.018, g: 0.022, b: 0.04, a: 1.0 };
 const STAR: Rgba = Rgba { r: 0.92, g: 0.94, b: 1.0, a: 1.0 };
@@ -969,13 +912,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_outlines_load() {
-        let c = load();
-        assert!(c.features.len() > 150);
-        assert!(c.outlines.iter().any(|o| o.code == "FR"));
-    }
-
-    #[test]
     fn qt_darker_and_lighter_move_the_value() {
         let c = rgba(0.5, 0.25, 0.25, 1.0);
         let d = darker(c, 2.0);
@@ -986,7 +922,7 @@ mod tests {
 
     #[test]
     fn a_still_globe_hands_back_the_same_list() {
-        let mut g = Globe { rect: (0.0, 0.0, 400.0, 300.0), countries: Some(Arc::new(load())), ..Globe::default() };
+        let mut g = Globe { rect: (0.0, 0.0, 400.0, 300.0), countries: Some(Arc::new(crate::services::countries::load())), ..Globe::default() };
         let ink = Ink { sphere: Rgba::hex(0x101010ff), land: Rgba::hex(0x303030ff), grid: Rgba::hex(0x404040ff), outline: Rgba::hex(0x808080ff), signal: Rgba::hex(0xff8800ff), accent: Rgba::hex(0xff8800ff), radius: 8.0 };
         let a = g.paint(&ink, 1.0, 1.0);
         let b = g.paint(&ink, 1.0, 1.0);

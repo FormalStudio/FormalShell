@@ -426,7 +426,7 @@ paths = ["crates/formalshell-rs/src/services/radio.rs", "crates/formalshell-rs/s
 runs = ["--radio", "--radio-atlas"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/atlas/**", "crates/formalshell-rs/src/services/earth.rs", "crates/formalshell-rs/src/wayland/atlas.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/atlas/**", "crates/formalshell-rs/src/services/earth.rs", "crates/formalshell-rs/src/services/countries.rs", "crates/formalshell-rs/src/wayland/atlas.rs"]
 runs = ["--radio-atlas", "--radio-atlas-cold"]
 
 [[rule]]

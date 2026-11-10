@@ -193,7 +193,7 @@ pub enum Reply {
     Rows(u64, Option<Vec<Station>>),
     /// The picked list, or why picking failed.
     Random(Result<Vec<Station>, String>),
-    Countries(std::sync::Arc<crate::surfaces::atlas::globe::Countries>),
+    Countries(std::sync::Arc<super::countries::Countries>),
     Earth(Result<std::sync::Arc<super::earth::Earth>, String>),
     /// Finer satellite tiles landed for the open atlas.
     Tiles,

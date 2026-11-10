@@ -17,7 +17,6 @@ use super::App;
 use crate::services::radio::{self, Cmd, Reply};
 use crate::store::Diff;
 use crate::services::earth;
-use crate::surfaces::atlas::globe;
 use crate::surfaces::atlas::view::Shown;
 use crate::surfaces::atlas::{Atlas, Cursor, Key};
 use crate::surfaces::modal::{Modal, Part};
@@ -64,7 +63,7 @@ impl App {
             && let Some(rt) = &self.runtime
         {
             rt.service(|ctx| {
-                let job = ctx.pool().run(globe::load);
+                let job = ctx.pool().run(crate::services::countries::load);
                 let publisher = ctx.publisher().clone();
                 ctx.spawn(async move {
                     if let Some(c) = job.await {

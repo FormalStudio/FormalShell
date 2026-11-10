@@ -24,6 +24,7 @@ pub mod commands;
 pub mod compositor;
 pub mod config;
 pub mod depth;
+pub mod countries;
 pub mod cover;
 pub mod devices;
 pub mod display;

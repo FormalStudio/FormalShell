@@ -8,9 +8,9 @@
 
 use std::collections::HashMap;
 
-use serde_json::Value;
-
 use fs_media::radio::stations::Station;
+
+use crate::services::countries::{CountryProperties, Feature, Polygon, Ring};
 
 const RADIANS: f64 = std::f64::consts::PI / 180.0;
 const DEGREES: f64 = 180.0 / std::f64::consts::PI;
@@ -330,12 +330,6 @@ pub fn unproject(
     })
 }
 
-/// A ring is `[longitude, latitude]` pairs; a coordinate JS read as NaN stays
-/// NaN.
-pub(crate) type Ring = Vec<[f64; 2]>;
-/// An outer ring followed by holes.
-pub(crate) type Polygon = Vec<Ring>;
-
 pub(crate) fn point_in_ring(longitude: f64, latitude: f64, ring: &[[f64; 2]]) -> bool {
     if ring.len() < 3 {
         return false;
@@ -367,94 +361,6 @@ pub(crate) fn point_in_polygon(longitude: f64, latitude: f64, polygon: &[Ring]) 
     !polygon[1..]
         .iter()
         .any(|hole| point_in_ring(longitude, latitude, hole))
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct CountryProperties {
-    pub name: String,
-    pub code: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Feature {
-    pub properties: Option<CountryProperties>,
-    /// None for a feature with no usable geometry; a `Polygon` becomes one
-    /// entry, a `MultiPolygon` its own list.
-    pub polygons: Option<Vec<Polygon>>,
-}
-
-fn coord(v: Option<&Value>) -> f64 {
-    match v {
-        Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
-        Some(Value::String(s)) => fs_js::parse_number(s),
-        Some(Value::Null) | None => f64::NAN,
-        Some(Value::Bool(b)) => f64::from(u8::from(*b)),
-        Some(_) => f64::NAN,
-    }
-}
-
-fn parse_polygon(v: &Value) -> Polygon {
-    let Value::Array(rings) = v else {
-        return Vec::new();
-    };
-    rings
-        .iter()
-        .map(|ring| match ring {
-            Value::Array(points) => points
-                .iter()
-                .map(|p| [coord(p.get(0)), coord(p.get(1))])
-                .collect(),
-            _ => Vec::new(),
-        })
-        .collect()
-}
-
-impl Feature {
-    pub(crate) fn from_value(v: &Value) -> Option<Feature> {
-        if !v.is_object() {
-            return None;
-        }
-        let properties = v
-            .get("properties")
-            .filter(|p| p.is_object())
-            .map(|p| CountryProperties {
-                name: p
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                code: p
-                    .get("code")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-            });
-        let polygons = v.get("geometry").filter(|g| g.is_object()).and_then(|g| {
-            let coordinates = g.get("coordinates");
-            if g.get("type").and_then(Value::as_str) == Some("Polygon") {
-                return Some(vec![coordinates.map(parse_polygon).unwrap_or_default()]);
-            }
-            match coordinates {
-                Some(Value::Array(polygons)) => Some(polygons.iter().map(parse_polygon).collect()),
-                _ => None,
-            }
-        });
-        Some(Feature {
-            properties,
-            polygons,
-        })
-    }
-}
-
-/// `countries.json`'s `features` array.
-pub fn parse_features(text: &str) -> Vec<Feature> {
-    let Ok(doc) = serde_json::from_str::<Value>(text) else {
-        return Vec::new();
-    };
-    match doc.get("features") {
-        Some(Value::Array(rows)) => rows.iter().filter_map(Feature::from_value).collect(),
-        _ => Vec::new(),
-    }
 }
 
 /// Properties of the first country whose polygon holds the point.
