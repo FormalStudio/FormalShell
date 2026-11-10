@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
-# --spaces (M74): the Spaces cell's own reads, off one session with windows
+# --spaces: the Spaces cell's own reads, off one session with windows
 # on two workspaces. A sibling of --workspaces rather than more of it: that
 # leg photographs the pill's travel on a burst clock, and everything here
 # waits on agent polls and a real pointer instead, so the two timelines

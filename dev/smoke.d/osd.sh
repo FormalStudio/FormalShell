@@ -5,7 +5,7 @@
 # sampled across the travel into osd-emerge-1..N.png over a 400x90 band at
 # the bottom of the output, with a bare-desktop frame of the same band taken
 # first and the pill's resting pose at the end (osd-rest.png): the pill buds
-# off the bottom line (M57 D8), so an early frame has its ink on the output's
+# off the bottom line, so an early frame has its ink on the output's
 # very last row, and at rest it is a plain pill a screenPadding clear of it.
 # The pill is retriggered on every frame, which is what holds it up through
 # a travel many times its own 1.6s auto-hide.
@@ -27,7 +27,7 @@
 # band (`--frame --osd`), which the pill buds off the same way without
 # painting the line itself.
 #
-# Ridden by --no-morph the claim turns over (M60 T2): a popover has no line to
+# Ridden by --no-morph the claim turns over: a popover has no line to
 # come out of, so the pill fades in a few pixels under its rest and the
 # output's last row stays bare through the whole entrance. Which one runs is
 # read off `debug dump`'s `theme.morph`, not off the rider, and both are then

@@ -1,4 +1,4 @@
-//! Drives the client thread from a shell, for the NixOS test:
+//! Drives the client thread from a shell, for `dev/check.sh`:
 //!
 //! fs-audio-probe dump
 //! fs-audio-probe set-volume <node.name> <visual>

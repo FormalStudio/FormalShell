@@ -22,19 +22,19 @@ pub fn inline_count() -> usize {
     INLINE.load(Ordering::Relaxed)
 }
 
-/// Bar/tray.js `extent`: n cells and the spacing between them.
+/// n cells and the spacing between them.
 fn extent(n: usize, cell: f64, spacing: f64) -> f64 {
     if n == 0 { 0.0 } else { n as f64 * cell + (n - 1) as f64 * spacing }
 }
 
-/// Bar/tray.js `needsRoom`: whether the answer depends on a measured strip.
+/// Whether the answer depends on a measured strip.
 /// A ceiling has already decided for a tray over it, and the default, 0, is
 /// over every ceiling.
 fn needs_room(total: usize, max_visible: i64) -> bool {
     total > 0 && max_visible != 0 && !(max_visible > 0 && total as i64 > max_visible)
 }
 
-/// Bar/tray.js `fit`: the whole tray inline or none of it.
+/// The whole tray inline or none of it.
 fn fits(total: usize, budget: f64, cell: f64, spacing: f64, max_visible: i64) -> bool {
     needs_room(total, max_visible) && (!(cell > 0.0) || extent(total, cell, spacing) <= budget)
 }

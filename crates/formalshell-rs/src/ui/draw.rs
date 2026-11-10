@@ -396,7 +396,7 @@ fn segment_spans(cx: &mut Cx, options: &[String], width: f64) -> Vec<(f64, f64)>
         .collect()
 }
 
-/// keys.js `cap`: the text on the cap, or the icon an arrow takes.
+/// The text on the cap, or the icon an arrow takes.
 pub fn keycap(key: &str) -> (String, &'static str) {
     let raw = key.trim();
     let low = raw.to_lowercase();
@@ -440,7 +440,7 @@ pub fn keycap(key: &str) -> (String, &'static str) {
     (raw.into(), "")
 }
 
-/// keys.js `split`: a chord as the keys it presses.
+/// A chord as the keys it presses.
 pub fn split_chord(chord: &str) -> Vec<String> {
     let s = chord.trim();
     if s.is_empty() {
@@ -907,7 +907,6 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     }
 }
 
-/// A picture centred in `r`.
 fn centred(p: &mut crate::paint::Painter, image: &crate::scene::Bitmap, r: IRect, alpha: f32) {
     let (w, h) = image.size();
     p.image(image, (r.x + (r.w - w) / 2, r.y + (r.h - h) / 2), alpha);
@@ -1215,7 +1214,6 @@ fn cx_border(t: &fs_theme::theme::Theme) -> i32 {
     t.border_width.round().max(1.0) as i32
 }
 
-/// The widest whole label.
 fn group_natural(cx: &mut Cx, options: &[super::el::Opt]) -> f64 {
     let s = cx.theme.space.clone();
     options.iter().map(|o| button_metrics(cx, &o.label, &o.icon, s.sm).0).fold(s.control_height - s.xs * 2.0, f64::max)
@@ -1510,7 +1508,7 @@ fn marquee(cx: &mut Cx, r: Rect, text: &str, ink: Ink, path: &str) {
     cx.done(last);
 }
 
-/// Monitor/history.js `points`: newest at the right edge, one step per
+/// Newest at the right edge, one step per
 /// sample of `capacity`, the value read against `ceiling` from the bottom.
 fn points(values: &[f64], w: f64, h: f64, ceiling: f64, capacity: usize) -> Vec<(f64, f64)> {
     if values.is_empty() || capacity < 2 {
@@ -1678,7 +1676,7 @@ fn sparkline(cx: &mut Cx, r: Rect, series: &super::el::Series, path: &str) {
 }
 
 // Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
-/// Pond's installs/Indicator.qml: 16px across, a 2.5px groove at a fifth of
+/// Pond's install indicator: 16px across, a 2.5px groove at a fifth of
 /// the ink, the arc from twelve o'clock in the ink, Pond's check once done
 /// and a bold `!` once failed (`title`, the table's nearest to Pond's 16px).
 const INDICATOR: f64 = 16.0;

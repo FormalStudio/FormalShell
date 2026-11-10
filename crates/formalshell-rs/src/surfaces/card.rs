@@ -2,8 +2,8 @@
 //! `motion.morph` it is the joined shape:
 //! Presence's emerge on the theme's `emerge` clock, the let-go on
 //! `spatialFast`, Deform's springs, Shoulders' outline cut at the line, the
-//! walls a side too close to the line's end runs out to (M57 D2) and the
-//! bud a card hanging off another card's far edge is clamped into (M57 D3).
+//! walls a side too close to the line's end runs out to and the
+//! bud a card hanging off another card's far edge is clamped into.
 //! With it off it is a plain card on its casts,
 //! fading on the table's `emerge` clock over an `md` drop out of its cell.
 //!

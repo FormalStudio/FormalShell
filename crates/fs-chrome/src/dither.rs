@@ -1,13 +1,12 @@
 //! The palette engine behind the "retro" dither pass.
 //!
-//! The pass used to posterize each RGB channel independently onto a few
-//! evenly spaced steps with a Bayer bias tipping a channel across a step
-//! boundary. A flat region whose color sits near a step boundary then
-//! dithered forever (a monotone wallpaper speckled end to end), and the two
-//! colors being mixed were a full step apart, so every dot was maximum
-//! contrast. A period-correct image instead carries a small palette chosen
-//! for that image, and dithers only between entries that are already
-//! neighbors:
+//! Posterizing each RGB channel independently onto a few evenly spaced steps
+//! with a Bayer bias tipping a channel across a step boundary fails twice. A
+//! flat region whose color sits near a step boundary dithers forever (a
+//! monotone wallpaper speckled end to end), and the two colors being mixed
+//! are a full step apart, so every dot is maximum contrast. A period-correct
+//! image instead carries a small palette chosen for that image, and dithers
+//! only between entries that are already neighbors:
 //!
 //! - [`palette`] derives up to `max_colors` colors from the image itself by
 //!   median cut. A solid or near-solid source collapses to a single entry,

@@ -405,7 +405,6 @@ impl Bar {
         }
     }
 
-    /// The strip's length along its own edge.
     pub fn length(&self) -> i32 {
         let s = self.strip();
         if self.vertical() { s.h } else { s.w }
@@ -828,7 +827,7 @@ impl Bar {
     }
 
     /// The two free labels share the room the cells leave
-    /// (layout.js's labelBudgets); a moved budget measures its cell again.
+    /// (`labelCap`, `labelMin`); a moved budget measures its cell again.
     fn refit(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
         let (inset, gap) = (self.style.inset, self.style.gap);
         let Some((strip, pass)) = self.strip_pass(store, now) else { return };
@@ -1057,7 +1056,6 @@ impl Bar {
         }
     }
 
-    /// A marquee has moved since it was painted.
     pub fn marquee_due(&mut self, kit: &Kit, now: Instant) -> bool {
         let visible = !self.hidden;
         let Body::Strip(strip) = &mut self.body else { return false };

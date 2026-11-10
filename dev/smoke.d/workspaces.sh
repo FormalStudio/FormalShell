@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --workspaces proves the bar's workspace indicator is ONE pill that travels
-# rather than a fill each slot owns (M48). Since Spaces (M74) the slot on
+# rather than a fill each slot owns. With Spaces the slot on
 # screen also opens wide for its icons, so between two settled frames the
 # pill and the two slots it left and reached are what moves.
 #
@@ -21,8 +21,8 @@
 # of these tokens is 0 and all four frames would be the settled cell exactly.
 #
 # The burst frames also carry the picture the assertions do not claim: the
-# pill's two edges run `emphasized`, the trailing one over twice that clock
-# (M54 D2), so between roughly a quarter and a whole clock past the switch
+# pill's two edges run `emphasized`, the trailing one over twice that clock,
+# so between roughly a quarter and a whole clock past the switch
 # the pill is one shape stretched across both slots rather than a pill at
 # either end. That is what the crops are for reading by eye. It is left out
 # of the assertions on purpose: a nested software-rendered session cannot
@@ -42,14 +42,14 @@ workspaces_crop_dir="$shot_dir/workspaces-crops"
 # the launcher cell beside it: five persistent slots with one of them open,
 # short of the active-window cell after it.
 workspaces_crop_geometry="150x24+52+8"
-# The pill's own clock (Theme.motion.emphasized, M54 D2/D11) and the delay
+# The pill's own clock (Theme.motion.emphasized) and the delay
 # this rig costs between the dispatch and the shell's first frame carrying
 # it, both in milliseconds. Every burst frame is that delay plus a fraction
 # of the clock, so moving the token moves the sampling with it instead of
 # leaving the burst pinned to a duration that has gone.
 #
 # The fractions straddle the widest part of the stretch, which is earlier
-# and narrower than the clock alone suggests: M3's emphasized curve puts
+# and narrower than the clock alone suggests: the emphasized curve puts
 # 86% of the travel in its first third, so the leading edge is nearly home
 # by 0.3 of a clock while the trailing edge, on twice that, is barely a
 # third of the way. The gap between them peaks around a quarter of a clock

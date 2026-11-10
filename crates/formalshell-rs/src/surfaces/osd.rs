@@ -39,7 +39,7 @@ pub enum Reading {
 }
 
 impl Reading {
-    /// Which icon the pill draws (Osd/icon.js). A muted sink keeps its
+    /// Which icon the pill draws. A muted sink keeps its
     /// pre-mute percentage on the readout but draws `volume-x`: the icon
     /// answers "will I hear this" and the number answers "where is the
     /// slider".

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --spectrum: the media panel's own spectrum band (spec D6, M55 Task 4), with
+# --spectrum: the media panel's own spectrum band, with
 # no `visualizer` cell anywhere in bar.layout, so the process gate's other
 # consumer (`root._visibleBars > 0`) is off and only `panelWants` can start
 # cava. A real tone through a real MPRIS player, visualizer.sh's own fixture,
@@ -35,7 +35,7 @@ leg_spectrum_fixture() {
     -map 0:a -map 1:0 -ac 2 -t 25 \
     -metadata "title=$spectrum_track_title" -metadata "artist=$spectrum_track_artist" \
     -c:a flac -c:v png -disposition:v attached_pic -y "$spectrum_track_path"
-  # No `visualizer` anywhere in bar.layout (D6): the bar cell's own
+  # No `visualizer` anywhere in bar.layout: the bar cell's own
   # `_visibleBars` gate stays 0 all run, so a cava child appearing at all is
   # `panelWants` alone doing it.
   settings_pin '.bar.layout.center = ["clock", "nowPlaying"]'

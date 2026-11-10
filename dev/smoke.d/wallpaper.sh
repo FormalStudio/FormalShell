@@ -6,7 +6,7 @@
 # dither assertions read opposite things and neither can be made off the
 # other's source.
 #
-# The dither is opt-in since M45, so the default run writes no
+# The dither is opt-in, so the default run writes no
 # `wallpaper.dither` key at all and this leg asserts the plain image reached
 # the screen. SMOKE_WALLPAPER_DITHER=1 turns the opt-in on for one run and
 # flips the assertion with it, so both sides of the setting are provable
@@ -186,7 +186,7 @@ leg_wallpaper_assert() {
   echo "SMOKE_WALLPAPER_SOLID $wallpaper_solid_path"
 
   # Half two, and the half that reads the setting: a full-width strip of the
-  # gradient crosses the whole ramp. With the pass off (M45's default, and
+  # gradient crosses the whole ramp. With the pass off (the default, and
   # what this run's settings.json leaves unset) the strip has to carry far
   # more colors than any derived palette is allowed, which is what proves the
   # plain image reached the screen. With SMOKE_WALLPAPER_DITHER=1 the same

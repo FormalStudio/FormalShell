@@ -201,7 +201,7 @@ mod tests {
     use super::*;
     use crate::bar::layout::{collapsed_names, resolve};
 
-    /// The JS answered "" for no panel.
+    /// "" for no panel.
     fn at(bar: Option<Value>, n: i64) -> &'static str {
         panel_at(&resolve(bar.as_ref(), &[]), n).map_or("", PanelId::as_str)
     }

@@ -34,7 +34,6 @@ fn text_el(s: impl Into<String>, size: Type, weight: Weight, mono: bool, ink: In
     El::new(Kind::Text { text: s.into(), font: Font { size, weight, mono }, ink, elide: false })
 }
 
-/// Body words.
 pub fn text(s: impl Into<String>) -> El {
     text_el(s, Type::Body, Weight::Normal, false, Ink::Fg)
 }
@@ -98,7 +97,6 @@ pub fn section_label(s: &Space, text: &str, count: Option<usize>, inset: bool) -
     if inset { el.pad_start(s.control_padding_x) } else { el }
 }
 
-/// A `Cell` around one child.
 pub fn cell(child: El) -> El {
     El::new(Kind::Cell { state: CellState::default(), interactive: false, child: Box::new(child) })
 }

@@ -6,7 +6,7 @@
 # toggle hub's Do Not Disturb, Caffeinate and Overnight rows each flip their
 # service and leave the hub open with the row ticked. Then the reminder
 # level: Set Reminder opens the launcher's own input step, "10m launcher
-# smoke" typed on real keys sets one reminder, and Clear Reminders drops it.
+# check" typed on real keys sets one reminder, and Clear Reminders drops it.
 #
 # HDR is left out (the rig's EDID-less output has none to toggle, which
 # --hdr proves), and so is the lock row (--lock owns a locked session).
@@ -60,7 +60,6 @@ call menu activate "\$idx" > /dev/null 2>&1
 sleep 1.5
 call reminder status > "$p-reminder-cleared.json" 2>&1
 call menu close > /dev/null 2>&1
-# Leave the session as it was found.
 call caffeinate disable > /dev/null 2>&1
 call overnight disable > /dev/null 2>&1
 EOF

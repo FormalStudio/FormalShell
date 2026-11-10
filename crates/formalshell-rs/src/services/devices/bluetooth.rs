@@ -88,7 +88,6 @@ impl Bluetooth {
     }
 }
 
-/// The adapter state's name.
 fn state_word(s: AdapterState) -> &'static str {
     match s {
         AdapterState::Disabled => "Disabled",

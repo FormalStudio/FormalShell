@@ -20,8 +20,6 @@ fn lines(text: &str) -> impl Iterator<Item = &str> {
     text.split('\n').filter(|l| !l.is_empty())
 }
 
-// ---- /proc/stat ---------------------------------------------------------
-
 /// One record per `cpu`/`cpuN` line. `total` follows the common
 /// user+nice+system+idle+iowait+irq+softirq+steal formula (guest/guest_nice
 /// are already folded into user/nice by the kernel, so adding them again
@@ -124,8 +122,6 @@ pub fn cpu_delta(prev: Option<&[CpuRecord]>, next: Option<&[CpuRecord]>) -> Opti
     Some(CpuDelta { aggregate, cores })
 }
 
-// ---- /proc/meminfo --------------------------------------------------------
-
 /// Bytes throughout (the section carries kB), plus a used fraction derived
 /// from MemAvailable, the kernel's own estimate of reclaimable memory,
 /// closer to "what a user would call used" than MemTotal-MemFree.
@@ -162,8 +158,6 @@ pub fn parse_mem(text: &str) -> Option<Mem> {
     })
 }
 
-// ---- /proc/loadavg --------------------------------------------------------
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Load {
     pub load1: f64,
@@ -191,8 +185,6 @@ pub fn parse_load(text: &str) -> Option<Load> {
     })
 }
 
-// ---- /proc/uptime ----------------------------------------------------------
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Uptime {
     pub uptime_seconds: f64,
@@ -208,8 +200,6 @@ pub fn parse_uptime(text: &str) -> Option<Uptime> {
     let (up, idle) = (js::parse_number(parts[0]), js::parse_number(parts[1]));
     (up.is_finite() && idle.is_finite()).then_some(Uptime { uptime_seconds: up, idle_seconds: idle })
 }
-
-// ---- /proc/net/dev ---------------------------------------------------------
 
 /// Rx/tx byte counters per interface; everything else /proc/net/dev carries
 /// is dropped at the parse boundary.
@@ -274,8 +264,6 @@ pub fn net_delta(prev: Option<&[NetRow]>, next: Option<&[NetRow]>, elapsed_ms: f
     )
 }
 
-// ---- hwmon temperatures -----------------------------------------------
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Temp {
     pub chip: String,
@@ -309,8 +297,6 @@ pub fn parse_temps(text: &str) -> Vec<Temp> {
     }
     rows
 }
-
-// ---- hwmon fans -------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fan {
@@ -349,8 +335,6 @@ pub fn parse_fans(text: &str) -> Vec<Fan> {
     }
     rows
 }
-
-// ---- disk usage -------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Disk {
@@ -392,7 +376,7 @@ pub fn parse_disk(text: &str) -> Vec<Disk> {
                 order.push(row.source.clone());
                 by_source.insert(row.source.clone(), row);
             }
-            // JS compares string length in UTF-16 units.
+            // Length counts UTF-16 units.
             Some(existing) if row.mount.encode_utf16().count() < existing.mount.encode_utf16().count() => {
                 by_source.insert(row.source.clone(), row);
             }
@@ -419,7 +403,7 @@ mod tests {
         assert!((a - b).abs() < 0.0001, "{a} vs {b}");
     }
 
-    // ---- splitSections ----
+    // split_sections
 
     #[test]
     fn split_sections_finds_every_marker_on_g815() {
@@ -450,7 +434,7 @@ mod tests {
         assert!(g["mem"].contains("MemTotal"));
     }
 
-    // ---- parseStat / cpuDelta ----
+    // parse_stat / cpu_delta
 
     #[test]
     fn parse_stat_reads_the_aggregate_and_per_core_lines() {
@@ -495,7 +479,7 @@ mod tests {
         assert_eq!(cpu_delta(Some(&same), Some(&same)), None);
     }
 
-    // ---- parseMem ----
+    // parse_mem
 
     #[test]
     fn parse_mem_g815_real_numbers() {
@@ -521,7 +505,7 @@ mod tests {
         assert_eq!(parse_mem(""), None);
     }
 
-    // ---- parseLoad / parseUptime ----
+    // parse_load / parse_uptime
 
     #[test]
     fn parse_load_g815() {
@@ -551,7 +535,7 @@ mod tests {
         assert_eq!(parse_uptime(""), None);
     }
 
-    // ---- parseNet / netDelta ----
+    // parse_net / net_delta
 
     #[test]
     fn parse_net_excludes_loopback() {
@@ -606,7 +590,7 @@ mod tests {
         assert_eq!(delta.len(), 0);
     }
 
-    // ---- parseTemps ----
+    // parse_temps
 
     #[test]
     fn parse_temps_converts_millidegrees_and_keeps_the_chip_name() {
@@ -631,7 +615,7 @@ mod tests {
         assert_eq!(parse_temps(&vm()["temp"]).len(), 0);
     }
 
-    // ---- parseFans ----
+    // parse_fans
 
     #[test]
     fn parse_fans_reads_rpm_and_keeps_the_chip_name() {
@@ -670,7 +654,7 @@ mod tests {
         assert_eq!(parse_fans(&vm()["fan"]).len(), 0);
     }
 
-    // ---- parseDisk ----
+    // parse_disk
 
     #[test]
     fn parse_disk_reads_source_mount_size_used_and_fraction() {

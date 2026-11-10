@@ -89,7 +89,6 @@ pub struct Due {
     pub refresh: bool,
 }
 
-/// What one layout pass reads.
 pub struct Input<'a> {
     pub theme: &'a Theme,
     pub output: (f64, f64),
@@ -101,7 +100,6 @@ pub struct Input<'a> {
     pub alpha: f32,
 }
 
-/// The sizes the switcher draws at.
 pub struct Metrics {
     pub thumb_h: f64,
     pub caption_icon: f64,

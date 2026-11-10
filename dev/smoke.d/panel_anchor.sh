@@ -1,11 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --panel-anchor proves the one thing `panel toggle` gained in M53: an open
+# --panel-anchor proves the one thing `panel toggle` does: an open
 # with no click behind it still hangs its card under the cell that owns the
 # panel, instead of at the end of the bar where an anchorless open puts it.
 #
 # The default right region cannot show that. Every panel-bearing cell there
-# sits within half a card's width of the screen edge, so geometry.js's own
+# sits within half a card's width of the screen edge, so the geometry
 # clamp lands a cell-anchored frame on exactly the x an anchorless one gets,
 # and the two frames are pixel-identical. This leg therefore puts the audio
 # cell in the LEFT region, where the anchored card lands against the left

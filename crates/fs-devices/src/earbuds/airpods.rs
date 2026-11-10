@@ -2,7 +2,7 @@
 //! daemon's status.json in, the daemon's control-socket verbs out. Talks only
 //! to the wire shape the daemon publishes; nothing here is ported from that
 //! project's own (GPL) source, this is an independent reimplementation of the
-//! documented contract. Ported from `shell/Earbuds/airpods.js`.
+//! documented contract.
 //!
 //! `left`/`right`/`case` are absent from the daemon's JSON entirely until a
 //! battery packet has arrived, never present with `available:false`, so

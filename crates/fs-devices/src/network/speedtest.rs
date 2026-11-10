@@ -1,7 +1,7 @@
 //! Pure math and parsing for the network speed test: flat ledger rows, no
 //! gauges. The panel drives real `ip route get`, `cat
 //! /sys/class/net/.../statistics/*` and `curl` processes and feeds their
-//! output through these helpers. Ported from `shell/Network/speedtest.js`.
+//! output through these helpers.
 
 use std::sync::LazyLock;
 

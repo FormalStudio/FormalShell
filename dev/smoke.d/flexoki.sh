@@ -7,9 +7,8 @@
 #
 # What makes the assertions real: Flexoki green (#879a39) and yellow
 # (#d0a215) cannot come out of a Material scheme seeded on Flexoki blue at
-# all, which is what the pin used to hand every template. Neither can the
-# base tones the surfaces take. So a probe carrying them can only have been
-# rewritten before matugen read it.
+# all, nor can the base tones the surfaces take. So a probe carrying them
+# can only have been rewritten before matugen read it.
 #
 # The post_hook is here for the same reason: matugen renders a hook string
 # through its own engine, so the aura/dualsense/ghostty-reload hooks a real

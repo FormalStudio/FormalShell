@@ -16,8 +16,8 @@
 # pointer has promoted that bar) has to close it and open audio there.
 # A fullscreen window there then unmaps that bar, and once it closes the
 # bar's new window has to draw every cell nothing changed with the pointer
-# kept off it: a new window used to draw only what changed since the old
-# one, so cells stayed blank until a hover repainted them (g815,
+# kept off it: a new window that drew only what changed since the old
+# one left cells blank until a hover repainted them (g815,
 # 2026-10-24).
 #
 # The screensaver next, with the pointer resting on the second output: a

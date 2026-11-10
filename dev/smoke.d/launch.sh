@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --launch proves launch feedback (`services/launch.rs`, Plan.md phase 6):
+# --launch proves launch feedback (`services/launch.rs`):
 # a desktop entry the shell spawns is a running `launch:<id>` item in
 # Activity until a window of it maps, and one that maps none reads failed
 # once fs_activity's LAUNCH_MS (15s) has passed.

@@ -3,7 +3,7 @@
 # --bar-title focuses a window whose title is far longer than any strip, in
 # a strip crowded with six `custom:` CommandModules on the right, and reads
 # the result off `bar room`: the title's budget is the room
-# its region actually has (Bar/layout.js's labelBudgets), the label is drawn
+# its region actually has, the label is drawn
 # at exactly that budget with the marquee running, and no two cells on the
 # strip intersect, none is cut by its region's clip, none runs past the
 # strip's own end insets and no region hid a cell to make room. "At its
@@ -202,7 +202,7 @@ leg_bar_title_assert() {
     "strip slack "*|"title ceiling "*|"gap to the centre "*) echo "title cell at its budget: $verdict" ;;
     *) fail "the title cell stops short of the room it was given: $verdict" ;;
   esac
-  # The two labels sharing the strip (Bar/layout.js's labelBudgets).
+  # The two labels sharing the strip.
   if ! grep -qF "\"title\":\"$bar_title_track\"" "$bar_title_status_path" 2>/dev/null; then
     fail "media status never showed the bar-title track, got: $(cat "$bar_title_status_path" 2>/dev/null)"
   fi

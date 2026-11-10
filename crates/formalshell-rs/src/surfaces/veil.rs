@@ -151,7 +151,6 @@ impl Veil<PixelSurface> {
         self.surface.configure(width, height);
     }
 
-    /// The surface's frame callback.
     pub fn landed(&mut self) {
         self.surface.landed();
         self.shown_end |= self.committed_end;
@@ -218,7 +217,6 @@ impl Veil {
         self.surface.configure(w, h);
     }
 
-    /// The surface's frame callback.
     pub fn landed(&mut self, now: Instant) {
         self.surface.landed(now);
         self.shown_end |= self.committed_end;

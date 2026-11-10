@@ -30,8 +30,6 @@ fn string_or_empty(v: Option<&Value>) -> String {
     v.and_then(Value::as_str).unwrap_or("").to_owned()
 }
 
-// ---- Claude (Anthropic OAuth) -----------------------------------------------
-
 #[derive(Clone, PartialEq)]
 pub struct Credentials {
     pub access_token: String,
@@ -245,8 +243,6 @@ pub fn format_reset(now_ms: f64, resets_at_iso: &str) -> String {
     }
 }
 
-// ---- Claude token refresh (`claude auth status --json`) ---------------------
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefreshState {
     Idle,
@@ -280,8 +276,6 @@ pub fn refresh_hint(state: RefreshState) -> &'static str {
         RefreshState::Idle | RefreshState::Ok => "Run claude to refresh",
     }
 }
-
-// ---- Codex (`codex app-server` JSON-RPC) ------------------------------------
 
 /// The `result` of one line of the app-server's stdout, already framed as
 /// newline-delimited JSON (no Content-Length headers).

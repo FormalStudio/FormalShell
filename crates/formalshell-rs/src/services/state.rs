@@ -223,7 +223,7 @@ impl Data {
     }
 
     /// A key missing or of the wrong type takes its default, and a key the
-    /// shell does not know is dropped on the next write, as `JsonAdapter` does.
+    /// shell does not know is dropped on the next write.
     fn parse(text: &str) -> Result<Data, serde_json::Error> {
         let value: Value = serde_json::from_str(text)?;
         if !value.is_object() {
@@ -254,7 +254,7 @@ impl Data {
         Ok(data)
     }
 
-    /// Four-space indent and sorted keys, the shape `JsonAdapter` writes.
+    /// Four-space indent and sorted keys.
     fn to_text(&self) -> String {
         let mut doc = serde_json::to_value(self).expect("state.json's records serialize");
         sort_keys(&mut doc);

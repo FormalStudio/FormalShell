@@ -4,9 +4,8 @@
 # chevron opens, quick settings, OPENS quiet. The card is built fresh on
 # every open, so its info tiles' cells read themselves for the first time
 # while it is arriving; the chevron's old second bar grew every one of them
-# from nothing and inflated the card around the lot, on every single open
-# (owner, 2026-09-09: "every time there's an animation moving the icons and
-# text, which is annoying"). The card's own entrance stays; what must not be
+# from nothing and inflated the card around the lot, on every single open.
+# The card's own entrance stays; what must not be
 # there is a second movement inside it.
 #
 # Same fixture as --chevron, so the card carries the same governed cells,
@@ -22,7 +21,7 @@
 #          entrance catches it.
 #
 #          "the card it settles on" is the settled silhouette less its two
-#          fillets (M54 D6): a joined card carries a concave shoulder a
+#          fillets: a joined card carries a concave shoulder a
 #          `radiusXl` outside each of its sides, in the first `radiusXl`
 #          under the bar's line, and those are the last part of it to come
 #          out from behind that line. So a frame caught mid-entrance is the
@@ -44,7 +43,7 @@
 # ⚠️ The width claim is a guard here, not the proof. This rig commits the
 # card's first frame ~130ms behind the ipc call and cannot sample faster than
 # ~60ms even capturing the band alone (`grim -g`, a tenth of the pixels, runs
-# no quicker than a full frame did). The entrance is `spatial` (M54 D2), long
+# no quicker than a full frame did). The entrance is `spatial`, long
 # enough that several samples land inside it, but a card growing around its
 # cells is still only measurably narrow while its cells are measuring
 # themselves, which is the first frame or two of it.
@@ -71,8 +70,8 @@ chevron_quiet_band_region="0,42 1920x110"
 chevron_quiet_cycles=3
 # Long enough for the card to be committed and sampled a few times, and for
 # the exit to finish before the next open, and no longer: the burst has to
-# cover every cycle. Both are the entrance's own clock (Theme.motion.spatial,
-# M54 D2) plus this rig's map, rounded up.
+# cover every cycle. Both are the entrance's own clock (Theme.motion.spatial)
+# plus this rig's map, rounded up.
 chevron_quiet_open_hold_ms=800
 chevron_quiet_shut_hold=0.6
 # One capture's own length, cut off the tail of every opening window so a

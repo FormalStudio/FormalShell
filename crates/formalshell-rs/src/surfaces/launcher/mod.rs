@@ -184,7 +184,6 @@ pub struct Model {
     empty: Option<Node>,
     searching: bool,
     key: String,
-    // The cursor (M72 T1).
     pub cursor: usize,
     pub cursor_id: String,
     placed: bool,

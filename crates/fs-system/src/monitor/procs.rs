@@ -26,8 +26,6 @@ fn lines(text: &str) -> impl Iterator<Item = &str> {
     text.split('\n').filter(|l| !l.is_empty())
 }
 
-// ---- sections -----------------------------------------------------------
-
 static CPU_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^cpu\s+(.*)$").unwrap());
 
 /// Total jiffies across all CPUs off the aggregate `cpu` line, which is what
@@ -61,8 +59,6 @@ pub fn page_size(text: &str) -> f64 {
     let value = js::parse_number(text);
     if value.is_finite() && value >= 1024.0 { value } else { 4096.0 }
 }
-
-// ---- /proc/PID/stat -----------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcRecord {
@@ -128,8 +124,6 @@ pub fn parse_cmdlines(text: &str) -> HashMap<String, String> {
     }
     map
 }
-
-// ---- rows ---------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcRow {
@@ -197,8 +191,6 @@ pub fn proc_delta(prev: Option<&[ProcRecord]>, next: &[ProcRecord], total_delta:
         .collect()
 }
 
-// ---- filter and sort ----------------------------------------------------
-
 /// Case-insensitive substring over the name and the argv, plus an exact pid
 /// match so a pid pasted in from a log finds its row. Matching the argv is
 /// what makes "python" find a script the kernel named after its interpreter
@@ -231,7 +223,7 @@ pub fn sort_rows(rows: &[ProcRow], mode: &str) -> Vec<ProcRow> {
             "cpu" => b.cpu_fraction.unwrap_or(-1.0) - a.cpu_fraction.unwrap_or(-1.0),
             "mem" => b.mem_bytes - a.mem_bytes,
             "name" => {
-                // JS compares strings by UTF-16 code unit.
+                // Strings compare by UTF-16 code unit.
                 let (x, y) = (a.name.to_lowercase(), b.name.to_lowercase());
                 match x.encode_utf16().cmp(y.encode_utf16()) {
                     std::cmp::Ordering::Less => -1.0,
@@ -245,8 +237,6 @@ pub fn sort_rows(rows: &[ProcRow], mode: &str) -> Vec<ProcRow> {
     });
     out
 }
-
-// ---- actions ------------------------------------------------------------
 
 /// The signals a process row can send. TERM asks, KILL takes, HUP is what a
 /// daemon reloads on, and INT is what Ctrl-C would have sent had the process
@@ -353,7 +343,7 @@ mod tests {
         )
     }
 
-    // ---- sections ----
+    // sections
 
     #[test]
     fn split_sections_finds_every_process_marker() {
@@ -387,7 +377,7 @@ mod tests {
         assert_eq!(page_size("16384\n"), 16384.0);
     }
 
-    // ---- /proc/PID/stat ----
+    // /proc/PID/stat
 
     #[test]
     fn parse_procs_reads_every_row() {
@@ -424,7 +414,7 @@ mod tests {
         assert_eq!(parse_procs("garbage\n\n").len(), 0);
     }
 
-    // ---- cmdlines ----
+    // cmdlines
 
     #[test]
     fn parse_cmdlines_keys_by_pid_from_the_path() {
@@ -437,7 +427,7 @@ mod tests {
         assert_eq!(parse_cmdlines(&a()["cmdline"]).get("103"), None);
     }
 
-    // ---- procDelta ----
+    // proc_delta
 
     #[test]
     fn first_sample_measures_nothing_rather_than_zero() {
@@ -492,7 +482,7 @@ mod tests {
         assert!(!row_for(&rows, BUSY_PID).unwrap().kernel);
     }
 
-    // ---- filter ----
+    // filter
 
     #[test]
     fn filter_matches_the_process_name() {
@@ -526,7 +516,7 @@ mod tests {
         assert_eq!(filter_rows(&rows(), "DBUS").len(), 1);
     }
 
-    // ---- sort ----
+    // sort
 
     #[test]
     fn cpu_sort_leads_with_the_busiest_process() {
@@ -589,7 +579,7 @@ mod tests {
         assert_eq!(sort_rows(&rows(), "nonsense")[0].pid, BUSY_PID);
     }
 
-    // ---- actions ----
+    // actions
 
     #[test]
     fn only_the_four_offered_signals_are_accepted() {

@@ -37,7 +37,7 @@ TABLE_FAVORITES = 4
 TABLE_SERVERS = 6
 
 
-# ---------------- protobuf ----------------
+# protobuf
 
 def varint(n):
     out = bytearray()
@@ -119,7 +119,7 @@ def lyrics_message(lines):
     return out
 
 
-# ---------------- HTTP/2 ----------------
+# HTTP/2
 
 def frame(kind, flags, stream, payload=b""):
     return struct.pack(">I", len(payload))[1:] + bytes([kind, flags]) + struct.pack(">I", stream) + payload
@@ -387,7 +387,7 @@ def daemon(args):
         threading.Thread(target=d.serve, args=(conn,), daemon=True).start()
 
 
-# ---------------- MPRIS ----------------
+# MPRIS
 
 MPRIS_XML = """<node>
   <interface name="org.mpris.MediaPlayer2">

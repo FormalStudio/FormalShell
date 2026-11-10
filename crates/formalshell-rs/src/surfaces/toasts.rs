@@ -208,7 +208,6 @@ impl Slot {
         self.moving(now) || self.content.running(now) || self.reveal.running(now) || self.visible.running(now) || self.ui_animating || self.rim.running(now)
     }
 
-    /// Faded out and no longer anything to draw.
     fn gone(&self, now: Instant) -> bool {
         self.departing && !self.presence.running(now)
     }

@@ -1,4 +1,4 @@
-//! The two clock families as `Anim` runs them (tokens.js `MOTION_BASE`,
+//! The two clock families as `Anim` runs them (`MOTION_BASE`,
 //! `MOTION_CURVES`), a `Behavior`'s retarget, and the velocity deform
 //! with its spring.
 
@@ -59,7 +59,7 @@ pub enum Kind {
     EffectsFast,
     Effects,
     EffectsSlow,
-    /// M3's two-segment curve, the workspace pill's alone.
+    /// Material 3's two-segment curve, the workspace pill's alone.
     Emphasized,
 }
 

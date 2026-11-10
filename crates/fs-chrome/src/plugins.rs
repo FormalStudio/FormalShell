@@ -239,7 +239,6 @@ fn is_str(v: Option<&Value>, want: &str) -> bool {
     v.and_then(Value::as_str) == Some(want)
 }
 
-/// One record in, one plugin (or none) plus its warnings out.
 pub fn validate_record(record: &Record) -> (Option<Plugin>, Vec<String>) {
     let mut warnings = Vec::new();
     let prefix = format!("plugins/{}: ", record.id);
@@ -436,7 +435,6 @@ pub fn validate_record(record: &Record) -> (Option<Plugin>, Vec<String>) {
     (Some(plugin), warnings)
 }
 
-/// The one function the plugin service calls.
 pub fn resolve(records: Vec<Record>, disabled: &[String]) -> Resolved {
     let mut plugins = Vec::new();
     let mut warnings = Vec::new();

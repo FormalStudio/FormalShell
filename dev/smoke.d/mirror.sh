@@ -198,7 +198,6 @@ leg_mirror_assert() {
   [ "$sd" -ge 40 ] || fail "the IR feed is flat (luma sd $sd)"
   [ "$sat" -le 5 ] || fail "the IR feed is not grey (saturation $sat)"
 
-  # The IR camera draws through the lit-frame filter, the colour one never.
   jq -e '.irFilter == false' "$mirror_dir/status-first.json" > /dev/null || fail "the colour camera drew through the IR filter"
   jq -e '.irFilter and .picture != null' "$mirror_dir/status-second.json" > /dev/null \
     || fail "the IR camera did not draw through its lit-frame filter: $(cat "$mirror_dir/status-second.json")"

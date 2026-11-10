@@ -1,4 +1,4 @@
-//! The JavaScript semantics the ported logic leans on: `String(x)`,
+//! The JavaScript semantics the logic here leans on: `String(x)`,
 //! `Number(x)`, `Math.round`, `toFixed`, `parseInt`, `trim`, `localeCompare`.
 //! Output strings reach IPC and the UI byte for byte, so these match the
 //! engine rather than Rust's neighbours (`f64::round` rounds half away from

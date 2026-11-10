@@ -1,6 +1,5 @@
 //! Pure model for the Tailscale panel and widget: parses `tailscale status
-//! --json` output into the shape the panel renders directly. Ported from
-//! `shell/Tailscale/model.js`.
+//! --json` output into the shape the panel renders directly.
 //!
 //! Field names verified against a real `tailscale status --json` run
 //! (BackendState, Self.HostName, Self.TailscaleIPs,

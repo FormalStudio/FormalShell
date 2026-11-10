@@ -1,8 +1,8 @@
 //! The dev sheet, every shared widget drawn
 //! against the live theme. A panel as wide as the output, opened by the
 //! `gallery` target rather than `panel`. The controls column takes the
-//! place of an auth prompt sample, which lands with the lock
-//! (R6), so every control a panel builds from is on the sheet.
+//! place of an auth prompt sample, so every control a panel
+//! builds from is on the sheet.
 
 use fs_theme::palette::ColorRole;
 use fs_theme::style::Role;

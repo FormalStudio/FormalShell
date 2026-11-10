@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --tray-overflow reads back where the tray lives with nothing configured at
 # all, which since 2026-08-28 is the second bar: the strip carries the dots
-# toggle and no icons, whatever room it has (Bar/tray.js's `maxVisible` 0
+# toggle and no icons, whatever room it has (`maxVisible` 0
 # default). What has to be true is that the tray moved WHOLE, nothing of it
 # left on the strip but the toggle and every registered item reachable in the
 # second bar, and that the bar itself opens as a real panel, the
@@ -16,14 +16,14 @@
 # (docs/superpowers/specs/2026-11-04-quick-settings.md §7, §11): the tile
 # reads the tray's item count, and a real click on it hands the card over
 # to this second bar. The governed tray drawing nothing until it has
-# measured shipped once (owner, 2026-08-28: "I just opened the chevron and
-# its not there"), with `tray status` reporting the collapse correctly the
+# measured shipped once (the chevron opened with no tray in it), with
+# `tray status` reporting the collapse correctly the
 # whole time, which is why the claim here is the tile and a picture rather
 # than a reply.
 #
 # Last, settings.json rewritten to put the dots alone on the strip beside
-# the clock, and the second bar under a real pointer behaving like a panel
-# (owner, 2026-10-09): a click on the desktop shuts it, and a click on the
+# the clock, and the second bar under a real pointer behaving like a panel:
+# a click on the desktop shuts it, and a click on the
 # clock shuts it and opens the calendar in its place.
 #
 # Ridden by --sidebar there is no strip and no chevron: the tray button on
@@ -32,13 +32,13 @@
 # landing on the time card's calendar. Then the second bar opened once more
 # by a real click and a sticky toast sent under it: the toast column is the
 # bottom-left one beside the column, the same stretch the card hangs in
-# (owner, 2026-10-30: an Activity toast drawn over the bar), so the card's
+# (an Activity toast must not draw over the bar), so the card's
 # rest rect and every toast card's rect in `debug dump` share x and must
 # never intersect.
 #
 # Fixture 6 registers twice, two processes sharing one `Id` the way two
-# copies of one app do (owner, 2026-11-02: two Beepers left an empty cell
-# in the second bar, both cells keyed by that `Id`): the second bar has to
+# copies of one app do (two Beeper windows, both cells keyed by that `Id`,
+# must leave no empty cell in the second bar): the second bar has to
 # draw both pictures.
 #
 # It owns bar.layout, so it does not combine with --bar-layout, --bar-position
@@ -243,9 +243,8 @@ leg_tray_overflow_assert() {
   panel_language_assert trayoverflow "$tray_overflow_bar_path" "$("$jq_bin" -c '.panel.rest' "$tray_overflow_bar_dump_path")" no "$tray_overflow_bar_dump_path" rowInset
   panel_language_verdict
   # An item's own menu belongs to the bar its cell is in, so opening one
-  # leaves that bar where it was. It used to take the bar down with it, which
-  # is the gesture cancelling itself (owner, 2026-08-28: "right clicking a
-  # tray item closes the bar").
+  # leaves that bar where it was. Closing the bar with it
+  # is the gesture cancelling itself.
   if ! grep -q '^ok$' "$tray_overflow_menu_reply_path" 2>/dev/null; then
     fail "tray menu was refused inside the second bar, got: $(cat "$tray_overflow_menu_reply_path" 2>/dev/null)"
   fi
@@ -254,7 +253,7 @@ leg_tray_overflow_assert() {
   fi
   # Where the two sit is the frame's to say: both hang off the same bar edge
   # by the same rule, so a menu that did not stand clear of its owner drew
-  # straight over it (owner, 2026-08-28). No layer box can show that, they are
+  # straight over it. No layer box can show that, they are
   # both full-output surfaces.
   if [ ! -f "$tray_overflow_menu_shot_path" ]; then
     fail "no menu-over-the-second-bar screenshot produced"

@@ -54,7 +54,6 @@ impl Popup {
         Rect::new(frame.x as f64 + pad, frame.y as f64 + pad, (frame.x + frame.w) as f64 - pad, (frame.y + frame.h) as f64 - pad)
     }
 
-    /// Lays `root` on the card's content rect.
     pub fn draw(&mut self, root: &El, theme: &Theme, kit: &mut Kit, now: Instant) -> Drawn {
         let inner = self.inner(theme);
         self.draw_in(root, inner, theme, kit, now)

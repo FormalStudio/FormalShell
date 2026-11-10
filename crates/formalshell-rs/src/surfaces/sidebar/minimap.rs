@@ -1,5 +1,5 @@
 // Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
-//! The Spaces minimap, Pond's (`minimap/Map.qml`): a row per workspace on
+//! The Spaces minimap, Pond's: a row per workspace on
 //! the sidebar's output, its windows three across in screen order, each in
 //! an outlined circle, an empty slot a dot, and one empty row under the
 //! last for a new workspace. The current row stands on a plate; the rows'

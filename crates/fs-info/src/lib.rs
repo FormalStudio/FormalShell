@@ -3,7 +3,7 @@
 //! data out, no IO.
 //!
 //! Months handed to and returned from this crate are 1-based (chrono's
-//! convention), unlike JS's 0-based months.
+//! convention).
 
 pub mod about;
 pub mod agents;

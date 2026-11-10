@@ -54,7 +54,7 @@ pub enum OutputsState {
 
 pub struct State {
     pub snapshot: Snapshot,
-    /// The last window the compositor reported focused, for focus.js's hold.
+    /// The last window the compositor reported focused, for the focus hold.
     pub remembered_focused_id: WindowId,
     pub outputs: Vec<Output>,
     pub outputs_state: OutputsState,
@@ -147,7 +147,7 @@ impl State {
     }
 }
 
-/// focus.js `held`: the compositor's focused window, or across a gap where
+/// The compositor's focused window, or across a gap where
 /// it reports none (a shell surface took the keyboard) the last one it did,
 /// while that window is still open on the focused workspace.
 fn held_focus(focused: &WindowId, remembered: &WindowId, windows: &[Window], focused_workspace: &WorkspaceId) -> WindowId {
@@ -226,7 +226,6 @@ pub enum Command {
     /// The config read again, for the files it pulls the colours and chrome
     /// from, which Hyprland does not watch. Dropped while one is running.
     Reload,
-    /// Ends the session.
     Exit,
 }
 

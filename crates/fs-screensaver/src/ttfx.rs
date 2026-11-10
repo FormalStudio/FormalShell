@@ -56,7 +56,7 @@ pub fn reroll_effect_name(requested: &str, previous_effect: &str, seed: i64) -> 
     pool[(seed.unsigned_abs() % pool.len() as u64) as usize].to_string()
 }
 
-// ---- wire protocol -------------------------------------------------------
+// wire protocol
 // ttfx writes one full canvas repaint per frame to stdout: `rows` lines of
 // `columns` cells, separated by \n, with truecolor SGR runs inside them.
 // Between two frames it emits restore-cursor, save-cursor, cursor-up-rows,
@@ -142,7 +142,7 @@ pub fn command(opts: &Opts) -> Vec<String> {
     cmd
 }
 
-// ---- frame parsing -------------------------------------------------------
+// frame parsing
 
 /// A stretch of consecutive characters sharing a color, one draw call on the
 /// canvas. `color` is "" for ttfx's default foreground (an SGR reset) and

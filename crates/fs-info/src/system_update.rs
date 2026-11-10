@@ -332,11 +332,9 @@ pub enum PollState {
     NoFlake,
     /// The directory has no readable flake.lock.
     NoLock,
-    /// Probes in flight.
     Checking,
     /// Every probe failed to reach its forge.
     Offline,
-    /// Probes finished.
     Ok,
 }
 

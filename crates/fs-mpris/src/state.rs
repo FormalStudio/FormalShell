@@ -60,7 +60,6 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    /// Artists joined with a comma and a space.
     pub fn artist(&self) -> String {
         self.artists.join(", ")
     }
@@ -125,7 +124,6 @@ impl PlayerState {
         self.status == PlaybackStatus::Playing
     }
 
-    /// The capability of the verb the toggle would issue next.
     pub fn can_toggle_playing(&self) -> bool {
         if self.is_playing() { self.can_pause } else { self.can_play }
     }

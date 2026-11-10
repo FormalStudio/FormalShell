@@ -29,8 +29,8 @@
 #     moves each card's fill with it. Both kept the old fill under the new
 #     ink, so every word on them vanished.
 #   - A wallpaper change or a theme mode flip never blanks the bar: every
-#     frame of the strip through the recolour carries cells. The bar used to
-#     rebuild every cell and grow each one out of nothing.
+#     frame of the strip through the recolour carries cells. A bar that
+#     rebuilt every cell would grow each one out of nothing.
 #
 # Nothing backed by the system bus or the owner's audio is touched: on a
 # real host the nested shell shares them, so the network, bluetooth, audio

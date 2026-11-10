@@ -252,8 +252,6 @@ impl Slot {
         (t >= hold).then(|| (t - hold) / 1000.0 * kit.look.marquee_px)
     }
 
-    /// The marquee moved (or started or stopped) since the label was last
-    /// painted.
     pub fn marquee_due(&mut self, kit: &Kit, visible: bool, now: Instant) -> bool {
         !self.rect.is_empty() && self.scroll(kit, visible, now) != self.painted_scroll
     }

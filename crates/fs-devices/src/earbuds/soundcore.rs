@@ -1,8 +1,7 @@
 //! Soundcore adapter for the earbuds model, over the `openscq30` CLI
 //! (github.com/Oppzippy/OpenSCQ30, cli/src/cli.rs and cli/src/cli/device.rs
 //! at v2.12.0). Only the documented `--json` outputs are read, since the
-//! plain-text ones are not stable across versions. Ported from
-//! `shell/Earbuds/soundcore.js`.
+//! plain-text ones are not stable across versions.
 //!
 //! A device appears only when it is in openscq30's own paired list (a MAC and
 //! a model id it was told about, not the Bluetooth pairing) and BlueZ reports

@@ -1,7 +1,6 @@
 //! Pure payload and matrix logic for the network panel's Wi-Fi QR share
 //! (omarchy's `bin/omarchy-network-qr` as testable code: its escaping rules,
 //! its security-branch choice, and its ASCII-pair collapse, nothing else).
-//! Ported from `shell/Network/wifiqr.js`.
 //!
 //! The passphrase passes through [`build_payload`]. It stays an argument and a
 //! return value: this module never logs it, never keeps it in a static, and

@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Hyprland smoke rig (M41): the shell's runtime verification loop on the
+# Hyprland smoke rig: the shell's runtime verification loop on the
 # backend the redesign ships. Builds the shell, brings up an isolated
 # Hyprland session, drives the legs a run asked for inside it, screenshots
 # with grim, tears the session down, then asserts each leg's own evidence.
 #
 # One file per leg under dev/smoke.d/, sourced from here, each owning its
-# flag, fixture, drive script and assertions: dump, menu, notify, center,
-# osd, panel (and tooltip, which rides on it), panel_at, console, wallpaper,
-# lock, picker, clipboard, monitor, processes, hotcorner. What a leg proves
-# is in its own header; dev/smoke.d/README.md is the file contract.
+# flag, fixture, drive script and assertions. What a leg proves is in its
+# own header; dev/smoke.d/README.md is the file contract.
 #
 # Two ways the session comes up, decided by what the machine can actually
 # do (render_node_present and vkms_card_device below), never by a flag:
@@ -26,7 +24,7 @@
 #           can never take a real GPU out from under a real session, and
 #           opening it unprivileged needs seatd.
 #
-# D-Bus isolation (M5 hard rule): the whole
+# D-Bus isolation: the whole
 # Hyprland invocation runs under `dbus-run-session --`, giving the shell's
 # NotificationServer a private session bus instead of the host's. The host's
 # is owned by DMS, and acquiring org.freedesktop.Notifications on it would
@@ -449,9 +447,8 @@ need_pipewire() {
   need_tool pw_loopback_bin pw-loopback pipewire-tools
 }
 
-# No nix fallback: a pkexec built as a plain derivation has no setuid bit
-# (the store never preserves one), so it cannot escalate at all. This one has
-# to already be the wrapper-owned binary a real polkit host installs.
+# No fallback pkexec: one without the setuid bit cannot escalate at all, so
+# this has to already be the wrapper-owned binary a real polkit host installs.
 need_pkexec() {
   if [ -z "${pkexec_bin:-}" ]; then
     if command -v pkexec >/dev/null 2>&1; then
@@ -461,8 +458,8 @@ need_pkexec() {
       exit 1
     fi
     # pkexec resets PATH to its own compiled-in secure default before exec'ing
-    # the target, which has no notion of the nix store, so a bare `true`
-    # 127s. `type -P`, not `command -v`: bash's own builtin shadows the real
+    # the target, so a bare `true` 127s. `type -P`, not `command -v`: bash's
+    # own builtin shadows the real
     # binary and command -v returns the bare word, which 127s just the same.
     polkit_true_bin=$(type -P true)
   fi

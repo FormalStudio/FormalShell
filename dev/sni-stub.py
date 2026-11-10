@@ -130,7 +130,7 @@ MENU_INTERFACE_XML = """<node>
   </interface>
 </node>"""
 
-# A fixed fixture tree exercising the M32 plan's own list: a plain entry, a
+# A fixed fixture tree: a plain entry, a
 # disabled one, a checked one, a separator, and a submenu with one child.
 # Ids are the dbusmenu item ids GetLayout/Event address; 0 is the root and
 # is never itself a visible row.

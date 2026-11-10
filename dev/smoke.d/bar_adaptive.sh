@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --bar-adaptive: the wingpanel band deciding its own paint off the
-# wallpaper under it (M60 T3, the 2026-09-17 spec's Part 2). Four wallpapers
+# wallpaper under it. Four wallpapers
 # in one session, each set over IPC, and for each of them both halves of the
 # claim: the paint the shell says it settled on (`bar paint`, the three
 # numbers behind it included) and the band as drawn, read off a patch of the

@@ -923,8 +923,8 @@ impl App {
         view::controls(self.lock_media().is_some(), &self.lock_buttons())
     }
 
-    /// The transport's and the buttons' keys first (Lock/model.js's
-    /// `transportKey` through the field's own key filter, over both), then
+    /// The transport's and the buttons' keys first (through the field's own
+    /// key filter, over both), then
     /// the field's.
     fn transport_key(&mut self, event: &KeyEvent) -> bool {
         let controls = self.lock_controls();
@@ -1359,7 +1359,7 @@ impl App {
         }
     }
 
-    /// `lock status`'s object (Lock/lock.js's `status` plus `beforeSleep`).
+    /// `lock status`'s object (plus `beforeSleep`).
     pub fn lock_status(&self) -> Value {
         let external = self.lock_external();
         let mut state = if external {
@@ -1431,7 +1431,7 @@ impl App {
         self.check_sleep_release();
     }
 
-    /// Lock/lock.js's `sleepRelease`, polled every 50ms until it answers.
+    /// The sleep release, polled every 50ms until it answers.
     fn check_sleep_release(&mut self) {
         let Some(started) = self.lock.sleep.started else { return };
         let elapsed = started.elapsed().as_millis() as u64;

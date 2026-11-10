@@ -8,7 +8,7 @@
 //! Randomness is injected as `rng: FnMut() -> f64` (a value in `[0, 1)`, the
 //! shape of `Math.random`) so the shuffles stay pure.
 //!
-//! Station fields JS left `null` or absent read as `""`/`0` here (a cliamp
+//! Station fields that are `null` or absent read as `""`/`0` here (a cliamp
 //! channel has no country or bitrate); every consumer treats the two alike.
 
 use std::collections::HashSet;

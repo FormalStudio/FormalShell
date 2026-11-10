@@ -4,7 +4,7 @@
 //! base16 slots a terminal palette is built from.
 //!
 //! One table, because a Flexoki-pinned wallpaper has to reach three sinks that
-//! used to disagree. theme.json and the Hyprland colours files take the shadcn
+//! must agree. theme.json and the Hyprland colours files take the shadcn
 //! view directly; every template (the shell's GTK/Qt ones and the user's own)
 //! is written against matugen's role names, so a pinned run rewrites those
 //! names to [`material_roles`] values before matugen ever sees the file.

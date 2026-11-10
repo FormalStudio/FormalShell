@@ -1,7 +1,7 @@
 // Row icon names. The drift guard reads the shipped default-menu.jsonc rather
 // than a fixture: a route added without an `iconName` renders with no icon
-// at all. Resolving the names in the Lucide and Nerd sets belongs to the
-// theme icon table's port.
+// at all. Resolving the names in the Lucide and Nerd sets is the
+// theme icon table's job.
 
 mod common;
 

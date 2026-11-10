@@ -320,7 +320,6 @@ pub struct Overview {
     nodes: Vec<NodeId>,
 }
 
-/// What one draw reads.
 pub struct Input<'a> {
     pub theme: &'a Theme,
     /// The output's wallpaper as drawn, or a flat colour.

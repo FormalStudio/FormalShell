@@ -1,4 +1,4 @@
-// Loads the real vendored dataset (shell/Menu/emoji.json), not a fixture: the
+// Loads the real vendored dataset (data/emoji.json), not a fixture: the
 // point is proving the generated file parses and carries the mappings the
 // emoji route searches.
 

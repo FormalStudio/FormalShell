@@ -8,8 +8,8 @@
 # pick lands, menu-search.png is the same field with a query in it under no
 # heading, and menu-emoji.png is the grid.
 #
-# The chrome that a frame cannot state is asserted off `menu status` instead
-# (M48): the field's placeholder, the headings, the column count and the
+# The chrome that a frame cannot state is asserted off `menu status` instead:
+# the field's placeholder, the headings, the column count and the
 # ids. The root at rest lists one heading and nothing else (launcher spec
 # §1): `Modes`, the root routes in declaration order, while fewer than three
 # picks resolve, then `Recent`, the best picks of any kind. state.json is
@@ -18,10 +18,10 @@
 # by search and Enter (the fixture's Exec is `true`) makes three, and the
 # next open is `Recent` with exactly those three apps.
 #
-# Every status read here also checks the cursor against the view (M72 T1):
+# Every status read here also checks the cursor against the view:
 # `cursorId` is the row Enter acts on, and `viewCursor` is where the live
 # view itself holds its current item and which row id its own model has
-# there. A re-rank used to move the view's current item without moving the
+# there. A re-rank could move the view's current item without moving the
 # cursor, which put the fill on one row and Enter on another.
 #
 # The field is typed into on real keys: a word, Ctrl+A selecting all of it

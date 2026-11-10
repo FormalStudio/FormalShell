@@ -1,7 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --r0-measure <seconds>: R0's numbers (plans/2026-10-06-r0-rust-spike.md
-# Task 4) on one timeline, so runs on different hosts compare. It records and asserts nothing about pass or fail: the
+# --r0-measure <seconds>: R0's numbers on one timeline, so runs on different hosts compare. It records and asserts nothing about pass or fail: the
 # budgets are read off its output by hand.
 #
 # The bar is pinned to workspaces on the left and the clock in the centre,

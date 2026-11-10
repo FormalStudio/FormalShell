@@ -125,7 +125,7 @@ leg_lock_assert() {
     grep -q "lock: login keyring left locked" "$shell_log_path" \
       || fail "no 'login keyring left locked' in the shell log: $(grep -E 'lock:' "$shell_log_path" | tail -8)"
   fi
-  # The swappable-locker half (M45 D2): this run writes no `lock.command`, so
+  # The swappable-locker half: this run writes no `lock.command`, so
   # the built-in surface is the one that came up and `external` has to say so.
   if ! grep -q '"external":false' "$lock_status_path"; then
     fail "lock status did not report external:false with no lock.command set. Got: $(cat "$lock_status_path")"

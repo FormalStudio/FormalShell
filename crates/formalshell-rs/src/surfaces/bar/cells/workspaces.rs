@@ -1,9 +1,8 @@
 //! Spaces: one chip per workspace on this output, each its
 //! ordinal followed by the icons of the windows on it, the focused chip
-//! under one pill that travels (Bar/workspaces.js picks the chips and what
-//! each lists). T3 Code's agent state rides its window's icon as a badge:
-//! a spinner while one works, a pulse while one waits on the user, a check
-//! once one is done. The hover preview waits for the thumbnails (R8).
+//! under one pill that travels. T3 Code's agent state rides its window's
+//! icon as a badge: a spinner while one works, a pulse while one waits on
+//! the user, a check once one is done. The hover preview waits for the thumbnails.
 
 use std::collections::HashMap;
 use std::time::Instant;

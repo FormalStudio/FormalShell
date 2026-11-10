@@ -226,7 +226,6 @@ fn battery(store: &Store) -> Option<(&'static str, String)> {
     Some((icon, format!("{}%", b.level.rounded())))
 }
 
-/// Every audio device of one direction: node name and label.
 fn audio_devices(store: &Store, sinks: bool) -> Vec<(&str, &str)> {
     store.audio.devices.iter().filter(|d| d.2 == sinks).map(|d| (d.0.as_str(), d.1.as_str())).collect()
 }
@@ -965,7 +964,7 @@ impl Panel for QuickSettings {
         // Tab section it belongs to.
         let mut parts: Vec<(Vec<&str>, El)> = Vec::new();
         let mut part_section: Vec<usize> = Vec::new();
-        // GNOME's two spacers (`system.js` 275-292): after the battery on a
+        // GNOME's two spacers after the battery on a
         // laptop, between Settings and Lock on a desktop.
         let laptop = system.iter().any(|t| t.id == "battery");
         let mut row = Vec::new();

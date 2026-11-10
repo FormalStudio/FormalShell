@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
 # --sidebar-activity: the Activity card under `layout: sidebar`, Pond's
-# installs card (shell/installs/SidebarCard.qml). dev/fspec-activity-stub.py
+# installs card. dev/fspec-activity-stub.py
 # plays three fspec operations on the session's real stream: an install of
 # Firefox held at 40%, an install of "Visual Studio Code Insiders" held at
 # resolving (no measure) and an apply of a package build whose ring follows

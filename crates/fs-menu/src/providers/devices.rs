@@ -219,7 +219,6 @@ pub struct AudioDevice {
     pub is_sink: bool,
 }
 
-/// Audio route.
 pub fn audio_rows(devices: &[AudioDevice]) -> Vec<Node> {
     if devices.is_empty() {
         return vec![Node::note("audio.unavailable", "No audio devices")];

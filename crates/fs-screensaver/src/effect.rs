@@ -74,7 +74,7 @@ fn shown(ch: char) -> Cell {
     Cell { ch, opacity: 1.0 }
 }
 
-// ---- decrypt: static noise resolving to the banner, no direction --------
+// decrypt: static noise resolving to the banner, no direction
 // Every non-space cell flickers through the noise charset until its own
 // (hashed, scattered) reveal frame, then holds its target forever.
 
@@ -93,7 +93,7 @@ fn decrypt_cell(col: i64, row: i64, frame: i64, banner: &Banner) -> Cell {
     Cell { ch: noise_char(col * 13 + row * 29 + frame * 5), opacity: 0.85 }
 }
 
-// ---- rain: falling trail that locks each cell once it passes over -------
+// rain: falling trail that locks each cell once it passes over
 // A per-column head falls monotonically (no wrap: this one must finish)
 // leaving a short fading trail; once the head passes a row for the first
 // time that cell locks to its target for good.
@@ -143,7 +143,7 @@ fn rain_convergence_frame(banner: &Banner) -> i64 {
     worst + RAIN_TRAIL + 2
 }
 
-// ---- expand: reveal opens outward from the centre -----------------------
+// expand: reveal opens outward from the centre
 // A cell is either not-yet-open (blank) or open (its target): the open
 // region is a diamond growing outward from the banner's centre, doubling
 // row-distance to compensate for glyphs being taller than wide.
@@ -178,7 +178,7 @@ fn expand_convergence_frame(banner: &Banner) -> i64 {
     max_dist.ceil() as i64 * EXPAND_SPEED + 1
 }
 
-// ---- slide: rows wipe in from alternating edges --------------------------
+// slide: rows wipe in from alternating edges
 // Even rows sweep open left to right, odd rows right to left, rows staggered
 // so the banner assembles in a visible zigzag.
 
@@ -203,7 +203,7 @@ fn slide_convergence_frame(banner: &Banner) -> i64 {
     (banner.height as i64 - 1) * SLIDE_ROW_STAGGER + (banner.width as i64 - 1) * SLIDE_STEP + 1
 }
 
-// ---- scatter: individual glyphs pop in at scattered moments --------------
+// scatter: individual glyphs pop in at scattered moments
 // Unlike decrypt's dense noise, scatter's canvas is mostly blank: each cell
 // lands at its own hashed arrival frame, fading in over a short final
 // approach instead of flickering through unrelated glyphs first.
@@ -227,7 +227,7 @@ fn scatter_cell(col: i64, row: i64, frame: i64, banner: &Banner) -> Cell {
     BLANK
 }
 
-// ---- registry -------------------------------------------------------------
+// registry
 
 type CellFn = fn(i64, i64, i64, &Banner) -> Cell;
 
@@ -279,7 +279,7 @@ pub fn frame_state(name: &str, frame: i64, banner: &Banner) -> Vec<Vec<Cell>> {
         .collect()
 }
 
-// ---- continuous cycling ---------------------------------------------------
+// continuous cycling
 // After an effect converges the controller holds the finished banner for
 // screensaver.holdSeconds, then rerolls and animates again, indefinitely.
 
@@ -301,7 +301,7 @@ pub fn reroll_effect_name(requested: &str, previous_effect: &str, seed: i64) -> 
     pool[(seed.unsigned_abs() % pool.len() as u64) as usize].to_string()
 }
 
-// ---- frame-pin resolution --------------------------------------------------
+// frame-pin resolution
 // The decision logic behind the deterministic frame pin: which counter
 // renders, whether the free-running timer ticks, and what the pin resolves
 // to across an active/inactive transition.

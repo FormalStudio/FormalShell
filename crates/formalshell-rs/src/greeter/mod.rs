@@ -7,8 +7,8 @@
 //! surface takes the keyboard, so there is one field to type into.
 //!
 //! Nothing here reads state.json: it would be the `greeter` system user's.
-//! The backdrop is `wallpaper` in the greeter's state dir, a copy the
-//! NixOS module mirrors from a user's own, else `greeter.wallpaper`. The
+//! The backdrop is `wallpaper` in the greeter's state dir, a copy
+//! mirrored from a user's own, else `greeter.wallpaper`. The
 //! theme is settings.json's keys over theme.json's palette, each falling
 //! back the way the shell's own do when absent.
 //!
@@ -73,7 +73,6 @@ use sessions::Session;
 use crate::services::users::{self as accounts, User};
 use crate::surfaces::login::{self, Backdrop, Card, Controls, Menu, Prompt, Under, View};
 
-/// AuthPrompt's `unavailableText` with no socket to talk to.
 const NO_SOCKET: &str = "No greetd socket to talk to";
 
 /// The fade in over the splash, and how long it waits for the wallpaper
@@ -153,7 +152,6 @@ struct Greeter {
     entered: Option<u32>,
 }
 
-/// What the socket thread hands back.
 enum Reply {
     Response(Response),
     Broken(String),
@@ -537,7 +535,6 @@ impl Greeter {
         }
     }
 
-    /// The clock redraws on the minute.
     fn arm_clock(&mut self) {
         let now = Local::now();
         let at = Instant::now() + Duration::from_secs(60 - now.second() as u64) - Duration::from_nanos(now.nanosecond() as u64 % 1_000_000_000);

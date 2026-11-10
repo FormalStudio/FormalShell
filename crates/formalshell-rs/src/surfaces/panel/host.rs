@@ -683,7 +683,7 @@ impl Host {
         self.cursor.take(self.module.as_mut(), &self.body.stops);
         self.cursor.sync(&self.body.stops);
 
-        // One halo for the whole list (M53 D4), travelling on a key step,
+        // One halo for the whole list travelling on a key step,
         // with the cursor's fill riding it.
         let stop = self.cursor.key.as_ref().filter(|_| self.cursor.active && self.cursor.keyed).and_then(|k| self.body.stops.iter().find(|s| &s.key == k)).cloned();
         let cr = theme.cursor_ring();
@@ -728,7 +728,7 @@ impl Host {
         self.wake.is_some_and(|w| w <= now)
     }
 
-    /// cursor.js `follow`: the smallest scroll that shows the cursor row.
+    /// The smallest scroll that shows the cursor row.
     fn follow(&mut self, theme: &Theme) {
         let Some(st) = self.body.stops.get(self.cursor.index) else { return };
         // A floating list keeps its own rows in view.
@@ -795,7 +795,6 @@ impl Host {
         fx.outs()
     }
 
-    /// One key.
     pub fn key(&mut self, name: Key, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
         if !self.open {
             return Vec::new();
@@ -999,7 +998,7 @@ impl Host {
     }
 }
 
-/// cursor.js `move`: the first key only reveals the cursor where it sits;
+/// The first key only reveals the cursor where it sits;
 /// above one column the stops are a grid, vertical steps a whole row and
 /// horizontal stops at the ends of its own.
 pub fn step(index: usize, count: usize, active: bool, dx: i32, dy: i32, columns: usize) -> usize {

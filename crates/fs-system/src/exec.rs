@@ -16,7 +16,7 @@ fn drop_codes(exec: &str) -> String {
             out.push(c);
             continue;
         }
-        // `.` in the JS pattern skips line terminators.
+        // `.` skips line terminators.
         match chars.peek().copied() {
             Some(n) if !matches!(n, '\n' | '\r' | '\u{2028}' | '\u{2029}') => {
                 chars.next();

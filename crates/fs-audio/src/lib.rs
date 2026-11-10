@@ -56,7 +56,6 @@ impl Visual {
         Self(linear.0.cbrt())
     }
 
-    /// The value written back to the server.
     pub fn to_linear(self) -> Linear {
         Linear(self.0 * self.0 * self.0)
     }
@@ -81,9 +80,8 @@ impl Linear {
     }
 }
 
-/// The volume setter: every channel scaled by the
-/// same factor so their balance holds, or all set flat when the average was
-/// zero. Negative results clamp to zero, as `setVolumes` does.
+/// Every channel scaled by the same factor so their balance holds, or all set
+/// flat when the average was zero. Negative results clamp to zero.
 pub(crate) fn scaled_volumes(current: &[Visual], average: Visual) -> Vec<Visual> {
     let (old, average) = (average_volume(current).0, average.0);
     let mul = if old == 0.0 { 0.0 } else { average / old };
@@ -101,7 +99,7 @@ pub(crate) fn average_volume(volumes: &[Visual]) -> Visual {
     Visual(volumes.iter().map(|v| v.0).sum::<f32>() / volumes.len() as f32)
 }
 
-/// `PwNodeType`'s flags, read off `media.class`.
+/// Node flags, read off `media.class`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct NodeType {
     pub audio: bool,
@@ -132,7 +130,6 @@ impl NodeType {
         }
     }
 
-    /// `PwNodeType::toString`.
     pub fn name(self) -> &'static str {
         match (self.audio, self.video, self.stream, self.source, self.sink) {
             (true, _, false, false, true) => "AudioSink",
@@ -158,7 +155,6 @@ pub struct AudioState {
 }
 
 impl AudioState {
-    /// The averaged `volume`.
     pub fn volume(&self) -> Visual {
         average_volume(&self.volumes)
     }
@@ -636,7 +632,7 @@ impl Graph {
         }
     }
 
-    /// `PwRegistry::findNodeByName`: an empty name finds nothing.
+    /// An empty name finds nothing.
     pub fn node_by_name(&self, name: &str) -> Option<&Node> {
         if name.is_empty() {
             return None;
@@ -644,12 +640,10 @@ impl Graph {
         self.nodes.values().find(|n| n.name == name)
     }
 
-    /// `Pipewire.defaultAudioSink`.
     pub fn default_sink(&self) -> Option<&Node> {
         self.node_by_name(&self.defaults.sink)
     }
 
-    /// `Pipewire.defaultAudioSource`.
     pub fn default_source(&self) -> Option<&Node> {
         self.node_by_name(&self.defaults.source)
     }

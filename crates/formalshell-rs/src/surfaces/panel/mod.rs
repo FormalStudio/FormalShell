@@ -240,13 +240,13 @@ pub trait Panel: std::any::Any {
     fn take_cursor(&mut self) -> Option<String> {
         None
     }
-    /// When the body next reads differently with nothing published (a
-    /// playing track's elapsed second).
     /// Whether the header carries the host's close button.
     fn closable(&self) -> bool {
         true
     }
 
+    /// When the body next reads differently with nothing published (a
+    /// playing track's elapsed second).
     fn wake(&self, _v: &View) -> Option<std::time::Instant> {
         None
     }
@@ -299,7 +299,6 @@ pub trait Panel: std::any::Any {
     }
 }
 
-/// A width class in pixels.
 pub fn width_of(class: Width, s: &Space) -> f64 {
     match class {
         Width::Narrow => s.popup_width_narrow,

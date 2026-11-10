@@ -1,5 +1,5 @@
 //! Activity: what is running on the machine right now, from the three live
-//! activity sources a Linux desktop has (FormalOS plan, decisions 6 and 12):
+//! activity sources a Linux desktop has:
 //! fspec's operation stream, `com.canonical.Unity.LauncherEntry` and the
 //! notification spec's `value` hint, and the shell's own app launches until
 //! their window maps. One list of items, grouped by source.

@@ -167,8 +167,8 @@ nohost" ]; then
   if [ "$(cat "$clipssh_paste_path" 2>/dev/null)" != "$clipssh_remote_path" ]; then
     fail "the clipboard after the send holds '$(cat "$clipssh_paste_path" 2>/dev/null)', want $clipssh_remote_path"
   fi
-  # Word for word, urgency and no actions, the way the QML service raised
-  # them. The COPIED one is read before anything else touches the clipboard.
+  # Word for word, urgency and no actions, as the service raises them.
+  # The COPIED one is read before anything else touches the clipboard.
   toasts='[.toasts[] | "\(.summary)|\(.body)|\(.urgency)|\(.actions | join(","))"]'
   "$jq_bin" -r "$toasts | .[]" "$clipssh_dump_landed_path" 2>/dev/null
   if ! "$jq_bin" -e --arg p "$clipssh_remote_path" "$toasts"' | any(. == "CLIPSSH SENDING|Clipboard image to box|1|") and any(. == "CLIPSSH COPIED|\($p) is on the clipboard|1|")' \

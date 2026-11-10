@@ -688,8 +688,6 @@ impl State {
         )
     }
 
-    // --- Controls, each gated on what the active source can do ----------
-
     fn mpris_active(&self) -> Option<&Player> {
         let id = self.active_id();
         self.mpris.iter().find(|p| p.id == id)

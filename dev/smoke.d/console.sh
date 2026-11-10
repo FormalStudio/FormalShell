@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --console drives the quake console (M37) over three `console toggle` calls
+# --console drives the quake console over three `console toggle` calls
 # off one timeline: open, parked, and back, with a `console status` dump
 # beside each frame. The claim: the console parks on a special workspace
 # rather than closing, and the same window id has to come back across all

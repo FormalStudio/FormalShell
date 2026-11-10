@@ -1,4 +1,4 @@
-//! Launch feedback (Plan.md phase 6): a desktop entry the shell spawns is a
+//! Launch feedback: a desktop entry the shell spawns is a
 //! running Activity item from the spawn until a window of it maps, read off
 //! the compositor's window list as it changes. One that maps none in
 //! [`fs_activity::LAUNCH_MS`] reads as failed (the model's own fold), and a

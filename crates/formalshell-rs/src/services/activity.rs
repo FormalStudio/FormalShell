@@ -204,8 +204,6 @@ async fn model(ctx: Ctx, rx: Receiver<Input>) {
     }
 }
 
-// ---- fspec ------------------------------------------------------------------
-
 /// `$XDG_RUNTIME_DIR/fspec/activity`, or fspec's own fallback without one.
 fn fspec_dir() -> PathBuf {
     match crate::paths::session_runtime() {
@@ -411,8 +409,6 @@ async fn read_operation(path: &Path, tx: &Sender<Input>) {
         let _ = tx.send(Input::Died(id)).await;
     }
 }
-
-// ---- com.canonical.Unity.LauncherEntry ---------------------------------------
 
 enum Bus {
     Update(zbus::Message),

@@ -5,7 +5,7 @@
 # tooltip both maps and anchors there. `hyprctl -j layers` is dumped either
 # side of the park, and the formalshell:tooltip namespace has to be absent
 # before and present after: a tooltip that still suppressed itself under an
-# open panel (the pre-M44 rule) would leave the second dump looking like the
+# open panel would leave the second dump looking like the
 # first. It anchors to a panel header's own close button, so it has nothing
 # to park on without a panel open.
 leg_tooltip_flag="--tooltip"

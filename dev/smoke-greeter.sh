@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# greetd smoke (M8 Task 2): drives the real greetd instance's default_session
+# greetd smoke: drives the real greetd instance's default_session
 # (the formalshell-greeter compositor the VM rig runs) through a full
 # login, typed via wtype into the greeter's own Wayland session rather than
 # an IPC shortcut (the same "verify the action, not the input method" idiom
@@ -10,7 +10,7 @@
 #
 # Unlike dev/smoke.sh's own ephemeral nested compositor (composed fresh
 # every run by that script), greetd's default_session is a persistent system
-# service declared once in the VM — driving it means finding the
+# service declared once in the VM, so driving it means finding the
 # ALREADY-RUNNING greeter session rather than spawning a new one, and
 # reaching from this script's own account into the separate `greeter`
 # system account's Wayland session. Root (passwordless sudo, already wired
@@ -21,7 +21,7 @@
 #
 # `sudo systemctl restart greetd` up front makes every run idempotent: once
 # a login succeeds, greetd moves on to the authenticated user's own session
-# and the default_session compositor this script talks to is gone — the
+# and the default_session compositor this script talks to is gone. The
 # restart forces a fresh greeter back up regardless of what a previous run
 # (or a fresh boot) left running.
 set -euo pipefail
@@ -44,7 +44,7 @@ journal_out="$out_dir/greetd-journal.txt"
 # key event is safe to send, or that first character is silently dropped
 # (reproduced directly: `wtype "12345"` into an empty field landed "2345").
 # `-s <ms>` sleeps before interpreting the text/key that follows, giving
-# that round trip time to complete — confirmed reliable up to a 16-char
+# that round trip time to complete, confirmed reliable up to a 16-char
 # string across this same cross-user path.
 wtype_settle_ms=300
 
@@ -84,7 +84,7 @@ fi
 greeter_env=(sudo env "XDG_RUNTIME_DIR=$runtime_dir" "WAYLAND_DISPLAY=$wayland_display")
 
 # formalshell-greeter needs a moment after connecting to map its surfaces
-# and read greetd's first state — matches the fixed post-connect
+# and read greetd's first state, matching the fixed post-connect
 # settle windows dev/smoke.sh's own legs use before their first shot.
 sleep 3
 "${greeter_env[@]}" grim "$pre_auth_png"

@@ -355,7 +355,7 @@ async fn watch(args: Vec<String>, tx: Sender<Event>, wrap: fn(String) -> Event) 
     }
 }
 
-/// ThumbnailService.warm in `fit` mode for these captures, off the loop.
+/// Warms thumbnails in `fit` mode for these captures, off the loop.
 fn warm(ctx: &Ctx, paths: Vec<String>) {
     if paths.is_empty() {
         return;

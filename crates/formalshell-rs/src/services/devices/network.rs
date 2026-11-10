@@ -36,7 +36,7 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(15);
 /// How often a held scanner asks the radio for a fresh scan.
 const SCAN_EVERY: Duration = Duration::from_secs(10);
 
-/// ConnectivityService's settle between the link coming up and the refetch.
+/// Settle between the link coming up and the refetch.
 const RECONNECT_SETTLE: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -60,7 +60,6 @@ pub struct Row {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Wired {
-    /// The interface.
     pub name: String,
     pub connected: bool,
     /// The active connection's name.
@@ -546,10 +545,8 @@ fn toggle_wifi(ctx: &Ctx) {
     });
 }
 
-// ---- The scan: whatever shows Wi-Fi rows wants it (`Source::WifiScan`),
-// and its last holder going ends the speed test (WifiService.holdScan,
-// NetworkPanel.onIsOpenChanged).
-
+/// The scan: whatever shows Wi-Fi rows wants it (`Source::WifiScan`),
+/// and its last holder going ends the speed test.
 async fn holds(ctx: Ctx) {
     let held = wants::watch(Source::WifiScan);
     while let Ok(held) = held.recv().await {

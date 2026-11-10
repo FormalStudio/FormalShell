@@ -24,7 +24,7 @@ use crate::services::proc;
 use crate::services::wants::Source;
 use crate::store;
 
-/// How a signal or a restart ended: ProcessService's `lastResult`.
+/// How a signal or a restart ended.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Action {
     pub pid: u64,

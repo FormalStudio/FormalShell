@@ -319,7 +319,6 @@ pub fn paint_backdrop(p: &mut Painter, b: &Backdrop, theme: &Theme, (w, h): (i32
     paint_grid(p, theme, (w, h), b.wake);
 }
 
-/// One output's login screen, the greeter's or the lock's.
 pub struct View {
     pub scene: Scene,
     pub ui: Ui,
@@ -327,7 +326,6 @@ pub struct View {
     over_clock: Option<OverClock>,
 }
 
-/// What a draw laid out.
 pub struct Drawn {
     /// Something on the card is still moving.
     pub animating: bool,

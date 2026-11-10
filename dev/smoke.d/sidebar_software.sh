@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
-# --sidebar-software: the sidebar's Software card (Plan 5.3) under
+# --sidebar-software: the sidebar's Software card under
 # `layout: sidebar`, against a PATH-shimmed `fspec` and a fixture spec
 # checkout (`FSPEC_SPEC`) cloned from a bare upstream that has moved on:
 # 22 commits the checkout lacks, the oldest of them fspec's own

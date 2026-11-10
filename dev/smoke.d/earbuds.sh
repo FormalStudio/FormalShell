@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --earbuds proves the earbuds panel (spec 2026-09-30-m77-earbuds.md
-# "Verification") against PATH-shimmed `nothingctl` and `openscq30`. Every
+# --earbuds proves the earbuds panel against PATH-shimmed `nothingctl` and
+# `openscq30`. Every
 # line either shim prints is a fixture under dev/smoke.d/fixtures
 # (nothing-b175-custom.json, nothingctl's own serialisation; the soundcore-*
 # files, captured from a real openscq30 2.12.0; airpods-pro3.json, the

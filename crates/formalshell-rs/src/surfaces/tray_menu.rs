@@ -17,7 +17,6 @@ use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::services::tray::MenuNode;
 use crate::paint::{Kit, Painter};
 
-/// What a menu takes off the theme beyond the cell kit's look.
 struct Look {
     padding: f64,
     control_height: f64,
@@ -93,8 +92,8 @@ pub struct Menu {
     pub morph: Animated,
     /// Rows scrolled off the top of a card capped below its rows.
     scroll: f64,
-    /// The rows' viewport, in the card's surface.
     close_hover: bool,
+    /// The rows' viewport, in the card's surface.
     body: IRect,
     look: Look,
     nodes: Vec<NodeId>,
@@ -270,8 +269,8 @@ impl Menu {
         self.rects.iter().position(inside).filter(|i| !self.rows[*i].node.separator && self.in_body(x, y)).map(Hit::Row)
     }
 
-    /// The pointer over a row takes the cursor, as TrayMenu's `onEntered`
-    /// does; a disabled row takes nothing. True when the picture changed.
+    /// The pointer over a row takes the cursor; a disabled row takes
+    /// nothing. True when the picture changed.
     pub fn hover(&mut self, hit: Option<Hit>) -> bool {
         let close = hit == Some(Hit::Close);
         let mut changed = close != self.close_hover;

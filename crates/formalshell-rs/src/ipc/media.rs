@@ -140,7 +140,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
     Ok(app.store.media.status())
 }
 
-/// LyricsService's own read for headless checks: the display set, the lit
+/// The lyrics read for headless checks: the display set, the lit
 /// main line and the secondary ones worked out against the held position at
 /// the moment of the call, the follow state, the output latency and the hold.
 fn lyrics(app: &mut App, _: &[Value]) -> Reply {

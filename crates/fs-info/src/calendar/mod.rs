@@ -10,7 +10,7 @@ pub mod progress;
 
 /// The local instant for a wall-clock time. A time repeated by a DST fall
 /// back takes its first occurrence and one skipped by a spring forward moves
-/// ahead by the gap, the way a JS `Date` constructor resolves both.
+/// ahead by the gap.
 pub(crate) fn localize(naive: NaiveDateTime) -> Option<DateTime<Local>> {
     match Local.from_local_datetime(&naive) {
         LocalResult::Single(t) => Some(t),

@@ -69,7 +69,7 @@ impl Colors {
 }
 
 impl Default for Colors {
-    /// `Palette.fallback()`'s dark zinc, the placeholder before theme.json.
+    /// The dark fallback palette, the placeholder before theme.json.
     fn default() -> Self {
         Self::from_palette(&palette::fallback("dark"))
     }
@@ -296,7 +296,7 @@ impl Theme {
         Ctx { colors: &self.colors, surface_opacity: self.surface_opacity, radii: self.radii }
     }
 
-    /// `Theme.box(role, state)`: one role's box, drawable.
+    /// One role's box in the given state, drawable.
     pub fn box_style(&self, role: Role, state: Option<&str>) -> BoxStyle<Rgba> {
         style::resolve(self.style, role, state, &self.ctx())
     }
@@ -412,7 +412,7 @@ mod tests {
         palette::merge_with_fallback(Some(&colors))
     }
 
-    /// `Config.get`'s own walk over a plain settings object.
+    /// A dotted-path getter over a plain settings object.
     pub(crate) fn make_get(settings: Value) -> impl Fn(&str) -> Option<Value> {
         move |path| {
             let mut node = &settings;
@@ -431,7 +431,7 @@ mod tests {
         Rgba::parse(s).unwrap()
     }
 
-    // --- the box a role resolves to, and the geometry Box
+    // the box a role resolves to, and the geometry Box
     // draws it with.
 
     #[test]
@@ -576,7 +576,7 @@ mod tests {
         assert_eq!(b.fill, hex("#1133ff").tint(style::wash(t.style, "filledHover", &t.ctx())));
     }
 
-    // --- the theme's own resolution
+    // the theme's own resolution
 
     #[test]
     fn the_defaults_are_the_one_look() {

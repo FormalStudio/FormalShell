@@ -1,8 +1,6 @@
 // Portions from omarchy-iphone (MIT, Copyright (c) 2026 kbbahaPro)
 
-//! Pure model for the iPhone mirror (plan at
-//! `docs/superpowers/plans/2026-09-28-m75-iphone.md`). Ported from
-//! `shell/Iphone/model.js`.
+//! Pure model for the iPhone mirror.
 //!
 //! The wire is `omarchy-iphone-bridge listen` (omarchy-iphone @ 586f37d,
 //! bin/omarchy-iphone-bridge): one JSON object per stdout line, `type` one of
@@ -615,8 +613,6 @@ mod tests {
         }
     }
 
-    // --- parse_event -------------------------------------------------------
-
     #[test]
     fn parse_notification_reads_every_field() {
         let e = phone();
@@ -749,8 +745,6 @@ mod tests {
         assert_eq!(parse_event(r#"{"type":"hci","adapters":[]}"#), None);
     }
 
-    // --- AMS now-playing -----------------------------------------------------
-    //
     // Lines in the exact shape omarchy-iphone-ams's cmd_listen/cmd_command emit
     // (bin/omarchy-iphone-ams @ 586f37d): `nowplaying` always carries the
     // player's whole known state, not a diff.
@@ -807,8 +801,6 @@ mod tests {
         assert_eq!(parse_ams_line(r#"{"type":"hci"}"#), None);
     }
 
-    // --- recent list -----------------------------------------------------
-
     #[test]
     fn upsert_replaces_a_modified_resend() {
         let with = |id, body: &str| Notification { id, body: body.into(), ..phone() };
@@ -822,8 +814,6 @@ mod tests {
         assert_eq!(upsert(&list, with(3, "x"), 2).len(), 2);
         assert_eq!(remove_by_id(&list, 2).len(), 1);
     }
-
-    // --- Focus -----------------------------------------------------------
 
     #[test]
     fn focus_verdict_modes() {
@@ -865,8 +855,6 @@ mod tests {
         assert!(!in_focus(&[a(901000.0, true)], now, 900.0));
         assert!(in_focus(&[a(901000.0, false), a(1000.0, true)], now, 900.0));
     }
-
-    // --- dedupe ----------------------------------------------------------
 
     #[test]
     fn normalise_ignores_isolates_quotes_and_spacing() {
@@ -981,8 +969,6 @@ mod tests {
         assert_eq!(superseded(&rules(), &slack, &[phone_entry(&phone(), now)], now).len(), 0);
     }
 
-    // --- notification model hooks --------------------------------------------
-
     #[test]
     // The groupKey half lives in tests/iphone_notifications.rs, which has the
     // notification model to key them with.
@@ -993,8 +979,6 @@ mod tests {
         assert_eq!(a.phone.as_ref().unwrap().body, "Still on for Friday?");
         assert_eq!(b.source, "");
     }
-
-    // --- mapping ---------------------------------------------------------
 
     #[test]
     fn to_notification_maps_a_message_and_a_call() {

@@ -24,7 +24,7 @@ use crate::ui::{self, El, Size, Ui, Variant, w};
 
 const NAMESPACE: &str = "formalshell:polkit";
 
-/// The drawer's default `deformAmount`, which the dialog leaves alone.
+/// The default `deformAmount` of a card budding off the top line.
 const DEFORM_AMOUNT: f64 = 0.15;
 
 pub struct Dialog {

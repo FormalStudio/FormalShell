@@ -419,8 +419,8 @@ mod tests {
         assert_eq!(level_to_fraction(250.0, 1000.0), 0.25);
     }
 
-    // Doing what cava's deprecated `ignore` knob used to: near-silence is
-    // flat (zero fill), not a jittering bottom pixel.
+    // Near-silence is flat (zero fill), not a jittering bottom pixel, which
+    // is what cava's deprecated `ignore` knob did.
     #[test]
     fn level_to_fraction_snaps_below_noise_floor_to_empty() {
         assert_eq!(level_to_fraction(NOISE_FLOOR - 1.0, MAX_LEVEL), 0.0);

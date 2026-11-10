@@ -1,5 +1,4 @@
-//! Pure model for LocalSend (plan at `docs/superpowers/plans/2026-09-28-m75-iphone.md`).
-//! Ported from `shell/Localsend/model.js`.
+//! Pure model for LocalSend.
 //!
 //! The CLI is 0w0mewo/localsend-cli (Go, rev 7865fb1c), picked over the
 //! official Rust `cli/` crate, whose headless mode can only send: no `recv`
@@ -242,7 +241,7 @@ mod tests {
         assert_eq!(out.failed.len(), 0);
     }
 
-    // The exact case the plan calls out: exit 0 with a per-file failure buried
+    // Exit 0 with a per-file failure buried
     // in an ERROR line, never surfaced by the exit code alone.
     #[test]
     fn send_outcome_exit0_with_per_file_error_is_not_ok() {

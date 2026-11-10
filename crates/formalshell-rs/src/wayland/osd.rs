@@ -119,7 +119,6 @@ impl App {
         }
     }
 
-    /// The OSD's `state` over IPC.
     pub fn osd_state(&self) -> serde_json::Value {
         serde_json::json!({
             "visible": self.osd.pill.is_some(),

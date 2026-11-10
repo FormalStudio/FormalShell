@@ -1,10 +1,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
-# --lyrics-blur (M56 P7/P10/P14): one real MPRIS player, a P3 cache seeded
+# --lyrics-blur: one real MPRIS player, a cache seeded
 # with six main lines 6s apart so several sit far enough down the
 # depth-of-field ramp, which is spent over the rows the pane has room for,
 # to carry most of the blur it can ask for once the first one is lit. The cache file is written
-# before the player is ever launched (spec P14: a lookup starts a second
+# before the player is ever launched (a lookup starts a second
 # after any key change, panel open or closed, so a live key with no file
 # behind it would otherwise reach the real providers), and `media playPause`
 # freezes playback right after the panel opens so both frames below are the
@@ -55,7 +55,7 @@ leg_lyrics_blur_fixture() {
 
   write_script "$lyrics_blur_lib_path" <<'EOF'
 #!/usr/bin/env bash
-# Mirrors Lyrics.cacheKey (shell/Lyrics/model.js), same as lyrics.sh's own copy.
+# Mirrors the lyrics service's cache key, same as lyrics.sh's own copy.
 lyrics_blur_cache_key() {
   local artist="$1" title="$2" album="$3" duration="$4"
   local raw lower slug seconds
@@ -114,7 +114,7 @@ EOF
 ]}
 JSON
 
-  # spec P14: LyricsService starts a lookup a second after any key change,
+  # The lyrics service starts a lookup a second after any key change,
   # panel open or closed, so the cache file has to exist before the track
   # is ever selected, not after (lyrics.sh's own fixture carries the full
   # reasoning). Written here, straight into the isolated XDG_CACHE_HOME,

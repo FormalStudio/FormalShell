@@ -24,9 +24,7 @@ pub(super) trait Owner: Sync {
     /// The surface is one of this owner's.
     fn owns(&self, app: &App, surface: &WlSurface) -> bool;
     fn configure(&self, _: &mut App, _: &WlSurface, _: (i32, i32)) {}
-    /// A frame callback landed on one of its surfaces.
     fn frame(&self, _: &mut App, _: &WlSurface, _: Instant) {}
-    /// The compositor closed one of its layer surfaces.
     fn closed(&self, _: &mut App, _: &WlSurface) {}
     /// Cards whose exit has run come off screen, ahead of every present.
     fn finished(&self, _: &mut App, _: Instant) {}

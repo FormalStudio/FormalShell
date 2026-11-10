@@ -1,27 +1,26 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
-# --lyrics (M56 P3/P5/P9/P11/P14): three real MPRIS players. Since P14, a
+# --lyrics: three real MPRIS players. A
 # lookup starts a second after ANY key change, panel open or closed, so all
 # three cache files (two `.json`, one `.miss`) are written straight into the
 # isolated XDG_CACHE_HOME in `leg_lyrics_fixture`, off the fixture's own
 # known ffmpeg duration, before the session (and any player in it) even
 # exists: there is never a moment where a key is live with no file behind
-# it, which a select-then-write ordering could no longer promise once the
-# wait was no longer gated on the panel being closed. `dev/smoke.d/README.md`
+# it, which a select-then-write ordering could not promise. `dev/smoke.d/README.md`
 # still calls this the file contract; nothing here needs a leg of its own to
 # know when another one is done, since the marker chain below only has to
 # serialise the player-specific waits, not the seeding.
 #
 # Track1 carries a syllable line, a background line whose own end runs
-# ridiculously past the next main line's start, and a duet turn (spec
-# P1/P4/P5): seeding the other two tracks below has no fixed duration (each
+# ridiculously past the next main line's start, and a duet turn:
+# seeding the other two tracks below has no fixed duration (each
 # select waits on the real player's own MPRIS registration), so the overlap
 # the duet-lit poll waits for is built to still be true minutes later rather
 # than sized to a guessed setup time. Track2 is the real line-synced shape
 # reaching the shell the real way: a sibling `.lrc` of plain `[mm:ss.xx]`
 # stamps with no end stamps and no word tags, through the same `parseLrc`
 # every provider body goes through, so `LyricsService.lines` synthesises its
-# chunks client-side (P4). The same two-word line repeats every 26s for the
+# chunks client-side. The same two-word line repeats every 26s for the
 # length of the file, held for 3s, 10s and 7s in turn, so whichever repeat
 # happens to be active once this leg gets around to selecting it, the
 # fraction of its own span the shell reports is what the polls below read,
@@ -32,27 +31,27 @@
 # The claims: `media lyrics` reaches `synced`/`quality:2`/`estimated:false`
 # for track1, its `active`/`secondary` moving to the exact pair kopuz's rule
 # produces once the duet line starts while the background line is still
-# running (P5's own worked example, not a made-up one: see the fixture's own
-# comment below); a real wlrctl wheel notch over the pane's own on-screen
+# running (a worked example from the lyrics spec, not a made-up one: see the
+# fixture's own comment below); a real wlrctl wheel notch over the pane's own on-screen
 # rect (found the same way the panel-width check already does, a pixel diff
 # between a bare frame and one with the panel open) takes `follow` to false,
 # and selecting track2 re-arms it; track2 reaches `quality:1` with every
 # words line `estimated:true` and its wipe partway along a row in a frame,
 # read off the row's own ink rather than trusted from IPC alone;
-# track3 reaches `none` with the panel narrower, as M55 already proved;
+# track3 reaches `none` with the panel narrower, as already proved elsewhere;
 # selecting track1 back grows the panel again across a burst of frames that
 # all share the narrow card's own centre, which is the centre of the bar
 # cell that opened it (the growth travels both edges); and that burst's
 # settled frame carries the lit line broken inside a chunk wider than the
 # pane, read as the brightest ink stopping short of the viewport's clip.
 #
-# Two more since M69. The reopen claim: a wheel takes `follow` off, the panel
+# The reopen claim: a wheel takes `follow` off, the panel
 # is closed with the track still playing and opened again with no track
 # change between, and the column is back on the song. Closing is the one way
-# out of the wheel takeover that leaves none of spec P9's own re-arms
-# reachable (they all live inside an open panel), which is what left a
+# out of the wheel takeover that leaves none of the re-arms
+# reachable (the re-arms all live inside an open panel), which is what left a
 # reopened pane parked where the wheel had put it minutes earlier, reading as
-# the song having run ahead of the lyrics (owner, 2026-09-18).
+# the song having run ahead of the lyrics.
 #
 # The line-change claim: track1 carries an mpv IPC socket, so the tail of the
 # run seeks it back over its own chained boundaries and photographs two
@@ -63,9 +62,7 @@
 # is the lit line, is on one place across the tail of each burst rather than
 # still drifting. A row that resized itself as it lit moved every row under
 # it and the scroll's own target with them, so the column was still chasing
-# a line seconds after it had started singing (owner, 2026-09-18).
-#
-# Four more since M71, all four owner-reported on a real host on 2026-09-18.
+# a line seconds after it had started singing.
 #
 # The wrapped-line claim: track1's line3 runs one row of words and then a
 # chunk the pane cannot hold across two more, and the tail of the run pauses
@@ -100,7 +97,7 @@
 # whatever it was held for, which is exactly what a real line-synced track
 # is made of.
 #
-# The latency claim (owner, 2026-09-28): on a Bluetooth sink the sound
+# The latency claim: on a Bluetooth sink the sound
 # reaches the ear 150ms to 300ms after the position the player reports, so
 # lyrics timed off that position run ahead of what is heard. Track1 is moved
 # onto a pw-loopback sink that declares 250ms of latency the way a bluez5
@@ -213,7 +210,7 @@ leg_lyrics_fixture() {
 
   write_script "$lyrics_lib_path" <<'EOF'
 #!/usr/bin/env bash
-# Mirrors Lyrics.cacheKey (shell/Lyrics/model.js) exactly: artist, title,
+# Mirrors the lyrics service's cache key exactly: artist, title,
 # album joined with spaces, lowercased, every run of non-alphanumerics
 # collapsed to one "-", the edges stripped, the rounded duration appended.
 lyrics_cache_key() {
@@ -298,7 +295,7 @@ EOF
   # check happens to land on. Line2 is the background line, `parent: 1`
   # (the raw index the service stores before `displayLines` remaps it), its
   # own end ridiculously past the point line3 (the duet turn) takes over as
-  # the active main line at 25s: P5's rule judges a background line on its
+  # the active main line at 25s: the service judges a background line on its
   # own timing, so it stays lit into that next main line for effectively the
   # rest of the session, which is what the duet-lit poll below waits for.
   # Line3 ends on one word half again as long as the pane is wide, so the lit
@@ -328,13 +325,13 @@ EOF
 JSON
 
   # Track2 is the real line-synced shape, and it reaches the shell the way a
-  # real one does: a sibling `.lrc` next to the file (spec P2.1, the step
+  # real one does: a sibling `.lrc` next to the file (the step
   # before the cache and before any provider), parsed by the same `parseLrc`
   # an lrclib body goes through. Plain `[mm:ss.xx] text` stamps, no end
   # stamps, no `<mm:ss.xx>` word tags: the shape every line-synced provider
   # actually returns, and the one a seeded cache of already-parsed lines with
   # `end` fields on them cannot stand in for, since an end of its own is
-  # exactly what such a line has not got (owner, 2026-09-18).
+  # exactly what such a line has not got.
   #
   # The pattern is 26s long and repeats for the length of the file. A line
   # held 3s, the same words held 10s, a line held to the note, then a stretch
@@ -351,7 +348,7 @@ JSON
     done
   } > "$shot_dir/lyrics-track2.lrc"
 
-  # spec P14: LyricsService starts a lookup a second after ANY key change,
+  # The lyrics service starts a lookup a second after ANY key change,
   # panel open or closed, so a player selected for longer than that with no
   # cache file yet would otherwise start a real provider race. Track2 answers
   # that with its sibling `.lrc`, which is the step before the cache and
@@ -397,8 +394,8 @@ disown
 echo \$! > "$lyrics_pid3_path"
 EOF
 
-  # Every cache file already exists (written in leg_lyrics_fixture, spec
-  # P14's own comment there says why), so this only has to work out which
+  # Every cache file already exists (written in leg_lyrics_fixture,
+  # the comment there says why), so this only has to work out which
   # real MPRIS id is which fixture: each of the three players is selected
   # in turn and `media status`'s own title tells it apart from the other
   # two regardless of which one the compositor happened to register first.
@@ -444,7 +441,7 @@ $ipc call media select "\$id1" > /dev/null 2>&1
 touch "$lyrics_marker_seeded"
 EOF
 
-  # spec P14: the lookup starts on the track change itself, so track1's
+  # The lookup starts on the track change itself, so track1's
   # lyrics are polled to synced here with the panel still closed the whole
   # time (no `panel open` call yet), proving the pane never had to wait on
   # being opened at all. Opening it after that is the "no morph" half: the
@@ -477,8 +474,8 @@ EOF
   # resolution against the fixture's own 3.5s-wide overlap window, rather
   # than a sleep tuned to it. The wheel target comes from `lyrics_pane_rect`
   # against the already-open synced frame, never a hardcoded coordinate:
-  # `+ 480` is popupWidthMenuSplit's own leading column width (M55 A1/M56
-  # P13), so the point lands in the middle of the trailing 360px the lyrics
+  # `+ 480` is popupWidthMenuSplit's own leading column width, so the point
+  # lands in the middle of the trailing 360px the lyrics
   # pane owns. The rect is the frame's pixels and wlrctl moves in logical
   # ones, hence the division by the scale.
   write_script "$duet_wheel" <<EOF
@@ -944,8 +941,8 @@ bands = [b.split(":") for b in sys.stdin.read().split() if b]
 if not bands:
     raise SystemExit
 tops = [int(b[0]) for b in bands]
-# The lit line is the one resting at the comfort offset (model.js
-# COMFORT_OFFSET_FRACTION), not the brightest: a line wrapped over several
+# The lit line is the one resting at the comfort offset
+# (COMFORT_OFFSET_FRACTION), not the brightest: a line wrapped over several
 # rows sits low enough in a short pane for the edge fade to take it under a
 # row nearer the middle, and a line whose second row carries more ink than
 # its first peaks there rather than at its own top. One line leads its own
@@ -1043,7 +1040,7 @@ leg_lyrics_assert() {
   [ -f "$lyrics_bare_path" ] || fail "no bare (panel closed) screenshot produced"
   echo "SMOKE_LYRICS_BARE $lyrics_bare_path"
 
-  # spec P14: the lookup ran on the track change itself, not on the panel
+  # The lookup ran on the track change itself, not on the panel
   # opening, so this reaches synced before "panel open media" is ever
   # called.
   if [ ! -s "$lyrics_status_preopen_path" ]; then
@@ -1090,15 +1087,15 @@ leg_lyrics_assert() {
   fi
 
   # This frame was taken one settle second after "panel open media", with
-  # the lyrics already synced beforehand (P14 above): its width check below
-  # is therefore also the "no morph" half of P14, the panel landing on
+  # the lyrics already synced beforehand: its width check below
+  # is therefore also the "no morph" check, the panel landing on
   # popupWidthMenuSplit directly rather than opening at popupWidthWide and
   # growing into it once the pane arrives.
   lyrics_panel_rect "$lyrics_synced_png_path" "$lyrics_panel_synced_json_path"
   echo "SMOKE_LYRICS_PANEL_SYNCED $lyrics_panel_synced_json_path"
   cat "$lyrics_panel_synced_json_path"; echo
 
-  # P5's own worked example: the background line at raw index2 (display
+  # The background line at raw index2 (display
   # index2 too, nothing here splices in an interlude) outlasts the main
   # line it rode in on (raw index1, `parent: 1`) and is still within its
   # own effectively-unbounded end once the duet turn (display index3)
@@ -1143,7 +1140,7 @@ leg_lyrics_assert() {
   fi
   echo "SMOKE_LYRICS_WHEEL follow true -> false over the pane at $(cat "$lyrics_wheel_target_path")"
 
-  # Track2: line timing only, synthesised client-side (P4).
+  # Track2: line timing only, synthesised client-side.
   if [ ! -s "$lyrics_status_estimated_path" ]; then
     fail "no media lyrics status produced for the estimated track"
   fi
@@ -1174,7 +1171,7 @@ leg_lyrics_assert() {
   # same dump says the line is through. A wipe that snapped each word in
   # WIPE_MAX_SECONDS and then waited sat a whole word ahead of its line on the
   # 16s repeat and on the beat on the 4s one, which is what reads as one rate
-  # for every line however long it is held (owner, 2026-09-18). Nothing is
+  # for every line however long it is held. Nothing is
   # pinned: the row is found as the pane's own brightest band and measured
   # against its own ink.
   local rate_long_fraction rate_long_f rate_short_fraction rate_short_f
@@ -1249,7 +1246,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
     fail "the pane drew $rows_above rows over the lit one and $rows_below under it, so it empties out inside its own height: bands '$rows_bands'"
   fi
 
-  # The instrumental note (owner, 2026-09-18). The 16s gap after every short
+  # The instrumental note. The 16s gap after every short
   # line is past both thresholds and the 4s gap after every long one is past
   # neither of kopuz's, only past the seamless carry: both now carry a note,
   # so the pane is never between two lines with nothing lit at all. `media
@@ -1333,7 +1330,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   echo "SMOKE_LYRICS_PANEL_NONE $lyrics_panel_none_json_path"
   cat "$lyrics_panel_none_json_path"; echo
 
-  # M55 A1: `popupWidthMenuSplit` (840) synced, the two-column layout;
+  # `popupWidthMenuSplit` (840) synced, the two-column layout;
   # `popupWidthWide` (480) once lyrics drop to `none` and only the
   # now-playing column remains. A generous tolerance for the diff rect's
   # own edge antialiasing rather than the exact token value.
@@ -1355,8 +1352,8 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   # popupWidthMenuSplit around the centre it already had, which is the
   # centre of the bar cell that opened it: the narrow card's own centre is
   # that number, since nothing clamps a 480-wide card under a centre-region
-  # cell. The tolerance is the diff rect's own edge antialiasing; the place
-  # this replaces moved the centre by half the growth, 180px.
+  # cell. The tolerance is the diff rect's own edge antialiasing; a card that
+  # kept its place moved the centre by half the growth, 180px.
   if [ ! -s "$lyrics_status_return_path" ]; then
     fail "no media lyrics status produced after returning to the syllable track"
   fi
@@ -1422,7 +1419,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
     fail "the lit line ran to the pane's own clip: ink ends at $((ix + iw)) of $pane_w, so a chunk wider than the pane never broke"
   fi
 
-  # The wrapped lit line, read in reading order (owner, 2026-09-18). One
+  # The wrapped lit line, read in reading order. One
   # gradient over the whole block lit every row of it left of a single x, so
   # a word on the second row read as sung while the first row was still being
   # sung. Both frames are taken with the player paused at an absolute
@@ -1484,7 +1481,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
     fail "the row under the wipe is already lit, so the wipe is one cut across the block rather than a reading order: third row's start=$w_r3start against the midpoint $w_mid"
   fi
 
-  # The reopen (M69): the wheel had the column, the panel was shut with the
+  # The reopen: the wheel had the column, the panel was shut with the
   # same track still playing and opened again, and nothing but the open
   # itself could have put follow back.
   if [ ! -s "$lyrics_status_reopen_path" ]; then

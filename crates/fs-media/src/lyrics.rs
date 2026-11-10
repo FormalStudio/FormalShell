@@ -122,7 +122,6 @@ impl Line {
     }
 }
 
-/// `x > 0`, false for NaN.
 fn finite(v: Option<f64>) -> Option<f64> {
     v.filter(|x| x.is_finite())
 }

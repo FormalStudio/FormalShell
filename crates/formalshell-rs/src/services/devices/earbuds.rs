@@ -200,7 +200,7 @@ impl Earbuds {
         self.backends.iter().find(|(n, _)| *n == name).map(|(_, b)| b)
     }
 
-    /// EarbudsService.set against the active device: the write to make
+    /// The write to make against the active device
     /// (`None` when the device already holds the value), or the reason it
     /// was refused, worded as the IPC hands it back.
     pub fn plan(&self, control: &str, raw: &str) -> Result<Option<Op>, String> {
@@ -266,7 +266,7 @@ fn status_path() -> PathBuf {
 
 /// What the panel, IPC and the other device services ask of the backends.
 pub enum Cmd {
-    /// BlueZ's devices as the backends read them (the smoke override applied).
+    /// BlueZ's devices as the backends read them.
     Bluetooth(Vec<BtDevice>),
     Op(Op),
     /// Something started or stopped recording off a source

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --switcher-off: the other half of --switcher (M60 T6). `switcher.enabled:
+# --switcher-off: the other half of --switcher. `switcher.enabled:
 # false` never instantiates the surface at all, so the claim here is that the
 # IPC target says so rather than accepting a call and doing nothing. A leg of
 # its own because one session carries one settings.json.

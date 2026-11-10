@@ -28,7 +28,7 @@ fn clamp_share(share: f64) -> f64 {
     if share.is_finite() { share.clamp(0.2, 1.0) } else { 0.5 }
 }
 
-/// geometry.js's `consoleGeometry`: `screen` is the output's logical box.
+/// The console's box: `screen` is the output's logical box.
 pub fn geometry(screen: (f64, f64, f64, f64), bar: Insets, share: f64, margin: f64) -> Option<IRect> {
     let (sx, sy, sw, sh) = screen;
     if sw <= 0.0 || sh <= 0.0 {
@@ -125,7 +125,7 @@ impl App {
         self.console_tick();
     }
 
-    /// ConsoleService.runOnce: `script` in a console window of its own,
+    /// Runs `script` in a console window of its own,
     /// under `<appId>.run` so it never becomes the quake console.
     pub fn console_run_once(&mut self, script: &str) {
         use fs_info::notifications::Urgency;

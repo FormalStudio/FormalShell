@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --notify-emerge proves how one notification arrives (M60 T4), which the
+# --notify-emerge proves how one notification arrives, which the
 # --notify leg cannot: that leg's two frames land seconds after the last
 # notify-send, by which time every entrance is long over. So one sticky
 # critical notification is fired at a tenth of its speed (`debug motionScale`,
@@ -28,7 +28,7 @@
 # output below the bar so the bell cell's own unread mark is not in the box.
 #
 # Critical rather than normal on purpose: a sticky popup (expiresAt 0, see
-# model.js's expire) is still there for the settled frame at the end of a
+# the model's expire) is still there for the settled frame at the end of a
 # ladder that runs for several seconds, and its urgency changes the rim's
 # colour and nothing about the geometry this leg reads.
 leg_notify_emerge_flag="--notify-emerge"

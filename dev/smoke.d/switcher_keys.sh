@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --switcher-keys: the switcher driven by the compositor's own binds and real
-# keys rather than over IPC (M64). --switcher proves the surface; this proves
+# keys rather than over IPC. --switcher proves the surface; this proves
 # the way in, which is where it was broken: on the owner's host a held Alt
 # with two taps of Tab left the card up and the release did nothing (owner,
 # 2026-09-18).
@@ -41,8 +41,8 @@
 leg_switcher_keys_flag="--switcher-keys"
 leg_switcher_keys_order=104
 leg_switcher_keys_needs="foot jq wtype"
-# A fourth window sits on workspace 2 throughout and must not reach the card
-# (M64): the owner's quick Alt+Tab was landing on a window elsewhere and
+# A fourth window sits on workspace 2 throughout and must not reach the card:
+# the owner's quick Alt+Tab was landing on a window elsewhere and
 # taking the compositor to its workspace, and Gala lists the active
 # workspace's windows alone. The compositor's own client list is read beside
 # `switcher state`, so a run where that window never spawned cannot pass by
@@ -53,9 +53,8 @@ leg_switcher_keys_needs="foot jq wtype"
 leg_switcher_keys_fixture_window=keep
 leg_switcher_keys_claims="switcher workspaces=shared"
 #
-# Three fast taps after that (M64 addendum, owner 2026-09-18): "alt+tab
-# doesn't work when i hit it fast, it just glitches, i have to wait for the
-# fade in to finish". Each is one wtype process holding Alt, tapping Tab
+# Three fast taps after that, where a fast alt+tab glitched until its fade
+# in had finished. Each is one wtype process holding Alt, tapping Tab
 # once and releasing straight back out with no sleep between any of them,
 # which is the one gap the switcher's pending-commit guard exists for: the
 # compositor spawns `switcher next` and `switcher commit` as two

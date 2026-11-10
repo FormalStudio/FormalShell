@@ -168,7 +168,7 @@ leg_bar_position_assert() {
   fi
 
   # What the chevron governs, and whether the card it opens is up: the
-  # governed names are off the strip for the whole session (M53) and
+  # governed names are off the strip for the whole session and
   # `collapses` is the only list there is to report, so `open` is what the
   # expand changes.
   local hidden_names='"bluetooth","weather","tray","bell","indicators","monitor","keyboardLayout","display","github","usage","tailscale","systemUpdate","clock"'

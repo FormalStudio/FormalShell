@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --host-binds: the command lines the owner's hyprland.nix binds
-# run, in the shape it writes them (`formalshell ipc --any-display call ...`
-# fifteen times (`screenshot full` takes its processing word, `default`, as `screenshot pick` does: the arity is Quickshell's own), `formalshell theme mode toggle` once), through the
+# --host-binds: the command lines the owner's Hyprland binds
+# run, in the shape the Lua config writes them (`formalshell ipc --any-display call ...`
+# fifteen times (`screenshot full` takes its processing word, `default`, as `screenshot pick` does), `formalshell theme mode toggle` once), through the
 # package's own `formalshell` entry point against the running shell. Each
 # must exit 0 and answer something other than a missing target or function.
 # `theme mode toggle` is also read back off `theme status`, and an unknown

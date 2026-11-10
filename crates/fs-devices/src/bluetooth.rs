@@ -1,6 +1,5 @@
 //! The bluetooth panel's device buckets: which devices render, in which
-//! bucket, sorted how, and their status line. Ported from
-//! `shell/Bluetooth/model.js`.
+//! bucket, sorted how, and their status line.
 
 use std::sync::LazyLock;
 

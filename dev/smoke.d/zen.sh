@@ -132,7 +132,6 @@ leg_zen_assert() {
   [ "$order" = "a b c" ] || fail "zen: b did not go back between a and c: $order"
   "$jq_bin" -e '.class == "formalshell-zen-b"' "$shot_dir/zen-active.json" > /dev/null || fail "zen: b is not focused after exit"
 
-  # Closed under zen.
   "$jq_bin" -e '.on == false' "${zen_status[3]}" > /dev/null || fail "zen: still on after its window closed"
   "$jq_bin" -e '.collapsed == false' "${zen_sidebar[3]}" > /dev/null || fail "zen: the sidebar stayed folded after the zen window closed"
   n=$("$jq_bin" -r '.class' "$shot_dir/zen-active-closed.json" | sed 's/^formalshell-zen-//')

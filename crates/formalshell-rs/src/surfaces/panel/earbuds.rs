@@ -15,7 +15,7 @@
 //! segmented row Left and Right pick the neighbouring entry; on the device
 //! group they move its ring and Enter presses the button under it; on a
 //! range they step by the control's `step`. Every write goes through
-//! `Earbuds::plan`, the same allow-list the `earbuds set` IPC uses (M77).
+//! `Earbuds::plan`, the same allow-list the `earbuds set` IPC uses.
 //! The panel wants the backends' watch and the AirPods' sensor streams
 //! while it is open.
 

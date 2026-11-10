@@ -829,6 +829,10 @@ fn render_node(dev: libc::dev_t) -> Option<Node> {
 /// and NVIDIA's beside Intel's, 133 MB of RSS and 0.8s where Intel's alone
 /// is 15 MB and 10ms (`vulkaninfo --summary`).
 fn adapter(node: &Node) -> Result<wgpu::Adapter, String> {
+    // The Vulkan loader's own driver selection (VK_DRIVER_FILES and its older
+    // name VK_ICD_FILENAMES, VK_ADD_DRIVER_FILES, and the VK_LOADER_DRIVERS_*
+    // filters): any one set is the caller choosing the drivers, which pinning
+    // a single driver here would override.
     let picked = ["VK_DRIVER_FILES", "VK_ICD_FILENAMES", "VK_ADD_DRIVER_FILES", "VK_LOADER_DRIVERS_SELECT", "VK_LOADER_DRIVERS_DISABLE"]
         .iter()
         .find(|v| std::env::var_os(v).is_some());
@@ -1163,7 +1167,6 @@ impl Canvas {
     }
 }
 
-/// Splits a rect of canvas pixels into tiles.
 pub fn tiles(r: IRect) -> impl Iterator<Item = IRect> {
     (r.y..r.bottom()).step_by(TILE as usize).flat_map(move |y| {
         (r.x..r.right()).step_by(TILE as usize).map(move |x| IRect::new(x, y, TILE.min(r.right() - x), TILE.min(r.bottom() - y)))

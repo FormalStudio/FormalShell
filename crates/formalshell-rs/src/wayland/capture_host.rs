@@ -80,7 +80,6 @@ impl Capture {
     }
 }
 
-/// NotificationService.notify(summary, body).
 fn notify(app: &mut App, summary: &str, body: &str) {
     notify_with(app, summary, body, Vec::new(), "");
 }
@@ -155,7 +154,7 @@ pub fn cands(app: &App) -> Cands {
     Cands::new(&app.capture_screens(), &app.store.compositor.snapshot)
 }
 
-// ---- screenshot ----------------------------------------------------------
+// screenshot
 
 fn shot_path(app: &App) -> String {
     format!("{}/screenshot-{}.png", settings::screenshot_dir(&app.store.config), model::timestamp(&now()))
@@ -454,7 +453,7 @@ fn on_cancelled(app: &mut App) {
     s.last_error.clear();
 }
 
-// ---- picker lifecycle ----------------------------------------------------
+// picker lifecycle
 
 pub fn picker_open(app: &mut App, mode: &str) -> Result<(), String> {
     if app.capture.picker.open {
@@ -644,7 +643,7 @@ pub fn picker_status(app: &App) -> Value {
     app.capture.picker.status(&c, &runtime_dir(), screens)
 }
 
-// ---- capture (text and colour) --------------------------------------------
+// capture (text and colour)
 
 fn grab_watchdog(app: &mut App) {
     let secs = settings::CAPTURE_TIMEOUT_SECONDS.get(&app.store.config);
@@ -846,7 +845,7 @@ fn grab_exit(app: &mut App, e: Exit) {
     }
 }
 
-// ---- events ---------------------------------------------------------------
+// events
 
 /// Everything the service thread reported since the last call.
 pub fn events(app: &mut App) {

@@ -1,5 +1,4 @@
-//! Surfaces/Switcher/switcher.js: the switcher's list, its cursor and its
-//! grid, pure.
+//! The switcher's list, its cursor and its grid, pure.
 
 use fs_types::{IRect, Rect, Window, WindowId, WorkspaceId};
 

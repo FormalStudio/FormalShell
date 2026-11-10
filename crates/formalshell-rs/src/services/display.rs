@@ -509,7 +509,7 @@ fn supported_names(store: &Store) -> Vec<String> {
     rows(store).iter().filter(|r| r.enabled && hdr_supported(store, &r.name)).map(|r| r.name.clone()).collect()
 }
 
-/// Any output showing HDR now (HdrService.active).
+/// Any output showing HDR now.
 pub fn hdr_active(store: &Store) -> bool {
     rows(store).iter().any(|r| hdr::is_on(Some(r)))
 }
@@ -537,7 +537,7 @@ pub fn hdr_status(store: &Store) -> Value {
 }
 
 /// The rule `hdr_set` would send for `name`, unsent: `{ rule, lua }`, the
-/// rule's numbers as numbers the way outputs.js builds it.
+/// rule's numbers as numbers.
 pub fn hdr_rule(store: &Store, name: &str) -> Result<Value, String> {
     let Some(row) = outputs::find_output(rows(store), name) else {
         return Err(format!("unknown output: {name}"));

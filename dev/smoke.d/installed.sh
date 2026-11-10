@@ -3,7 +3,7 @@
 # --installed <distro>: install.sh run from nothing in a rootless podman
 # image of arch, trixie or fedora, against the tarball and install.sh that
 # dev/install-check.sh copies into ~/install-check, and the
-# ~/.local/bin/formalshell it installs run in place of the Nix package.
+# ~/.local/bin/formalshell it installs run in place of the fspec package.
 # "Nothing" is the distro's own container image plus sudo and an account:
 # install.sh installs Hyprland and the runtime tools with the distro's own
 # package manager, unpacks the tarball, and `formalshell install --yes`

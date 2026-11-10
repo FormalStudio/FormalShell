@@ -8,7 +8,7 @@
 # that does not exist), one printing an empty SUCCESS payload (a real answer
 # that must render NO cell rather than an empty bordered box).
 #
-# No drive step decides any of that: Bar/layout.js resolves it from
+# No drive step decides any of that: the shell resolves it from
 # settings.json at startup, so the frame is the whole claim. Every other leg
 # leaves the `bar` key out entirely, which is itself the no-config-fallback
 # proof.

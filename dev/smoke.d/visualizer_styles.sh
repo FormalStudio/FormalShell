@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --visualizer-styles (M73 Task 3): pink noise rather than one sine, so every
+# --visualizer-styles: pink noise rather than one sine, so every
 # cava band actually differs and a style that shapes the spectrum
 # (butterfly, mirror, terrain) has something to shape. The media panel opens
 # once and every id `visualizer styles` reports is set over IPC in turn, one

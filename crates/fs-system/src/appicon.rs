@@ -305,7 +305,7 @@ mod tests {
         ProcInfo { exe: exe.into(), argv: cmd(argv) }
     }
 
-    // --- tier 1: the class ---
+    // tier 1: the class
 
     #[test]
     fn the_class_matches_an_entry_id() {
@@ -358,7 +358,7 @@ mod tests {
         );
     }
 
-    // --- tier 2: the process ---
+    // tier 2: the process
 
     #[test]
     fn an_empty_class_resolves_through_the_launching_script() {
@@ -402,7 +402,7 @@ mod tests {
         assert_eq!(entry_for(Some(&win(|_| {})), &es, Some(&procs)), None);
     }
 
-    // --- Steam, as on the owner's g815 ---
+    // Steam, as on the owner's g815
 
     /// The shortcut Steam writes for an installed game, read ahead of Steam's
     /// own entry since ~/.local comes first.
@@ -443,7 +443,7 @@ mod tests {
         assert_eq!(entry_for(Some(&other), &es, None), None);
     }
 
-    // --- tier 3: the initial title ---
+    // tier 3: the initial title
 
     #[test]
     fn an_empty_class_and_no_process_falls_to_the_initial_title() {
@@ -465,9 +465,9 @@ mod tests {
         assert_eq!(entry_for(Some(&win(|w| w.app_id = "foot".into())), &[], None), None);
     }
 
-    // --- the picture ---
+    // the picture
 
-    // --- the /proc read ---
+    // the /proc read
 
     #[test]
     fn the_proc_read_parses_into_depth_order() {

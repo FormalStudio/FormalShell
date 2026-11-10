@@ -148,8 +148,8 @@ fn gpu_outputs_desc(outputs: &[GpuOutput]) -> String {
 
 /// One inert note row per card: name, integrated/discrete, driver, connected
 /// outputs. No cards renders an honest "No GPU" row instead of an empty
-/// level. There is no "launch on GPU" route: it was a second full copy of the
-/// app list in every root search, for a choice the Shift+Enter accelerator on
+/// level. There is no "launch on GPU" route: it would be a second full copy of
+/// the app list in every root search, for a choice the Shift+Enter accelerator on
 /// the app row already offers.
 pub fn gpu_provider(cards: &[GpuCard]) -> Vec<Node> {
     if cards.is_empty() {

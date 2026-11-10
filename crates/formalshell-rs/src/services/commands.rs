@@ -1,6 +1,6 @@
 //! `bar.modules` entries of type `command` that the bar's layout places:
 //! each runs its argv every `interval` ms, and what it printed resolves
-//! through `Bar/commandOutput.js`'s rules. A run past `timeout` is killed
+//! through [`Output::resolve`]. A run past `timeout` is killed
 //! and reads as an error.
 
 use std::collections::BTreeMap;
@@ -53,7 +53,6 @@ impl Output {
         Output { text: "MODULE ERROR".into(), ..Output::default() }
     }
 
-    /// commandOutput.js's `resolve`.
     pub fn resolve(exit_ok: bool, raw: &str) -> Self {
         if !exit_ok {
             return Self::error();

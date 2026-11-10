@@ -87,7 +87,7 @@ pub(crate) fn is_internal(name: &str) -> bool {
 /// settings.json is hand-written, so a single output named as a bare string is
 /// a likelier mistake than a considered one. Read it as a one-entry list
 /// instead of ignoring the whole key. Entries that are not strings are
-/// stringified the way a JS `String(entry || "")` would.
+/// stringified, an empty or falsy one as "".
 pub fn priority_list(value: &Value) -> Vec<String> {
     match value {
         Value::String(s) if !s.is_empty() => vec![s.clone()],
@@ -125,7 +125,7 @@ mod tests {
         v(&["eDP-1", "HDMI-A-1"])
     }
 
-    // ---- the priority list
+    // the priority list
 
     #[test]
     fn first_connected_entry_wins() {
@@ -170,7 +170,7 @@ mod tests {
         assert_eq!(resolve_main_output(&both(), &priority_list(&json!("HDMI")), "eDP-1", ""), "HDMI-A-1");
     }
 
-    // ---- fallbacks
+    // fallbacks
 
     #[test]
     fn a_list_matching_nothing_falls_through_to_focus() {
@@ -199,7 +199,7 @@ mod tests {
         assert_eq!(resolve_main_output(&[], &[], "", "eDP-1"), "");
     }
 
-    // ---- hotplug
+    // hotplug
 
     #[test]
     fn the_main_monitor_takes_the_run_back_when_it_returns() {

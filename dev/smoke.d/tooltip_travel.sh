@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --tooltip-travel rides on --panel <name>, like --tooltip, and proves the
-# other half of the group (M53 D10): the card is one surface per output that
+# other half of the group: the card is one surface per output that
 # changes hands rather than one per item. It parks on the panel header's
 # close button, waits the 400ms show delay out, then moves one button left
 # onto the rescan button.
@@ -13,7 +13,7 @@
 # count either side is what says there is one card and not two.
 #
 # The frame comes later than the dump, not with it: the card travels between
-# the two anchors on the fast spatial clock (M54 D2), which outlasts the
+# the two anchors on the fast spatial clock, which outlasts the
 # dump's own quarter second, so a frame taken there would catch the card
 # between the buttons and say nothing about where it settled.
 #

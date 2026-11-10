@@ -1,12 +1,12 @@
-//! The resolver behind `Theme.box()` (`shell/Theme/style.js`): a theme is
+//! The resolver behind a theme's box descriptions: a theme is
 //! one table of box descriptions keyed by role, and this turns an entry plus
 //! a state into the numbers and colours a box draws. Generic over the colour
 //! type through [`Ctx`], so a table's resolution can be checked against a
 //! palette whose every role answers with its own name.
 //!
 //! Tables are `serde_json::Value` because the JSON files are the schema:
-//! a state merges over its base key by key, exactly as style.js merges two
-//! objects, and an absent key reads the way an absent JS property does.
+//! a state merges over its base key by key like a JSON object merge,
+//! and an absent key reads as undefined (`None`).
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -31,7 +31,6 @@ macro_rules! roles {
         impl Role {
             pub const ALL: [Self; [$($name,)*].len()] = [$(Self::$variant,)*];
 
-            /// The role's key in a table.
             pub const fn name(self) -> &'static str {
                 match self {
                     $(Self::$variant => $name,)*
@@ -338,7 +337,7 @@ pub struct Ring<C> {
     pub spread: f64,
     pub color: C,
     /// An inset ring's alpha at the box's bottom edge as a share of its
-    /// top, fading down the sides between (Pond's `PanelBorder.qml`).
+    /// top, fading down the sides between.
     pub fade: Option<f64>,
 }
 
@@ -839,7 +838,7 @@ pub(crate) mod tests {
         show_box(resolve(style, Role::parse(role).expect("a role"), state, &ctx(mode)))
     }
 
-    // --- The tables
+    // The tables
 
     #[test]
     fn every_table_carries_every_role_and_state() {
@@ -998,7 +997,7 @@ pub(crate) mod tests {
         assert_eq!(ghost.rings.len(), 0);
     }
 
-    // --- The table's own values
+    // The table's own values
 
     #[test]
     fn the_pantheon_button_is_raised() {
@@ -1231,7 +1230,7 @@ pub(crate) mod tests {
         assert_eq!(selected.radius, Radius::Px(9.0));
     }
 
-    // --- The resolver
+    // The resolver
 
     #[test]
     fn a_state_absent_from_a_role_reads_as_its_base() {
@@ -1362,7 +1361,7 @@ pub(crate) mod tests {
         assert_eq!(show(wash(m, "nonsense", &ctx("dark"))), CLEAR);
     }
 
-    // --- The window
+    // The window
 
     #[test]
     fn every_table_declares_a_window_hyprland_can_draw() {

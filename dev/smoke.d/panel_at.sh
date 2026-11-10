@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --panel-at <n> drives `panel toggleAt <n>`, the positional keybind (M42
-# D4, SUPER+CTRL+1..9 in the shipped Hyprland example). What needs proving
+# --panel-at <n> drives `panel toggleAt <n>`, the positional keybind
+# (SUPER+CTRL+1..9 in the shipped Hyprland example). What needs proving
 # is that the index walked the resolved right region and stopped on a
 # panel-bearing cell, so `panel state` is read back beside the route's own
 # answer: a toggleAt that returned ok while opening the wrong panel would
@@ -16,7 +16,7 @@ panel_at_state_path="$shot_dir/panel-at-state.txt"
 panel_at_path="$shot_dir/panel-at.json"
 panel_at_shot_path="$shot_dir/panel-at.png"
 
-# The default right region (Bar/layout.js's DEFAULT_LAYOUT) in order, with
+# The default right region in order, with
 # the cells that open no panel dropped (tray, bell, indicators). This run
 # writes no bar.layout, so `panel toggleAt <n>` has to land on the nth of
 # these, which is the assertion below.

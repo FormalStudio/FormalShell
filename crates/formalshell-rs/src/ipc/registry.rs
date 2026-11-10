@@ -47,8 +47,8 @@ impl Type {
         }
     }
 
-    /// `IpcValueSlot::setString`: Qt's `toInt` and `toDouble` trim
-    /// whitespace and take a sign, and a bool is `true`, `false` or any int.
+    /// Ints and reals are trimmed and take a sign, and a bool is `true`,
+    /// `false` or any int.
     fn parse(self, text: &str) -> Option<Value> {
         match self {
             Type::Void => None,
@@ -230,7 +230,7 @@ impl<C> Registry<C> {
     }
 }
 
-/// `IpcValueSlot::toString`: a string as it is, `null` as `ok`, a real the
+/// A string as it is, `null` as `ok`, a real the
 /// way Qt prints one, and any other JSON compact.
 fn print(ret: Type, json: &Json) -> String {
     match json {

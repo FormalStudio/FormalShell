@@ -1,4 +1,4 @@
-//! The shared widget set (shell/Components/), the one way a surface puts
+//! The shared widget set, the one way a surface puts
 //! content on a card.
 //!
 //! The shape, for whoever builds the next surface on it:
@@ -350,7 +350,6 @@ impl Ui {
         }
     }
 
-    /// Hides everything this surface drew.
     pub fn hide(&mut self, scene: &mut Scene) {
         for g in self.groups.values() {
             for id in &g.nodes {
@@ -359,7 +358,6 @@ impl Ui {
         }
     }
 
-    /// The topmost hit under a point.
     pub fn hit(&self, x: f64, y: f64) -> Option<&Hit> {
         let (x, y) = (x.floor() as i32, y.floor() as i32);
         self.hits.iter().rev().find(|h| x >= h.rect.x && x < h.rect.right() && y >= h.rect.y && y < h.rect.bottom())
@@ -483,7 +481,6 @@ impl<T> std::ops::DerefMut for Held<T> {
     }
 }
 
-/// One draw in progress.
 pub struct Cx<'a> {
     pub theme: &'a Theme,
     pub kit: &'a mut Kit,

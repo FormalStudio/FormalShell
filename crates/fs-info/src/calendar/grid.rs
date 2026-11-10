@@ -97,8 +97,7 @@ pub fn parse_iso_date(iso: &str) -> Option<NaiveDate> {
         return None;
     }
     let year: i32 = iso[0..4].parse().ok()?;
-    // A JS Date maps years 0 to 99 onto 1900 to 1999, which fails the
-    // round-trip check, so those years never parse.
+    // Years 0 to 99 never parse: they fail the round-trip check.
     if year < 100 {
         return None;
     }

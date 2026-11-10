@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --deform proves the velocity deform (M54 D7) unwinds: the last frame of an
+# --deform proves the velocity deform unwinds: the last frame of an
 # open is the same rect as a card that has been sitting there for a second.
 # The table's curves never overshoot (formalshell.json's motion note), so a
 # frame past the resting card is not asked for.
@@ -52,7 +52,7 @@ deform_mid_paths=(
   "$shot_dir/deform-mid-8.png"
   "$shot_dir/deform-mid-9.png"
 )
-# The travel's own clock (Theme.motion.spatial, M54 D2) and the moment this
+# The travel's own clock (Theme.motion.spatial) and the moment this
 # rig has the window up, in milliseconds; every sample is the map plus a
 # fraction of that clock, so a change to the token moves the sampling with it.
 # The last one is three clocks out, past the springs as well as the travel.

@@ -256,12 +256,12 @@ leg_screensaver_assert() {
     fi
   fi
   echo "SMOKE_SCREENSAVER_CYCLE $ss_cycle_effect1 -> $ss_cycle_effect2"
-  # Solidity (M48): the banner is block characters, and a block character has
+  # Solidity: the banner is block characters, and a block character has
   # to fill its whole cell. It stopped doing that when the shell's monospace
   # alias moved to Geist Mono, whose U+2588 inks 1.30em against a cell the
   # painter had padded to 1.495em, so a 6px background stripe ran through
   # every row of a supposedly solid banner. The painter draws the block
-  # elements as rectangles on the cell grid now (shell/Screensaver/blocks.js),
+  # elements as rectangles on the cell grid,
   # which is font-independent, and this is the claim: inside the banner's own
   # vertical span there is no scanline the banner failed to touch. A stripe
   # between two rows of solid blocks is exactly such a scanline, so the

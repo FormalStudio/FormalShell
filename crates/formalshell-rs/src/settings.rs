@@ -88,7 +88,7 @@ impl Number {
         lookup(doc.doc(), self.key).and_then(Value::as_f64).filter(|n| *n > 0.0).unwrap_or(self.default)
     }
 
-    /// Rounded and held to `lo..=hi`, the way LyricsService clamps.
+    /// Rounded and held to `lo..=hi`.
     fn rounded(self, doc: &(impl Doc + ?Sized), lo: f64, hi: f64) -> f64 {
         self.get(doc).round().clamp(lo, hi)
     }

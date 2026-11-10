@@ -48,8 +48,6 @@ pub fn trim_number(value: f64, decimals: usize) -> String {
     js::num_str(js::parse_number(&js::to_fixed(value, decimals)))
 }
 
-// ---- Scale -------------------------------------------------------------
-
 pub fn clamp_scale(scale: f64) -> f64 {
     if !scale.is_finite() {
         return SCALE_MIN;
@@ -85,8 +83,6 @@ pub fn format_scale(scale: f64) -> String {
     format!("{}X", trim_number(scale, 2))
 }
 
-// ---- Row derivations ---------------------------------------------------
-
 /// Enabled outputs first (the ones an action can act on), then left-to-right /
 /// top-to-bottom by logical position, then by name, so the order never
 /// depends on the map key order or array order the compositor answered in.
@@ -97,7 +93,7 @@ pub fn sort_outputs(rows: &[Output]) -> Vec<Output> {
             .cmp(&a.enabled)
             .then(a.x.cmp(&b.x))
             .then(a.y.cmp(&b.y))
-            // JS compares strings by UTF-16 code unit.
+            // Strings compare by UTF-16 code unit.
             .then_with(|| a.name.encode_utf16().cmp(b.name.encode_utf16()))
     });
     out
@@ -196,8 +192,6 @@ pub struct Color {
     pub sdrbrightness: f64,
     pub sdrsaturation: f64,
 }
-
-// ---- GPU annotation ---------------------------------------------------------
 
 /// The row's own meta line naming the card driving it, e.g. "NVIDIA /
 /// DISCRETE" for `connector_name`'s row when it matches one of `cards`'

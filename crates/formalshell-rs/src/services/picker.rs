@@ -231,7 +231,7 @@ fn identical(a: &str, b: &str) -> bool {
     }
 }
 
-/// ThumbnailService.warm in `wide` mode: the sources whose thumbnail is
+/// Warms `wide` thumbnails: the sources whose thumbnail is
 /// now in the cache, a hit or freshly drawn.
 async fn warm(ctx: &Ctx, paths: &[String]) -> Vec<String> {
     if paths.is_empty() {

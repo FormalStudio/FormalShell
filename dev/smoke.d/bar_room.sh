@@ -4,7 +4,7 @@
 # region's eight cells plus twelve `custom:` CommandModules, each a fixed
 # 40-character label, behind a long-title track so the now-playing cell
 # wants its full 220px budget at the same time the right region wants more
-# room than the strip has (spec D7, M55 Task 5's own room rule). Two claims,
+# room than the strip has. Two claims,
 # read off `bar room`: the now-playing cell gives ground
 # before a cell hides (`nowPlaying.budget` under 220), and what still does
 # not fit hides whole cells from the right region's own inner edge rather

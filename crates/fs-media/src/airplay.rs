@@ -16,7 +16,7 @@ use regex::Regex;
 
 pub(crate) const COVER_PLACEHOLDER_BYTES: u64 = 95;
 
-// JS `.` does not match \r,   or   as well as \n.
+// `.` must not match any line terminator (\r, U+2028, U+2029 as well as \n).
 static METADATA_LINE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([A-Za-z][A-Za-z ]*): ([^\n\r\u{2028}\u{2029}]*)$").unwrap());
 

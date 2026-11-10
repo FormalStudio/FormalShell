@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
-# --wheel (M47 D3): the mouse wheel scrolls a launcher view, and the cursor
+# --wheel: the mouse wheel scrolls a launcher view, and the cursor
 # stays where it is. One notch moves it exactly one step, and a scroll far
 # past the end stops on it. The wallpaper grid is the surface that reported the
 # bug, so it is the one driven here, over a directory of 40 fixtures, which
@@ -108,7 +108,7 @@ leg_wheel_drive() {
   # status`'s rowBoxes once the grid is up. The middle of the grid is not
   # good enough: it can land in the gutter between two cells, where the wheel
   # reaches the GridView without passing a cell at all, which is the one
-  # path that was never broken.
+  # path that works regardless.
   #
   # The bar's audio cell, off `bar room`, is the second half's target, once
   # the grid is closed and the bar is reachable again. Both are logical

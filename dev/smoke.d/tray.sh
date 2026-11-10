@@ -157,7 +157,7 @@ leg_tray_assert() {
   if [ "$tray_count" != "6" ]; then
     fail "tray status did not report all 6 fixture items (got $tray_count), stub registration likely failed"
   fi
-  # No drawer since M24, so nothing here may report one. A drawer/expanded
+  # The tray has no drawer, so nothing here may report one. A drawer/expanded
   # key coming back would mean a stale build, not a passing run.
   if grep -qE '"(drawer|expanded|pinned|bucket)":' "$tray_status_path"; then
     fail "tray status still reports drawer/bucket state, got: $(cat "$tray_status_path")"
@@ -204,7 +204,7 @@ leg_tray_assert() {
     fail "expected exactly Activate + opened + clicked + closed (got $tray_activate_lines lines), got: $(cat "$tray_activate_path")"
   fi
   # routeOnly: the tray names its rows after the applications they belong to,
-  # so the same app used to come back two and three times in one root search.
+  # so the same app would come back two and three times in one root search.
   # The query runs twice against the same shell, once from the root and once
   # standing inside the route, because "invisible" on its own is equally
   # consistent with a row that stopped existing.

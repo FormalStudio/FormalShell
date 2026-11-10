@@ -1,7 +1,7 @@
-//! The token maths from `shell/Theme/tokens.js` (DESIGN.md §1): type and
+//! The token maths (DESIGN.md §1): type and
 //! spacing scales, the radius ladder, the motion families and the deform
-//! constants. `docs/DESIGN.md` and tokens.js carry the reasoning behind each
-//! number; this file only has to agree with them.
+//! constants. `docs/DESIGN.md` carries the reasoning behind each
+//! number; this file only has to agree with it.
 
 use serde_json::Value;
 
@@ -66,7 +66,7 @@ macro_rules! spacing {
         impl Space {
             pub const TOKENS: Self = Self { $($field: $value,)* };
 
-            /// A token by its tokens.js name, for the readers (IPC dumps, tests)
+            /// A token by its name, for the readers (IPC dumps, tests)
             /// that address them by string.
             pub fn get(&self, name: &str) -> Option<f64> {
                 match name {
@@ -247,7 +247,7 @@ pub struct Motion {
 }
 
 impl Motion {
-    /// A family by its tokens.js name, which is how a table names a clock.
+    /// A family by name, which is how a table names a clock.
     pub fn family(&self, name: &str) -> Option<f64> {
         Some(match name {
             "spatialFast" => self.spatial_fast,

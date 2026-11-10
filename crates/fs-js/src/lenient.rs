@@ -1,5 +1,5 @@
 //! Reading a JSON file a hand, an older shell or another program may have
-//! written, the way `JsonAdapter` read it: a value of the wrong type reads as
+//! written: a value of the wrong type reads as
 //! absent, and in a list or map one bad entry costs only itself.
 
 use std::collections::BTreeMap;

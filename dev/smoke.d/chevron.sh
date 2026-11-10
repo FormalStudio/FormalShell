@@ -4,7 +4,7 @@
 # around one `chevron` name: the governed cells lead the region, then the
 # chevron, then battery/audio/network sit outboard against the screen edge. A
 # right-region chevron governs what PRECEDES it, so those cells are never on
-# the strip at all (M52), and everything outboard of the chevron keeps its x
+# the strip at all, and everything outboard of the chevron keeps its x
 # whether its card is up or not.
 #
 # The chevron opens the quick settings card
@@ -15,11 +15,10 @@
 # reads the card open from `chevron:right`, with an info tile for every
 # governed cell it does not draw itself (bluetooth and indicators are its
 # own toggles) and whose honest state is shown. The two PNGs are asserted to
-# differ: M24 shipped a correct IPC contract over a bar that rendered
-# nothing, and these two frames were byte-identical the whole time with
-# every dump passing.
+# differ: a correct IPC contract can sit over a bar that renders
+# nothing, with every dump passing.
 #
-# It also carries the ink claim (M66): the band reads its paint off the
+# It also carries the ink claim: the band reads its paint off the
 # wallpaper, so the leg sets a flat bright field first and the strip goes
 # to dark ink over it. The card the chevron opens is not the band, and its
 # tiles have to say so, which is read off one patch of the frame inside the
@@ -217,7 +216,7 @@ _chevron_patch_max() {
     -format '%[fx:int(maxima.r*255+0.5)]' info: 2>/dev/null
 }
 
-# The ink claim (M66). Three parts: the band settled
+# The ink claim. Three parts: the band settled
 # on the dark paint, so its cells really are carrying black ink; the patch
 # inside the card is on the card, not on the bright wallpaper around it; and
 # the words drawn on that card are light. The middle one is what makes the

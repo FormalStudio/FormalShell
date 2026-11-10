@@ -47,7 +47,7 @@ fn timeout_for(urgency: Urgency, expire_timeout: i32) -> i64 {
 pub struct Arrival {
     pub notif: Notif,
     pub timeout_ms: i64,
-    /// The picture icon.js picks, decoded on the pool.
+    /// The picture the icon order picks, decoded on the pool.
     pub icon: Option<icons::Raw>,
     pub replaced: bool,
 }
@@ -92,7 +92,7 @@ pub enum Op {
     /// The centre's "Clear all": pending and seen both go.
     ClearHistory,
     Invoke(NotificationId, String),
-    /// NotificationService.notify() for a service on its own thread.
+    /// A shell-authored entry from a service on its own thread.
     Notify(String, String, Urgency),
     /// The same with actions, each a command run when it is picked.
     NotifyRunning(String, String, Urgency, Vec<LocalAction>),
@@ -241,7 +241,7 @@ impl State {
         state::set(vec![Field::Dnd(on)]);
     }
 
-    /// NotificationService.notify(): a shell-authored entry, which earns the
+    /// A shell-authored entry, which earns the
     /// DND bypass at urgency 2 on its own `local` marker.
     pub fn notify(&mut self, summary: &str, body: &str, urgency: Urgency) {
         self.notify_with(summary, body, urgency, Vec::new(), String::new());
@@ -415,8 +415,7 @@ impl State {
         state::set(vec![Field::Reminders(value)]);
     }
 
-    /// ReminderService.setFromParts(): the stored entry, or `None` when the
-    /// duration does not parse.
+    /// The stored entry, or `None` when the duration does not parse.
     pub fn set_reminder(&mut self, duration: &str, message: &str, default_message: &str) -> Option<reminders::Entry> {
         let seconds = reminders::parse_duration(duration)?;
         let text = js::trim(message);
@@ -526,7 +525,7 @@ fn notice_of(n: &fs_notifd::Notification) -> fs_activity::Notice {
     }
 }
 
-/// The image hint as icon.js reads it: a decoded buffer gets a token of its
+/// The image hint: a decoded buffer gets a token of its
 /// own, a path a file url, a name the icon provider's url.
 fn image_of(n: &fs_notifd::Notification) -> (String, Option<Arc<ImageData>>) {
     match &n.image {
@@ -559,7 +558,7 @@ fn sender_icon(desktop_id: &str, app_name: &str) -> Option<String> {
     by(desktop_id).or_else(|| by(app_name)).map(|e| e.icon.clone())
 }
 
-/// icon.js's order, resolved to pixels: the notification's own image, its
+/// The icon order, resolved to pixels: the notification's own image, its
 /// app icon, then nothing (the card's bell). A themed name no theme
 /// carries resolves to nothing rather than to a broken picture.
 fn resolve_icon(image: &str, app_icon: &str, desktop_entry: &str, app_name: &str, pixels: Option<&ImageData>, largest: f64) -> Option<icons::Raw> {

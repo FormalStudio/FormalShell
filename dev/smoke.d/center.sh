@@ -20,7 +20,7 @@
 # and `dismissOne` is asserted here rather than in --notify: it drops the
 # front toast, which would change what that leg's own frames show.
 #
-# Then the M48 D3 claim, which needs a history longer than the output is
+# Then the height claim, which needs a history longer than the output is
 # tall: thirty notifications, the centre reopened over them, and a real
 # scroll wheel through the row list. The card's own height is read off
 # `notifications status` rather than measured in the frame, since the
@@ -179,7 +179,7 @@ leg_center_assert() {
     fi
   fi
 
-  # --- M48 D3: content-tall, then capped -------------------------------
+  # Content-tall, then capped.
   short_height=$("$jq_bin" -r '.centerHeight' "$center_status_open_path")
   short_max=$("$jq_bin" -r '.centerMaxHeight' "$center_status_open_path")
   short_capped=$("$jq_bin" -r '.centerCapped' "$center_status_open_path")

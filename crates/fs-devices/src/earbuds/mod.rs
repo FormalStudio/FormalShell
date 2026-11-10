@@ -1,7 +1,5 @@
-//! The one device shape every earbuds backend normalises into (spec
-//! `docs/superpowers/specs/2026-09-30-m77-earbuds.md`), and the helpers the
-//! panel, bar cell and IPC read it through. Ported from
-//! `shell/Earbuds/model.js`.
+//! The one device shape every earbuds backend normalises into, and the
+//! helpers the panel, bar cell and IPC read it through.
 //!
 //! A capability the device lacks is absent from `controls`, and an adapter
 //! lists a battery only once its level is known.
@@ -18,7 +16,7 @@ pub mod nothing;
 pub mod samsung;
 pub mod soundcore;
 
-/// A control's value or an IPC argument: the JS models compare and coerce
+/// A control's value or an IPC argument: callers compare and coerce
 /// these loosely, so the type keeps every shape a caller can hand over.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -631,7 +629,7 @@ impl ControlKind {
     }
 }
 
-/// The device as `JSON.stringify` prints model.js's object, key for key.
+/// The device as a JSON object, key for key.
 pub fn to_json(dev: &Device) -> Json {
     let batteries: Vec<Json> = dev
         .batteries

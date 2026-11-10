@@ -1,10 +1,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
-# --iphone: IphoneService and the notification filter (M75 Task 2/4) against
+# --iphone: IphoneService and the notification filter against
 # PATH-shimmed `omarchy-iphone-bridge` and `omarchy-iphone-ams`. Both shims
 # are `tail -F` over a JSONL file this leg's own drive script appends to in
-# real time -- the wire is exactly what IphoneService reads (Iphone/model.js
-# parseEvent/parseAmsLine), so the shim never invents a shape, only paces
+# real time: the wire is exactly what IphoneService reads, so the shim
+# never invents a shape, only paces
 # it. `invoke`/`command` are one-shot: they record their argv to a calls
 # file and exit, which is the one claim no frame can make -- that a card's
 # action reached the bridge with the right id and kind.
@@ -15,13 +15,13 @@
 #    (`sourceMark`), and its
 #    positive action reaches the bridge shim's own record.
 #  - `iphone.notifications.focus: respect` routes a silent arrival to the
-#    centre's pending tier with no toast (Iphone/model.js focusVerdict's
-#    "quiet"); `hide` (retargeted mid-run, see below) drops it from the
+#    centre's pending tier with no toast (the "quiet" verdict); `hide`
+#    (retargeted mid-run, see below) drops it from the
 #    centre entirely while IphoneService.recent still keeps it, since the
 #    phone's own history and the desktop notification centre are separate
 #    claims (IphoneService._receive upserts `recent` before the verdict is
 #    even checked).
-#  - the M75 dedupe rule (default `com.apple.MobileSMS` vs `Messages`):
+#  - the dedupe rule (default `com.apple.MobileSMS` vs `Messages`):
 #    a phone message and the same message from a real `notify-send -a
 #    Messages` collapse to one card in both arrival orders, and the local
 #    one is what survives (NotificationService.notifyPhone's own dedupe()
@@ -51,7 +51,7 @@
 #
 # The centre-side checks read `notifications status`'s pending+popups SUM,
 # never either alone: a popup ages into pending on its own 6s clock
-# (model.js DEFAULT_TIMEOUT_MS), and that move is not the thing under test.
+# (the default popup timeout), and that move is not the thing under test.
 # A collapsed dedupe reads as the sum holding steady across a phase; an
 # uncollapsed one reads as it climbing by two instead of one.
 #

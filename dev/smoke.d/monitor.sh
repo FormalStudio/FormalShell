@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --monitor: the opt-in bar cell, its compact panel, and the launcher's full
-# monitor route (Menu/appviews.js's one registered app view), off one
+# monitor route, off one
 # timeline. Never-faked data is the actual claim: `monitor gpu` has to name
 # exactly the cards this machine's own /sys/class/drm holds (here that is
 # the vkms card the session renders on, which reports no utilisation counter

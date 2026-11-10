@@ -18,7 +18,7 @@ pub fn far_overhang(radius: f64, wall_start: f64, wall_end: f64) -> f64 {
     if wall_start >= 0.0 || wall_end >= 0.0 { radius.max(0.0) } else { 0.0 }
 }
 
-/// A side running out to where its line ends (M57 D2): how far past the
+/// A side running out to where its line ends: how far past the
 /// card each end reaches (negative for a side with room), the attach it
 /// rides and the corner the two lines meet in.
 #[derive(Clone, Copy, Debug, PartialEq)]

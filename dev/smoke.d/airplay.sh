@@ -4,8 +4,8 @@
 # receiver decodes AirPlay's video into a GL texture, and this rig's card is
 # the kernel's software `vkms` KMS device with no GL path at all, so the
 # shim stands in for it the way --clipssh's does for a real ssh host: it
-# speaks uxplay's own output contract (Airplay/model.js's header carries the
-# exact line and file shapes, checked against FDH2/UxPlay's source) rather
+# speaks uxplay's own output contract (the exact line and file shapes are
+# checked against FDH2/UxPlay's source) rather
 # than one invented for the test.
 #
 # uxplay only prints its connect line and writes `-md`/`-ca`/`-dacp` once a

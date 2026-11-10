@@ -22,12 +22,12 @@
 # Every frame is saved for reading by eye; two claims are asserted on an
 # attached frame of case a, and case b's card has to be there at rest:
 #
-#   the seam (M57 D1)   the line's own row inside the gap must be byte-equal
+#   the seam            the line's own row inside the gap must be byte-equal
 #                       to the bar's fill two rows above it: the bar paints
 #                       that row, and a card whose fill starts on it too
 #                       leaves a line across the whole gap wherever the
 #                       surfaces are translucent.
-#   the wall (M57 D2)   case a rests a screenPadding off the output and its
+#   the wall            case a rests a screenPadding off the output and its
 #                       fillet wants radiusXl. Where that is more than the
 #                       room, the attached silhouette runs out to the
 #                       screen's own edge instead, and the output's last

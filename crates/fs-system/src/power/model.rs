@@ -116,7 +116,7 @@ pub fn format_rate(watts: f64) -> String {
     format!("{}W", js::to_fixed(watts.abs(), 1))
 }
 
-/// RAPL package power. The counter itself is root-only, so the nix module's
+/// RAPL package power. The counter itself is root-only, so the host's
 /// power poller publishes the package draw as integer milliwatts averaged over
 /// its own interval. `None` on an absent file or anything but one
 /// non-negative integer, never 0 or a guess.

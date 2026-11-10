@@ -324,7 +324,7 @@ pub struct App {
     /// first arrived, so the first open has results to draw on.
     fresh_asked: bool,
     /// The network the launcher's password step is for, and the identity
-    /// an enterprise one was given first (WifiService.pendingSsid).
+    /// an enterprise one was given first (`wifi_pending`).
     wifi_pending: Option<(String, String)>,
     /// The Show password request still awaited, and the launcher session it
     /// was asked in; `wifi_reveals` numbers the requests.
@@ -1136,7 +1136,8 @@ impl App {
         self.log(&format!("panel {id} mapped"));
     }
 
-    /// The input region over a popout's resting rect.
+    /// The input region over a popout's resting rect, or its whole surface
+    /// while a menu is open.
     fn set_popout_input(compositor: &CompositorState, p: &mut Popout) {
         // A menu takes input everywhere on its surface: a click off the
         // card dismisses it.

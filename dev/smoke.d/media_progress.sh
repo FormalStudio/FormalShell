@@ -40,7 +40,7 @@ leg_media_progress_timing() {
   leg_timing 200
 }
 
-# Lyrics.cacheKey (shell/Lyrics/model.js) for one of these fixtures: artist,
+# The lyrics cache key for one of these fixtures: artist,
 # title and an empty album joined with spaces, lowercased, runs of
 # non-alphanumerics collapsed to one "-", the edges stripped, the rounded
 # duration appended.

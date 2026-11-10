@@ -62,7 +62,7 @@ EOF
 
 leg_theme_toggle_assert() {
   if leg_on wallpaper; then
-    # Flexoki hexes only ever enter theme.json through palette.js's fallback
+    # Flexoki hexes only ever enter theme.json through the fallback palette
     # write, so any appearance of one means a toggle reset the theme instead
     # of re-running matugen. Matched -i because that write is uppercase.
     if [ ! -s "$theme_json_dump1_path" ] || ! grep -qF '"mode": "dark"' "$theme_json_dump1_path" \

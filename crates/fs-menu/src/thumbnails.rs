@@ -1,4 +1,4 @@
-//! Cache names for the prerendered thumbnails (thumbnails.js): the wallpaper
+//! Cache names for the prerendered thumbnails: the wallpaper
 //! picker's `cover` squares and 16:9 `wide` tiles (`size` wide), and a
 //! clipboard capture's `fit` box. A cached
 //! name is `<basename>-<key>-<mode><size>.jpg`; size and mode are in it so

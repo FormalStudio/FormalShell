@@ -1,15 +1,15 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --panel-handoff proves what M53 D5 asks of one panel replacing another: not
+# --panel-handoff proves what one panel replacing another has to do: not
 # two cards crossing, one card. The incoming card is seeded on the outgoing
 # one's rect, the outgoing window is cut on the tick the travel starts, while
 # the two are still exactly on top of each other, and the one card left
 # travels to its own place with its new contents coming up over the first
-# part of that travel (M54 D9). So at no instant is there a card at both
+# part of that travel. So at no instant is there a card at both
 # resting places and at some instant there is one between them.
 #
 # The default right region cannot show that: every panel-bearing cell there
-# is within half a card's width of the screen edge, so geometry.js's clamp
+# is within half a card's width of the screen edge, so the geometry clamp
 # lands both cards on the same x and the whole travel is a height change.
 # This leg therefore puts `audio` alone in the LEFT region and `network`
 # alone in the RIGHT one, which parks the two cards ~1500px apart.
@@ -37,7 +37,7 @@
 # couple of hundred milliseconds on this rig and is not the same twice.
 #
 # The five are the incoming window's own map plus a fraction of the travel's
-# clock (Theme.motion.spatial, M54 D2), so a change to the token moves the
+# clock (Theme.motion.spatial), so a change to the token moves the
 # sampling with it rather than leaving it pinned to a duration that has gone.
 # The travel is front-loaded, which is why three of the five sit inside its
 # first third: that is where a card is between the two rests.

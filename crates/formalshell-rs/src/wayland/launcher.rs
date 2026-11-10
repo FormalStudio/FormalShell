@@ -514,7 +514,6 @@ impl App {
         reply
     }
 
-    /// LightsService.resolveInput.
     fn lights_answer(&mut self, value: Option<String>, cancelled: bool) {
         let value = value.unwrap_or_default();
         if cancelled {
@@ -526,7 +525,7 @@ impl App {
         }
     }
 
-    /// ReminderService.resolveInput: "25m coffee" set, and a toast either way.
+    /// "25m coffee" set, and a toast either way.
     fn reminder_answer(&mut self, value: Option<String>, cancelled: bool) {
         use fs_info::notifications::Urgency;
         let value = value.unwrap_or_default();
@@ -614,7 +613,7 @@ impl App {
         }
     }
 
-    /// WifiService.resolveInput, then the launcher back on the Wi-Fi list.
+    /// The password step answered, then the launcher back on the Wi-Fi list.
     fn wifi_answer(&mut self, token: &str, value: Option<String>, cancelled: bool) {
         use crate::services::devices::network as net;
         let Some((ssid, identity)) = self.wifi_pending.take() else { return };
@@ -732,7 +731,7 @@ impl App {
         chosen
     }
 
-    /// LocalsendService.sendClipboardEntryAt: a ledger entry to the peer at
+    /// Sends a ledger entry to the peer at
     /// `index` of the last scan.
     fn localsend_entry(&mut self, index: &str, id: &str) {
         use crate::services::localsend::{self, Cmd, Payload};

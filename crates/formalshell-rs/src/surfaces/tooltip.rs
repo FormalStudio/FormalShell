@@ -103,7 +103,6 @@ impl Group {
     }
 }
 
-/// tooltip.js `placement`.
 pub fn placement(anchor: IRect, size: (f64, f64), screen: (f64, f64), gap: f64, edge: f64, bar: Option<Edge>) -> (f64, f64) {
     #[derive(Clone, Copy, PartialEq)]
     enum Side {

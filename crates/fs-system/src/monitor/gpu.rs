@@ -10,8 +10,6 @@
 use fs_js as js;
 use std::collections::HashMap;
 
-// ---- @drm section --------------------------------------------------------
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Output {
     pub name: String,
@@ -102,8 +100,6 @@ pub fn parse_metrics(drm_text: &str) -> CardMetrics {
     metrics
 }
 
-// ---- @nvidia section -------------------------------------------------------
-
 fn num_or_none(field: &str) -> Option<f64> {
     if field == "[N/A]" || field == "N/A" {
         return None;
@@ -154,8 +150,6 @@ pub fn parse_nvidia(nvidia_text: &str) -> Vec<NvidiaRow> {
     }
     rows
 }
-
-// ---- merge ------------------------------------------------------------
 
 /// Every metrics record carries the same keys whatever the driver, so a
 /// consumer reads a field without first working out which branch built the
@@ -290,8 +284,6 @@ pub fn merge_gpu(cards: &[Card], metrics: &CardMetrics, nvidia_rows: &[NvidiaRow
         .collect()
 }
 
-// ---- naming -------------------------------------------------------------
-
 pub(crate) fn vendor_name(vendor_id: &str) -> &'static str {
     match vendor_id.to_lowercase().as_str() {
         "0x8086" => "Intel",
@@ -330,8 +322,6 @@ pub fn is_discrete(card: &Card) -> bool {
 pub(crate) fn output_card<'a>(connector_name: &str, cards: &'a [Card]) -> Option<&'a Card> {
     cards.iter().find(|c| c.outputs.iter().any(|o| o.name == connector_name))
 }
-
-// ---- launch-on-dGPU ----------------------------------------------------------
 
 /// Which offload helper is on PATH.
 #[derive(Debug, Clone, Copy, Default)]
@@ -374,8 +364,6 @@ pub fn offload_argv(exec_string: &str, target: Option<&Card>, tools: OffloadTool
     head.extend(tail);
     head
 }
-
-// ---- @gfx section -----------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GfxMode {

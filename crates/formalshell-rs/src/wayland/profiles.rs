@@ -1,5 +1,5 @@
 // Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
-//! The power profile picker, Pond's `battery/ProfileSelector.qml`: a pill
+//! The power profile picker, after Pond's profile selector: a pill
 //! shaped like a battery (body and nub one outline, `card::battery`) on
 //! the output's right edge, centred, shown while the Settings tiles are
 //! open under `layout: sidebar`, as Pond shows it beside its settings

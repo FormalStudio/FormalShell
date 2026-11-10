@@ -1,4 +1,4 @@
-//! A command plugin of kind `overlay` (PluginOverlay.qml): a summoned modal
+//! A command plugin of kind `overlay`: a summoned modal
 //! card (`surfaces::modal`) budding off the top line to the output's centre
 //! over its scrim, holding the keyboard while open. It shows the plugin's
 //! rows exactly as a panel plugin's card does (`surfaces::panel::plugin`);
@@ -23,7 +23,7 @@ use crate::ui::{self, Size, Ui, w};
 
 const NAMESPACE: &str = "formalshell:plugin-overlay";
 
-/// Drawer.qml's default `deformAmount`, which PluginOverlay.qml leaves alone.
+/// The default `deformAmount` of a card budding off the top line.
 const DEFORM_AMOUNT: f64 = 0.15;
 
 pub struct Window {

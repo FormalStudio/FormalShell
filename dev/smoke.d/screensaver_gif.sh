@@ -148,7 +148,7 @@ EOF
       exit 1
     fi
     # The engine is asserted, not assumed: with ttfx missing from the shell's
-    # wrapper PATH the surface silently falls back to effect.js's builtin
+    # wrapper PATH the surface silently falls back to its builtin
     # effects, which would still record a plausible GIF of the wrong thing.
     if ! grep -q '"engine":"ttfx"' "$info_path"; then
       echo "SMOKE_FAIL: screensaver is not running the ttfx engine, got: $(cat "$info_path" 2>/dev/null)" >&2

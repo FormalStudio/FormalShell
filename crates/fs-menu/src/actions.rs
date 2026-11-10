@@ -1,4 +1,4 @@
-//! The launcher's footer (actions.js) and the row accessory (hints.js): what
+//! The launcher's footer and the row accessory: what
 //! Enter does to the row under the cursor, the keys that always apply beside
 //! it, and the muted value a row carries on its right.
 //!
@@ -329,7 +329,6 @@ pub fn subject_id(node: &Node) -> SubjectId {
     }
 }
 
-/// A single-quoted shell word.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }

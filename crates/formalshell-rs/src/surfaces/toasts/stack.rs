@@ -183,7 +183,7 @@ mod tests {
         })
     }
 
-    // --- collapsed: the depth stack ---------------------------------------
+    // collapsed: the depth stack
 
     #[test]
     fn the_front_card_is_full_width_against_the_anchored_edge() {
@@ -375,7 +375,7 @@ mod tests {
         assert_eq!(out.collapsed_height, 90.0);
     }
 
-    // --- expanded: the plain list -----------------------------------------
+    // expanded: the plain list
 
     #[test]
     fn every_expanded_card_is_full_width_in_the_order_given() {
@@ -415,7 +415,7 @@ mod tests {
         assert!(expanded(&out, "a").z > expanded(&out, "b").z);
     }
 
-    // --- edges -------------------------------------------------------------
+    // edges
 
     // A group with no slot of its own draws nothing, but the cards around it keep
     // the level they would have had.

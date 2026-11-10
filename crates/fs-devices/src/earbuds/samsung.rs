@@ -1,6 +1,5 @@
 //! Samsung Galaxy Buds adapter for the earbuds model, over the `earbuds` CLI
-//! (github.com/JojiiOfficial/LiveBudsCli, nixpkgs `earbuds`). Ported from
-//! `shell/Earbuds/samsung.js`.
+//! (github.com/JojiiOfficial/LiveBudsCli, nixpkgs `earbuds`).
 //!
 //! The CLI is a client of its own background daemon and starts it on any
 //! command, and that daemon acts on its own (auto-pause over MPRIS, PulseAudio

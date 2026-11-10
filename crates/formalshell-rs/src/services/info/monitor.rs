@@ -156,8 +156,8 @@ pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
-/// Whether `name` is an executable on PATH, for the offload tools gpu.js
-/// asks about.
+/// Whether `name` is an executable on PATH, for the offload tools the
+/// GPU cell asks about.
 pub fn on_path(name: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
 }

@@ -22,7 +22,7 @@
 # from `modmask` on under the PREVIOUS key's name (the fixture's modmask 65
 # comes back as `"submap": "65"`, its key `slash` as `"keycode": slash`
 # unquoted) and emits `allow_input_capture` with no value at all, so the reply
-# is not JSON and JSON.parse throws on it. keybinds.js reads the text table
+# is not JSON and the JSON parser throws on it. The shell reads the text table
 # for that reason, and this leg dumps the same table beside the route's rows.
 leg_keybinds_flag="--keybinds"
 leg_keybinds_order=240

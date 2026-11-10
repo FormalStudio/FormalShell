@@ -161,7 +161,7 @@ leg_clipboard_assert() {
   done
   # A copy made before anything read the ledger. It fails if the two
   # `wl-paste --watch` children only start when something first reads
-  # ClipboardService, which is what the poll this replaced was papering over.
+  # ClipboardService, which a poll would paper over.
   cat "$clip_warmup_path"; echo
   if ! grep -qF 'clipboard smoke warmup' "$clip_warmup_path"; then
     fail "a copy made before anything read the ledger was never captured: $(cat "$clip_warmup_path" 2>/dev/null)"

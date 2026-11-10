@@ -30,7 +30,7 @@ use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 const PROFILES: [Profile; 3] = [Profile::PowerSaver, Profile::Balanced, Profile::Performance];
 const ICONS: [&str; 3] = ["leaf", "gauge", "zap"];
 
-/// The sheet of the flow model a draw reads: the same nodes Power/flow.js
+/// The sheet of the flow model a draw reads: the same nodes the power model
 /// builds, carried as plain strings.
 pub fn flow_view(f: &flow::Flow, animate: bool) -> Flow {
     let node = |icon: &str, caption: &str, value: &str, detail: &str, dim: bool| FlowNode {

@@ -1,5 +1,5 @@
-//! The geoclue path: a GeoClue2 client under the desktop id the NixOS module
-//! allowlists, left started so a later fix replaces an early inaccurate one
+//! The geoclue path: a GeoClue2 client under the desktop id the system's GeoClue
+//! config allowlists, left started so a later fix replaces an early inaccurate one
 //! (`updateInterval` 60 s). A machine with no GeoClue, or one that will not talk to this
 //! client, ends the task and leaves the beaconDB lookup to place it.
 

@@ -177,7 +177,7 @@ impl State {
 }
 
 /// `media.lyricsOffsetAuto`, `media.lyricsOffsetMs`, `media.lyricsBlur` and
-/// its strength, read the way LyricsService clamps them.
+/// its strength, clamped on read.
 pub struct Settings {
     pub auto: bool,
     pub offset_ms: f64,

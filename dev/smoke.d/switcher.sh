@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --switcher: Gala's Alt+Tab as a keyboard-only surface (M60 T6, the
-# 2026-09-17 spec's Part 2), with live window thumbnails (owner, 2026-09-29).
+# --switcher: Gala's Alt+Tab as a keyboard-only surface, with live window
+# thumbnails.
 # Three windows in one session, the cursor walked over IPC the way the
 # compositor's bind walks it, and both halves of the claim at every step:
 # what `switcher state` says the cursor is on, and the card as drawn.
@@ -11,7 +11,7 @@
 # isolated home's icon theme (#CE5D97, which nothing else in a frame is) and a
 # caption carrying an icon is telling apart from an empty one by colour alone.
 #
-# A fourth window sits on workspace 2 and must not be offered (M64): Gala
+# A fourth window sits on workspace 2 and must not be offered: Gala
 # lists the active workspace's windows alone, and offering the rest is what
 # made a quick Alt+Tab commit to a window elsewhere and take the compositor
 # to it. The compositor's own client list is read beside `switcher state`, so

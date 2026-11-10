@@ -1,9 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --menu-emerge proves the launcher's own open (M57 D5): the card buds off the
+# --menu-emerge proves the launcher's own open: the card buds off the
 # top line, the same metamorphosis a panel does off the bar's hairline, and is
-# a plain card at its resting rect once it has let go. It replaced the unfold,
-# where the card appeared at its search row's height and grew downward.
+# a plain card at its resting rect once it has let go.
 #
 # At full speed the card is on the line for about as long as one screencopy
 # takes, so the open runs at a tenth of its speed (`debug motionScale`, the
@@ -42,7 +41,7 @@
 #                     Hyprland never applied) fails it.
 #
 # Probes are read by mean brightness, not by identity: the card is still being
-# squashed for a beat after it lands (M54 D7), so a probe standing well inside
+# squashed for a beat after it lands, so a probe standing well inside
 # it compares unequal to the settled frame for most of the open, and the scrim
 # over the whole output makes --panel-emerge's "anything but the desktop" say
 # nothing. Nothing the card draws is darker than its own fill, so a threshold
@@ -256,7 +255,7 @@ leg_menu_emerge_assert() {
     echo "SMOKE_MENU_EMERGE_$i $path"
   done
 
-  # --- The settle, printed before anything is asserted ------------------
+  # The settle, printed before anything is asserted
   #
   # The first frame that is byte-equal to the rest frame below the search row.
   # The field itself is left out of the comparison: its text cursor blinks, so
@@ -293,7 +292,7 @@ leg_menu_emerge_assert() {
   fi
   cat "$menu_emerge_status_path"; echo
 
-  # --- The scrim under the blur mark ------------------------------------
+  # The scrim under the blur mark
   #
   # Hyprland's `ignore_alpha` reads a buffer's own alpha, never the
   # wp_alpha_modifier multiplier over it, and this rig runs with blur off, so
@@ -314,7 +313,7 @@ leg_menu_emerge_assert() {
     "a scrim is not faded fully in at rest, the bar's band included: $scrims"
   echo "SMOKE_MENU_EMERGE_SCRIM ok under ignore_alpha $mark: $scrims"
 
-  # --- The dim at rest --------------------------------------------------
+  # The dim at rest
   #
   # Black at the scrim's alpha over anything leaves it at 1 - alpha of what
   # it was, so the bar's band and the desktop each read that fraction of
@@ -342,7 +341,7 @@ leg_menu_emerge_assert() {
   done
   echo "SMOKE_MENU_EMERGE_DIM ok bar $b_rest of $b_closed, desktop $d_rest of $d_closed, want $want"
 
-  # --- Content on the card ----------------------------------------------
+  # Content on the card
   #
   # Every frame of the open, how far the header's placeholder has come in
   # against how far the card's own fill has, each as a share of its change
@@ -376,7 +375,7 @@ leg_menu_emerge_assert() {
   [ -z "$lead" ] || fail "the header's text came in ahead of the card fill under it in frames$lead"
   echo "SMOKE_MENU_EMERGE_CONTENT ok the fill is never behind the text"
 
-  # --- The fade, open and close -----------------------------------------
+  # The fade, open and close
   #
   # How much of the card each frame shows, read as its mean difference from
   # the closed frame over the card's resting box against the rest frame's,
@@ -440,7 +439,7 @@ leg_menu_emerge_assert() {
   done
   echo "SMOKE_MENU_EMERGE_FADE ok card and scrim fade in across the open and out across the close"
 
-  # --- Where the card rests ---------------------------------------------
+  # Where the card rests
   #
   # Its bottom is measured rather than stated: the row count is the rig's
   # own, and only the three numbers the tokens fix are spelled out above.
@@ -491,7 +490,7 @@ leg_menu_emerge_assert() {
   menu_emerge_covered "$menu_emerge_rest_path" "$floor_box" || fail \
     "the settled card does not cover $floor_box, so the floor probe is not where the measurement thinks"
 
-  # --- Out of the line --------------------------------------------------
+  # Out of the line
   local attached="" last_attached="" ladder=""
   for i in $(seq 1 $menu_emerge_frames); do
     path="$shot_dir/menu-emerge-$i.png"
@@ -512,7 +511,7 @@ leg_menu_emerge_assert() {
     "no frame among menu-emerge-1..$menu_emerge_frames carries the card's fill at $neck_box with nothing at $floor_box: the card never came out of the line"
   echo "SMOKE_MENU_EMERGE_BUD ok $attached"
 
-  # --- The lit bar ------------------------------------------------------
+  # The lit bar
   #
   # Read off the LAST frame the card is still on the line for, not the first:
   # the scrim rides the same pose the travel does, so on the first frame of an
@@ -534,7 +533,7 @@ leg_menu_emerge_assert() {
   echo "SMOKE_MENU_EMERGE_LIT_BAR ok bar $bar_open = $bar_closed, desktop $desk_open under $desk_closed in $last_attached"
   fi
 
-  # --- The plain card ---------------------------------------------------
+  # The plain card
   #
   # A row of desktop-through-scrim between the line and the card says the
   # near edge let go of the line, and a border pixel differing from both the

@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --panel-morph proves a card whose content changes size travels to the new
-# one instead of jumping to it (M57 D7, the owner's "all panels when they
-# suddenly resize, like wifi or now playing"). Three cases, all at `debug
+# one instead of jumping to it (any panel that
+# suddenly resizes, like wifi or now playing). Three cases, all at `debug
 # motionScale 1000` so a screencopy lands inside the morph rather than after
 # it, and all read off the card's own far edge:
 #
@@ -31,8 +31,8 @@
 # is `panel_morph_skirt` rows past the flat bottom.
 #
 # The tolerance on the far edge is neither slack nor a guess: the spatial
-# curves overshoot their rest by design (M54 D1) and the deform stretches the
-# card along its travel on top of that (M54 D7), so the edge legitimately
+# curves overshoot their rest by design and the deform stretches the
+# card along its travel on top of that, so the edge legitimately
 # passes a rest by a few pixels. What it may not do is land on a size nobody
 # is travelling to, which is tens of pixels away in every case here.
 #

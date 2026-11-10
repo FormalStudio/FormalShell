@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --systemupdate: the flake-inputs-behind panel against a fixture flake
-# (fixtures/flake, the lock this repo carried while it was one). Naming the
+# (fixtures/flake). Naming the
 # bar cell in bar.layout IS the opt-in to background polling (the widget
 # flips the panel's pollEnabled), so the cell and the panel read the same
 # real poll rather than two independent ones. That is

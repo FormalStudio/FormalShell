@@ -122,11 +122,6 @@ fn main() {
     }
 }
 
-/// glibc's mmap threshold climbs to 32 MiB once a large block is freed, and
-/// a canvas or scene after that comes out of the heap and stays in RSS
-/// after it is dropped (the screensaver's, the launcher's). Pinned, every
-/// such buffer is its own mapping, gone with its owner. Fewer arenas keep
-/// the threads' small allocations from each holding their own slack.
 /// `FORMALSHELL_SMOKE_MOTION_SCALE`, a percentage of every motion clock, for
 /// a leg that has to photograph the first frames of something the shell
 /// does at start, before `debug motionScale` can reach it.
@@ -134,6 +129,11 @@ fn motion_scale() -> f64 {
     std::env::var("FORMALSHELL_SMOKE_MOTION_SCALE").ok().and_then(|v| v.parse::<f64>().ok()).map_or(1.0, |p| p / 100.0)
 }
 
+/// glibc's mmap threshold climbs to 32 MiB once a large block is freed, and
+/// a canvas or scene after that comes out of the heap and stays in RSS
+/// after it is dropped (the screensaver's, the launcher's). Pinned, every
+/// such buffer is its own mapping, gone with its owner. Fewer arenas keep
+/// the threads' small allocations from each holding their own slack.
 fn tune_malloc() {
     #[cfg(target_env = "gnu")]
     // SAFETY: mallopt only sets allocator parameters, before any thread.

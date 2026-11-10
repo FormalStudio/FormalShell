@@ -48,7 +48,7 @@ fn image_entry_shares_its_content_addressed_path_directly() {
     );
 }
 
-// --- fallback shape (installed=false, the GUI path) ---------------------------
+// Fallback shape (installed=false, the GUI path)
 
 #[test]
 fn fallback_empty_clipboard_maps_share_send_to_a_dim_note_row() {
@@ -77,7 +77,7 @@ fn fallback_receive_launches_the_gui_and_history_stays_a_provider_node() {
     assert_eq!(out["share.history"].provider.as_ref().map(Provider::as_str), Some("shareHistory"));
 }
 
-// --- CLI shape (installed=true) ----------------------------------------------
+// CLI shape (installed=true)
 
 #[test]
 fn installed_no_peers_is_an_honest_empty_send() {
@@ -137,13 +137,12 @@ fn installed_multiple_peers_each_get_their_own_index() {
     assert_eq!(out["share.send.1.clipboard"].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:localsend.send:1:t1"));
 }
 
-// --- receive status line -------------------------------------------------------
+// Receive status line
 
 // `dim` stays false on every branch (never used to grey the row): a dim "note"
 // sitting next to "share.send" would be dropped outright by the launcher's own
 // live-row filter, which treats a dim note as "this level is empty" rather than
-// "muted status line" (the bug this caught in the VM smoke rig, --share's
-// screenshot showing Send with no Receive row at all until this was fixed).
+// "muted status line".
 fn receive(enabled: bool, receiving: bool) -> ReceiveStatus {
     ReceiveStatus { enabled, receiving, alias: "kyan-laptop".into(), dir: "/home/kyan/Downloads".into() }
 }

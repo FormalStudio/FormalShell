@@ -3,7 +3,7 @@
 
 use fs_menu::nav::{Dir, rederive, step};
 
-// --- Re-derivation ------------------------------------------------------------
+// Re-derivation
 
 // Clipboard or window churn inserts a row above a cursor the reader put
 // somewhere: the cursor stays on its row rather than on its old slot.
@@ -18,7 +18,7 @@ fn a_placed_cursor_keeps_its_row_when_rows_leave_above_it() {
 }
 
 // The row it was on left: whatever took its slot, clamped to what is left, and
-// never past the end, which is where Enter used to do nothing.
+// never past the end, where Enter would do nothing.
 #[test]
 fn a_row_that_left_hands_the_cursor_to_its_slot() {
     assert_eq!(rederive("b", 1, &["a", "c", "d"], false, true), 1);
@@ -55,7 +55,7 @@ fn an_empty_list_puts_the_cursor_at_zero() {
     assert_eq!(rederive("", 0, &["a"], false, true), 0);
 }
 
-// --- Row list -----------------------------------------------------------------
+// Row list
 
 #[test]
 fn a_row_list_steps_and_wraps() {
@@ -84,7 +84,7 @@ fn an_empty_list_goes_nowhere() {
     assert_eq!(step(0, Dir::Down, 0, 0, 1, 1).index, 0);
 }
 
-// --- Grid (picker, emoji) -------------------------------------------------------
+// Grid (picker, emoji)
 
 // Ten cells over four columns: rows 0-3, 4-7 and a short 8-9.
 #[test]
@@ -93,7 +93,7 @@ fn down_off_the_grid_wraps_to_the_same_column() {
     assert_eq!(step(8, Dir::Down, 10, 10, 4, 4).index, 0);
 }
 
-// The old `raw % n` wrap lost the column whenever the cell count was not a
+// A bare `raw % n` wrap loses the column whenever the cell count is not a
 // multiple of the column count.
 #[test]
 fn up_off_the_grid_keeps_the_column_over_a_short_last_row() {
@@ -111,7 +111,7 @@ fn down_into_a_short_last_row_lands_on_its_last_cell() {
     assert_eq!(step(4, Dir::Down, 10, 10, 4, 4).index, 8);
 }
 
-// Left on the first result used to wrap to the last one.
+// Left on the first result stays on it; it does not wrap to the last one.
 #[test]
 fn left_and_right_walk_reading_order_and_stop_at_the_ends() {
     assert_eq!(step(3, Dir::Right, 10, 10, 4, 4).index, 4);
@@ -120,7 +120,7 @@ fn left_and_right_walk_reading_order_and_stop_at_the_ends() {
     assert_eq!(step(9, Dir::Right, 10, 10, 4, 4).index, 9);
 }
 
-// --- App grid: six cells over four columns, three rows under them --------------
+// App grid: six cells over four columns, three rows under them
 
 #[test]
 fn down_out_of_the_cells_lands_on_the_first_row_under_them() {

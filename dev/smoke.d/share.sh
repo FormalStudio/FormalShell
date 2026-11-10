@@ -1,15 +1,14 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --share proves the menu's SHARE route against the real packaged
-# localsend-cli (M75 Task 5 restructured the route around it; M17's
-# GUI-only shape is now the fallback, providers.js's sharePeerEntries).
+# localsend-cli. Without the CLI the route falls back to a GUI-only shape.
 #
 # The launcher appends the result's helper directory (dev/build.sh), which
 # carries localsend-cli, to whatever PATH it inherited, so the CLI is
 # unconditionally present for anything launched through
 # `result/bin/formalshell` in this rig: no PATH trick can take it away. That makes the CLI-present branch the only
 # one this rig can honestly exercise end to end; the CLI-absent fallback
-# shape (M17's Clipboard/Pick From History/Receive-launches-the-GUI rows)
+# shape (the Clipboard/Pick From History/Receive-launches-the-GUI rows)
 # cannot be produced honestly on this rig, so it isn't reproduced here.
 #
 # What is under test: the route resolves and renders (a screenshot, read by

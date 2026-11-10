@@ -30,7 +30,7 @@ use crate::fontconfig::{self, HintStyle, Rendering};
 /// and only the tables a glyph needs are ever paged in.
 fn map_font(path: impl AsRef<std::path::Path>) -> std::io::Result<Blob<u8>> {
     let file = std::fs::File::open(path)?;
-    // SAFETY: the font files come from the read-only nix store or a
+    // SAFETY: the font files come from the read-only package store or a
     // package's share dir; nothing truncates them under a running shell.
     let map = unsafe { memmap2::Mmap::map(&file)? };
     Ok(Blob::new(Arc::new(map)))
@@ -383,8 +383,7 @@ impl Inner {
         crate::trace::phase("fontconfig");
         let mut fcx = FontContext::new();
         crate::trace::phase("font collection");
-        // The package wraps the binary with the lucide font's path, the way
-        // nix/package.nix puts it on XDG_DATA_DIRS for Qt.
+        // The package wraps the binary with the lucide font's path.
         match std::env::var("FS_RS_ICON_FONT").map(map_font) {
             Ok(Ok(data)) => {
                 let families = fcx.collection.register_fonts(data, None);

@@ -1,4 +1,4 @@
-//! A command plugin's card (PluginPanel.qml and PluginOverlay.qml): the
+//! A command plugin's card: the
 //! title and width come from its manifest and the body from the rows its
 //! process last printed. A plugin that has printed nothing yet is Loading,
 //! one that exited is the dim PLUGIN ERROR with its reason. Activating a

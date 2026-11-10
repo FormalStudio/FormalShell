@@ -34,7 +34,7 @@ polkit_debug_path="$shot_dir/polkit-debug.log"
 
 # How many frames the open is photographed across, and at what fraction of
 # speed. The consent card buds off the top line like every other
-# centre-floating card (M57 D5) and is gone into its resting place inside one
+# centre-floating card and is gone into its resting place inside one
 # screencopy at full speed, so the open runs at a tenth and is sampled across
 # it. Read by eye: `--menu-emerge` is where that travel is measured, and
 # repeating its probes here would pin this leg to the launcher's geometry.

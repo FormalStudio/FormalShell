@@ -29,7 +29,7 @@
 # negative offset paints its cells up the output instead of being clipped
 # away.
 #
-# The typing half (M72 T1), on real keys where it can be: after a re-rank
+# The typing half, on real keys where it can be: after a re-rank
 # and a real Backspace the cursor's row and the row the view holds its
 # current item on have to be the same one (`cursorId` against `viewCursor`);
 # a query no app matches keeps the grid as the level's view with no rows in

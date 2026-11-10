@@ -69,7 +69,7 @@ pub fn parse_edid(hex_text: &str) -> Edid {
                 } else if ext == EXT_HDR_STATIC {
                     result.pq = at(i + 2).unwrap_or(0) & 0x04 != 0;
                     if len >= 4 {
-                        // A missing luminance byte reads as NaN, as it did in JS.
+                        // A missing luminance byte reads as NaN.
                         result.max_nits = match at(i + 4) {
                             Some(code) => js::round(50.0 * 2f64.powf(f64::from(code) / 32.0)),
                             None => f64::NAN,

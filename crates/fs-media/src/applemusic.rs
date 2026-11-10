@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn is_stale_false_for_non_numeric_mtime() {
-        // undefined in JS; the caller's NaN here.
+        // A non-numeric mtime reaches here as NaN.
         assert!(!is_stale(f64::NAN, NOW_2026_07_28_MS, 30.0));
     }
 

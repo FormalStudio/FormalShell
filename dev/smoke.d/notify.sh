@@ -6,7 +6,7 @@
 # so the reflow has settled, and `expand off` restores the collapsed pile the
 # run's own smoke.png reads.
 #
-# Three of the four are the icon resolution order (M48 D4), which only the
+# Three of the four are the icon resolution order, which only the
 # expanded frame can show: a collapsed stack draws the front card's content
 # and empty chrome for the peeks behind it. One carries a fixture PNG by
 # absolute path, one a themed name this session's own icon theme really
@@ -18,7 +18,7 @@
 # every other theme falls back to, which is why a name dropped in there
 # resolves without the session having to agree on a theme name.
 #
-# The two layer dumps are the sonner stack's own claim (M48): the toast
+# The two layer dumps are the sonner stack's own claim: the toast
 # surface is a column the output's height down the stack's own side, and
 # stays that size while it is mapped, so the collapse/expand reflow moves cards inside a static window instead of
 # resizing a layer surface the compositor would then animate against the

@@ -8,9 +8,8 @@
 //! [`Action`], so the bar's own routing opens what a cell would; folding
 //! the column and the Software card's buttons run here.
 //!
-//! The composition and its lengths are Pond's sidebar (`Theme.qml`,
-//! `Sidebar.qml`, `calendar/Clock.qml`); [`Geo`] carries them. What the
-//! kit's type scale cannot draw (the clock's digits, its period and the
+//! The composition and its lengths are Pond's sidebar; [`Geo`] carries
+//! them. What the kit's type scale cannot draw (the clock's digits, its period and the
 //! date box) is painted over the time card's reserved box, the digits in
 //! the desktop clock's own face and glass (`desktopClock.*`).
 
@@ -684,7 +683,7 @@ impl Default for ClockCard {
 /// The share of the type size Pond's digits' figures stand.
 const FIGURE: f64 = 0.7;
 
-/// Pond's battery line under the clock (`calendar/Clock.qml`): a trough the
+/// Pond's battery line under the clock: a trough the
 /// digits' width in the foreground at a fifth, filled to the level, the
 /// fill in the foreground, `primary` while charging and `destructive` low
 /// on battery, centred in `band`.
@@ -803,7 +802,7 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
     out
 }
 
-/// The Software card's rows (Plan 5.3): the upstream's commits the spec
+/// The Software card's rows: the upstream's commits the spec
 /// checkout lacks, with Apply, and the newest app change, with Undo. Each
 /// is a label over a caption so the words keep the sidebar's narrow width.
 /// The packages service checks the checkout while the column is open

@@ -11,7 +11,6 @@ use zbus::zvariant::OwnedObjectPath;
 pub struct SignalStrength(u8);
 
 impl SignalStrength {
-    /// Clamps to 100.
     pub fn from_percent(value: u8) -> Self {
         Self(value.min(100))
     }
@@ -64,7 +63,6 @@ impl ConnectionState {
         }
     }
 
-    /// Whether the device is mid-transition.
     pub fn is_changing(self) -> bool {
         matches!(self, Self::Connecting | Self::Disconnecting)
     }

@@ -161,7 +161,7 @@ fn update(f: impl FnOnce(&mut Gate)) {
     }
 }
 
-/// MediaService's pick, as the run gate reads it.
+/// The media pick, as the run gate reads it.
 pub fn set_media(playing: bool, tempo: bool, artist: &str, title: &str) {
     let track = (tempo && !title.is_empty()).then(|| (artist.to_owned(), title.to_owned()));
     update(|g| {

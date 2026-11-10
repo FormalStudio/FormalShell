@@ -1,12 +1,12 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --panel-emerge proves the drawer open (M53 addendum 2026-09-09): a panel
+# --panel-emerge proves the drawer open: a panel
 # comes out from under the bar rather than fading in where it will end up. The
 # card is displaced behind the bar's inner line by its own height while closed
 # and travels out from under it, so its visible height grows from nothing to
 # the whole card and no part of it is ever drawn inside the bar's own band.
 #
-# Ridden by --no-morph it reads the popover instead (M60 T2): a card that
+# Ridden by --no-morph it reads the popover instead: a card that
 # drops out of its cell has no line to unroll from, so the ladder is whole or
 # empty on every frame and never a fraction of the card. The bar's band stays
 # the claim it is either way, since a popover opens no gap in the line at all.
@@ -15,7 +15,7 @@
 # is NOT byte-identical to the same probe in the closed output: something the
 # desktop does not draw is being drawn there, which is the card.
 #
-# Both halves of that are the deform's doing (M54 D7). The card arrives
+# Both halves of that are the deform's doing. The card arrives
 # squashed and unwinds through its rest, so a probe cannot ask whether what it
 # sees is what the settled card draws: for the tail of every open it is the
 # same card a few percent narrower. What the deform does not move is the
@@ -34,7 +34,7 @@
 # The card rect is not hardcoded: it comes out of the difference between the
 # frame with the panel open and the frame without it, cropped below the bar
 # first so the cell's own panel mark is not in the box. Below the card's
-# shoulders too (M54 D6): the two fillets reach a `radiusXl` outside the
+# shoulders too: the two fillets reach a `radiusXl` outside the
 # card's own sides for the first `radiusXl` under the bar's line, so a box
 # that took them in would measure the silhouette rather than the card and
 # put the gutter probes below on bare desktop.

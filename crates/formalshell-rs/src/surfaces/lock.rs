@@ -3,7 +3,7 @@
 //! and the login card the greeter draws (`surfaces::login`) in its locked
 //! state, now playing under the clock in place of the greeter's controls.
 //! `lock status` still reports the ink the wallpaper under the card asks
-//! for (Lock/model.js's `ink`).
+//! for.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -187,7 +187,6 @@ pub enum Control {
     Button(Button),
 }
 
-/// The transport's three buttons, in order.
 pub const TRANSPORT: [Control; 3] = [Control::Previous, Control::PlayPause, Control::Next];
 
 /// The controls in the cursor's order: the transport while a track
@@ -227,7 +226,7 @@ impl Cursor {
     }
 }
 
-/// Lock/model.js's `transportKey`: where a key moves the transport cursor,
+/// Where a key moves the transport cursor,
 /// whether the field must not see it, and whether it pressed the button.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Step {
@@ -390,14 +389,14 @@ fn now_playing(m: &NowPlaying, ring: Option<usize>, theme: &Theme) -> El {
     w::column(s.sm, rows)
 }
 
-/// Lock/model.js's `ink` on an already composited backdrop luma.
+/// The ink for an already composited backdrop luma.
 fn ink_of(backdrop: f64) -> &'static str {
     let l = Rgba::linear(backdrop.clamp(0.0, 255.0) / 255.0);
     if Rgba::contrast(1.0, l) >= Rgba::contrast(0.0, l) { "light" } else { "dark" }
 }
 
 /// The ink over `rect`, the backdrop luma it was chosen against, and
-/// whether that luma was read off the wallpaper (BarPaint's `sampled`).
+/// whether that luma was read off the wallpaper.
 fn ink(s: &Shared, theme: &Theme, rect: IRect, size: (i32, i32)) -> (&'static str, f64, bool) {
     let fallback = if s.has_wallpaper { 0.0 } else { theme.colors.get(ColorRole::Background).luma601() };
     let mean = s.picture.and_then(|p| {

@@ -1,4 +1,4 @@
-//! The compositor's keybinds as launcher rows (keybinds.js).
+//! The compositor's keybinds as launcher rows.
 
 use fs_types::Bind;
 

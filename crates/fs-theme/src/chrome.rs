@@ -1,4 +1,4 @@
-//! `~/.config/hypr/formalshell-chrome.lua` (`shell/Theme/chrome.js`): the
+//! `~/.config/hypr/formalshell-chrome.lua`: the
 //! window rounding, whether the compositor blurs
 //! behind the shell, the gaps, frame and cast the table's `window` role
 //! asks for, and the shell's two clock families as the

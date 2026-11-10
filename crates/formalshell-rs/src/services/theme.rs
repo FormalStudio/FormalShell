@@ -29,7 +29,7 @@
 //! still gets them. A probe with no ranking falls back to `--prefer
 //! saturation` (the least bad scalar on the same corpus) and warns. The
 //! choice depends on the wallpaper alone, never on the mode: a mode-matched
-//! pair used to flip one wallpaper's hue family across a toggle, while `-m`
+//! pair flips one wallpaper's hue family across a toggle, while `-m`
 //! alone tones the scheme.
 //!
 //! A flat desktop (`wallpaper.color`) seeds the scheme with
@@ -1066,7 +1066,7 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
             .collect()
     }
 
-    // --- The pure halves
+    // The pure halves
 
     #[test]
     fn mode_key_reads_three_values_and_nothing_else() {
@@ -1119,7 +1119,7 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
         assert_eq!(joined.as_deref(), Some("[templates.a]\n[templates.b]"));
     }
 
-    // --- The engine, against shims
+    // The engine, against shims
 
     /// No wallpaper: no matugen at all, the zinc variant for the mode
     /// written as theme.json, the Hyprland colours beside it, the chrome

@@ -3,7 +3,7 @@
 //! serde output: the snapshot is src/protocol/state.rs `Snapshot`, a `list
 //! --json` row is src/transport/mod.rs `DeviceInfo`, and `watch` prints the
 //! `ack`, `error` and `disconnected` lines from src/session.rs and
-//! src/main.rs. Ported from `shell/Earbuds/nothing.js`.
+//! src/main.rs.
 //!
 //! Safety: nothingctl is the only thing that speaks the Nothing protocol
 //! (spec "Safety (Nothing)"). The one channel into it is [`command`], which

@@ -436,7 +436,7 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
     }
     cx.keep(pane);
 
-    // The resync control (spec P9): present once a wheel has taken the
+    // The resync control: present once a wheel has taken the
     // column over, and the last entry in the keyboard's order while it is.
     let shown = !v.follow || v.cursor == Some(lines.len());
     let fade = cx.tween(&format!("{path}.resync"), if shown { 1.0 } else { 0.0 }, Clock::Effects);

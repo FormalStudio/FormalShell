@@ -930,8 +930,7 @@ impl<R: Role> Surface<R> {
         !self.left.is_empty()
     }
 
-    /// A frame callback landed, the only way one is recorded. True for the
-    /// first, which is when the surface is on screen.
+    /// True for the first callback, which is when the surface is on screen.
     pub fn landed(&mut self, now: Instant) -> bool {
         self.frame_pending = false;
         self.callbacks += 1;
@@ -1226,8 +1225,6 @@ impl<R: Role> Surface<R> {
             .collect()
     }
 
-    /// The GPU is gone: a CPU canvas of the same size and scale, and the
-    /// whole scene drawn into it again.
     /// A surface drawn on the CPU while the device was still opening.
     fn enter_gpu(&mut self, scene: &mut Scene) {
         let (w, h, scale) = (self.renderer.width(), self.renderer.height(), self.renderer.scale());
@@ -1240,6 +1237,8 @@ impl<R: Role> Surface<R> {
         scene.touch(IRect::new(0, 0, scene.size.w, scene.size.h));
     }
 
+    /// The GPU is gone: a CPU canvas of the same size and scale, and the
+    /// whole scene drawn into it again.
     fn leave_gpu(&mut self, scene: &mut Scene) {
         let (w, h, scale) = (self.renderer.width(), self.renderer.height(), self.renderer.scale());
         self.drop_buffers();
@@ -1327,8 +1326,7 @@ impl PixelSurface {
         self.size
     }
 
-    /// A frame callback landed, the only way one is recorded. True for the
-    /// first, which is when the surface is on screen.
+    /// True for the first callback, which is when the surface is on screen.
     pub fn landed(&mut self) -> bool {
         self.frame_pending = false;
         self.callbacks += 1;

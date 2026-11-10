@@ -164,7 +164,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
     floating_on.dedup();
 
     // Special workspaces carry a negative id and are overlays, not places:
-    // model.js drops them, and the console lives on one for good.
+    // They are dropped here, and the console lives on one for good.
     let mut out: Vec<Workspace> = array(workspaces)
         .iter()
         .filter_map(|w| {

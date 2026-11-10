@@ -214,8 +214,6 @@ pub fn applications_dirs() -> Vec<PathBuf> {
     crate::paths::data_dirs().into_iter().map(|d| d.join("applications")).collect()
 }
 
-// ---- desktop entries --------------------------------------------------------
-
 /// Every launchable entry, a higher-priority directory shadowing a lower one's
 /// entry of the same id.
 fn scan_entries(dirs: &[PathBuf]) -> (Vec<DesktopEntry>, HashMap<String, Extras>) {

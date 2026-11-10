@@ -13,7 +13,6 @@ use serde::Deserialize;
 
 use crate::node::{Kind, Node};
 
-/// The file name of a path.
 pub fn image_basename(path: &str) -> &str {
     match path.rfind('/') {
         Some(cut) => &path[cut + 1..],

@@ -32,7 +32,7 @@ notify_close_dispatch_path="$shot_dir/notify-close-dispatch.txt"
 notify_close_status_parked_path="$shot_dir/notify-close-status-parked.txt"
 notify_close_status_after_path="$shot_dir/notify-close-status-after.txt"
 
-# panelPadding plus half a controlHeight (shell/Theme/tokens.js).
+# panelPadding plus half a controlHeight.
 notify_close_button_inset=28
 
 leg_notify_close_timing() {
