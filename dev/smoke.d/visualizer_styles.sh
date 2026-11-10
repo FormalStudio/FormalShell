@@ -83,19 +83,10 @@ sleep 0.2
 
 # The bar's own nowPlaying marquee scrolls this title continuously, which
 # would otherwise widen the diff below to span the whole screen height.
-# Cropping the 60px bar off first (the same constant media_progress.sh's
-# own rect finder uses) keeps the diff to the panel alone.
-b0="$shot_dir/visualizer-styles-rect-0-body.png"
-b1="$shot_dir/visualizer-styles-rect-1-body.png"
-b2="$shot_dir/visualizer-styles-rect-2-body.png"
-fh=\$($convert_bin "\$f0" -format '%h' info: 2>/dev/null)
-fh=\${fh:-1080}
-$convert_bin "\$f0" -crop "1920x\$((fh - 60))+0+60" +repage "\$b0" > /dev/null 2>&1
-$convert_bin "\$f1" -crop "1920x\$((fh - 60))+0+60" +repage "\$b1" > /dev/null 2>&1
-$convert_bin "\$f2" -crop "1920x\$((fh - 60))+0+60" +repage "\$b2" > /dev/null 2>&1
-
-rect_a=\$($convert_bin "\$b0" "\$b1" -compose difference -composite -colorspace Gray -threshold 8% -format '%@' info: 2>/dev/null)
-rect_b=\$($convert_bin "\$b1" "\$b2" -compose difference -composite -colorspace Gray -threshold 8% -format '%@' info: 2>/dev/null)
+# Leaving the 60px bar out (the same constant media_progress.sh's own rect
+# finder uses) keeps the diff to the panel alone.
+rect_a=\$(card_box "\$f0" "\$f1" 60 8%)
+rect_b=\$(card_box "\$f1" "\$f2" 60 8%)
 
 IFS='x+' read -r wa ha xa ya <<< "\$rect_a"
 IFS='x+' read -r wb hb xb yb <<< "\$rect_b"
@@ -108,10 +99,6 @@ if [ -n "\${wa:-}" ] && [ -n "\${wb:-}" ]; then
   y2=\$(( y2a < y2b ? y2a : y2b ))
   if [ "\$x2" -gt "\$x1" ] && [ "\$y2" -gt "\$y1" ]; then
     pad=6
-    # Back into full-frame coordinates: the diff above ran on the
-    # bar-cropped body, 60px down from the real frame.
-    y1=\$(( y1 + 60 ))
-    y2=\$(( y2 + 60 ))
     x1=\$(( x1 - pad > 0 ? x1 - pad : 0 ))
     y1=\$(( y1 - pad > 60 ? y1 - pad : 60 ))
     w=\$(( x2 - x1 + pad * 2 ))

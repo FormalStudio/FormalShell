@@ -99,8 +99,7 @@ EOF
 _backdrop_diff() {
   local w h
   read -r w h < <($convert_bin "$1" -format '%w %h' info:)
-  $convert_bin "$1" "$2" -crop "$((w * 55 / 100))x$((h * 80 / 100))+$((w * 45 / 100))+$((h * 10 / 100))" +repage \
-    -compose difference -composite -colorspace Gray -threshold 3% -format '%[fx:mean*w*h]' info: 2>/dev/null | awk '{printf "%d", $1}'
+  diff_px "$1" "$2" 3% "$((w * 55 / 100))x$((h * 80 / 100))+$((w * 45 / 100))+$((h * 10 / 100))"
 }
 
 _backdrop_field() {

@@ -189,19 +189,9 @@ leg_panel_emerge_assert() {
   # The card's own rect, off the two frames that differ by exactly one card.
   # Cropped below the bar first: the cell that owns an open panel draws a mark
   # of its own, which is a difference and is not the card.
-  local body_h=$((out_h - panel_emerge_body_top)) bare_body rest_body rect
-  bare_body="$shot_dir/panel-emerge-body-bare.png"
-  rest_body="$shot_dir/panel-emerge-body-rest.png"
-  $convert_bin "$panel_emerge_bare_path" -crop "${out_w}x${body_h}+0+${panel_emerge_body_top}" +repage "$bare_body" > /dev/null 2>&1
-  $convert_bin "$panel_emerge_rest_path" -crop "${out_w}x${body_h}+0+${panel_emerge_body_top}" +repage "$rest_body" > /dev/null 2>&1
-  rect=$($convert_bin "$bare_body" "$rest_body" -compose difference -composite \
-    -threshold 8% -format "%@" info: 2>/dev/null)
-  local card_w card_h card_x card_y
-  card_w=${rect%%x*}
-  card_h=${rect#*x}; card_h=${card_h%%+*}
-  card_x=$(echo "$rect" | sed -n 's/.*+\([0-9]*\)+[0-9]*$/\1/p')
-  card_y=$(echo "$rect" | sed -n 's/.*+\([0-9]*\)$/\1/p')
-  card_y=$((card_y + panel_emerge_body_top))
+  local rect card_w card_h card_x card_y
+  rect=$(card_box "$panel_emerge_bare_path" "$panel_emerge_rest_path" "$panel_emerge_body_top" 8%)
+  IFS='x+' read -r card_w card_h card_x card_y <<< "$rect"
   if [ -z "$card_w" ] || [ "${card_w:-0}" -lt 200 ] || [ "${card_h:-0}" -lt 80 ]; then
     fail "could not measure the network card off the open/closed pair, got rect '$rect'"
   fi

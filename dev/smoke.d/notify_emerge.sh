@@ -161,23 +161,13 @@ leg_notify_emerge_assert() {
   done < "$notify_emerge_stamp_path"
 
   # The card's own rect, off the two frames that differ by exactly one card.
-  local body_h=$((1080 - notify_emerge_body_top)) bare_body settled_body rect
-  bare_body="$shot_dir/notify-emerge-body-bare.png"
-  settled_body="$shot_dir/notify-emerge-body-settled.png"
-  $convert_bin "$notify_emerge_bare_path" -crop "1920x${body_h}+0+${notify_emerge_body_top}" +repage "$bare_body" > /dev/null 2>&1
-  $convert_bin "$notify_emerge_settled_path" -crop "1920x${body_h}+0+${notify_emerge_body_top}" +repage "$settled_body" > /dev/null 2>&1
   # 2% rather than --panel-emerge's 8%: a card's translucent fill lifts this
   # rig's near-black desktop by about 5% (panel_morph.sh's own finding), so a
   # higher cut measures the card's border alone and puts the box in the wrong
   # place.
-  rect=$($convert_bin "$bare_body" "$settled_body" -compose difference -composite \
-    -threshold 2% -format "%@" info: 2>/dev/null)
-  local card_w card_h card_x card_y
-  card_w=${rect%%x*}
-  card_h=${rect#*x}; card_h=${card_h%%+*}
-  card_x=$(echo "$rect" | sed -n 's/.*+\([0-9]*\)+[0-9]*$/\1/p')
-  card_y=$(echo "$rect" | sed -n 's/.*+\([0-9]*\)$/\1/p')
-  card_y=$((card_y + notify_emerge_body_top))
+  local rect card_w card_h card_x card_y
+  rect=$(card_box "$notify_emerge_bare_path" "$notify_emerge_settled_path" "$notify_emerge_body_top" 2%)
+  IFS='x+' read -r card_w card_h card_x card_y <<< "$rect"
   if [ -z "$card_w" ] || [ "${card_w:-0}" -lt 200 ] || [ "${card_h:-0}" -lt 40 ]; then
     fail "could not measure the notification off the bare/settled pair, got rect '$rect'"
   fi

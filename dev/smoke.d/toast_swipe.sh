@@ -108,10 +108,8 @@ EOF
 # The left edge of everything that differs from the bare frame below the
 # bar, or nothing when the two match there.
 toast_swipe_left() {
-  local top rect
-  top=$(logical_px "$toast_swipe_body_top")
-  rect=$($convert_bin "$toast_swipe_bare_path" "$1" -crop "${out_w}x$((out_h - top))+0+${top}" +repage \
-    -compose difference -composite -threshold 20% -format "%@" info: 2>/dev/null)
+  local rect
+  rect=$(card_box "$toast_swipe_bare_path" "$1" "$(logical_px "$toast_swipe_body_top")" 20%)
   echo "$rect" | sed -n 's/.*+\([0-9]*\)+[0-9]*$/\1/p'
 }
 

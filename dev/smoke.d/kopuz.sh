@@ -178,8 +178,10 @@ EOF
 
 # The share of a panel crop's pixels two frames differ in.
 kopuz_diff() {
-  "$convert_bin" "$1" "$2" -crop "$3" +repage -compose difference -composite \
-    -colorspace Gray -threshold 6% -format '%[fx:mean]' info: 2>/dev/null
+  local w h n
+  IFS='x+' read -r w h _ <<< "$3"
+  n=$(diff_px "$1" "$2" 6% "$3")
+  [ -z "$n" ] || awk -v n="$n" -v a="$((w * h))" 'BEGIN { print n / a }'
 }
 
 kopuz_calls() {

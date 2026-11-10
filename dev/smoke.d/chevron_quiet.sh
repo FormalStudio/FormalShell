@@ -179,15 +179,9 @@ EOF
 # fill sits about 6% over this rig's near-black desktop.
 chevron_quiet_card_width() {
   local band="$1" box
-  box=$($convert_bin "$band" "$chevron_quiet_shut_path" -compose difference -composite \
-    -colorspace Gray -threshold 2% -format "%@" info: 2>/dev/null)
-  case "$box" in
-    [0-9]*x[0-9]*) ;;
-    *) echo 0; return 0 ;;
-  esac
+  box=$(card_box "$band" "$chevron_quiet_shut_path" 0 2%) || { echo 0; return 0; }
   local width="${box%%x*}"
-  # A trim over an all-black difference answers with the whole image on some
-  # builds and with 1x1 on others; either way there is no card in it.
+  # card_box's whole image or 1x1 over no difference: no card in it.
   if [ "$width" -le 4 ] || [ "$width" -ge 1900 ]; then
     echo 0
   else

@@ -430,8 +430,7 @@ leg_spaces_assert() {
   $convert_bin "$spaces_idle_png" -crop "$geo" +repage "$spaces_crop_dir/slot-idle.png"
   echo "SMOKE_SPACES_SLOT_BLOCKED $spaces_crop_dir/slot-blocked.png"
   echo "SMOKE_SPACES_SLOT_IDLE $spaces_crop_dir/slot-idle.png"
-  diff_box=$($convert_bin "$spaces_crop_dir/slot-blocked.png" "$spaces_crop_dir/slot-idle.png" \
-    -compose difference -composite -threshold 10% -format '%@' info: 2>/dev/null)
+  diff_box=$(card_box "$spaces_crop_dir/slot-blocked.png" "$spaces_crop_dir/slot-idle.png" 0 10%)
   echo "slot $geo, blocked icon from x=$icon_left, badge diff box $diff_box"
   dw=${diff_box%%x*}
   dx=$(echo "$diff_box" | sed -n 's/^[0-9]*x[0-9]*+\([0-9]*\)+[0-9]*$/\1/p')

@@ -133,7 +133,7 @@ leg_lock_assert() {
   # The avatar over the clock: ~/.face's colour covering at least a 40px
   # disc's worth of the locked frame (a quarter of the 90px slot).
   local avatar_px
-  avatar_px=$($convert_bin "$lock_locked_path" -fuzz 4% -fill black +opaque '#1FB86A' -fill white -opaque '#1FB86A' -format '%[fx:int(mean*w*h)]' info: 2>/dev/null)
+  avatar_px=$(colour_px "$lock_locked_path" '#1FB86A' 4%)
   echo "lock avatar pixels: ${avatar_px:-none}"
   if [ "${avatar_px:-0}" -lt 1250 ]; then
     fail "the lock screen drew no avatar from \$HOME/.face (${avatar_px:-0} pixels of its colour)"

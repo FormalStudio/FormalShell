@@ -168,8 +168,7 @@ launcher_preview_colour() {
   local png="$shot_dir/launcher-preview-$1.png" box
   # The picture hangs from the pane's top, fitted to its width.
   box=$(scaled_jq -r "$geometry_jq"'.paneBox | {x: (.x + .width / 2 - 12), y: (.y + 40), width: 24, height: 24} | geometry' "$shot_dir/launcher-preview-$1.json")
-  $convert_bin "$png" -crop "$box" +repage \
-    -format '%[fx:int(255*mean.r)] %[fx:int(255*mean.g)] %[fx:int(255*mean.b)]' info:
+  patch_rgb "$png" "$box"
 }
 
 leg_launcher_preview_assert() {

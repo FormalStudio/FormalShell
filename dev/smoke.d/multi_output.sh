@@ -266,10 +266,11 @@ leg_multi_output_assert() {
   cat "$multi_output_hidden"
   grep -q '^bars under fullscreen: 0$' "$multi_output_hidden" || fail "the fullscreen window on $multi_output_second left its bar mapped"
   [ -s "$multi_output_unhidden_png" ] || fail "no frame of $multi_output_second once its fullscreen window closed"
-  local name box diff cells=0
+  local name box bw bh diff cells=0
   while read -r name box; do
-    diff=$($convert_bin "$multi_output_bare_png" -crop "$box" +repage "(" "$multi_output_unhidden_png" -crop "$box" +repage ")" -alpha off \
-      -compose difference -composite -colorspace gray -threshold 10% -format '%[fx:mean]' info: 2>&1 | tail -1)
+    IFS='x+' read -r bw bh _ <<< "$box"
+    diff=$(diff_px "$multi_output_bare_png" "$multi_output_unhidden_png" 10% "$box")
+    [ -z "$diff" ] || diff=$(awk -v n="$diff" -v a="$((bw * bh))" 'BEGIN { print n / a }')
     echo "bar after fullscreen: $name $box, share changed ${diff:-?}"
     awk -v d="${diff:-1}" 'BEGIN { exit !(d + 0 < 0.3) }' \
       || fail "$multi_output_second's bar came back from fullscreen without its $name cell (${diff:-?} of $box changed)"

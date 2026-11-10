@@ -70,21 +70,12 @@ lyrics_blur_cache_key() {
 # a frame with the panel closed and one with it open, bar cropped away
 # first. Echoes "x y w h bodyImagePath"; y is relative to that crop.
 lyrics_blur_pane_rect() {
-  local bare="$1" open="$2" conv="$3"
-  local body_h=$((1080 - 60)) bare_body open_body rect w h rest x y
-  bare_body="${bare%.png}-body.png"
+  local bare="$1" open="$2" open_body rect w h x y
   open_body="${open%.png}-body.png"
-  "$conv" "$bare" -crop "1920x${body_h}+0+60" +repage "$bare_body" > /dev/null 2>&1
-  "$conv" "$open" -crop "1920x${body_h}+0+60" +repage "$open_body" > /dev/null 2>&1
-  rect=$("$conv" "$bare_body" "$open_body" -compose difference -composite \
-    -threshold 8% -format "%@" info: 2>/dev/null)
-  w=${rect%%x*}
-  rest=${rect#*x}
-  h=${rest%%+*}
-  rest=${rest#*+}
-  x=${rest%%+*}
-  y=${rest#*+}
-  printf '%s %s %s %s %s\n' "${x:-0}" "${y:-0}" "${w:-0}" "${h:-0}" "$open_body"
+  "$convert_bin" "$open" -chop 0x60 "$open_body" > /dev/null 2>&1
+  rect=$(card_box "$bare" "$open" 60 8%)
+  IFS='x+' read -r w h x y <<< "$rect"
+  printf '%s %s %s %s %s\n' "${x:-0}" "$(( ${y:-60} - 60 ))" "${w:-0}" "${h:-0}" "$open_body"
 }
 
 # A 3x1 morphological gradient (max-min over each pixel's own row of three),
@@ -246,8 +237,8 @@ leg_lyrics_blur_assert() {
   # shellcheck source=/dev/null
   . "$lyrics_blur_lib_path"
   local rx ry rw rh on_body off_body energy_on energy_off
-  read -r rx ry rw rh on_body < <(lyrics_blur_pane_rect "$lyrics_blur_bare_path" "$lyrics_blur_on_png_path" "$convert_bin")
-  read -r _ _ _ _ off_body < <(lyrics_blur_pane_rect "$lyrics_blur_bare_path" "$lyrics_blur_off_png_path" "$convert_bin")
+  read -r rx ry rw rh on_body < <(lyrics_blur_pane_rect "$lyrics_blur_bare_path" "$lyrics_blur_on_png_path")
+  read -r _ _ _ _ off_body < <(lyrics_blur_pane_rect "$lyrics_blur_bare_path" "$lyrics_blur_off_png_path")
   local lyrics_x0=$((rx + 480)) lyrics_w=$((rw - 480))
   # The bottom third of the pane's own viewport: with the first line lit and
   # frozen, everything back there is most of the way from the anchor to the

@@ -138,8 +138,7 @@ EOF
 
 # Pixels of the fixture's colour (or the one given) in a frame.
 login_lock_pixels() {
-  local colour=${2:-$login_lock_colour}
-  $convert_bin "$1" -fuzz 15% -fill black +opaque "$colour" -fill white -opaque "$colour" -format '%[fx:int(mean*w*h)]' info: 2>/dev/null
+  colour_px "$1" "${2:-$login_lock_colour}" 15%
 }
 
 # dev/dissolve-cells.py's line: at least 90% of the 32 px cells one

@@ -103,17 +103,7 @@ EOF
 # from the closed output. Empty (0x0+0+0) when there is no card in it, which
 # is what a sample taken before the window is up reads as.
 deform_box() {
-  local frame="$1" name="$2" body bare_body box
-  body="$shot_dir/deform-body-$name.png"
-  bare_body="$shot_dir/deform-body-bare.png"
-  $convert_bin "$frame" -crop "${out_w}x$((out_h - deform_band_top))+0+${deform_band_top}" +repage "$body" > /dev/null 2>&1
-  [ -s "$body" ] || fail "could not crop the band out of $frame"
-  box=$($convert_bin "$bare_body" "$body" -compose difference -composite \
-    -threshold 8% -format "%@" info: 2>/dev/null)
-  case "$box" in
-    [0-9]*x[0-9]*+[0-9]*+[0-9]*) echo "$box" ;;
-    *) echo "0x0+0+0" ;;
-  esac
+  card_box "$deform_bare_path" "$1" "$deform_band_top" 8% || echo "0x0+0+0"
 }
 
 deform_height() {
@@ -142,14 +132,8 @@ leg_deform_assert() {
     echo "SMOKE_DEFORM_MID_$((i + 1)) ${deform_mid_paths[$i]}"
   done
 
-  # The reference the samples are read against, cropped by hand first since
-  # every deform_box call below subtracts it.
-  $convert_bin "$deform_bare_path" -crop "${out_w}x$((out_h - deform_band_top))+0+${deform_band_top}" \
-    +repage "$shot_dir/deform-body-bare.png" > /dev/null 2>&1
-  [ -s "$shot_dir/deform-body-bare.png" ] || fail "could not crop the band out of $deform_bare_path"
-
   local rest_box rest_h
-  rest_box=$(deform_box "$deform_settled_path" "settled")
+  rest_box=$(deform_box "$deform_settled_path")
   rest_h=$(deform_height "$rest_box")
   if [ "${rest_h:-0}" -lt 80 ]; then
     fail "no resting card found under the bar: the diff against the closed output is '$rest_box'"
@@ -158,7 +142,7 @@ leg_deform_assert() {
 
   local box height last_box="" ladder=""
   for i in "${!deform_mid_paths[@]}"; do
-    box=$(deform_box "${deform_mid_paths[$i]}" "mid-$((i + 1))")
+    box=$(deform_box "${deform_mid_paths[$i]}")
     height=$(deform_height "$box")
     ladder+=" $height"
     echo "deform: sample $((i + 1)) at +${deform_mid_sleeps[$i]}s box $box"

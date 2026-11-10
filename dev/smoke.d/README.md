@@ -77,10 +77,14 @@ run's paths and resolved `*_bin`, then `call <target> <fn> [args...]`,
 <path> <id>`, `until_jq <seconds> <path> <claim> <command...>`, `walk_to
 <target> <cursor jq> <id> <trace> [key jq]`, `spawn_foot <app id> [rules]
 [title]`, `until_window <app id> [seconds]`, `settings_retarget <jq assignment>`, `pw_load_module <module>
-[args]` (unloaded at teardown and on exit), `pixel` and `patch_mean`. Each
-one's header in `dev/smoke.sh` is its contract. A leg's assert has
-`expect_jq <path> <claim> <what failed> [excerpt]`, `pixel <png> <x> <y>`
-("r g b"), `patch_mean <png> [crop]` (mean grey in thousandths),
+[args]` (unloaded at teardown and on exit), the frame reads below, and
+`$out_scale` (the asked scale). Each one's header in `dev/smoke.sh` is its
+contract. A leg's assert has `expect_jq <path> <claim> <what failed>
+[excerpt]` and the frame reads: `pixel <png> <x> <y>` ("r g b"),
+`patch_mean <png> [crop]` (mean grey in thousandths), `patch_rgb <png>
+<crop>` ("r g b"), `card_box <bare> <frame> <top> <threshold>`, `diff_px
+<a> <b> <threshold> [crop]`, `colour_px <png> <hex> <fuzz> [crop]`,
+`logical_px <n>` and `frame_logical <n>`,
 `$layers_jq` (`layers`, `layer($ns)`) beside `$geometry_jq`, and
 `panel_language_assert`.
 

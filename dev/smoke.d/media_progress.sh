@@ -202,11 +202,9 @@ media_progress_body() {
 # frame with the panel open, so nothing below reads a hardcoded screen
 # coordinate.
 media_progress_rect() {
-  local bare open
-  bare=$(media_progress_body bare)
-  open=$(media_progress_body "$1")
-  $convert_bin "$bare" "$open" -compose difference -composite \
-    -colorspace Gray -threshold 8% -format '%@' info: 2>/dev/null
+  local w h x y
+  IFS='x+' read -r w h x y <<< "$(card_box "$shot_dir/progress-bare.png" "$shot_dir/progress-$1.png" 60 8%)"
+  [ -n "$y" ] && echo "${w}x${h}+${x}+$((y - 60))"
 }
 
 # The progress track's fill, as a fraction of its own groove, read off one

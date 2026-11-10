@@ -162,8 +162,7 @@ leg_lock_media_assert() {
   # cover's own stripes are in the picture (the red one, nothing else on the
   # lock paints it).
   shown=$(_lock_media_out "$lock_media_bright_json" nowPlaying)
-  stripes=$($convert_bin "$lock_media_bright_png" -fuzz 6% -fill black +opaque '#E03131' \
-    -fill white -opaque '#E03131' -format '%[fx:int(mean*w*h)]' info: 2>/dev/null)
+  stripes=$(colour_px "$lock_media_bright_png" '#E03131' 6%)
   echo "lock-media: nowPlaying=$shown cover-red-px=${stripes:-0}"
   [ "$shown" = "true" ] || fail "lock-media: the lock reports no now-playing block with a player playing"
   [ "${stripes:-0}" -ge 40 ] || fail "lock-media: the cover's red stripe is not in the locked frame (${stripes:-0} px)"

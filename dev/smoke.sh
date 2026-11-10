@@ -281,6 +281,8 @@ echo "output scale: $FS_SMOKE_SCALE"
 # edge before any frame is read. hypr_base_config pins the mode at 1920x1080.
 logical_w=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1920 / s + 0.5 }')
 logical_h=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1080 / s + 0.5 }')
+# The scale a frame will be at, until the session reports the one it got.
+out_scale=$FS_SMOKE_SCALE
 
 # The session's own start (the shell up, the desktop arrived, the fixture
 # window mapped) and its teardown, then each leg's turn (leg_timing).
@@ -1010,6 +1012,49 @@ patch_mean() {
   [ -z "${2:-}" ] || crop=(-crop "$2" +repage)
   "$convert_bin" "$1" ${crop[@]+"${crop[@]}"} -colorspace Gray -format '%[fx:int(mean*1000+0.5)]' info: 2>/dev/null
 }
+# logical_px <n>: one logical length or offset in frame pixels, at the
+# output's scale (the asked one until the session reports its own).
+logical_px() {
+  awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", n * s + (n < 0 ? -0.5 : 0.5) }'
+}
+# frame_logical <n>: a length found in a frame's pixels as logical ones, for
+# a pointer moved onto it.
+frame_logical() {
+  awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", n / s + (n < 0 ? -0.5 : 0.5) }'
+}
+# patch_rgb <png> <crop>: the mean colour of that crop as "r g b", each 0 to
+# 255.
+patch_rgb() {
+  "$convert_bin" "$1" -crop "$2" +repage -format '%[fx:int(mean.r*255+0.5)] %[fx:int(mean.g*255+0.5)] %[fx:int(mean.b*255+0.5)]\n' info: 2>/dev/null
+}
+# card_box <bare> <frame> <top> <threshold>: the box of everything that
+# differs between two frames from row <top> down, a difference past
+# <threshold> (a percentage) in any channel, as "WxH+X+Y" in the frames'
+# own pixels. A trim over no difference at all answers 0x0, 1x1 or the
+# whole crop depending on the ImageMagick build; a caller reads it against
+# the smallest card it expects.
+card_box() {
+  local box w h x y
+  box=$("$convert_bin" "$1" "$2" -chop "0x$3" -compose difference -composite -threshold "$4" -format '%@' info: 2>/dev/null)
+  IFS='x+' read -r w h x y <<< "$box"
+  [ -n "$y" ] || return 1
+  echo "${w}x${h}+${x}+$((y + $3))"
+}
+# diff_px <a> <b> <threshold> [crop]: how many pixels of two frames, or of
+# that crop of them, differ in grey by more than <threshold> (a percentage).
+diff_px() {
+  local crop=()
+  [ -z "${4:-}" ] || crop=(-crop "$4" +repage)
+  "$convert_bin" "$1" "$2" ${crop[@]+"${crop[@]}"} -alpha off -compose difference -composite \
+    -colorspace Gray -threshold "$3" -format '%[fx:mean*w*h]' info: 2>/dev/null | awk '{ printf "%d", $1 + 0.5 }'
+}
+# colour_px <png> <hex> <fuzz> [crop]: how many pixels of a frame, or of
+# that crop of it, are <hex> within <fuzz> (a percentage).
+colour_px() {
+  local crop=()
+  [ -z "${4:-}" ] || crop=(-crop "$4" +repage)
+  "$convert_bin" "$1" ${crop[@]+"${crop[@]}"} -fuzz "$3" -fill black +opaque "$2" -fill white -opaque "$2" -format '%[fx:mean*w*h]' info: 2>/dev/null | awk '{ printf "%d", $1 }'
+}
 
 # The drive library: what drives share, sourced by each (hypr_exec_once).
 # The run's paths and every resolved *_bin first, read when a function runs,
@@ -1017,11 +1062,11 @@ patch_mean() {
 {
   echo '# shellcheck shell=bash'
   echo '# Written per run by dev/smoke.sh; dev/smoke.d/README.md has the contract.'
-  for lib_var in shot_dir iso_home settings_path rig_password pw_modules_path $(compgen -v | grep '_bin$'); do
+  for lib_var in shot_dir iso_home settings_path rig_password pw_modules_path out_scale $(compgen -v | grep '_bin$'); do
     printf '%s=%q\n' "$lib_var" "${!lib_var}"
   done
   printf 'formalshell_ipc=%q\n' "$PWD/result/bin/formalshell-ipc"
-  declare -f pw_load_module pw_unload_modules pixel patch_mean
+  declare -f pw_load_module pw_unload_modules pixel patch_mean patch_rgb card_box diff_px colour_px logical_px frame_logical
   cat <<'LIB'
 # call <target> <fn> [args...]: the shell's IPC, as `$ipc call`.
 call() { "$formalshell_ipc" call "$@"; }
@@ -1384,18 +1429,10 @@ scaled_jq() {
   "$jq_bin" --argjson s "${out_scale:-1}" "$@"
 }
 # A probe with no shell rect to read: a box in logical pixels as the crop
-# of the same pixels in a frame, logical_box <w> <h> <x> <y>, and one
-# logical length or offset in frame pixels, logical_px <n>.
+# of the same pixels in a frame, logical_box <w> <h> <x> <y>; logical_px
+# above converts one length.
 logical_box() {
   scaled_jq -nr --argjson w "$1" --argjson h "$2" --argjson x "$3" --argjson y "$4" "$geometry_jq"'{x: $x, y: $y, width: $w, height: $h} | geometry'
-}
-logical_px() {
-  awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", n * s + (n < 0 ? -0.5 : 0.5) }'
-}
-# A length found in a frame's pixels as logical ones, for a pointer moved
-# onto it.
-frame_logical() {
-  awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", n / s + (n < 0 ? -0.5 : 0.5) }'
 }
 
 panel_language_failures=""

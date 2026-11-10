@@ -78,7 +78,7 @@ leg_lock_restore_assert() {
   if ! grep -q '"locked":true' "$lock_restore_status_path" || ! grep -q '"secure":true' "$lock_restore_status_path"; then
     fail "the second shell's lock is not locked and secure. Got: $(cat "$lock_restore_status_path" 2>/dev/null)"
   fi
-  avatar_px=$($convert_bin "$lock_restore_back_path" -fuzz 4% -fill black +opaque '#1FB86A' -fill white -opaque '#1FB86A' -format '%[fx:int(mean*w*h)]' info: 2>/dev/null)
+  avatar_px=$(colour_px "$lock_restore_back_path" '#1FB86A' 4%)
   echo "restored lock avatar pixels: ${avatar_px:-none}"
   if [ "${avatar_px:-0}" -lt 1250 ]; then
     fail "the restored lock drew no avatar (${avatar_px:-0} pixels of its colour): not our lock surface on screen"

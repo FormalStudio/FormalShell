@@ -283,8 +283,7 @@ leg_fullscreen_assert() {
   [ "${menu_overlay:-0}" -ge 1 ] || fail "the launcher is not on the overlay level over a fullscreen window"
   [ -s "$fullscreen_menu_path" ] || fail "no launcher frame at $fullscreen_menu_path"
   local menu_diff
-  menu_diff=$($convert_bin "$fullscreen_on_path" "$fullscreen_menu_path" -compose difference -composite \
-    -colorspace Gray -threshold 5% -format '%[fx:mean*w*h]' info: 2>/dev/null | awk '{printf "%d", $1}')
+  menu_diff=$(diff_px "$fullscreen_on_path" "$fullscreen_menu_path" 5%)
   echo "launcher over fullscreen: pixels differing from the bare frame=$menu_diff"
   [ "${menu_diff:-0}" -gt 10000 ] || fail "the launcher did not draw over the fullscreen window ($menu_diff pixels differ)"
 

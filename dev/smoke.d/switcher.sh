@@ -108,9 +108,7 @@ EOS
 # One patch of a frame as its own mean colour, as a plain string: two crops of
 # a flat region answer the same string, and two different fills never do.
 _switcher_patch() {
-  $convert_bin "$1" -crop "$2" +repage \
-    -format '%[fx:int(mean.r*255+0.5)].%[fx:int(mean.g*255+0.5)].%[fx:int(mean.b*255+0.5)]' \
-    info: 2>/dev/null
+  patch_rgb "$1" "$2" | tr ' ' .
 }
 
 # Whether two `r.g.b` patches are the same colour within the rig's own

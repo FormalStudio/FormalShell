@@ -91,12 +91,6 @@ EOS
   hypr_exec_once "bash $script"
 }
 
-# Mean red, green and blue (0..255) inside one rect of a frame.
-_reactive_rims_mean() {
-  $convert_bin "$1" -crop "$2" +repage \
-    -format '%[fx:int(mean.r*255+0.5)] %[fx:int(mean.g*255+0.5)] %[fx:int(mean.b*255+0.5)]\n' info: 2>/dev/null
-}
-
 # The card's rect in the frame's pixels, its edges on the first and last
 # whole pixel the 1px rim covers at the output's scale, as "x0 y0 x1 y1"
 # with x1 and y1 past the edge.
@@ -131,15 +125,15 @@ _reactive_rims_span() {
 # Luminance (0..255) inside one rect of a frame.
 _reactive_rims_lum() {
   local lr lg lb
-  read -r lr lg lb < <(_reactive_rims_mean "$1" "$2")
+  read -r lr lg lb < <(patch_rgb "$1" "$2")
   echo $(((lr * 2126 + lg * 7152 + lb * 722) / 10000))
 }
 
 # Red minus blue at the rim, less red minus blue on the fill inside it.
 _reactive_rims_lean() {
   local png="$1" json="$2" side="$3" rim fill
-  read -r rr _ rb < <(_reactive_rims_mean "$png" "$(_reactive_rims_column "$json" "$side" 0)")
-  read -r fr _ fb < <(_reactive_rims_mean "$png" "$(_reactive_rims_column "$json" "$side" 6)")
+  read -r rr _ rb < <(patch_rgb "$png" "$(_reactive_rims_column "$json" "$side" 0)")
+  read -r fr _ fb < <(patch_rgb "$png" "$(_reactive_rims_column "$json" "$side" 6)")
   echo $(((rr - rb) - (fr - fb)))
 }
 

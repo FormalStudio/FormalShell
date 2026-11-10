@@ -236,13 +236,6 @@ s.close()
 PY
 }
 
-# Every number this leg measures a frame with is a logical pixel at scale 1;
-# this puts one on the frame's own pixels at the session's output scale
-# (`lyrics_scale`, appended once the lib is written).
-lyrics_px() {
-  awk -v n="$1" -v s="${lyrics_scale:-1}" 'BEGIN { v = n * s; printf "%d", (v < 0) ? v - 0.5 : v + 0.5 }'
-}
-
 lyrics_wait_marker() {
   local marker="$1" timeout="$2" waited=0
   while [ ! -f "$marker" ] && [ "$waited" -lt "$timeout" ]; do
@@ -262,25 +255,15 @@ lyrics_wait_marker() {
 # "x y w h bodyImagePath". Cut at 2%: the opaque card's fill sits about 6%
 # over this rig's near-black desktop.
 lyrics_pane_rect() {
-  local bare="$1" open="$2" conv="$3"
-  local bar bare_body open_body rect w h rest x y
-  bar=$(lyrics_px 60)
-  bare_body="${bare%.png}-body.png"
+  local bare="$1" open="$2" bar open_body rect w h x y
+  bar=$(logical_px 60)
   open_body="${open%.png}-body.png"
-  "$conv" "$bare" -crop "1920x$((1080 - bar))+0+${bar}" +repage "$bare_body" > /dev/null 2>&1
-  "$conv" "$open" -crop "1920x$((1080 - bar))+0+${bar}" +repage "$open_body" > /dev/null 2>&1
-  rect=$("$conv" "$bare_body" "$open_body" -compose difference -composite \
-    -threshold 2% -format "%@" info: 2>/dev/null)
-  w=${rect%%x*}
-  rest=${rect#*x}
-  h=${rest%%+*}
-  rest=${rest#*+}
-  x=${rest%%+*}
-  y=${rest#*+}
-  printf '%s %s %s %s %s\n' "${x:-0}" "${y:-0}" "${w:-0}" "${h:-0}" "$open_body"
+  "$convert_bin" "$open" -chop "0x${bar}" "$open_body" > /dev/null 2>&1
+  rect=$(card_box "$bare" "$open" "$bar" 2%)
+  IFS='x+' read -r w h x y <<< "$rect"
+  printf '%s %s %s %s %s\n' "${x:-0}" "$(( ${y:-$bar} - bar ))" "${w:-0}" "${h:-0}" "$open_body"
 }
 EOF
-  printf 'lyrics_scale=%s\n' "${FS_SMOKE_SCALE:-1}" >> "$lyrics_lib_path"
 
   # Four lines chained edge to edge (line0 ends exactly where line1 starts,
   # so there is never a gap wide enough for `displayLines` to read as an
@@ -490,10 +473,10 @@ while [ "\$SECONDS" -lt 50 ]; do
   sleep 0.5
 done
 
-read -r rx ry rw rh _ < <(lyrics_pane_rect "$lyrics_bare_path" "$lyrics_synced_png_path" "$convert_bin")
-lead=\$(lyrics_px 480)
-target_x=\$(awk -v v="\$((rx + lead + (rw - lead) / 2))" -v s="\$lyrics_scale" 'BEGIN { printf "%d", v / s }')
-target_y=\$(awk -v v="\$((ry + rh / 2 + \$(lyrics_px 60)))" -v s="\$lyrics_scale" 'BEGIN { printf "%d", v / s }')
+read -r rx ry rw rh _ < <(lyrics_pane_rect "$lyrics_bare_path" "$lyrics_synced_png_path")
+lead=\$(logical_px 480)
+target_x=\$(awk -v v="\$((rx + lead + (rw - lead) / 2))" -v s="\$out_scale" 'BEGIN { printf "%d", v / s }')
+target_y=\$(awk -v v="\$((ry + rh / 2 + \$(logical_px 60)))" -v s="\$out_scale" 'BEGIN { printf "%d", v / s }')
 echo "\$target_x \$target_y \$rx \$ry \$rw \$rh" > "$lyrics_wheel_target_path"
 
 "$wlrctl_bin" pointer move -4000 -4000 > "$lyrics_wheel_dispatch_path" 2>&1
@@ -670,7 +653,7 @@ for delay in 0.1 0.4 0.8 1.2 1.6; do
   sleep "\$delay"
   frame="$shot_dir/lyrics-return-\${delay}.png"
   "$grim_bin" "\$frame" > /dev/null 2>&1
-  read -r rx ry rw rh _ < <(lyrics_pane_rect "$lyrics_bare_path" "\$frame" "$convert_bin")
+  read -r rx ry rw rh _ < <(lyrics_pane_rect "$lyrics_bare_path" "\$frame")
   echo "\$delay \$rx \$ry \$rw \$rh" >> "$lyrics_return_rects_path"
 done
 $ipc call media lyrics > "$lyrics_status_return_path" 2>&1
@@ -819,7 +802,7 @@ EOF
 # theirs).
 lyrics_burst_body() {
   local frame="$1" body="${1%.png}-body.png" bar
-  bar=$(lyrics_px 60)
+  bar=$(logical_px 60)
   "$convert_bin" "$frame" -crop "1920x$((1080 - bar))+0+${bar}" +repage "$body" > /dev/null 2>&1
   printf '%s' "$body"
 }
@@ -927,9 +910,9 @@ lyrics_ink_box() {
 # over its columns off the fill, and the walk inward ran on into the text.
 lyrics_pane_crop() {
   local px py pw ph body top h left right
-  read -r px py pw ph body < <(lyrics_pane_rect "$lyrics_bare_path" "$1" "$convert_bin")
-  top=$(lyrics_px 100)
-  h=$((ph - top - $(lyrics_px 28)))
+  read -r px py pw ph body < <(lyrics_pane_rect "$lyrics_bare_path" "$1")
+  top=$(logical_px 100)
+  h=$((ph - top - $(logical_px 28)))
   read -r left right < <("$convert_bin" "$body" -crop "$((pw / 2))x${h}+$((px + pw / 2))+$((py + top))" +repage \
     -colorspace Gray -scale "$((pw / 2))x1!" -depth 8 txt:- 2>/dev/null | python3 -c '
 import re, sys
@@ -985,7 +968,7 @@ while lo > 0 and tops[lo] - bottoms[lo - 1] <= gap:
 while hi + 1 < len(tops) and tops[hi + 1] - bottoms[hi] <= gap:
     hi += 1
 print(" ".join("%s:%s" % (b[0], b[1]) for b in bands[lo:hi + 1]))
-' "$(printf '%s' "${2#*x}" | cut -d+ -f1)" "$(lyrics_px 8)"
+' "$(printf '%s' "${2#*x}" | cut -d+ -f1)" "$(logical_px 8)"
 }
 
 # The mean grey, in thousandths, over a slice of one row's own ink: "0 0.22" is the row's
@@ -1062,7 +1045,7 @@ lyrics_panel_rect() {
   local open_frame="$1" out_json="$2"
   # shellcheck source=/dev/null
   . "$lyrics_lib_path"
-  read -r x y w h _ < <(lyrics_pane_rect "$lyrics_bare_path" "$open_frame" "$convert_bin")
+  read -r x y w h _ < <(lyrics_pane_rect "$lyrics_bare_path" "$open_frame")
   printf '{"width": %s, "height": %s, "x": %s, "y": %s}\n' "${w:-0}" "${h:-0}" "${x:-0}" "${y:-0}" > "$out_json"
 }
 
@@ -1317,7 +1300,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   note_pane_w=${note_crop%%x*}
   read -r nx ny nw nh < <(lyrics_ink_box "$note_body" "$note_crop" "70%")
   echo "SMOKE_LYRICS_NOTE_INK sung ink ${nw}x${nh} while the stretch is the active row"
-  if [ "${nw:-0}" -gt "$(lyrics_px 24)" ]; then
+  if [ "${nw:-0}" -gt "$(logical_px 24)" ]; then
     fail "a line of words is still being sung over the instrumental stretch: ${nw}px of sung ink"
   fi
   read -r nx ny nw nh < <(lyrics_ink_box "$note_body" "$note_crop" "35%")
@@ -1335,16 +1318,16 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
 
   # Measured here rather than in the session: eight diffs cost more time
   # than the run has left once the burst itself is done.
-  local edge_n edge_x edge_w edge_y edge_h edge_far=$((1920 - $(lyrics_px 12))) edge_off
+  local edge_n edge_x edge_w edge_y edge_h edge_far=$((1920 - $(logical_px 12))) edge_off
   : > "$lyrics_edge_rects_path"
   for edge_n in 1 2 3 4 5 6 7 8; do
     [ -f "$shot_dir/lyrics-edge-${edge_n}.png" ] || fail "edge-burst frame $edge_n was never taken"
-    read -r edge_x edge_y edge_w edge_h _ < <(lyrics_pane_rect "$lyrics_bare_path" "$shot_dir/lyrics-edge-${edge_n}.png" "$convert_bin")
+    read -r edge_x edge_y edge_w edge_h _ < <(lyrics_pane_rect "$lyrics_bare_path" "$shot_dir/lyrics-edge-${edge_n}.png")
     echo "$edge_n $edge_x $edge_w" >> "$lyrics_edge_rects_path"
   done
   while read -r edge_n edge_x edge_w; do
     edge_off=$((edge_x + edge_w - edge_far))
-    if [ "${edge_off#-}" -gt "$(lyrics_px 4)" ]; then
+    if [ "${edge_off#-}" -gt "$(logical_px 4)" ]; then
       fail "the card left the screen's far padding while its width morphed: frame $edge_n x=$edge_x w=$edge_w, far edge $((edge_x + edge_w)) against $edge_far"
     fi
   done < "$lyrics_edge_rects_path"
@@ -1370,9 +1353,9 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   # now-playing column remains. A generous tolerance for the diff rect's
   # own edge antialiasing rather than the exact token value.
   local split_w wide_w width_tol
-  split_w=$(lyrics_px 840)
-  wide_w=$(lyrics_px 480)
-  width_tol=$(lyrics_px 30)
+  split_w=$(logical_px 840)
+  wide_w=$(logical_px 480)
+  width_tol=$(logical_px 30)
   width_synced=$("$jq_bin" -r '.width' "$lyrics_panel_synced_json_path" 2>/dev/null)
   width_none=$("$jq_bin" -r '.width' "$lyrics_panel_none_json_path" 2>/dev/null)
   if ! awk -v w="${width_synced:-0}" -v want="$split_w" -v tol="$width_tol" 'BEGIN { exit !(w > want - tol && w < want + tol) }'; then
@@ -1397,7 +1380,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   fi
   [ -f "$lyrics_return_narrow_path" ] || fail "no narrow-card frame taken before the return arrival"
   local nx ny nw nh cell_centre
-  read -r nx ny nw nh _ < <(lyrics_pane_rect "$lyrics_bare_path" "$lyrics_return_narrow_path" "$convert_bin")
+  read -r nx ny nw nh _ < <(lyrics_pane_rect "$lyrics_bare_path" "$lyrics_return_narrow_path")
   if ! awk -v w="${nw:-0}" -v want="$wide_w" -v tol="$width_tol" 'BEGIN { exit !(w > want - tol && w < want + tol) }'; then
     fail "the reopened card is not popupWidthWide before the pane arrives (want ~$wide_w, got width=$nw)"
   fi
@@ -1409,7 +1392,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   while read -r delay rx ry rw rh; do
     centre=$((rx + rw / 2))
     off=$((centre - cell_centre))
-    if [ "${off#-}" -gt "$(lyrics_px 8)" ]; then
+    if [ "${off#-}" -gt "$(logical_px 8)" ]; then
       fail "the card left its cell's centre during the return arrival: cell centre $cell_centre, card centre $centre at +${delay}s (x=$rx w=$rw)"
     fi
     last_w="$rw"
@@ -1421,7 +1404,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   fi
   # And the claim is about the centring rather than a clamp: both ends of
   # the settled card are clear of the screen's own padding.
-  if [ "$last_x" -le "$(lyrics_px 16)" ] || [ $((last_x + last_w)) -ge $((1920 - $(lyrics_px 16))) ]; then
+  if [ "$last_x" -le "$(logical_px 16)" ] || [ $((last_x + last_w)) -ge $((1920 - $(logical_px 16))) ]; then
     fail "the settled card is against the screen's padding, so its place says nothing about its cell: x=$last_x w=$last_w"
   fi
   echo "SMOKE_LYRICS_CENTRE cell centre x=$cell_centre, card centre x=$((last_x + last_w / 2)) with the pane open (narrow width=$nw, settled width=$last_w)"
@@ -1438,7 +1421,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   read -r fit_crop sbody < <(lyrics_pane_crop "$shot_dir/lyrics-return-1.6.png")
   pane_w=${fit_crop%%x*}
   band_h=${fit_crop#*x}; band_h=${band_h%%+*}
-  if [ "$pane_w" -lt "$(lyrics_px 200)" ] || [ "$band_h" -lt "$(lyrics_px 80)" ]; then
+  if [ "$pane_w" -lt "$(logical_px 200)" ] || [ "$band_h" -lt "$(logical_px 80)" ]; then
     fail "the settled return frame gave no lyrics pane to read: crop $fit_crop"
   fi
   ink=$("$convert_bin" "$sbody" -crop "$fit_crop" +repage -colorspace Gray -threshold 70% -format '%@' info: 2>/dev/null)
@@ -1448,7 +1431,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   ix=${ink#*+}; ix=${ix%%+*}
   iy=${ink##*+}
   echo "SMOKE_LYRICS_FIT lit ink ends at x=$((ix + iw)) of the pane's own $pane_w, over $ih rows of it (ink ${ink})"
-  if [ $((ix + iw)) -gt $((pane_w - $(lyrics_px 14))) ]; then
+  if [ $((ix + iw)) -gt $((pane_w - $(logical_px 14))) ]; then
     fail "the lit line ran to the pane's own clip: ink ends at $((ix + iw)) of $pane_w, so a chunk wider than the pane never broke"
   fi
 
@@ -1536,7 +1519,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   read -r burst_crop _ < <(lyrics_pane_crop "$shot_dir/lyrics-burst-${burst_name}.png")
   burst_w=${burst_crop%%x*}
   burst_h=${burst_crop#*x}; burst_h=${burst_h%%+*}
-  if [ "$burst_w" -lt "$(lyrics_px 200)" ] || [ "$burst_h" -lt "$(lyrics_px 80)" ]; then
+  if [ "$burst_w" -lt "$(logical_px 200)" ] || [ "$burst_h" -lt "$(logical_px 80)" ]; then
     fail "the line-change burst gave no lyrics pane to read: crop $burst_crop"
   fi
   : > "$lyrics_burst_profile_path"
@@ -1577,7 +1560,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
     first_peak=$(printf '%s\n' "$tail_peaks" | head -1)
     [ -n "$first_peak" ] || fail "burst $burst_phase produced no ink profile at all"
     while read -r peak_row; do
-      if [ "$((peak_row - first_peak))" -gt "$(lyrics_px 2)" ] || [ "$((first_peak - peak_row))" -gt "$(lyrics_px 2)" ]; then
+      if [ "$((peak_row - first_peak))" -gt "$(logical_px 2)" ] || [ "$((first_peak - peak_row))" -gt "$(logical_px 2)" ]; then
         fail "the lit row was still moving at the end of burst $burst_phase: peaks $(printf '%s' "$tail_peaks" | tr '\n' ' ')"
       fi
     done < <(printf '%s\n' "$tail_peaks")
@@ -1617,10 +1600,8 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   read -r lat_crop lat_body < <(lyrics_pane_crop "$lyrics_lat_before_png_path")
   lat_held_body=$(lyrics_burst_body "$lyrics_lat_held_png_path")
   lat_lit_body=$(lyrics_burst_body "$lyrics_lat_lit_png_path")
-  lat_held_diff=$("$convert_bin" "$lat_body" "$lat_held_body" -crop "$lat_crop" +repage \
-    -compose difference -composite -colorspace Gray -threshold 10% -format '%[fx:mean*w*h]' info: 2>/dev/null)
-  lat_lit_diff=$("$convert_bin" "$lat_body" "$lat_lit_body" -crop "$lat_crop" +repage \
-    -compose difference -composite -colorspace Gray -threshold 10% -format '%[fx:mean*w*h]' info: 2>/dev/null)
+  lat_held_diff=$(diff_px "$lat_body" "$lat_held_body" 10% "$lat_crop")
+  lat_lit_diff=$(diff_px "$lat_body" "$lat_lit_body" 10% "$lat_crop")
   echo "SMOKE_LYRICS_LAT_FRAMES crop $lat_crop changed px: held=$lat_held_diff lit=$lat_lit_diff"
   if ! awk -v h="${lat_held_diff:-0}" -v l="${lat_lit_diff:-0}" 'BEGIN { exit !(h > 500 && l * 4 < h) }'; then
     fail "the frames do not follow the hold: before/held changed $lat_held_diff px, before/lit $lat_lit_diff"

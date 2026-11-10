@@ -202,11 +202,9 @@ leg_shots_assert() {
   # The media card alone, found as what opening it changed below the bar,
   # then six styles in a 3x2 grid on the wallpaper's own ground.
   local rect
-  rect=$($convert_bin "$shots_dir/media-closed.png" "$shots_dir/media.png" -compose difference -composite \
-    -crop "1920x1020+0+60" +repage -colorspace Gray -threshold 8% -format '%@' info: 2>/dev/null)
-  if [ -n "$rect" ]; then
+  if rect=$(card_box "$shots_dir/media-closed.png" "$shots_dir/media.png" 60 8%); then
     IFS='x+' read -r w h x y <<< "$rect"
-    rect="$((w + 24))x$((h + 24))+$((x - 12))+$((y + 60 - 12))"
+    rect="$((w + 24))x$((h + 24))+$((x - 12))+$((y - 12))"
     for f in bars led scope retro firework redsector; do
       $convert_bin "$shots_dir/vis-$f.png" -crop "$rect" +repage "$shots_dir/card-$f.png"
       ids+=("$shots_dir/card-$f.png")
