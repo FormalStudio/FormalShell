@@ -130,8 +130,7 @@ impl App {
     pub fn console_run_once(&mut self, script: &str) {
         use fs_info::notifications::Urgency;
         let fail = |app: &mut Self, body: &str| {
-            app.store.notifications.notify("CONSOLE UNAVAILABLE", body, Urgency::Normal);
-            crate::surfaces::changed(app, crate::store::Topic::Notifications);
+            app.apply(crate::services::notifications::Op::Notify("CONSOLE UNAVAILABLE".into(), body.into(), Urgency::Normal));
         };
         if !self.console_available() {
             return fail(self, "this compositor cannot place a floating window");

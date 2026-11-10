@@ -22,7 +22,7 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Target};
 use crate::services::menu::{self as index, Ask};
-use crate::services::notifications;
+use crate::services::notifications::{self, Op};
 use crate::store::{Diff, Topic};
 use crate::surface::{Backend, Surface};
 use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
@@ -615,7 +615,7 @@ impl App {
         }
         if crate::services::lights::colour(&self.store.lights, &value).is_err() {
             let body = format!("\"{value}\" is not a hex colour like ff8800");
-            self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::Notify("Keyboard Lights".into(), body, fs_info::notifications::Urgency::Normal))));
+            self.apply(Op::Notify("Keyboard Lights".into(), body, fs_info::notifications::Urgency::Normal));
         }
     }
 
@@ -626,19 +626,16 @@ impl App {
         if cancelled {
             return;
         }
-        let fallback = crate::settings::REMINDER_MESSAGE.get(&self.store.config).to_owned();
-        let entry = fs_info::reminders::parse_spec(&value).and_then(|spec| {
-            let duration = value.split_whitespace().next().unwrap_or_default().to_owned();
-            self.store.notifications.set_reminder(&duration, &spec.message, &fallback)
-        });
-        match entry {
-            Some(e) => {
-                let body = format!("{} at {}", e.message, fs_info::reminders::due_clock(e.due_at));
-                self.store.notifications.notify("Reminder set", &body, Urgency::Normal);
-            }
-            None => self.store.notifications.notify("Reminder", &format!("Could not read \"{value}\" as a duration"), Urgency::Normal),
+        let Some(spec) = fs_info::reminders::parse_spec(&value) else {
+            self.apply(Op::Notify("Reminder".into(), format!("Could not read \"{value}\" as a duration"), Urgency::Normal));
+            return;
+        };
+        let message = notifications::reminder_message(&spec.message, crate::settings::REMINDER_MESSAGE.get(&self.store.config));
+        self.apply(Op::SetReminder { seconds: spec.seconds, message });
+        if let Some(e) = self.store.notifications.newest_reminder() {
+            let body = format!("{} at {}", e.message, fs_info::reminders::due_clock(e.due_at));
+            self.apply(Op::Notify("Reminder set".into(), body, Urgency::Normal));
         }
-        crate::surfaces::changed(self, crate::store::Topic::Notifications);
     }
 
     /// A Wi-Fi row's Enter: connected, it disconnects; a secured network
@@ -832,8 +829,8 @@ impl App {
         use fs_info::notifications::Urgency;
         let peer = index.parse::<usize>().ok().and_then(|i| self.store.localsend.peers.get(i)).cloned();
         let Some(peer) = peer else {
-            self.store.notifications.notify("LOCALSEND FAILED", "That device is no longer in range, rescan and try again", Urgency::Critical);
-            return crate::surfaces::changed(self, crate::store::Topic::Notifications);
+            self.apply(Op::Notify("LOCALSEND FAILED".into(), "That device is no longer in range, rescan and try again".into(), Urgency::Critical));
+            return;
         };
         let Some(entry) = self.store.clipboard.items.iter().find(|e| e.id == id) else { return };
         localsend::command(Cmd::Send { peer, payload: Payload::of(entry) });

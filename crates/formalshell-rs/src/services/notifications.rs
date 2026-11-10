@@ -91,13 +91,43 @@ pub enum Op {
     DismissGroup(Vec<NotificationId>),
     /// The centre's "Clear all": pending and seen both go.
     ClearHistory,
+    /// Every toast and every pending entry gone; the seen tier stays.
+    Clear,
+    ClearPending,
+    DismissAll,
+    MarkAllSeen,
+    /// Toasts closed off the stack, not out of the history.
+    DismissPopups(Vec<NotificationId>),
     Invoke(NotificationId, String),
+    /// A toast's action button: its action runs and the toast goes.
+    Pick(NotificationId, String),
+    /// A click on a toast's body: the group's newest entry runs its default
+    /// action, if it has one, and the group's toasts go.
+    Open(Vec<NotificationId>),
+    /// The newest toast's default action, then that toast dismissed.
+    InvokeLast,
+    /// `notifications expand on`, the rig's stand-in for hovering the stack.
+    Expand(bool),
+    /// The pointer over these toasts, or off them: their countdown holds.
+    Hover(Vec<NotificationId>, bool),
     /// A shell-authored entry from a service on its own thread.
     Notify(String, String, Urgency),
-    /// The same with actions, each a command run when it is picked.
-    NotifyRunning(String, String, Urgency, Vec<LocalAction>),
+    /// The same with actions, each a command run when it is picked, and a
+    /// picture's URL ([`State::newest_local`] names the entry).
+    NotifyRunning { summary: String, body: String, urgency: Urgency, actions: Vec<LocalAction>, image: String },
+    /// A shell-authored entry's picture, decoded.
+    Picture(NotificationId, icons::Raw),
+    /// [`State::newest_reminder`] names the entry.
+    SetReminder { seconds: u64, message: String },
+    ClearReminders,
     /// The pending reminders as one toast, the bar's reminder indicator.
     ShowReminders,
+}
+
+impl From<Op> for store::Diff {
+    fn from(op: Op) -> Self {
+        store::Diff::Notifications(Diff::Op(op))
+    }
 }
 
 #[derive(Default)]
@@ -123,6 +153,7 @@ pub struct State {
     pub reminders: Vec<reminders::Entry>,
     reminders_seen: Option<Value>,
     reminder_serial: u64,
+    newest_reminder: Option<String>,
     pub phone: iphone::Mirror,
 }
 
@@ -176,25 +207,64 @@ impl State {
                 self.after_change();
                 dropped
             }
-            Diff::Op(op) => {
-                match op {
-                    Op::SetDnd(on) => self.set_dnd(on),
-                    Op::DismissGroup(ids) => self.dismiss_group(&ids),
-                    Op::ClearHistory => {
-                        self.clear_pending();
-                        let past: Vec<NotificationId> = self.model.past.iter().map(|e| e.id).collect();
-                        self.dismiss_group(&past);
-                    }
-                    Op::Invoke(id, key) => self.invoke_action(id, &key),
-                    Op::Notify(summary, body, urgency) => self.notify(&summary, &body, urgency),
-                    Op::NotifyRunning(summary, body, urgency, actions) => {
-                        self.notify_local(&summary, &body, urgency, actions, String::new());
-                    }
-                    Op::ShowReminders => self.show_reminders(),
-                }
-                true
-            }
+            Diff::Op(op) => self.op(op),
         }
+    }
+
+    fn op(&mut self, op: Op) -> bool {
+        match op {
+            Op::SetDnd(on) => self.set_dnd(on),
+            Op::DismissGroup(ids) => self.dismiss_group(&ids),
+            Op::ClearHistory => {
+                self.clear_pending();
+                let past: Vec<NotificationId> = self.model.past.iter().map(|e| e.id).collect();
+                self.dismiss_group(&past);
+            }
+            Op::Clear => {
+                self.dismiss_all();
+                self.clear_pending();
+            }
+            Op::ClearPending => self.clear_pending(),
+            Op::DismissAll => self.dismiss_all(),
+            Op::MarkAllSeen => self.mark_all_seen(),
+            Op::DismissPopups(ids) => self.dismiss_popup_group(&ids),
+            Op::Invoke(id, key) => self.invoke_action(id, &key),
+            Op::Pick(id, key) => {
+                self.invoke_action(id, &key);
+                self.dismiss_popup(id);
+            }
+            Op::Open(ids) => {
+                if let Some(&id) = ids.last()
+                    && self.find(id).is_some_and(|e| e.actions.iter().any(|a| a.key == "default"))
+                {
+                    self.invoke_action(id, "default");
+                }
+                self.dismiss_popup_group(&ids);
+            }
+            Op::InvokeLast => self.invoke_last(),
+            Op::Expand(on) => self.stack_expanded = on,
+            Op::Hover(ids, on) => {
+                self.set_hovered(&ids, on);
+                // Only the countdown reads it: nothing redraws.
+                return false;
+            }
+            Op::Notify(summary, body, urgency) => self.notify(&summary, &body, urgency),
+            Op::NotifyRunning { summary, body, urgency, actions, image } => {
+                self.notify_local(&summary, &body, urgency, actions, image);
+            }
+            Op::Picture(id, raw) => {
+                self.icons.insert(id, raw);
+            }
+            Op::SetReminder { seconds, message } => self.set_reminder(seconds, &message),
+            Op::ClearReminders => {
+                if self.reminders.is_empty() {
+                    return false;
+                }
+                self.store_reminders(Vec::new());
+            }
+            Op::ShowReminders => self.show_reminders(),
+        }
+        true
     }
 
     pub fn find(&self, id: NotificationId) -> Option<&model::Entry> {
@@ -236,20 +306,20 @@ impl State {
         }
     }
 
-    pub fn set_dnd(&mut self, on: bool) {
+    fn set_dnd(&mut self, on: bool) {
         self.model.set_dnd(on);
         state::set(vec![Field::Dnd(on)]);
     }
 
     /// A shell-authored entry, which earns the
     /// DND bypass at urgency 2 on its own `local` marker.
-    pub fn notify(&mut self, summary: &str, body: &str, urgency: Urgency) {
+    fn notify(&mut self, summary: &str, body: &str, urgency: Urgency) {
         self.notify_with(summary, body, urgency, Vec::new(), String::new());
     }
 
     /// The same with actions and an image; the id comes back so the
     /// caller can match an invoked action to its entry.
-    pub fn notify_with(&mut self, summary: &str, body: &str, urgency: Urgency, actions: Vec<Action>, image: String) -> NotificationId {
+    fn notify_with(&mut self, summary: &str, body: &str, urgency: Urgency, actions: Vec<Action>, image: String) -> NotificationId {
         self.local_serial += 1;
         let id = NotificationId::Local(self.local_serial);
         let notif = Notif {
@@ -268,16 +338,15 @@ impl State {
     }
 
     /// [`State::notify_with`] whose actions run what they carry when picked.
-    pub fn notify_local(&mut self, summary: &str, body: &str, urgency: Urgency, actions: Vec<LocalAction>, image: String) -> NotificationId {
+    fn notify_local(&mut self, summary: &str, body: &str, urgency: Urgency, actions: Vec<LocalAction>, image: String) {
         let shown = actions.iter().map(|a| Action { key: a.key.clone(), label: a.label.clone() }).collect();
         let id = self.notify_with(summary, body, urgency, shown, image);
         if !actions.is_empty() {
             self.local_commands.insert(id, actions);
         }
-        id
     }
 
-    pub fn dismiss_popup(&mut self, id: NotificationId) {
+    fn dismiss_popup(&mut self, id: NotificationId) {
         self.hovered.remove(&id);
         if self.model.popups.iter().any(|p| p.id == id) {
             self.phone_dismissed(id);
@@ -286,30 +355,30 @@ impl State {
         close(id, CloseReason::Dismissed);
     }
 
-    pub fn dismiss_popup_group(&mut self, ids: &[NotificationId]) {
+    fn dismiss_popup_group(&mut self, ids: &[NotificationId]) {
         for &id in ids {
             self.dismiss_popup(id);
         }
     }
 
-    pub fn dismiss_one(&mut self, id: NotificationId) {
+    fn dismiss_one(&mut self, id: NotificationId) {
         self.phone_dismissed(id);
         self.model.dismiss_one(id);
         self.after_change();
     }
 
-    pub fn dismiss_group(&mut self, ids: &[NotificationId]) {
+    fn dismiss_group(&mut self, ids: &[NotificationId]) {
         for &id in ids {
             self.dismiss_one(id);
         }
     }
 
-    pub fn dismiss_all(&mut self) {
+    fn dismiss_all(&mut self) {
         self.model.dismiss_all();
         self.after_change();
     }
 
-    pub fn clear_pending(&mut self) {
+    fn clear_pending(&mut self) {
         self.model.clear_pending();
         self.after_change();
     }
@@ -318,7 +387,7 @@ impl State {
         self.model.mark_all_seen(now_ms());
     }
 
-    pub fn set_hovered(&mut self, ids: &[NotificationId], hovered: bool) {
+    fn set_hovered(&mut self, ids: &[NotificationId], hovered: bool) {
         for id in ids {
             if hovered {
                 self.hovered.insert(*id);
@@ -328,7 +397,7 @@ impl State {
         }
     }
 
-    pub fn invoke_action(&mut self, id: NotificationId, key: &str) {
+    fn invoke_action(&mut self, id: NotificationId, key: &str) {
         match id {
             NotificationId::Local(_) => {
                 let Some(a) = self.local_commands.get(&id).and_then(|acts| acts.iter().find(|a| a.key == key)) else { return };
@@ -353,7 +422,7 @@ impl State {
         model::stack_order(&groups).into_iter().next().map(|g| g.member_ids)
     }
 
-    pub fn invoke_last(&mut self) {
+    fn invoke_last(&mut self) {
         let Some(target) = model::invoke_target(&self.model).cloned() else { return };
         if target.actions.iter().any(|a| a.key == "default") {
             self.invoke_action(target.id, "default");
@@ -415,27 +484,26 @@ impl State {
         state::set(vec![Field::Reminders(value)]);
     }
 
-    /// The stored entry, or `None` when the duration does not parse.
-    pub fn set_reminder(&mut self, duration: &str, message: &str, default_message: &str) -> Option<reminders::Entry> {
-        let seconds = reminders::parse_duration(duration)?;
-        let text = js::trim(message);
-        let text = if text.is_empty() { default_message } else { text };
+    fn set_reminder(&mut self, seconds: u64, message: &str) {
         self.reminder_serial += 1;
-        let entry = reminders::make_entry(seconds, text, now_ms() as f64, self.reminder_serial);
-        let list = reminders::add(&self.reminders, entry.clone());
+        let entry = reminders::make_entry(seconds, message, now_ms() as f64, self.reminder_serial);
+        self.newest_reminder = Some(entry.id.clone());
+        let list = reminders::add(&self.reminders, entry);
         self.store_reminders(list);
-        Some(entry)
     }
 
-    pub fn clear_reminders(&mut self) -> usize {
-        let dropped = self.reminders.len();
-        if dropped > 0 {
-            self.store_reminders(Vec::new());
-        }
-        dropped
+    /// The entry the last [`Op::SetReminder`] stored, while it is pending.
+    pub fn newest_reminder(&self) -> Option<&reminders::Entry> {
+        let id = self.newest_reminder.as_deref()?;
+        self.reminders.iter().find(|e| e.id == id)
     }
 
-    pub fn show_reminders(&mut self) {
+    /// The id the last shell-authored entry was given.
+    pub fn newest_local(&self) -> NotificationId {
+        NotificationId::Local(self.local_serial)
+    }
+
+    fn show_reminders(&mut self) {
         if self.reminders.is_empty() {
             self.notify("Reminders", "None pending", Urgency::Normal);
             return;
@@ -463,6 +531,12 @@ impl State {
             .collect();
         json!({"count": self.reminders.len(), "reminders": items})
     }
+}
+
+/// A reminder's message as typed, or `default` when it is blank.
+pub fn reminder_message(message: &str, default: &str) -> String {
+    let text = js::trim(message);
+    if text.is_empty() { default } else { text }.to_owned()
 }
 
 fn reminder_json(e: &reminders::Entry) -> Value {

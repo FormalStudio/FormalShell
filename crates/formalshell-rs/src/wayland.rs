@@ -1323,8 +1323,8 @@ impl App {
     /// The one write into the store: the diff, the slice it implies, then
     /// what the change asks of services and surfaces. Answers the diff's own
     /// topic, `None` when it changed nothing.
-    pub fn apply(&mut self, diff: Diff) -> Option<Topic> {
-        let moved = self.store.apply(diff);
+    pub fn apply(&mut self, diff: impl Into<Diff>) -> Option<Topic> {
+        let moved = self.store.apply(diff.into());
         self.moved(moved);
         moved.topic
     }
@@ -1401,7 +1401,7 @@ impl App {
                 let _ = capture_host::record::stop(self);
             }
             Action::ReminderSummary => {
-                self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::ShowReminders)));
+                self.apply(notifications::Op::ShowReminders);
             }
             Action::MediaNext => self.store.media.next(),
             Action::MediaPrevious => self.store.media.previous(),
@@ -1410,7 +1410,7 @@ impl App {
                 self.set_center(open, Some(anchor));
             }
             Action::Dnd(on) => {
-                self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::SetDnd(on))));
+                self.apply(notifications::Op::SetDnd(on));
             }
             Action::Launcher => self.menu_toggle(),
         }
@@ -1963,7 +1963,7 @@ impl App {
             }
             Run::DarkStyle => theme::set_mode(&self.store, "toggle").map(drop),
             Run::Dnd => {
-                self.set_dnd(!self.store.notifications.model.dnd);
+                self.apply(notifications::Op::SetDnd(!self.store.notifications.model.dnd));
                 Ok(())
             }
             Run::Caffeinate => {
@@ -1983,7 +1983,7 @@ impl App {
             Run::IpadEdge(edge) => ipad::send(&self.store.ipad, |i| Ok(ipad::Cmd::Position(*edge, i.stretch))),
             Run::RecordStop => capture_host::record::stop(self),
             Run::ClearReminders => {
-                self.clear_reminders();
+                self.apply(notifications::Op::ClearReminders);
                 Ok(())
             }
             Run::Dismiss(source) => crate::services::activity::act(&self.store, self.runtime.as_ref(), crate::services::activity::Verb::Dismiss, source).map(drop),

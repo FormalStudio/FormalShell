@@ -14,7 +14,7 @@ use fs_types::Rect;
 use serde_json::{Value, json};
 
 use crate::services::capture::{self as svc, Act, Event, Exit, Job, Run, or_code};
-use crate::services::notifications::{Local, LocalAction};
+use crate::services::notifications::{Local, LocalAction, Op};
 use crate::settings;
 use crate::surfaces::capture::picker::{Cands, Picker};
 use crate::wayland::App;
@@ -88,14 +88,15 @@ fn notify(app: &mut App, summary: &str, body: &str) {
 fn notify_with(app: &mut App, summary: &str, body: &str, actions: Vec<(&'static str, &'static str, Act)>, image: &str) {
     let actions = actions.into_iter().map(|(key, label, act)| LocalAction { key: key.into(), label: label.into(), run: Local::Capture(act) }).collect();
     let url = if image.is_empty() { String::new() } else { format!("file://{image}") };
-    let id = app.store.notifications.notify_local(summary, body, fs_info::notifications::Urgency::Normal, actions, url);
+    let urgency = fs_info::notifications::Urgency::Normal;
+    app.apply(Op::NotifyRunning { summary: summary.into(), body: body.into(), urgency, actions, image: url });
+    let id = app.store.notifications.newest_local();
     if !image.is_empty()
         && let Some(rt) = &app.runtime
     {
         let path = image.to_owned();
         rt.service(move |ctx| svc::picture(ctx, id, path));
     }
-    crate::surfaces::changed(app, crate::store::Topic::Notifications);
 }
 
 /// Runs the actions picked on this family's notifications since the last
@@ -863,8 +864,7 @@ pub fn events(app: &mut App) {
             }
             Event::Image { id, raw } => {
                 if let Some(raw) = raw {
-                    app.store.notifications.icons.insert(id, raw);
-                    crate::surfaces::changed(app, crate::store::Topic::Notifications);
+                    app.apply(Op::Picture(id, raw));
                 }
             }
             Event::Cropped { generation, result } => cropped(app, generation, result),

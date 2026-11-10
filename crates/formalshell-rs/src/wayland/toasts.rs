@@ -13,6 +13,7 @@ use super::App;
 use crate::motion::Kind;
 use crate::scroll::Travel;
 use crate::runtime::now_ms;
+use crate::services::notifications::Op;
 use crate::store::Topic;
 use crate::surface::{Backend, Surface};
 use crate::surfaces;
@@ -67,19 +68,6 @@ impl App {
             self.open_host(Box::new(center::Center::default()), center::ID, crate::surfaces::panel::quick::Origin::Ipc, anchor, now);
         }
         self.tick_notifications();
-    }
-
-    /// Do not disturb on or off.
-    pub fn set_dnd(&mut self, on: bool) {
-        self.store.notifications.set_dnd(on);
-        surfaces::changed(self, Topic::Notifications);
-    }
-
-    /// Every pending reminder dropped; how many there were.
-    pub fn clear_reminders(&mut self) -> usize {
-        let n = self.store.notifications.clear_reminders();
-        surfaces::changed(self, Topic::Notifications);
-        n
     }
 
     /// Mapped for as long as the centre is shut, passive and empty when
@@ -247,7 +235,7 @@ impl App {
         let expanded = t.expanded(&self.store);
         if expanded != was {
             let ids: Vec<_> = t.members().into_iter().collect();
-            self.store.notifications.set_hovered(&ids, expanded);
+            self.apply(Op::Hover(ids, expanded));
         }
     }
 
@@ -279,23 +267,12 @@ impl App {
             }
             return;
         }
-        let n = &mut self.store.notifications;
-        match act {
+        let op = match act {
             Act::None | Act::Activity(..) => return,
-            Act::Dismiss(ids) => n.dismiss_popup_group(&ids),
-            Act::Action(id, key) => {
-                n.invoke_action(id, &key);
-                n.dismiss_popup(id);
-            }
-            Act::Body(ids) => {
-                if let Some(&id) = ids.last() {
-                    if n.find(id).is_some_and(|e| e.actions.iter().any(|a| a.key == "default")) {
-                        n.invoke_action(id, "default");
-                    }
-                }
-                n.dismiss_popup_group(&ids);
-            }
-        }
-        surfaces::changed(self, Topic::Notifications);
+            Act::Dismiss(ids) => Op::DismissPopups(ids),
+            Act::Action(id, key) => Op::Pick(id, key),
+            Act::Body(ids) => Op::Open(ids),
+        };
+        self.apply(op);
     }
 }

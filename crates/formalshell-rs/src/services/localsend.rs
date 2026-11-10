@@ -186,12 +186,13 @@ async fn run(ctx: Ctx) {
                         run: notifications::Local::Spawn(vec!["xdg-open".into(), target.into()]),
                     };
                     let actions = vec![open("open", "Open", &path.to_string_lossy()), open("reveal", "Show in Folder", &s.dir)];
-                    ctx.publish(store::Diff::Notifications(notifications::Diff::Op(Op::NotifyRunning(
-                        "LOCALSEND RECEIVED".into(),
-                        file,
-                        Urgency::Normal,
+                    ctx.publish(store::Diff::Notifications(notifications::Diff::Op(Op::NotifyRunning {
+                        summary: "LOCALSEND RECEIVED".into(),
+                        body: file,
+                        urgency: Urgency::Normal,
                         actions,
-                    ))));
+                        image: String::new(),
+                    })));
                 }
                 continue;
             }

@@ -25,8 +25,7 @@ fn send(app: &mut App, a: &[Value]) -> Reply {
     let name = a[0].str();
     let Some(peer) = fs_devices::localsend::resolve_peer(&app.store.localsend.peers, name).cloned() else {
         let body = format!("'{name}' is not in the last scan, rescan and try again");
-        app.store.notifications.notify("LOCALSEND FAILED", &body, fs_info::notifications::Urgency::Critical);
-        crate::surfaces::changed(app, crate::store::Topic::Notifications);
+        app.apply(crate::services::notifications::Op::Notify("LOCALSEND FAILED".into(), body, fs_info::notifications::Urgency::Critical));
         return Err(format!("unknown peer '{name}'"));
     };
     localsend::command(Cmd::Send { peer, payload: Payload::Path(a[1].str().to_owned()) });

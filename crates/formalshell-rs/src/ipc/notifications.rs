@@ -3,17 +3,11 @@
 use serde_json::json;
 
 use super::registry::{Function, Reply, Target, Type, Value, ok, text};
-use crate::services::notifications;
-use crate::store::Topic;
-use crate::surfaces;
+use crate::services::notifications::{self, Op};
 use crate::wayland::App;
 
 fn on_off(on: bool) -> Reply {
     text(if on { "on" } else { "off" })
-}
-
-fn moved(app: &mut App) {
-    surfaces::changed(app, Topic::Notifications);
 }
 
 pub fn target() -> Target<App> {
@@ -46,12 +40,12 @@ fn dnd_state(app: &mut App, _: &[Value]) -> Reply {
 }
 
 fn toggle_dnd(app: &mut App, _: &[Value]) -> Reply {
-    app.set_dnd(!app.store.notifications.model.dnd);
+    app.apply(Op::SetDnd(!app.store.notifications.model.dnd));
     on_off(app.store.notifications.model.dnd)
 }
 
 fn set_dnd(app: &mut App, args: &[Value]) -> Reply {
-    app.set_dnd(args[0].bool());
+    app.apply(Op::SetDnd(args[0].bool()));
     on_off(app.store.notifications.model.dnd)
 }
 
@@ -62,27 +56,22 @@ fn show_history(app: &mut App, _: &[Value]) -> Reply {
 }
 
 fn clear(app: &mut App, _: &[Value]) -> Reply {
-    app.store.notifications.dismiss_all();
-    app.store.notifications.clear_pending();
-    moved(app);
+    app.apply(Op::Clear);
     ok()
 }
 
 fn clear_pending(app: &mut App, _: &[Value]) -> Reply {
-    app.store.notifications.clear_pending();
-    moved(app);
+    app.apply(Op::ClearPending);
     ok()
 }
 
 fn mark_all_seen(app: &mut App, _: &[Value]) -> Reply {
-    app.store.notifications.mark_all_seen();
-    moved(app);
+    app.apply(Op::MarkAllSeen);
     ok()
 }
 
 fn dismiss_all(app: &mut App, _: &[Value]) -> Reply {
-    app.store.notifications.dismiss_all();
-    moved(app);
+    app.apply(Op::DismissAll);
     ok()
 }
 
@@ -90,14 +79,12 @@ fn dismiss_all(app: &mut App, _: &[Value]) -> Reply {
 /// `none` at an empty screen: a keybind fired there is not a failure.
 fn dismiss_one(app: &mut App, _: &[Value]) -> Reply {
     let Some(ids) = app.store.notifications.front_group() else { return text("none") };
-    app.store.notifications.dismiss_popup_group(&ids);
-    moved(app);
+    app.apply(Op::DismissPopups(ids));
     ok()
 }
 
 fn invoke_last(app: &mut App, _: &[Value]) -> Reply {
-    app.store.notifications.invoke_last();
-    moved(app);
+    app.apply(Op::InvokeLast);
     ok()
 }
 
@@ -106,8 +93,7 @@ fn expand(app: &mut App, args: &[Value]) -> Reply {
     if state != "on" && state != "off" {
         return Err(format!("unknown expand state '{state}' (on|off)"));
     }
-    app.store.notifications.stack_expanded = state == "on";
-    moved(app);
+    app.apply(Op::Expand(state == "on"));
     on_off(app.store.notifications.stack_expanded)
 }
 
@@ -129,12 +115,13 @@ pub fn reminder() -> Target<App> {
 }
 
 fn reminder_set(app: &mut App, args: &[Value]) -> Reply {
-    let duration = args[0].str().to_owned();
-    let fallback = crate::settings::REMINDER_MESSAGE.get(&app.store.config).to_owned();
-    let Some(e) = app.store.notifications.set_reminder(&duration, args[1].str(), &fallback) else {
+    let duration = args[0].str();
+    let Some(seconds) = fs_info::reminders::parse_duration(duration) else {
         return Err(format!("could not read \"{duration}\" as a duration"));
     };
-    moved(app);
+    let message = notifications::reminder_message(args[1].str(), crate::settings::REMINDER_MESSAGE.get(&app.store.config));
+    app.apply(Op::SetReminder { seconds, message });
+    let Some(e) = app.store.notifications.newest_reminder() else { return Err("the reminder was not stored".into()) };
     Ok(json!({
         "id": e.id,
         "message": e.message,
@@ -144,13 +131,13 @@ fn reminder_set(app: &mut App, args: &[Value]) -> Reply {
 }
 
 fn reminder_show(app: &mut App, _: &[Value]) -> Reply {
-    app.store.notifications.show_reminders();
-    moved(app);
+    app.apply(Op::ShowReminders);
     ok()
 }
 
 fn reminder_clear(app: &mut App, _: &[Value]) -> Reply {
-    let n = app.clear_reminders();
+    let n = app.store.notifications.reminders.len();
+    app.apply(Op::ClearReminders);
     text(format!("ok: cleared {n}"))
 }
 
