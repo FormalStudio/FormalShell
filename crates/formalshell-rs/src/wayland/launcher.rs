@@ -524,7 +524,7 @@ impl App {
                     self.picker_choose_for(path, half);
                 }
             }
-            Intent::EndProcess(pid) => self.call_self("monitor", "kill", &[&pid.to_string(), "TERM"]),
+            Intent::EndProcess(pid) => self.run_call(&IpcCall::new("monitor", "kill").arg(pid.to_string()).arg("TERM")),
             Intent::WifiEnable => net::send(net::Cmd::Wifi(true)),
             Intent::WifiForget(ssid) => net::send(net::Cmd::Forget(ssid.clone())),
             Intent::WifiReveal(ssid) => {
