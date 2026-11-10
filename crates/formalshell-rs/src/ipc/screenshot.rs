@@ -8,11 +8,11 @@ use crate::wayland::App;
 const PROCESSING: (&str, Type) = ("processing", Type::String);
 
 fn full(app: &mut App, a: &[Value]) -> Reply {
-    cap::shot_start(app, false, a[0].str()).map(Json::String)
+    cap::shot_start(app, false, cap::Processing::parse(a[0].str())).map(Json::String)
 }
 
 fn region(app: &mut App, a: &[Value]) -> Reply {
-    cap::shot_start(app, true, a[0].str()).map(Json::String)
+    cap::shot_start(app, true, cap::Processing::parse(a[0].str())).map(Json::String)
 }
 
 fn cancel(app: &mut App, _: &[Value]) -> Reply {
@@ -21,7 +21,7 @@ fn cancel(app: &mut App, _: &[Value]) -> Reply {
 }
 
 fn pick(app: &mut App, a: &[Value]) -> Reply {
-    cap::shot_pick(app, a[0].str(), a[1].str()).map(Json::String)
+    cap::shot_pick(app, a[0].str(), cap::Processing::parse(a[1].str())).map(Json::String)
 }
 
 fn key(app: &mut App, a: &[Value]) -> Reply {

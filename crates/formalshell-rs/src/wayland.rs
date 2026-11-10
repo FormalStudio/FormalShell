@@ -1768,7 +1768,7 @@ impl App {
         use crate::services::{ipad, lights, nightlight};
         use quick::Run;
         let done = match &run {
-            Run::Screenshot => capture_host::shot_pick(self, "smart", "default").map(drop),
+            Run::Screenshot => capture_host::shot_pick(self, "smart", capture_host::Processing::Default).map(drop),
             Run::Lock => self.lock(),
             Run::Logout => {
                 self.logout();

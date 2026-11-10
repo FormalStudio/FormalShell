@@ -19,6 +19,45 @@ use crate::settings;
 use crate::surfaces::capture::picker::{Cands, Picker};
 use crate::wayland::App;
 
+/// What a screenshot does with its picture once grim has it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Processing {
+    /// Saved and copied, the saved toast offering the editor.
+    #[default]
+    Default,
+    /// Copied alone, no file kept.
+    Copy,
+    /// Saved alone.
+    Save,
+}
+
+impl Processing {
+    /// An IPC word: anything but `copy` or `save` is the default.
+    pub fn parse(word: &str) -> Self {
+        match word {
+            "copy" => Self::Copy,
+            "save" => Self::Save,
+            _ => Self::Default,
+        }
+    }
+}
+
+/// What a grab reads off its selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GrabMode {
+    Text,
+    Color,
+}
+
+impl GrabMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Color => "color",
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Shot {
     pub busy: bool,
@@ -26,7 +65,7 @@ pub struct Shot {
     pub last_path: String,
     pub last_error: String,
     pub last_cancelled: bool,
-    pub processing: String,
+    pub processing: Processing,
     pub slurp: Option<u64>,
     pub grab: Option<u64>,
     pub watch: u64,
@@ -35,7 +74,8 @@ pub struct Shot {
 #[derive(Default)]
 pub struct Grab {
     pub busy: bool,
-    pub mode: String,
+    /// The grab in flight's, none between grabs.
+    pub mode: Option<GrabMode>,
     pub last_hex: String,
     pub last_text: String,
     pub last_error: String,
@@ -172,14 +212,14 @@ fn shot_watchdog(app: &mut App) {
     });
 }
 
-pub fn shot_start(app: &mut App, region: bool, processing: &str) -> Result<String, String> {
+pub fn shot_start(app: &mut App, region: bool, processing: Processing) -> Result<String, String> {
     if app.capture.shot.busy {
         return Err("capture already in flight".into());
     }
     let path = shot_path(app);
     let s = &mut app.capture.shot;
     s.busy = true;
-    s.processing = if processing.is_empty() { "default".into() } else { processing.into() };
+    s.processing = processing;
     s.pending_path = path.clone();
     s.last_cancelled = false;
     if region {
@@ -193,14 +233,14 @@ pub fn shot_start(app: &mut App, region: bool, processing: &str) -> Result<Strin
     Ok(path)
 }
 
-pub fn shot_pick(app: &mut App, mode: &str, processing: &str) -> Result<String, String> {
+pub fn shot_pick(app: &mut App, mode: &str, processing: Processing) -> Result<String, String> {
     if app.capture.shot.busy {
         return Err("capture already in flight".into());
     }
     let path = shot_path(app);
     let s = &mut app.capture.shot;
     s.busy = true;
-    s.processing = if processing.is_empty() { "default".into() } else { processing.into() };
+    s.processing = processing;
     s.pending_path = path;
     s.last_cancelled = false;
     if let Err(e) = picker_open(app, if mode.is_empty() { "smart" } else { mode }) {
@@ -217,10 +257,10 @@ pub fn shot_pick(app: &mut App, mode: &str, processing: &str) -> Result<String, 
 
 fn shot_grab(app: &mut App, geometry: &str) {
     let grab = if geometry.is_empty() { r#"grim "$FS_SHOT_PATH""# } else { r#"grim -g "$FS_SHOT_GEOM" "$FS_SHOT_PATH""# };
-    let pipeline = match app.capture.shot.processing.as_str() {
-        "copy" => grab.replace(r#""$FS_SHOT_PATH""#, "-") + " | wl-copy --type image/png",
-        "save" => grab.to_owned(),
-        _ => format!(r#"{grab} && wl-copy --type image/png < "$FS_SHOT_PATH""#),
+    let pipeline = match app.capture.shot.processing {
+        Processing::Copy => grab.replace(r#""$FS_SHOT_PATH""#, "-") + " | wl-copy --type image/png",
+        Processing::Save => grab.to_owned(),
+        Processing::Default => format!(r#"{grab} && wl-copy --type image/png < "$FS_SHOT_PATH""#),
     };
     let g = app.capture.generation();
     app.capture.shot.grab = Some(g);
@@ -310,14 +350,14 @@ fn shot_exit(app: &mut App, e: Exit) {
             s.busy = false;
             if e.started && e.code == 0 {
                 s.last_error.clear();
-                if s.processing == "copy" {
+                if s.processing == Processing::Copy {
                     s.last_path.clear();
                     notify(app, "SCREENSHOT COPIED", "on the clipboard");
                     return;
                 }
                 s.last_path = s.pending_path.clone();
                 let saved = s.last_path.clone();
-                if s.processing == "save" {
+                if s.processing == Processing::Save {
                     notify_with(app, "SCREENSHOT SAVED", &saved, Vec::new(), &saved);
                 } else {
                     notify_with(app, "SCREENSHOT SAVED", &saved, vec![("default", "EDIT", Act::Edit(saved.clone()))], &saved);
@@ -385,7 +425,7 @@ fn crop_shot(app: &mut App, r: Rect, c: &Cands) {
     let x1 = ((sel.x + sel.width - out.x) * sx).round().clamp(0.0, fw) as u32;
     let y1 = ((sel.y + sel.height - out.y) * sy).round().clamp(0.0, fh) as u32;
     let src = format!("{}/formalshell-capture-{name}.png", runtime_dir());
-    let dest = if app.capture.shot.processing == "copy" {
+    let dest = if app.capture.shot.processing == Processing::Copy {
         format!("{}/formalshell/shot.png", runtime_dir())
     } else {
         app.capture.shot.pending_path.clone()
@@ -416,10 +456,10 @@ fn cropped(app: &mut App, generation: u64, result: Result<String, String>) {
             return;
         }
     };
-    let script = match app.capture.shot.processing.as_str() {
-        "save" => "true",
-        "copy" => r#"wl-copy --type image/png < "$FS_SHOT_PATH"; status=$?; rm -f "$FS_SHOT_PATH"; exit $status"#,
-        _ => r#"wl-copy --type image/png < "$FS_SHOT_PATH""#,
+    let script = match app.capture.shot.processing {
+        Processing::Save => "true",
+        Processing::Copy => r#"wl-copy --type image/png < "$FS_SHOT_PATH"; status=$?; rm -f "$FS_SHOT_PATH"; exit $status"#,
+        Processing::Default => r#"wl-copy --type image/png < "$FS_SHOT_PATH""#,
     };
     let g = app.capture.generation();
     app.capture.shot.grab = Some(g);
@@ -436,10 +476,9 @@ fn on_picked_record(app: &mut App, r: Rect, output: String) {
     let audio = settings::RECORDING_AUDIO.get(&app.store.config).to_owned();
     let geometry = format!("{},{} {}x{}", r.x.round(), r.y.round(), r.width.round(), r.height.round());
     let Err(why) = record::start_at(app, &geometry, &output, "region", &audio, None) else { return };
-    let answer = format!("error: {why}");
-    eprintln!("ScreenshotIpc: {answer}");
-    app.capture.shot.last_error = answer.clone();
-    notify(app, "RECORDING FAILED", &answer);
+    eprintln!("ScreenshotIpc: error: {why}");
+    notify(app, "RECORDING FAILED", &format!("error: {why}"));
+    app.capture.shot.last_error = why;
 }
 
 fn on_cancelled(app: &mut App) {
@@ -657,20 +696,20 @@ fn grab_watchdog(app: &mut App) {
     });
 }
 
-pub fn grab_start(app: &mut App, mode: &str, geometry: &str) -> Result<(), String> {
+pub fn grab_start(app: &mut App, mode: GrabMode, geometry: &str) -> Result<(), String> {
     if app.capture.grab.busy {
         return Err("capture already in flight".into());
     }
     let g = &mut app.capture.grab;
     g.busy = true;
-    g.mode = mode.into();
+    g.mode = Some(mode);
     g.last_cancelled = false;
     g.last_error.clear();
     if !geometry.is_empty() {
-        if mode == "color" { run_pick(app, geometry) } else { run_ocr(app, geometry) }
+        if mode == GrabMode::Color { run_pick(app, geometry) } else { run_ocr(app, geometry) }
         return Ok(());
     }
-    let script = if mode == "color" {
+    let script = if mode == GrabMode::Color {
         r#"exec slurp -p -w "$FS_SLURP_WEIGHT" -b "$FS_SLURP_BG" -c "$FS_SLURP_BORDER""#
     } else {
         SLURP_REGION
@@ -738,7 +777,7 @@ pub fn grab_cancel(app: &mut App, reason: &str) -> Result<(), String> {
     }
     let g = &mut app.capture.grab;
     g.busy = false;
-    g.mode.clear();
+    g.mode = None;
     g.last_error.clear();
     g.last_cancelled = true;
     notify(app, "CAPTURE CANCELLED", reason);
@@ -748,7 +787,7 @@ pub fn grab_cancel(app: &mut App, reason: &str) -> Result<(), String> {
 fn grab_fail(app: &mut App, why: String) {
     let g = &mut app.capture.grab;
     g.busy = false;
-    g.mode.clear();
+    g.mode = None;
     eprintln!("CaptureIpc: {why}");
     g.last_error = why.clone();
     notify(app, "CAPTURE FAILED", &why);
@@ -758,7 +797,7 @@ pub fn grab_status(app: &App) -> Value {
     let g = &app.capture.grab;
     json!({
         "capturing": g.busy,
-        "mode": g.mode,
+        "mode": g.mode.map_or("", GrabMode::as_str),
         "lastHex": g.last_hex,
         "lastText": g.last_text,
         "lastError": g.last_error,
@@ -776,13 +815,13 @@ fn grab_exit(app: &mut App, e: Exit) {
             app.capture.grab.watch += 1;
             let geometry = model::parse_geometry(&e.stdout);
             if e.started && e.code == 0 && !geometry.is_empty() {
-                if app.capture.grab.mode == "color" { run_pick(app, &geometry) } else { run_ocr(app, &geometry) }
+                if app.capture.grab.mode == Some(GrabMode::Color) { run_pick(app, &geometry) } else { run_ocr(app, &geometry) }
                 return;
             }
             if e.started && e.code == 1 {
                 let g = &mut app.capture.grab;
                 g.busy = false;
-                g.mode.clear();
+                g.mode = None;
                 g.last_cancelled = true;
                 return;
             }
@@ -799,7 +838,7 @@ fn grab_exit(app: &mut App, e: Exit) {
                 model::OcrOutcome::Ok => {
                     let g = &mut app.capture.grab;
                     g.busy = false;
-                    g.mode.clear();
+                    g.mode = None;
                     g.last_text = e.stdout.trim().to_owned();
                     g.last_error.clear();
                     let text = g.last_text.clone();
@@ -808,7 +847,7 @@ fn grab_exit(app: &mut App, e: Exit) {
                 model::OcrOutcome::Empty => {
                     let g = &mut app.capture.grab;
                     g.busy = false;
-                    g.mode.clear();
+                    g.mode = None;
                     g.last_text.clear();
                     g.last_error.clear();
                     notify(app, "NO TEXT FOUND", "the selected region held no readable text");
@@ -828,7 +867,7 @@ fn grab_exit(app: &mut App, e: Exit) {
             }
             let g = &mut app.capture.grab;
             g.busy = false;
-            g.mode.clear();
+            g.mode = None;
             g.last_hex = hex.clone();
             g.last_error.clear();
             let g_ = app.capture.generation();

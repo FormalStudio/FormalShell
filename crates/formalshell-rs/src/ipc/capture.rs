@@ -6,22 +6,22 @@ use crate::wayland::capture_host as cap;
 use crate::wayland::App;
 
 fn grab_text(app: &mut App, _: &[Value]) -> Reply {
-    cap::grab_start(app, "text", "")?;
+    cap::grab_start(app, cap::GrabMode::Text, "")?;
     ok()
 }
 
 fn color(app: &mut App, _: &[Value]) -> Reply {
-    cap::grab_start(app, "color", "")?;
+    cap::grab_start(app, cap::GrabMode::Color, "")?;
     ok()
 }
 
 fn text_at(app: &mut App, a: &[Value]) -> Reply {
-    cap::grab_start(app, "text", a[0].str())?;
+    cap::grab_start(app, cap::GrabMode::Text, a[0].str())?;
     ok()
 }
 
 fn color_at(app: &mut App, a: &[Value]) -> Reply {
-    cap::grab_start(app, "color", a[0].str())?;
+    cap::grab_start(app, cap::GrabMode::Color, a[0].str())?;
     ok()
 }
 
