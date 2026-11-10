@@ -127,6 +127,8 @@ paths = [
 paths = [
   "crates/formalshell-rs/src/surfaces/launcher/mod.rs",
   "crates/formalshell-rs/src/surfaces/launcher/rows.rs",
+  "crates/formalshell-rs/src/surfaces/launcher/picker.rs",
+  "crates/formalshell-rs/src/surfaces/launcher/view.rs",
 ]
 runs = ["--picker", "--picker --light", "--wheel"]
 
@@ -137,6 +139,7 @@ paths = [
   "crates/formalshell-rs/src/surfaces/launcher/rows.rs",
   "crates/formalshell-rs/src/surfaces/launcher/preview.rs",
   "crates/formalshell-rs/src/surfaces/launcher/settings.rs",
+  "crates/formalshell-rs/src/surfaces/launcher/view.rs",
   "crates/formalshell-rs/src/wayland/launcher.rs",
   "crates/formalshell-rs/src/services/menu.rs",
   "crates/formalshell-rs/src/ipc/menu.rs",
@@ -479,7 +482,7 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/settings.rs"]
 runs = ["--settings-ui", "--settings-ui --light"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/launcher/mod.rs", "crates/formalshell-rs/src/surfaces/launcher/settings.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/panel/mod.rs", "crates/formalshell-rs/src/ipc/panel.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/launcher/mod.rs", "crates/formalshell-rs/src/surfaces/launcher/settings.rs", "crates/formalshell-rs/src/surfaces/launcher/view.rs", "crates/formalshell-rs/src/surfaces/launcher/picker.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/panel/mod.rs", "crates/formalshell-rs/src/ipc/panel.rs"]
 runs = ["--settings-ui", "--bluez-player"]
 
 [[rule]]

@@ -1,43 +1,5 @@
 use super::*;
 
-/// The wallpaper route lists `dir`, and in
-/// select mode answers `token` in picker-selection.txt instead of setting
-/// the wallpaper.
-#[derive(Clone, Debug, Default)]
-pub struct Picker {
-    pub select: bool,
-    pub dir: String,
-    pub token: String,
-    /// `picker select` set this up for the open that follows.
-    pub(super) pending: bool,
-    /// The settings page it was summoned from, which leaving it returns to.
-    pub from: Option<PanelId>,
-}
-
-/// One of the picker's sections: its id, heading, and the words at the
-/// heading's far end.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct PickerSection {
-    pub id: &'static str,
-    pub title: String,
-    pub far: String,
-}
-
-pub const STYLE: &str = "style";
-
-pub const YOURS: &str = "yours";
-
-pub const INCLUDED: &str = "included";
-
-/// A select request's one flat section.
-pub(super) const FILES: &str = "files";
-
-pub const PICKER_ROUTE: &str = "wallpaper";
-
-pub fn picker_selection_path() -> std::path::PathBuf {
-    state::state_path().with_file_name("picker-selection.txt")
-}
-
 pub fn snapshot(store: &Store) -> Snapshot {
     let radio = &store.media.radio;
     let l = &store.lights;
@@ -246,41 +208,6 @@ pub(super) fn picker_tile(m: &Model, store: &Store, theme: &Theme, tiles: &[(&st
         .stop(format!("p:{}", row.id))
         .width(Size::Px(slot.w))
         .height(slot.h - slot.band)
-}
-
-/// The Style heading's far end: where settings.json pins the mode, so;
-/// under `auto`, the mode and when the schedule next turns it.
-pub(super) fn picker_style_note(store: &Store) -> String {
-    use crate::services::theme;
-    let key = theme::mode_key(store.config.settings());
-    match key {
-        "dark" | "light" => "Set in settings.json".into(),
-        "auto" => {
-            let data = &store.state.data;
-            let times = store.theme.schedule.as_ref();
-            let over = theme::parse_override(&data.mode_override);
-            let mode = theme::effective_mode(key, times, over.as_ref(), &data.mode);
-            let until = fs_theme::sun::next_change(&chrono::Local::now(), times);
-            format!("Auto, {mode} until {}", until.format("%H:%M"))
-        }
-        _ => String::new(),
-    }
-}
-
-/// An SPDX licence id as a heading names it: `CC0-1.0` reads `CC0`.
-pub(super) fn licence_name(spdx: &str) -> String {
-    match spdx.rsplit_once('-') {
-        Some((name, version)) if !name.is_empty() && version.chars().all(|c| c.is_ascii_digit() || c == '.') => name.to_owned(),
-        _ => spdx.to_owned(),
-    }
-}
-
-pub(super) fn write_picker_selection(payload: &Value) {
-    let path = picker_selection_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let _ = std::fs::write(&path, payload.to_string());
 }
 
 /// Where an item sits across the body, off its key.
