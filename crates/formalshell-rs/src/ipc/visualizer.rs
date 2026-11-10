@@ -24,7 +24,7 @@ fn configured(app: &App) -> String {
     crate::settings::VISUALIZER_STYLE.get(&app.store.config).to_owned()
 }
 
-fn current(app: &App) -> String {
+fn current(app: &App) -> styles::Style {
     app.store.visualizer.style(&configured(app))
 }
 
@@ -33,14 +33,16 @@ fn current(app: &App) -> String {
 fn style(app: &mut App, args: &[Value]) -> Reply {
     let name = args[0].str();
     let next = match name {
-        "config" => String::new(),
-        "next" => styles::step(&current(app), 1).to_owned(),
-        "prev" => styles::step(&current(app), -1).to_owned(),
-        id if styles::is_known(id) => id.to_owned(),
-        id => return Err(format!("unknown style {id} ({})", styles::ids().join("|"))),
+        "config" => None,
+        "next" => Some(current(app).step(1)),
+        "prev" => Some(current(app).step(-1)),
+        id => match styles::Style::parse(id) {
+            Some(style) => Some(style),
+            None => return Err(format!("unknown style {id} ({})", styles::ids().join("|"))),
+        },
     };
     app.apply(store::Diff::Visualizer(Diff::Style(next)));
-    text(current(app))
+    text(current(app).id())
 }
 
 fn list(_: &mut App, _: &[Value]) -> Reply {
@@ -52,5 +54,5 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
     let configured = configured(app);
     let tempo_at = app.store.media.active().filter(|a| a.kind.tempo_driven() && v.running).map(|a| a.position.as_secs_f64());
     let frame = visualizer::frame_for(tempo_at, v.bpm);
-    Ok(v.status(&current(app), &configured, &frame))
+    Ok(v.status(current(app), &configured, &frame))
 }

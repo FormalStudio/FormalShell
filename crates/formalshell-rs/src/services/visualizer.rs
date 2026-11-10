@@ -29,6 +29,7 @@ use super::wants::{self, Source};
 use crate::runtime::Ctx;
 use crate::services::proc::Avail;
 use crate::store;
+use crate::ui::spectrum::styles::Style;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
@@ -36,27 +37,27 @@ pub struct State {
     /// cava is up, or the tempo clock is.
     pub running: bool,
     pub bpm: f64,
-    /// `visualizer style`'s in-memory pick, "" following settings.json.
-    pub style_override: String,
+    /// `visualizer style`'s in-memory pick, none following settings.json.
+    pub style_override: Option<Style>,
 }
 
 pub enum Diff {
     Avail(Avail),
     Running(bool),
     Bpm(f64),
-    Style(String),
+    Style(Option<Style>),
 }
 
 impl State {
     /// The IPC `status` reply: the style now drawn, the one settings.json
     /// asks for, and the frame the bar would draw.
-    pub fn status(&self, current: &str, configured: &str, frame: &Frame) -> serde_json::Value {
+    pub fn status(&self, current: Style, configured: &str, frame: &Frame) -> serde_json::Value {
         let levels = |l: &[f64]| serde_json::Value::Array(l.iter().map(|x| fs_js::json_number(*x)).collect());
         serde_json::json!({
-            "style": current,
-            "override": self.style_override,
+            "style": current.id(),
+            "override": self.style_override.map_or("", Style::id),
             "configured": configured,
-            "configuredKnown": crate::ui::spectrum::styles::is_known(configured),
+            "configuredKnown": Style::parse(configured).is_some(),
             "running": self.running,
             "state": self.avail.as_str(),
             "levels": levels(&frame.mono),
@@ -80,11 +81,10 @@ impl State {
 
     /// The style drawn: the override, else the configured one when known,
     /// else the key's default.
-    pub fn style(&self, configured: &str) -> String {
-        if !self.style_override.is_empty() {
-            return self.style_override.clone();
-        }
-        if crate::ui::spectrum::styles::is_known(configured) { configured.to_owned() } else { crate::settings::VISUALIZER_STYLE.default.to_owned() }
+    pub fn style(&self, configured: &str) -> Style {
+        self.style_override
+            .or_else(|| Style::parse(configured))
+            .unwrap_or_else(|| Style::parse(crate::settings::VISUALIZER_STYLE.default).expect("the default style is known"))
     }
 }
 

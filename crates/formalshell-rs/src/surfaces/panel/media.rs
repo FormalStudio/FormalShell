@@ -23,8 +23,6 @@ mod lyrics;
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 
-use crate::ui::spectrum::styles;
-
 use fs_theme::icons;
 use fs_types::Fraction;
 
@@ -355,7 +353,7 @@ impl Panel for Media {
         let vis = &v.store.visualizer;
         if enabled && (vis.avail == Avail::Available || a.kind.tempo_driven()) {
             let style = vis.style(VISUALIZER_STYLE.get(&v.store.config));
-            let tip = styles::label(&style);
+            let tip = style.label();
             info.push(El::custom(crate::ui::spectrum::Spectrum { style, columns: SPECTRUM_COLUMNS, live: vis.running }).on("spectrum").tip(tip).key("spectrum"));
         }
         col.push(w::row(s.lg, info).fill());
@@ -500,7 +498,7 @@ impl Panel for Media {
             ("volume", What::Fraction(f)) => fx.store.media.set_volume(Fraction::from_fraction(*f)),
             ("volume", What::Wheel(d)) => self.step_volume(fx, *d as f64 * VOLUME_STEP),
             ("spectrum", What::Click) => {
-                let next = styles::step(&fx.store.visualizer.style(VISUALIZER_STYLE.get(&fx.store.config)), 1).to_owned();
+                let next = Some(fx.store.visualizer.style(VISUALIZER_STYLE.get(&fx.store.config)).step(1));
                 fx.service(move |ctx| ctx.publish(store::Diff::Visualizer(visualizer::Diff::Style(next))));
             }
             _ => {}

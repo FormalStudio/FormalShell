@@ -29,161 +29,196 @@ use super::band::{Band, LEVEL_ACCENT_FROM, LEVEL_DIM_BELOW, level_color_band};
 use super::scene::{Scene, TextAlign, TextBaseline};
 use fs_js::round;
 
-pub(crate) struct StyleInfo {
-    pub id: &'static str,
-    pub label: &'static str,
+struct StyleInfo {
+    id: &'static str,
+    label: &'static str,
+    draw: DrawFn,
 }
 
-pub(crate) const STYLES: [StyleInfo; 31] = [
+const STYLES: [StyleInfo; 31] = [
     StyleInfo {
         id: "bars",
         label: "Bars",
+        draw: bars,
     },
     StyleInfo {
         id: "peaks",
         label: "Peaks",
+        draw: peaks,
     },
     StyleInfo {
         id: "led",
         label: "LED",
+        draw: led,
     },
     StyleInfo {
         id: "mirror",
         label: "Mirror",
+        draw: mirror,
     },
     StyleInfo {
         id: "butterfly",
         label: "Butterfly",
+        draw: butterfly,
     },
     StyleInfo {
         id: "outline",
         label: "Outline",
+        draw: outline,
     },
     StyleInfo {
         id: "wave",
         label: "Wave",
+        draw: wave,
     },
     StyleInfo {
         id: "dots",
         label: "Dots",
+        draw: dots,
     },
     StyleInfo {
         id: "ascii",
         label: "ASCII",
+        draw: ascii,
     },
     StyleInfo {
         id: "matrix",
         label: "Matrix",
+        draw: matrix,
     },
     StyleInfo {
         id: "rain",
         label: "Rain",
+        draw: rain,
     },
     StyleInfo {
         id: "flame",
         label: "Flame",
+        draw: flame,
     },
     StyleInfo {
         id: "bubbles",
         label: "Bubbles",
+        draw: bubbles,
     },
     StyleInfo {
         id: "scope",
         label: "Scope",
+        draw: scope,
     },
     StyleInfo {
         id: "pulse",
         label: "Pulse",
+        draw: pulse,
     },
     StyleInfo {
         id: "heartbeat",
         label: "Heartbeat",
+        draw: heartbeat,
     },
     StyleInfo {
         id: "terrain",
         label: "Terrain",
+        draw: terrain,
     },
     StyleInfo {
         id: "bricks",
         label: "Bricks",
+        draw: bricks,
     },
     StyleInfo {
         id: "columns",
         label: "Columns",
+        draw: columns,
     },
     StyleInfo {
         id: "scatter",
         label: "Scatter",
+        draw: scatter,
     },
     StyleInfo {
         id: "retro",
         label: "Retro",
+        draw: retro,
     },
     StyleInfo {
         id: "binary",
         label: "Binary",
+        draw: binary,
     },
     StyleInfo {
         id: "sakura",
         label: "Sakura",
+        draw: sakura,
     },
     StyleInfo {
         id: "firework",
         label: "Firework",
+        draw: firework,
     },
     StyleInfo {
         id: "firefly",
         label: "Firefly",
+        draw: firefly,
     },
     StyleInfo {
         id: "mosaic",
         label: "Mosaic",
+        draw: mosaic,
     },
     StyleInfo {
         id: "sand",
         label: "Sand",
+        draw: sand,
     },
     StyleInfo {
         id: "geyser",
         label: "Geyser",
+        draw: geyser,
     },
     StyleInfo {
         id: "stereo",
         label: "Stereo",
+        draw: stereo,
     },
     StyleInfo {
         id: "redsector",
         label: "Red Sector",
+        draw: redsector,
     },
     StyleInfo {
         id: "stipple",
         label: "Stipple",
+        draw: stipple,
     },
 ];
 
-pub(crate) fn index_of(id: &str) -> Option<usize> {
-    STYLES.iter().position(|s| s.id == id)
-}
+/// A style the table names, resolved from its id once at the boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Style(usize);
 
-pub fn is_known(id: &str) -> bool {
-    index_of(id).is_some()
+impl Style {
+    pub fn parse(id: &str) -> Option<Self> {
+        STYLES.iter().position(|s| s.id == id).map(Self)
+    }
+
+    pub fn id(self) -> &'static str {
+        STYLES[self.0].id
+    }
+
+    pub fn label(self) -> &'static str {
+        STYLES[self.0].label
+    }
+
+    /// `delta` steps through the cycle order and wraps.
+    pub fn step(self, delta: i64) -> Self {
+        let n = STYLES.len() as i64;
+        Self((((self.0 as i64 + delta) % n) + n) as usize % STYLES.len())
+    }
 }
 
 pub fn ids() -> Vec<&'static str> {
     STYLES.iter().map(|s| s.id).collect()
-}
-
-/// An unknown id reads as bars.
-pub fn label(id: &str) -> &'static str {
-    index_of(id).map_or(STYLES[0].label, |i| STYLES[i].label)
-}
-
-/// `delta` steps through the cycle order and wraps; an unknown `id` steps from
-/// bars.
-pub fn step(id: &str, delta: i64) -> &'static str {
-    let i = index_of(id).unwrap_or(0) as i64;
-    let n = STYLES.len() as i64;
-    STYLES[(((i + delta) % n) + n) as usize % STYLES.len()].id
 }
 
 /// Frames past this are a stall (a hidden window, a suspended session), and
@@ -355,49 +390,12 @@ struct Frame<'a> {
 
 type DrawFn = fn(&mut Scene, &Frame, &mut State);
 
-fn draw_fn(id: &str) -> Option<DrawFn> {
-    Some(match id {
-        "bars" => bars,
-        "peaks" => peaks,
-        "led" => led,
-        "mirror" => mirror,
-        "butterfly" => butterfly,
-        "outline" => outline,
-        "wave" => wave,
-        "dots" => dots,
-        "ascii" => ascii,
-        "matrix" => matrix,
-        "rain" => rain,
-        "flame" => flame,
-        "bubbles" => bubbles,
-        "scope" => scope,
-        "pulse" => pulse,
-        "heartbeat" => heartbeat,
-        "terrain" => terrain,
-        "bricks" => bricks,
-        "columns" => columns,
-        "scatter" => scatter,
-        "retro" => retro,
-        "binary" => binary,
-        "sakura" => sakura,
-        "firework" => firework,
-        "firefly" => firefly,
-        "mosaic" => mosaic,
-        "sand" => sand,
-        "geyser" => geyser,
-        "stereo" => stereo,
-        "redsector" => redsector,
-        "stipple" => stipple,
-        _ => return None,
-    })
-}
-
-/// Draws one frame of style `id` (an unknown id draws bars) into `scene` over
+/// Draws one frame of `style` into `scene` over
 /// a `w` x `h` box. `left` and `right` are the same bands per channel; only
 /// `stereo` reads them, and it falls back to `levels` for both.
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
-    id: &str,
+    style: Style,
     scene: &mut Scene,
     w: f64,
     h: f64,
@@ -408,7 +406,7 @@ pub fn draw(
     left: Option<&[f64]>,
     right: Option<&[f64]>,
 ) {
-    let f = draw_fn(id).unwrap_or(bars);
+    let f = STYLES[style.0].draw;
     let dt = if dt.is_finite() && dt > 0.0 {
         dt.min(MAX_DT)
     } else {
@@ -2329,7 +2327,7 @@ mod tests {
     fn draw_one(id: &str, levels: &[f64], state: &mut State, dt: f64) -> Scene {
         let mut scene = Scene::new();
         draw(
-            id,
+            Style::parse(id).expect("a known id"),
             &mut scene,
             BOX_W,
             BOX_H,
@@ -2358,17 +2356,16 @@ mod tests {
     #[test]
     fn step_wraps_both_ways() {
         let ids = ids();
-        assert_eq!(step("bars", 1), ids[1]);
-        assert_eq!(step("bars", -1), ids[ids.len() - 1]);
-        assert_eq!(step(ids[ids.len() - 1], 1), "bars");
-        assert_eq!(step("nope", 1), ids[1]);
+        let at = |id| Style::parse(id).unwrap();
+        assert_eq!(at("bars").step(1).id(), ids[1]);
+        assert_eq!(at("bars").step(-1).id(), ids[ids.len() - 1]);
+        assert_eq!(at(ids[ids.len() - 1]).step(1).id(), "bars");
     }
 
     #[test]
     fn unknown_id_is_not_known() {
-        assert!(!is_known("nope"));
-        assert!(is_known("peaks"));
-        assert_eq!(label("nope"), "Bars");
+        assert_eq!(Style::parse("nope"), None);
+        assert_eq!(Style::parse("peaks").map(Style::label), Some("Peaks"));
     }
 
     #[test]
@@ -2415,14 +2412,6 @@ mod tests {
         }
     }
 
-    // An id with no drawing function would fall back to bars unnoticed.
-    #[test]
-    fn every_id_has_its_own_drawing() {
-        for id in ids() {
-            assert!(draw_fn(id).is_some(), "{id} has no entry in draw_fn");
-        }
-    }
-
     #[test]
     fn stereo_draws_each_channel_on_its_own() {
         let loud = frame(|_| 0.9);
@@ -2430,7 +2419,7 @@ mod tests {
         let run = |left: Option<&[f64]>, right: Option<&[f64]>| {
             let mut scene = Scene::new();
             draw(
-                "stereo",
+                Style::parse("stereo").unwrap(),
                 &mut scene,
                 BOX_W,
                 BOX_H,
@@ -2457,13 +2446,6 @@ mod tests {
             fills(&c),
             "a missing channel pair falls back to the mix"
         );
-    }
-
-    #[test]
-    fn unknown_style_draws_bars() {
-        let a = draw_one("nope", &frame(|_| 0.5), &mut State::with_seed(7), 0.0);
-        let b = draw_one("bars", &frame(|_| 0.5), &mut State::with_seed(7), 0.0);
-        assert_eq!(points(&a), points(&b));
     }
 
     #[test]

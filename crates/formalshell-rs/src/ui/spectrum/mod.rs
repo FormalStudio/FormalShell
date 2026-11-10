@@ -27,13 +27,13 @@ use self::scene::{self as vis, PathEl, Shape, TextAlign};
 /// `live` and at rest otherwise.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spectrum {
-    pub style: String,
+    pub style: styles::Style,
     pub columns: usize,
     pub live: bool,
 }
 
 struct Live {
-    style: String,
+    style: Option<styles::Style>,
     live: bool,
     state: styles::State,
     shown: Vec<f64>,
@@ -50,7 +50,7 @@ impl Widget for Spectrum {
     }
 
     fn paint(&self, cx: &mut Cx, inner: Rect, path: &str) {
-        paint(cx, inner, &self.style, self.columns, self.live, path);
+        paint(cx, inner, self.style, self.columns, self.live, path);
     }
 }
 
@@ -79,7 +79,7 @@ fn path(els: &[PathEl], at: Affine) -> BezPath {
     p
 }
 
-fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key: &str) {
+fn paint(cx: &mut Cx, r: Rect, style: styles::Style, columns: usize, live: bool, key: &str) {
     let t = cx.theme;
     let ink = styles::Ink {
         groove: t.colors.get(ColorRole::Muted),
@@ -94,15 +94,15 @@ fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key: &st
     let frame = if live { visualizer::frame() } else { visualizer::Frame::baseline() };
     let now = cx.now;
     let mut held = cx.take(key, || Live {
-        style: String::new(),
+        style: None,
         live: false,
         state: styles::State::default(),
         shown: model::baseline_levels(),
         last: None,
     });
     let st = &mut *held;
-    if st.style != style || st.live != live {
-        st.style = style.to_owned();
+    if st.style != Some(style) || st.live != live {
+        st.style = Some(style);
         st.live = live;
         st.state = styles::State::default();
         st.shown = model::baseline_levels();
