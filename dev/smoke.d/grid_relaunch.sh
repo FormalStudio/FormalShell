@@ -67,6 +67,8 @@ leg_grid_relaunch_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call menu summon "" > /dev/null 2>&1
+# The launch records land after the shell's first tree build.
+until_jq 10 "$grid_relaunch_open_path" '.ids[0] == "apps.formalshell-relaunch-hotel"' call menu status
 until_settled
 $ipc call menu status > "$grid_relaunch_open_path" 2>&1
 $ipc call menu close > /dev/null 2>&1

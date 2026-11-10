@@ -119,7 +119,7 @@ EOF
 m="$act_marks"
 dir="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}/fspec/activity"
 snap() { status activity "\$m-\$1.json"; call bar room > "\$m-room-\$1.json" 2>&1; }
-shot() { call panel open activity > /dev/null; until_settled
+shot() { call panel open activity > /dev/null; until_settled; shoot "$shot_dir/activity-panel-\$1.png"; call panel close > /dev/null; sleep 0.4; }
 await() { for _ in \$(seq 200); do [ -e "\$1" ] && return 0; sleep 0.05; done; echo "timed out on \$1" >> "\$m-drive.log"; }
 for _ in \$(seq 100); do
   $ipc call activity status 2>/dev/null | jq -e '.fspec.watching' > /dev/null 2>&1 && break
