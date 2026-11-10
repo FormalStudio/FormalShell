@@ -1164,6 +1164,28 @@ until_jq() {
     sleep 0.5
   done
 }
+# until_settled [surface...]: until `debug dump`'s `animating` names none
+# of the surfaces (any surface, with none named), 20s at most; the dump
+# in $shot_dir/settled-<pid>.json. A surface counts from its making until
+# a frame commits with no next one asked for, so a card just asked for
+# reads as moving before its first frame.
+until_settled() {
+  local claim='.animating == []' s
+  if [ $# -gt 0 ]; then
+    claim='all(.animating[]; true'
+    for s in "$@"; do claim+=" and . != \"$s\""; done
+    claim+=')'
+  fi
+  until_jq 20 "$shot_dir/settled-$$.json" "$claim" call debug dump
+}
+# until_wallpaper <path> [mode]: until the desktop shows <path> and the
+# live palette was made from it, for the mode in effect or <mode>, 60s at
+# most (matugen's own timeout); `theme status` in
+# $shot_dir/wallpaper-<pid>.json. The crossfade may still run: until_settled.
+until_wallpaper() {
+  local mode=${2:+\"$2\"}
+  until_jq 60 "$shot_dir/wallpaper-$$.json" ".desktop == \"$1\" and .palette.wallpaper == \"$1\" and .palette.mode == ${mode:-.mode}${mode:+ and .mode == $mode}" call theme status
+}
 # walk_to <target> <cursor jq> <id> <trace> [key jq]: real keys until
 # `<target> status`'s cursor reads <id>, every cursor passed appended to
 # <trace> and the last status in <trace>.json. The key is Down, or what

@@ -81,6 +81,8 @@ pub struct State {
     /// so text never sits on a bare wallpaper.
     pub blur: bool,
     pub json_present: bool,
+    /// The desktop and mode the last finished run made the palette for.
+    pub source: Option<(String, Mode)>,
     pub schedule: Option<SunTimes>,
     /// The sun as the engine last read it for a sky desktop, none while
     /// the desktop is something else.
@@ -136,7 +138,7 @@ impl Default for State {
         let settings = Value::Object(Map::new());
         let mut theme = Theme::resolve(get(&settings), &palette);
         theme.surface_opacity = 1.0;
-        Self { palette, settings, theme, blur: false, json_present: false, schedule: None, sky: None, sky_at: None }
+        Self { palette, settings, theme, blur: false, json_present: false, source: None, schedule: None, sky: None, sky_at: None }
     }
 }
 
@@ -144,6 +146,7 @@ pub enum Diff {
     Palette(Map<String, Value>),
     Settings(Value),
     JsonPresent(bool),
+    Source(String, Mode),
     Schedule(Option<SunTimes>),
     /// The compositor's own blur switch, read on start and every reload.
     Blur(bool),
@@ -164,6 +167,10 @@ impl State {
             Diff::JsonPresent(p) if p != self.json_present => {
                 self.json_present = p;
                 return true;
+            }
+            Diff::Source(desktop, mode) => {
+                self.source = Some((desktop, mode));
+                return false;
             }
             Diff::Schedule(s) if s != self.schedule => {
                 self.schedule = s;
@@ -380,6 +387,7 @@ pub fn status(store: &store::Store) -> Value {
         "desktop": store.desktop(),
         "mode": data.mode.as_str(),
         "themeJsonPresent": store.theme.json_present,
+        "palette": store.theme.source.as_ref().map(|(desktop, mode)| serde_json::json!({"wallpaper": desktop, "mode": mode.as_str()})),
         "modeKey": key.as_str(),
         "effective": effective(store).as_str(),
         "schedule": schedule,
@@ -713,11 +721,11 @@ impl Engine {
         self.sync_system_scheme(&inputs);
         if inputs.wallpaper.is_empty() {
             self.publish_static(palette::fallback(inputs.mode.as_str())).await;
+        } else if let Err(err) = self.matugen_run(&inputs).await {
+            warn(err);
             return;
         }
-        if let Err(err) = self.matugen_run(&inputs).await {
-            warn(err);
-        }
+        self.ctx.publish(store::Diff::Theme(Diff::Source(inputs.wallpaper, inputs.mode)));
     }
 
     /// The tail the no-wallpaper zinc path and a pinned run share: theme.json

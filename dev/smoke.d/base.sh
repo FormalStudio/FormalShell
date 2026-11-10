@@ -75,8 +75,9 @@ leg_base_assert() {
   check_dump() {
     printf '%s' "$1" | "$jq_bin" -e --argjson allowed "$dump_keys" --argjson join "$2" '
       (keys - $allowed) == []
-      and (["compositor","configLoaded","join","bar","frame","theme"] - keys) == []
+      and (["compositor","configLoaded","join","bar","frame","theme","animating"] - keys) == []
       and .compositor == "hyprland"
+      and (.animating | type) == "array" and all(.animating[]; type == "string")
       and (.bar | length) == 1
       and (.frame | keys) == ["enabled","thickness"]
       and .theme.borderWidth == 1 and .theme.barPosition == "top"

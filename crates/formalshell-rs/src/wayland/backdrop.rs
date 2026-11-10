@@ -17,7 +17,7 @@ use crate::render::scaled;
 use fs_types::IRect;
 use crate::services::wallpaper::Picture;
 use crate::shards::{Look, Painted, Raster};
-use crate::surface::{Dispatcher, Format, Ignore, Pixels, Scaler};
+use crate::surface::{Clock, Dispatcher, Format, Ignore, Pixels, Scaler};
 use crate::trace;
 
 /// The desktop's own layer: the theme's background colour under the grid
@@ -49,6 +49,8 @@ pub struct Backdrop {
     /// what the session's arrival waits on.
     committed: (bool, bool),
     pub landed: (bool, bool),
+    /// On while a fade runs or the picture wanted is still being made.
+    clock: Clock,
 }
 
 /// What a backdrop picture holds: a wallpaper by its path, dither and
@@ -82,6 +84,7 @@ impl Backdrop {
             shards: None,
             committed: (false, false),
             landed: (false, false),
+            clock: Clock::new("wallpaper"),
         }
     }
 
@@ -126,6 +129,7 @@ impl Backdrop {
             }
             Ok(()) => false,
         };
+        s.clock.set(s.running);
         let moved = s.look.as_ref() != Some(&look) || s.drawn.is_none_or(|(_, d)| d != device);
         s.look = Some(look);
         // Anything else waits for the beat, which keeps the cap.
@@ -171,6 +175,12 @@ impl Backdrop {
         }
         let shown = self.shown.clone();
         self.paint(None, shown.as_deref(), color, grid, 1.0, qh);
+    }
+
+    /// The picture wanted is still being made: what is up stays until it
+    /// lands.
+    pub fn wait(&mut self) {
+        self.clock.set(true);
     }
 
     /// Already showing `path` at this logical size, though at another
@@ -298,6 +308,7 @@ impl Backdrop {
         self.committed = committed;
         self.layer.commit();
         self.painted = Some(size);
+        self.clock.set(self.fade.is_some());
         if from.is_none() {
             trace::commit_bare("wallpaper", format_args!("{}x{} picture={} gpu={}", w, h, to.is_some(), on_gpu.is_some()));
         }
@@ -422,6 +433,7 @@ pub struct Shards {
     pub render_us: u128,
     /// The beat driving it, while it runs.
     pub timer: Option<calloop::RegistrationToken>,
+    clock: Clock,
 }
 
 impl Shards {
@@ -455,6 +467,7 @@ impl Shards {
             callbacks: 0,
             render_us: 0,
             timer: None,
+            clock: Clock::new("shards"),
         }
     }
 

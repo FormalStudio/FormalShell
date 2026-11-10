@@ -5,8 +5,9 @@
 //! only on a commit made while something on the surface animates.
 //! A flat full-output fill skips all of that: see [`PixelSurface`].
 
-use std::sync::Arc;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use smithay_client_toolkit::compositor::FrameCallbackData;
@@ -527,6 +528,53 @@ pub struct Surface<R: Role = LayerSurface> {
     /// [`Pixels::clear`] is attached: the surface shows nothing and holds
     /// no canvas or buffers ([`Surface::present_clear`]).
     cleared: bool,
+    clock: Clock,
+}
+
+/// Every surface whose clock runs, by name, counted per surface.
+static RUNNING: Mutex<BTreeMap<&'static str, u32>> = Mutex::new(BTreeMap::new());
+
+/// One surface's place in [`running`]: on from its making until a present
+/// that commits everything and asks for no next frame.
+pub struct Clock {
+    name: &'static str,
+    on: bool,
+}
+
+impl Clock {
+    pub fn new(name: &'static str) -> Self {
+        let mut clock = Self { name, on: false };
+        clock.set(true);
+        clock
+    }
+
+    pub fn set(&mut self, on: bool) {
+        if on == std::mem::replace(&mut self.on, on) {
+            return;
+        }
+        let mut running = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+        let n = running.entry(self.name).or_default();
+        if on {
+            *n += 1;
+        } else {
+            *n -= 1;
+            if *n == 0 {
+                running.remove(self.name);
+            }
+        }
+    }
+}
+
+impl Drop for Clock {
+    fn drop(&mut self) {
+        self.set(false);
+    }
+}
+
+/// The names of the surfaces still moving or not yet on screen: none is
+/// the whole shell at rest.
+pub fn running() -> Vec<&'static str> {
+    RUNNING.lock().unwrap_or_else(|e| e.into_inner()).keys().copied().collect()
 }
 
 /// Rows per band of a sliced frame.
@@ -660,6 +708,7 @@ impl<R: Role> Surface<R> {
             front_view: None,
             audit: None,
             cleared: false,
+            clock: Clock::new(name),
         }
     }
 
@@ -787,6 +836,7 @@ impl<R: Role> Surface<R> {
             return;
         }
         let request = self.wait_map && !self.mapped;
+        self.clock.set(request);
         let surface = self.layer.role_surface();
         if self.cleared {
             if commit || (request && self.commits > 0) {
@@ -1002,6 +1052,7 @@ impl<R: Role> Surface<R> {
             scene.touch(IRect::new(0, 0, 1, 1));
         }
         if !scene.has_damage() && self.raster.is_empty() && !self.refade {
+            self.clock.set(request);
             if request && self.commits > 0 {
                 let surface = self.layer.role_surface();
                 surface.frame(qh, FrameCallbackData(surface.clone()));
@@ -1012,6 +1063,7 @@ impl<R: Role> Surface<R> {
             return;
         }
         if !self.draw(scene) {
+            self.clock.set(true);
             return;
         }
         let damage = std::mem::take(&mut self.raster);
@@ -1019,6 +1071,7 @@ impl<R: Role> Surface<R> {
             self.audit = audit::reference(scene, self.renderer.scale(), self.renderer.is_gpu());
         }
         self.commit_frame(damage, scene.size, request, qh);
+        self.clock.set(request || !self.raster.is_empty());
     }
 
     pub fn is_gpu(&self) -> bool {
@@ -1058,6 +1111,7 @@ impl<R: Role> Surface<R> {
         self.left.clear();
         self.raster.clear();
         self.commit_frame(vec![size], size, true, qh);
+        self.clock.set(true);
         true
     }
 
@@ -1293,6 +1347,7 @@ pub struct PixelSurface {
     mapped: bool,
     commits: u64,
     callbacks: u64,
+    clock: Clock,
 }
 
 impl PixelSurface {
@@ -1318,6 +1373,7 @@ impl PixelSurface {
             mapped: false,
             commits: 0,
             callbacks: 0,
+            clock: Clock::new(name),
         }
     }
 
@@ -1356,6 +1412,7 @@ impl PixelSurface {
             return;
         }
         let request = animating || !self.mapped;
+        self.clock.set(request);
         let multiplier = (fade.clamp(0.0, 1.0) * u32::MAX as f64).round() as u32;
         let surface = self.layer.wl_surface();
         if self.multiplier == Some(multiplier) && !self.resized {

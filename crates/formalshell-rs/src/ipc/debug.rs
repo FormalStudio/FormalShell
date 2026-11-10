@@ -88,6 +88,7 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
     dump["panelSpace"] = json!({"inset": theme.space.panel_inset, "rowInset": theme.space.panel_row_inset, "row": theme.space.panel_row});
     dump["sky"] = sky(app);
     dump["rims"] = app.rims_report();
+    dump["animating"] = json!(crate::surface::running());
     if let Some(map) = dump.as_object_mut() {
         app.report(map);
     }

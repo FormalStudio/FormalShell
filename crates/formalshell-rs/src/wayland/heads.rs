@@ -488,6 +488,7 @@ impl App {
             // and crossfade once it lands, rather than cut to the plain
             // colour first.
             if picture.is_none() && (made.is_some() || b.holds(wanted)) {
+                b.wait();
                 continue;
             }
             b.draw(picture, background, under, reveal, &self.qh);
