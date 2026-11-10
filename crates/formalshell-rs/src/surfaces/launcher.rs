@@ -2118,6 +2118,8 @@ impl Model {
     }
 
     fn begin_selection(&mut self) {
+        self.after_unmap = None;
+        self.grab.cancel();
         let pending = self.mode != Mode::Menu;
         self.abandon_select();
         if !pending {
@@ -4725,5 +4727,17 @@ mod grab_tests {
         let id = g.hold(call("full"));
         g.cancel();
         assert_eq!(g.take(id), None);
+    }
+
+    #[test]
+    fn reopening_as_a_prompt_drops_the_held_grab() {
+        for open in [|m: &mut Model| m.open_select("p", Vec::new(), "t"), |m: &mut Model| m.open_input("p", "t", false)] {
+            let mut m = Model::default();
+            let id = m.grab.hold(call("full"));
+            m.after_unmap = Some(call("full"));
+            open(&mut m);
+            assert_eq!(m.grab.take(id), None);
+            assert!(m.after_unmap.is_none());
+        }
     }
 }
