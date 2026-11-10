@@ -32,13 +32,18 @@ impl Avail {
     }
 }
 
-/// Whether `name` would run: a path that is a file, or a bare name found
-/// in one of PATH's directories.
+/// Whether `name` would run: a path that is an executable file, or a bare
+/// name found as one in one of PATH's directories.
 pub fn on_path(name: &str) -> bool {
     if name.contains('/') {
-        return std::path::Path::new(name).is_file();
+        return executable(std::path::Path::new(name));
     }
-    std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file()))
+    std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| executable(&d.join(name))))
+}
+
+fn executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 pub struct Done {
@@ -154,4 +159,21 @@ async fn run(argv: &[String], timeout: Duration, err: bool, on_exit: bool) -> Do
         none(TIMED_OUT)
     };
     run.or(expired).await
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn a_file_without_an_execute_bit_does_not_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("tool");
+        std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!super::on_path(tool.to_str().unwrap()));
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(super::on_path(tool.to_str().unwrap()));
+        assert!(!super::on_path(dir.path().to_str().unwrap()));
+    }
 }
