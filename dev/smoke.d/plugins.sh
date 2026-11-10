@@ -249,6 +249,7 @@ procs() { pgrep -fc '$plugins_root/smoke-panel/entry.sh' || true; }
 echo "before: \$(procs)" > "$plugins_panel_procs_path"
 $ipc call panel open plugin:nope > "$plugins_unknown_path" 2>&1
 $ipc call panel open plugin:smoke-panel > "$plugins_panel_state_path" 2>&1
+# The plugin's process starts and prints its first rows on its own clock.
 sleep 2
 $ipc call panel state >> "$plugins_panel_state_path" 2>&1
 echo "open: \$(procs)" >> "$plugins_panel_procs_path"
@@ -266,11 +267,13 @@ $ipc call panel close > /dev/null 2>&1
 sleep 2
 echo "closed: \$(procs)" >> "$plugins_panel_procs_path"
 $ipc call panel open plugin:smoke-panel-crash > /dev/null 2>&1
+# Long enough for the plugin's process to start and die.
 sleep 3
 "$grim_bin" "$plugins_panel_crash_png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
 sleep 1
 $ipc call panel open plugin:smoke-overlay > /dev/null 2>&1
+# The plugin's process starts and prints its overlay on its own clock.
 sleep 2
 $ipc call panel state > "$plugins_overlay_state_path" 2>&1
 "$grim_bin" "$plugins_overlay_png" > /dev/null 2>&1
@@ -283,7 +286,8 @@ lprocs() { pgrep -fc '$plugins_root/smoke-launcher/entry.sh' || true; }
 lstatus() { $ipc call menu status > "$shot_dir/plugins-launcher-\$1.json" 2>&1; }
 echo "before: \$(lprocs)" > "$plugins_launcher_procs_path"
 $ipc call menu summon plugin:smoke-launcher > /dev/null 2>&1
-sleep 2
+until_jq 10 "$shot_dir/plugins-launcher-rows.json" '(.ids | length) > 0' call menu status
+until_settled
 echo "open: \$(lprocs)" >> "$plugins_launcher_procs_path"
 lstatus mode
 "$grim_bin" "$shot_dir/plugins-launcher-mode.png" > /dev/null 2>&1
@@ -295,11 +299,13 @@ lstatus query
 sleep 2
 echo "closed: \$(lprocs)" >> "$plugins_launcher_procs_path"
 $ipc call menu summon plugin:smoke-launcher > /dev/null 2>&1
-sleep 2
+until_jq 10 "$shot_dir/plugins-launcher-rows.json" '(.ids | length) > 0' call menu status
+until_settled
 lstatus reopen
 $ipc call menu close > /dev/null 2>&1
 sleep 2
 $ipc call menu summon "" > /dev/null 2>&1
+# The plugin's process starts with the launcher, ahead of the query it answers.
 sleep 1.5
 $ipc call menu filter "Alpha note" > /dev/null 2>&1
 sleep 1

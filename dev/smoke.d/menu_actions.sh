@@ -27,7 +27,7 @@ call notifications dndState > "$p-dnd-before.txt" 2>&1
 call caffeinate status > "$p-caffeinate-before.json" 2>&1
 call overnight status > "$p-overnight-before.json" 2>&1
 call menu summon toggles > /dev/null 2>&1
-sleep 1.5
+until_settled
 for id in toggles.dnd toggles.caffeinate toggles.overnight; do
   idx=\$(row_index "$p-hub.json" "\$id")
   call menu activate "\$idx" > /dev/null 2>&1
@@ -43,7 +43,7 @@ call menu close > /dev/null 2>&1
 sleep 1
 
 call menu summon reminder > /dev/null 2>&1
-sleep 1.5
+until_settled
 idx=\$(row_index "$p-reminder.json" reminder.set)
 call menu activate "\$idx" > /dev/null 2>&1
 sleep 1.5
@@ -54,7 +54,7 @@ sleep 0.5
 sleep 1.5
 call reminder status > "$p-reminder-set.json" 2>&1
 call menu summon reminder > /dev/null 2>&1
-sleep 1.5
+until_settled
 idx=\$(row_index "$p-reminder2.json" reminder.clear)
 call menu activate "\$idx" > /dev/null 2>&1
 sleep 1.5

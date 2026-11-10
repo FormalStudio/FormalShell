@@ -103,7 +103,7 @@ sleep 6
 "$wl_paste_bin" --no-newline > "$clipssh_image_paste_auto_path" 2>&1
 $ipc call debug dump > "$clipssh_image_dump_auto_path" 2>&1
 $ipc call menu summon clipboard > "$clipssh_image_summon_reply_path" 2>&1
-sleep 2
+until_settled
 $ipc call menu filter image > "$clipssh_image_filter_reply_path" 2>&1
 sleep 2
 "$grim_bin" "$clipssh_image_route_png" > /dev/null 2>&1

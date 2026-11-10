@@ -46,7 +46,7 @@ d="$shot_dir/menu-rows"
 mkdir -p "\$d"
 park 120 1000
 call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 "$grim_bin" "\$d/settled-0.png" > /dev/null 2>&1
 call menu status > "\$d/settled-0.json" 2>&1
 word="$menu_rows_word"

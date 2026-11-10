@@ -88,7 +88,7 @@ leg_menu_drive() {
 # Every wtype is a new virtual keyboard whose first keys reach nobody until
 # the shell binds it (lock.sh's drive has the detail), so each waits first.
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call debug query 'e' > "$query_path" 2>&1
 "$grim_bin" "$menu_root_path" > /dev/null 2>&1
 $ipc call menu status > "$menu_status_root_path" 2>&1
@@ -114,7 +114,7 @@ sleep 1
 "$wtype_bin" -s 300 -k Return
 sleep 1.5
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 1.5
+until_settled
 "$grim_bin" "$menu_recent_path" > /dev/null 2>&1
 $ipc call menu status > "$menu_status_recent_path" 2>&1
 $ipc call menu filter e > /dev/null 2>&1
@@ -123,7 +123,7 @@ sleep 1
 $ipc call menu status > "$menu_status_search_path" 2>&1
 sleep 1
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 "$wtype_bin" -s 300 fire
 sleep 0.6
 $ipc call menu status > "$shot_dir/menu-status-typed.json" 2>&1
@@ -143,7 +143,7 @@ sleep 1
 "$grim_bin" "$shot_dir/menu-empty.png" > /dev/null 2>&1
 $ipc call menu status > "$shot_dir/menu-status-empty.json" 2>&1
 $ipc call menu summon emoji > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu filter smiling > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$menu_emoji_path" > /dev/null 2>&1

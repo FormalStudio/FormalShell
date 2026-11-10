@@ -72,7 +72,7 @@ leg_emoji_drive() {
 $ipc call debug query ':e sob' > "$emoji_keyword_path" 2>&1
 $ipc call debug query ':e cry' > "$emoji_before_path" 2>&1
 $ipc call menu summon emoji > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu filter ':e cry' > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$emoji_png" > /dev/null 2>&1
@@ -83,13 +83,13 @@ sleep 3
 cat "$iso_home/.local/state/formalshell/state.json" > "$emoji_state_path" 2>&1
 $ipc call debug query ':e cry' > "$emoji_after_path" 2>&1
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call menu status > "$emoji_recent_path" 2>&1
 "$grim_bin" "$emoji_recent_png" > /dev/null 2>&1
 $ipc call menu close > /dev/null 2>&1
 sleep 2
 $ipc call menu summon emoji > /dev/null 2>&1
-sleep 3
+until_settled
 $(stale_audit_start)
 for stop in $emoji_stops; do
   case "\$stop" in

@@ -40,7 +40,7 @@ leg_nix_run_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu filter "Nix Run Fixture" > /dev/null 2>&1
 sleep 1
 $ipc call menu activate 0 > "$nix_run_activate_path" 2>&1

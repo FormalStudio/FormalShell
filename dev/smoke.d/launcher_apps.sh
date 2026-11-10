@@ -58,17 +58,20 @@ leg_launcher_apps_timing() {
 }
 
 leg_launcher_apps_drive() {
-  local script="$shot_dir/launcher-apps-drive.sh"
+  local script="$shot_dir/launcher-apps-drive.sh" want
+  want=$("$jq_bin" -R . "$shot_dir/launcher-apps-ids.txt" | "$jq_bin" -sc .)
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call menu summon apps > /dev/null 2>&1
-sleep 2.5
+# The icons are read off the UI thread.
+until_jq 10 "$shot_dir/launcher-apps-status.json" '$want as \$w | all(\$w[]; . as \$i | any(.drawn[]; .id == \$i and .picture))' call menu status
+until_settled
 "$grim_bin" "$shot_dir/launcher-apps.png" > /dev/null 2>&1
 $ipc call menu status > "$shot_dir/launcher-apps-status.json" 2>&1
 $ipc call menu close > /dev/null 2>&1
 sleep 1
 $ipc call menu toggle > /dev/null 2>&1
-sleep 1.5
+until_settled
 $ipc call menu filter e > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$shot_dir/launcher-apps-long.png" > /dev/null 2>&1

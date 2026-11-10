@@ -68,7 +68,7 @@ shot() {
 }
 sha256sum "$settings_ui_settings" | cut -d' ' -f1 > "\$d/sha-before"
 $ipc call panel open settings > /dev/null 2>&1
-sleep 1.5
+until_settled
 shot grid
 key Down Return
 read_back appearance
@@ -110,7 +110,7 @@ read_back back
 walk_to menu .panelCursor session:lock "\$d/walk-tiles.txt"
 for page in desktop system; do
   $ipc call panel open "settings:\$page" > /dev/null 2>&1
-  sleep 1.5
+  until_settled
   shot \$page
   if [ "\$page" = desktop ]; then
     key Down Down Down Down Down Down Down Down Down Down Down Down Down Down Left
@@ -136,7 +136,7 @@ sleep 0.6
 key Return
 read_back root
 $ipc call panel open info > /dev/null 2>&1
-sleep 1.5
+until_settled
 read_back info
 shot info
 $ipc call panel close > /dev/null 2>&1
@@ -145,7 +145,7 @@ read_back closed
 sleep 0.5
 sha256sum "$settings_ui_settings" | cut -d' ' -f1 > "\$d/sha-after"
 $ipc call panel open settings > /dev/null 2>&1
-sleep 1.5
+until_settled
 walk_to menu .panelCursor session:reboot "\$d/walk-reboot.txt"
 key Return
 read_back armed

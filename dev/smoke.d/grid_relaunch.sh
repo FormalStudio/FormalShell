@@ -67,18 +67,18 @@ leg_grid_relaunch_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call menu status > "$grid_relaunch_open_path" 2>&1
 $ipc call menu close > /dev/null 2>&1
 sleep 1
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu filter "relaunch india" > /dev/null 2>&1
 sleep 1
 $ipc call menu activate 0 > /dev/null 2>&1
 sleep 2
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$grid_relaunch_first_png" > /dev/null 2>&1
 $ipc call menu status > "$grid_relaunch_first_path" 2>&1
 $ipc call menu filter "relaunch juliet" > /dev/null 2>&1
@@ -86,7 +86,7 @@ sleep 1
 $ipc call menu activate 0 > /dev/null 2>&1
 sleep 2
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$grid_relaunch_second_png" > /dev/null 2>&1
 $ipc call menu status > "$grid_relaunch_second_path" 2>&1
 $ipc call menu close > /dev/null 2>&1
@@ -95,7 +95,7 @@ printf '[Desktop Entry]\nType=Application\nName=Relaunch kilo\nExec=true\n' > "$
 rm -f "$grid_relaunch_dir/formalshell-relaunch-alpha.desktop"
 sleep 3
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call menu status > "$grid_relaunch_rescan_closed_path" 2>&1
 printf '[Desktop Entry]\nType=Application\nName=Relaunch lima\nExec=true\n' > "$grid_relaunch_dir/formalshell-relaunch-lima.desktop"
 rm -f "$grid_relaunch_dir/formalshell-relaunch-hotel.desktop"
@@ -109,11 +109,11 @@ sleep 1
 $ipc call menu close > /dev/null 2>&1
 sleep 1
 $ipc call menu summon clipboard > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu close > /dev/null 2>&1
 sleep 1
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$grid_relaunch_return_png" > /dev/null 2>&1
 $ipc call menu status > "$grid_relaunch_return_path" 2>&1
 EOF

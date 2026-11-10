@@ -86,7 +86,7 @@ place
 
 focus
 call menu summon "" > /dev/null 2>&1
-sleep 0.6
+until_settled
 call menu filter "Overflow Probe" > /dev/null 2>&1
 sleep 1.5
 status menu "$shot_dir/launcher-overflow-long.json"
@@ -96,7 +96,7 @@ sleep 1
 
 focus
 call menu summon "" > /dev/null 2>&1
-sleep 0.6
+until_settled
 call menu filter overflow-trail-probe > /dev/null 2>&1
 sleep 1.5
 status menu "$shot_dir/launcher-overflow-trail.json"
@@ -106,7 +106,8 @@ sleep 1
 
 focus
 call menu summon plugin:overflow-probe > /dev/null 2>&1
-sleep 2
+until_jq 10 "$shot_dir/launcher-overflow-rows.json" '(.ids | length) > 0' call menu status
+until_settled
 status menu "$shot_dir/launcher-overflow-mode.json"
 "$wtype_bin" -k Tab
 sleep 1.5
@@ -125,7 +126,8 @@ sleep 3
 "$hyprctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors-narrow.json" 2>&1
 focus "$launcher_overflow_narrow"
 call menu summon plugin:overflow-probe > /dev/null 2>&1
-sleep 2
+until_jq 10 "$shot_dir/launcher-overflow-rows.json" '(.ids | length) > 0' call menu status
+until_settled
 "$wtype_bin" -k Tab
 sleep 1.5
 status menu "$shot_dir/launcher-overflow-narrow.json"
@@ -136,12 +138,17 @@ sleep 1
 sleep 1
 
 call theme mode light > /dev/null 2>&1
+until_jq 60 "$shot_dir/launcher-overflow-theme.json" '.mode == "light" and .palette.mode == "light" and .palette.wallpaper == .desktop' call theme status
+until_settled
+# The compositor reload the retheme sends lands on its own clock and drops
+# the rule place sets.
 sleep 2
 place
 "$hyprctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors-light.json" 2>&1
 focus
 call menu summon plugin:overflow-probe > /dev/null 2>&1
-sleep 2
+until_jq 10 "$shot_dir/launcher-overflow-rows.json" '(.ids | length) > 0' call menu status
+until_settled
 "$wtype_bin" -k Tab
 sleep 1.5
 shoot "$shot_dir/launcher-overflow-column-light.png" -o "$launcher_overflow_output"

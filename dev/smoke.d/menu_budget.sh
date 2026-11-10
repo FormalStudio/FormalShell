@@ -49,6 +49,8 @@ leg_menu_budget_drive() {
 #!/usr/bin/env bash
 $ipc call debug r0Spinner true > /dev/null 2>&1
 sleep 1
+# Paced by the clock: a dump polled through the opens would be the shell's
+# own hold on the spinning bar's frames the budget reads.
 for i in 1 2 3 4 5; do
   $ipc call menu toggle > /dev/null 2>&1
   sleep 1.5
@@ -58,6 +60,7 @@ done
 $ipc call debug r0Spinner false > /dev/null 2>&1
 sleep 1
 $ipc call menu toggle > /dev/null 2>&1
+# The assert reads the rest off this toggle's own stamp, 2s to 7s after it.
 sleep 2
 echo rest-start > "$shot_dir/menu-budget-rest"
 sleep 5
@@ -65,10 +68,10 @@ echo rest-end >> "$shot_dir/menu-budget-rest"
 $ipc call menu toggle > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-budget-probe sleep 300]==])" > /dev/null 2>&1
 sleep 3
-seek() { $ipc call menu summon "" > /dev/null 2>&1; sleep 0.5; $ipc call menu filter "\$1" > /dev/null 2>&1; sleep 1.5; }
+seek() { $ipc call menu summon "" > /dev/null 2>&1; until_settled; $ipc call menu filter "\$1" > /dev/null 2>&1; sleep 1.5; }
 rest() { sleep 3; $ipc call menu status > "$shot_dir/menu-budget-rest-\$1.json" 2>&1; sleep 5.5; $ipc call menu close > /dev/null 2>&1; sleep 1; }
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu actions 0 > /dev/null 2>&1
 rest actions
 seek budget-swatch

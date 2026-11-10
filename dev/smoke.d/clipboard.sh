@@ -118,7 +118,7 @@ $ipc call clipboard list > "$clip_burst_path" 2>&1
 "$wl_copy_bin" "clipboard smoke sentinel"
 sleep 1
 $ipc call menu summon clipboard > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu filter "clipboard smoke one" > /dev/null 2>&1
 sleep 1
 $ipc call menu activate 0 > "$clip_activate_path" 2>&1
@@ -134,7 +134,12 @@ sleep 1
 sleep 2
 $ipc call clipboard list > "$clip_list3_path" 2>&1
 $ipc call menu summon clipboard > /dev/null 2>&1
-sleep 3
+# The image row's thumbnail is made off the UI thread.
+for _ in \$(seq 1 20); do
+  ls -1 "$iso_home/.cache/formalshell/thumbnails" 2>/dev/null | grep -q 'fit[0-9]*\.jpg\$' && break
+  sleep 0.5
+done
+until_settled
 "$grim_bin" "$clip_route_png" > /dev/null 2>&1
 ls -1 "$iso_home/.cache/formalshell/thumbnails" > "$clip_thumb_cache_path" 2>&1
 $ipc call menu close > /dev/null 2>&1
@@ -146,7 +151,7 @@ sleep 1
 sleep 2
 $ipc call clipboard list > "$clip_emoji_list_path" 2>&1
 $ipc call menu summon clipboard > /dev/null 2>&1
-sleep 3
+until_settled
 "$grim_bin" "$clip_emoji_png" > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"

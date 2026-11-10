@@ -69,7 +69,7 @@ leg_launcher_actions_drive() {
 #!/usr/bin/env bash
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
 clients() { "$hyprctl_bin" clients -j > "$shot_dir/launcher-actions-clients-\$1.json" 2>&1; }
-probe() { call menu summon "" > /dev/null 2>&1; sleep 0.4; call menu filter "Actions Probe" > /dev/null 2>&1; sleep 0.6; }
+probe() { call menu summon "" > /dev/null 2>&1; until_settled; call menu filter "Actions Probe" > /dev/null 2>&1; sleep 0.6; }
 for verb in "actions 0" "runAction 0 open" "into 0"; do
   call menu \$verb >> "$shot_dir/launcher-actions-closed.txt" 2>&1
 done
@@ -169,7 +169,7 @@ call menu runAction "\$i" probe-note > "$shot_dir/launcher-actions-ipc-run.txt" 
 sleep 1
 
 call menu summon "" > /dev/null 2>&1
-sleep 0.4
+until_settled
 call menu filter Clipboard > /dev/null 2>&1
 sleep 0.6
 status menu "$shot_dir/launcher-actions-pin-list.json"
@@ -185,7 +185,7 @@ cp "$iso_home/.local/state/formalshell/state.json" "$shot_dir/launcher-actions-p
 call menu close > /dev/null 2>&1
 sleep 0.4
 call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 status menu "$shot_dir/launcher-actions-pin-root.json"
 shoot "$shot_dir/launcher-actions-pin-root-dark.png"
 call menu actions 0 > /dev/null 2>&1
@@ -197,12 +197,13 @@ cp "$iso_home/.local/state/formalshell/state.json" "$shot_dir/launcher-actions-u
 call menu close > /dev/null 2>&1
 sleep 0.4
 call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 status menu "$shot_dir/launcher-actions-unpin-root.json"
 call menu close > /dev/null 2>&1
 
 call theme mode light > /dev/null 2>&1
-sleep 2
+until_jq 60 "$shot_dir/launcher-actions-theme.json" '.mode == "light" and .palette.mode == "light" and .palette.wallpaper == .desktop' call theme status
+until_settled
 probe
 key -k Tab
 sleep 0.6

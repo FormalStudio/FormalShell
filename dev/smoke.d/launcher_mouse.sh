@@ -66,7 +66,7 @@ row_y() { echo \$((by + top + \$1 * pitch + (bottom - top) / 2)); }
 index() { "$jq_bin" -r --arg id "\$2" '.ids | index(\$id) // -1' "$p-\$1.json"; }
 park
 call menu summon "" > /dev/null 2>&1
-sleep 1.5
+until_settled
 "$wtype_bin" e
 sleep 1
 status menu "$p-root.json"
@@ -90,7 +90,7 @@ for i in 0 1 2 3 4; do
 done
 
 call menu summon toggles > /dev/null 2>&1
-sleep 1.5
+until_settled
 status menu "$p-hub.json"
 rows_from hub
 caffeinate=\$(index hub toggles.caffeinate)
@@ -161,15 +161,16 @@ tap
 status menu "$p-outside.json"
 
 call theme mode light > /dev/null 2>&1
-sleep 2
+until_jq 60 "$p-theme.json" '.mode == "light" and .palette.mode == "light" and .palette.wallpaper == .desktop' call theme status
+until_settled
 call theme status > "$p-theme.json" 2>&1
 call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 rows_from root
 at "\$x" "\$(row_y 2)"
 shoot "$p-hover-light.png"
 call menu summon toggles > /dev/null 2>&1
-sleep 1
+until_settled
 rows_from hub
 at "\$x" "\$(row_y "\$dnd")"
 tap right

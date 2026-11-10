@@ -23,10 +23,10 @@ leg_appmenu_drive() {
   local script="$shot_dir/appmenu-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-# The fixture window is spawned two seconds in and needs a moment to map and
-# take focus before the held-focus window the menu reads is it.
+# The menu reads the held-focus window, so the fixture window has focus first.
+until_jq 10 "$shot_dir/appmenu-focus.json" '.heldFocusedWindowId != null' call debug dump
 $ipc call panel open appmenu > "$appmenu_open_path" 2>&1
-sleep 2
+until_settled
 $ipc call panel state > "$appmenu_state_path" 2>&1
 "$grim_bin" "$appmenu_png" > /dev/null 2>&1
 EOF

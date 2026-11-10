@@ -73,7 +73,7 @@ leg_launcher_modes_drive() {
   local script="$shot_dir/launcher-modes-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-root() { call menu summon "" > /dev/null 2>&1; sleep 0.3; }
+root() { call menu summon "" > /dev/null 2>&1; until_settled; }
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
 while IFS='|' read -r id label; do
   root
@@ -84,7 +84,7 @@ while IFS='|' read -r id label; do
   sleep 0.3
   status menu "$shot_dir/launcher-modes-name-\$id.json"
   call menu summon "\$id" > /dev/null 2>&1
-  sleep 0.3
+  until_settled
   status menu "$shot_dir/launcher-modes-summon-\$id.json"
 done <<'ROUTES'
 $launcher_modes_routes
@@ -97,10 +97,10 @@ for p in "e|emoji" "k|keybinds" "r|radio.search" "f|files" "m|modesfix"; do
   status menu "$shot_dir/launcher-modes-prefix-\${p#*|}.json"
 done
 call menu summon ":k SUPER" > /dev/null 2>&1
-sleep 0.3
+until_settled
 status menu "$shot_dir/launcher-modes-summon-prefixed.json"
 call menu summon files > /dev/null 2>&1
-sleep 0.5
+until_settled
 call menu filter Documents > /dev/null 2>&1
 sleep 0.5
 call menu into 0 > /dev/null 2>&1
@@ -128,23 +128,23 @@ status menu "$shot_dir/launcher-modes-scope-fixture.json"
 shoot "$shot_dir/launcher-modes-fixture-dark.png"
 
 call menu summon modesfix.outer.inner > /dev/null 2>&1
-sleep 1
+until_settled
 status menu "$shot_dir/launcher-modes-inner.json"
 shoot "$shot_dir/launcher-modes-inner-dark.png"
 key -k BackSpace
 status menu "$shot_dir/launcher-modes-backspace.json"
 call menu summon modesfix.outer.inner > /dev/null 2>&1
-sleep 0.5
+until_settled
 "$wtype_bin" -P BackSpace -s 1500 -p BackSpace
 sleep 0.6
 status menu "$shot_dir/launcher-modes-backspace-held.json"
 call menu summon modesfix.outer.inner > /dev/null 2>&1
-sleep 0.5
+until_settled
 key -k Left
 status menu "$shot_dir/launcher-modes-left.json"
 
 call menu summon modesfix.outer.inner > /dev/null 2>&1
-sleep 0.5
+until_settled
 key le
 status menu "$shot_dir/launcher-modes-escape-0.json"
 for n in 1 2 3 4 5; do
@@ -154,7 +154,7 @@ done
 
 park
 call menu summon modesfix.outer > /dev/null 2>&1
-sleep 1
+until_settled
 status menu "$shot_dir/launcher-modes-click-before.json"
 read -r tx ty tw th < <("$jq_bin" -r '[.tokenBox.x, .tokenBox.y, .tokenBox.width, .tokenBox.height] | @tsv' "$shot_dir/launcher-modes-click-before.json")
 "$wlrctl_bin" pointer move \$((tx + tw / 2)) \$((ty + th / 2)) > /dev/null 2>&1
@@ -165,10 +165,11 @@ status menu "$shot_dir/launcher-modes-click-after.json"
 park
 
 call theme mode light > /dev/null 2>&1
-sleep 2
+until_jq 60 "$shot_dir/launcher-modes-theme.json" '.mode == "light" and .palette.mode == "light" and .palette.wallpaper == .desktop' call theme status
+until_settled
 call theme status > "$shot_dir/launcher-modes-theme.json" 2>&1
 call menu summon modesfix.outer.inner > /dev/null 2>&1
-sleep 1
+until_settled
 shoot "$shot_dir/launcher-modes-inner-light.png"
 root
 key -d 30 ":e modes"

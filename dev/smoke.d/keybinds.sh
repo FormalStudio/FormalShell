@@ -59,7 +59,7 @@ sleep 1
 $ipc call debug query ":k " > "$keybinds_query1_path" 2>&1
 $ipc call debug query ":k SUPER+T" > "$keybinds_query2_path" 2>&1
 $ipc call menu summon keybinds > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call menu status > "$keybinds_menu_status_path" 2>&1
 "$grim_bin" "$keybinds_menu_png" > /dev/null 2>&1
 EOF

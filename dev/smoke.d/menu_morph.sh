@@ -56,7 +56,7 @@ leg_menu_morph_drive() {
 sleep 1
 call debug motionScale 1000 > /dev/null 2>&1
 call menu summon "" > /dev/null 2>&1
-sleep 8
+until_settled
 "$grim_bin" "$shot_dir/menu-morph-root.png" > /dev/null 2>&1
 call menu summon clipboard > "$shot_dir/menu-morph-summon.txt" 2>&1
 for i in \$(seq 1 $menu_morph_frames); do
@@ -67,7 +67,7 @@ sleep 6
 "$grim_bin" "$shot_dir/menu-morph-rest.png" > /dev/null 2>&1
 call menu status > "$shot_dir/menu-morph-rest.json" 2>&1
 call menu summon "" > /dev/null 2>&1
-sleep 6
+until_settled
 for phase in tab back; do
   if [ "\$phase" = tab ]; then "$wtype_bin" -k Tab; else "$wtype_bin" -M shift -k Tab -m shift; fi
   for i in \$(seq 1 $menu_morph_frames); do

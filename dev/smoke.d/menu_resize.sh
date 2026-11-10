@@ -69,7 +69,7 @@ leg_menu_resize_drive() {
 #!/usr/bin/env bash
 call debug motionScale 500 > /dev/null 2>&1
 call menu toggle > /dev/null 2>&1
-sleep 6
+until_settled
 "$grim_bin" "$shot_dir/menu-resize-root0.png" > /dev/null 2>&1
 call debug dump > "$shot_dir/menu-resize-dump-root0.json" 2>&1
 "$wtype_bin" sysmon

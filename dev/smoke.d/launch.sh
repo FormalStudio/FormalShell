@@ -57,7 +57,7 @@ snap ipc-mapped
 pkill -f -- "--app-id=$launch_probe"
 sleep 1
 call menu summon "" > /dev/null 2>&1
-sleep 0.4
+until_settled menu menu-content
 call menu filter "Launch Probe" > /dev/null 2>&1
 sleep 0.6
 call menu status > "$shot_dir/launch-menu.json" 2>&1

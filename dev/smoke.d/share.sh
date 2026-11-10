@@ -38,7 +38,7 @@ leg_share_drive() {
 #!/usr/bin/env bash
 $ipc call localsend status > "$share_status_path" 2>&1
 $ipc call menu summon share > /dev/null 2>&1
-sleep 1
+until_settled
 "$grim_bin" "$share_menu_path" > /dev/null 2>&1
 $ipc call menu close > /dev/null 2>&1
 $ipc call localsend scan > "$share_scan_reply_path" 2>&1

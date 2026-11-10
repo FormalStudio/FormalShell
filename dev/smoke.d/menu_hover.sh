@@ -38,7 +38,7 @@ leg_menu_hover_drive() {
 park
 call debug motionScale 1000 > /dev/null 2>&1
 call menu summon emoji > /dev/null 2>&1
-sleep 8
+until_settled
 call menu status > "$shot_dir/menu-hover-open.json" 2>&1
 read -r bx by top bottom left right < <("$jq_bin" -r '[.body.x, .body.y, .viewCursor.top, .viewCursor.bottom, .viewCursor.left, .viewCursor.right] | @tsv' "$shot_dir/menu-hover-open.json")
 cw=\$((right - left)); ch=\$((bottom - top))

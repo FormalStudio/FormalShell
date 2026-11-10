@@ -59,7 +59,7 @@ leg_launcher_abbrev_drive() {
 sha256sum "$launcher_abbrev_settings" | cut -d' ' -f1 > "$launcher_abbrev_sha_before"
 step() {
   $ipc call menu summon "" > /dev/null 2>&1
-  sleep 1
+  until_settled
   $ipc call menu filter "\$1" > /dev/null 2>&1
   sleep 1
   $ipc call menu status > "$shot_dir/launcher-abbrev-\$2.json" 2>&1

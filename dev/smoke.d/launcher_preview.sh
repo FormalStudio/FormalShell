@@ -65,7 +65,7 @@ leg_launcher_preview_drive() {
 #!/usr/bin/env bash
 dump() { call debug dump > "$shot_dir/launcher-preview-dump-\$1.json" 2>&1; }
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
-seek() { call menu summon "" > /dev/null 2>&1; sleep 0.4; call menu filter "\$1" > /dev/null 2>&1; sleep 1.5; }
+seek() { call menu summon "" > /dev/null 2>&1; until_settled; call menu filter "\$1" > /dev/null 2>&1; sleep 1.5; }
 run() {
   local mode=\$1
   seek "Preview Probe"
@@ -137,17 +137,20 @@ shoot "$shot_dir/launcher-preview-image-dark.png"
 "$wl_copy_bin" --type image/png < "$shot_dir/launcher-preview-clip.png"
 sleep 2
 call menu summon clipboard > /dev/null 2>&1
-sleep 2.5
+until_jq 10 "$shot_dir/launcher-preview-clip-dark.json" '.pane.picture' call menu status
+until_settled
 status menu "$shot_dir/launcher-preview-clip-dark.json"
 shoot "$shot_dir/launcher-preview-clip-dark.png"
 call menu summon files > /dev/null 2>&1
-sleep 1.5
+until_jq 10 "$shot_dir/launcher-preview-files.json" '.level == "files" and ([.drawn[].label] | index("preview note.txt") != null)' call menu status
+until_settled
 status menu "$shot_dir/launcher-preview-files.json"
 call menu close > /dev/null 2>&1
 sleep 1
 
 call theme mode light > /dev/null 2>&1
-sleep 2
+until_jq 60 "$shot_dir/launcher-preview-theme.json" '.mode == "light" and .palette.mode == "light" and .palette.wallpaper == .desktop' call theme status
+until_settled
 run light
 EOF
   hypr_exec_once "bash $script"

@@ -93,6 +93,7 @@ leg_clipssh_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call menu summon clipssh > "$clipssh_summon_reply_path" 2>&1
+# Held to the frames script's clock below, which photographs the route at 3s.
 sleep 3
 $ipc call menu activate 0 > "$clipssh_send_reply_path" 2>&1
 sleep 3
@@ -103,6 +104,7 @@ $ipc call bar room > "$clipssh_room_landed_path" 2>&1
 $ipc call debug dump > "$clipssh_dump_landed_path" 2>&1
 sleep 2
 $ipc call menu summon clipssh > "$clipssh_fail_summon_reply_path" 2>&1
+# Held to the frames script's clock, like the first send.
 sleep 2
 $ipc call menu activate 1 > "$clipssh_fail_reply_path" 2>&1
 sleep 4

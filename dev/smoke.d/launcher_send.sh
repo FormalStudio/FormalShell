@@ -48,7 +48,7 @@ leg_launcher_send_drive() {
 # Send to… on the first clipboard entry, the targets settled into step \$1.
 clip_send() {
   call menu summon clipboard > /dev/null 2>&1
-  sleep 1
+  until_settled
   status menu "$shot_dir/launcher-send-\$1-list.json"
   call menu runAction 0 send-to > /dev/null 2>&1
   until_jq 20 "$shot_dir/launcher-send-\$1.json" "\$2" call menu status
@@ -89,7 +89,7 @@ cat "$launcher_send_peer_dir"/localsend-text-*.txt > "$shot_dir/launcher-send-te
 status menu "$shot_dir/launcher-send-text-sent.json"
 
 call menu summon "" > /dev/null 2>&1
-sleep 0.5
+until_settled
 call menu filter send-probe > /dev/null 2>&1
 sleep 1.5
 status menu "$shot_dir/launcher-send-file-list.json"

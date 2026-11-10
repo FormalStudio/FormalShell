@@ -130,7 +130,7 @@ go() { touch "$li_dir/\$1"; }
 "$python3_bin" -m http.server "$li_port" --bind 127.0.0.1 --directory "$li_dir/www" > "$li_dir/http.log" 2>&1 &
 sleep 4
 call menu summon install > /dev/null 2>&1
-sleep 1
+until_settled menu menu-content
 status menu "$li_dir/idle.json"
 call menu filter fox > /dev/null 2>&1
 until_jq 3 "$li_dir/searching.json" '.empty == "install.searching"' call menu status
@@ -200,7 +200,7 @@ sleep 1
 cp "$iso_home/.local/state/formalshell/state.json" "$li_dir/state.json" 2>/dev/null
 
 call menu summon install > /dev/null 2>&1
-sleep 0.5
+until_settled menu menu-content
 call menu filter fox > /dev/null 2>&1
 until_jq 10 "$li_dir/found.json" '.ids[0] | startswith("apps.")' call menu status
 
@@ -223,7 +223,7 @@ sleep 2
 go "\$(cat "$li_dir/last-op").go1"
 sleep 1
 call menu summon install > /dev/null 2>&1
-sleep 0.5
+until_settled menu menu-content
 call menu filter fox > /dev/null 2>&1
 until_jq 10 "$li_dir/runready.json" '(.ids | index("install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire")) != null' call menu status
 i=\$("$jq_bin" '.ids | index("install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire")' "$li_dir/runready.json")
@@ -257,7 +257,7 @@ Icon=folder
 DESKTOP
 sleep 1.5
 call menu summon install > /dev/null 2>&1
-sleep 0.5
+until_settled menu menu-content
 call menu filter foxb > /dev/null 2>&1
 until_jq 10 "$li_dir/own.json" '.ids[0] == "apps.org.example.Foxberry"' call menu status
 # Tab before the owner query answers: Uninstall joins the open column.
@@ -287,7 +287,7 @@ done
 sleep 1.5
 status activity "$li_dir/uninstalled.json"
 call menu summon install > /dev/null 2>&1
-sleep 0.5
+until_settled menu menu-content
 call menu filter foxb > /dev/null 2>&1
 until_jq 10 "$li_dir/gonerows.json" '(.ids | length) > 0 and (.ids | index("apps.org.example.Foxberry")) == null' call menu status
 

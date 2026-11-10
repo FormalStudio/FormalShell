@@ -51,7 +51,7 @@ leg_app_install_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu filter "latecomer" > /dev/null 2>&1
 sleep 1
 $ipc call menu status > "$app_install_before_path" 2>&1

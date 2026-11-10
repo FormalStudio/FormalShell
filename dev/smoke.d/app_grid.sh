@@ -165,7 +165,7 @@ leg_app_grid_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call menu summon apps > /dev/null 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$app_grid_png" > /dev/null 2>&1
 $ipc call menu status > "$app_grid_open_path" 2>&1
 $(stale_audit_start)
@@ -187,7 +187,7 @@ sleep 2
 # A root query that ranks an app alongside routes: the grid takes the apps
 # and the rest draw as rows under it.
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call menu filter app > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$app_grid_mixed_png" > /dev/null 2>&1
@@ -211,7 +211,7 @@ $ipc call menu status > "$app_grid_empty_path" 2>&1
 sleep 1
 $ipc call menu status > "$app_grid_escape_path" 2>&1
 $ipc call menu summon apps > /dev/null 2>&1
-sleep 1
+until_settled
 "$wtype_bin" -P BackSpace -s 1500 -p BackSpace
 sleep 1
 $ipc call menu status > "$app_grid_hold_path" 2>&1
@@ -220,7 +220,7 @@ $ipc call menu close > /dev/null 2>&1
 settings_retarget 'del(.menu.appGrid)'
 sleep 2
 $ipc call menu summon apps > /dev/null 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$app_grid_rows_png" > /dev/null 2>&1
 $ipc call menu status > "$app_grid_off_path" 2>&1
 $ipc call menu close > /dev/null 2>&1
