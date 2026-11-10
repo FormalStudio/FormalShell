@@ -11,6 +11,8 @@
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, Offset, TimeZone, Timelike};
 
+use crate::theme::{Mode, ModeKey};
+
 /// 90 degrees plus 50 arcminutes for the sun's own radius and the standard
 /// refraction allowance, so the times land on a published table rather than
 /// on the geometric horizon crossing.
@@ -58,7 +60,7 @@ pub struct SunTimes {
 /// A manual flip snoozing the schedule for one cycle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Override {
-    pub mode: String,
+    pub mode: Mode,
     pub until_ms: i64,
 }
 
@@ -308,25 +310,24 @@ pub fn next_change<Tz: TimeZone>(now: &DateTime<Tz>, times: Option<&SunTimes>) -
 }
 
 /// The mode `theme.mode` resolves to, or `None` for a key that leaves the
-/// mode to state.json alone. "dark" and "light" pin it; "auto" reads the
+/// mode to state.json alone. A pinned key is its mode; "auto" reads the
 /// schedule, unless an override is still snoozing it (one cycle,
 /// elementary's own reading of a manual flip under a schedule).
 pub fn effective_mode<Tz: TimeZone>(
-    key: &str,
+    key: ModeKey,
     now: &DateTime<Tz>,
     times: Option<&SunTimes>,
     override_: Option<&Override>,
-) -> Option<&'static str> {
+) -> Option<Mode> {
     match key {
-        "dark" => return Some("dark"),
-        "light" => return Some("light"),
-        "auto" => {}
-        _ => return None,
+        ModeKey::Unset => None,
+        ModeKey::Pinned(mode) => Some(mode),
+        ModeKey::Auto => Some(match override_.filter(|o| o.until_ms > now.timestamp_millis()) {
+            Some(o) => o.mode,
+            None if is_dark(now, times) => Mode::Dark,
+            None => Mode::Light,
+        }),
     }
-    if let Some(o) = override_.filter(|o| o.until_ms > now.timestamp_millis()) {
-        return Some(if o.mode == "light" { "light" } else { "dark" });
-    }
-    Some(if is_dark(now, times) { "dark" } else { "light" })
 }
 
 /// Minutes since local midnight as wall clock, for `theme status`. Wraps a
@@ -570,23 +571,23 @@ mod tests {
     #[test]
     fn effective_mode_pinned_keys() {
         assert_eq!(
-            effective_mode("dark", &local(2026, 9, 22, 12, 0), None, None),
-            Some("dark")
+            effective_mode(ModeKey::Pinned(Mode::Dark), &local(2026, 9, 22, 12, 0), None, None),
+            Some(Mode::Dark)
         );
         assert_eq!(
-            effective_mode("light", &local(2026, 9, 22, 23, 0), None, None),
-            Some("light")
+            effective_mode(ModeKey::Pinned(Mode::Light), &local(2026, 9, 22, 23, 0), None, None),
+            Some(Mode::Light)
         );
     }
 
     #[test]
     fn effective_mode_manual_key_leaves_the_mode_alone() {
         assert_eq!(
-            effective_mode("", &local(2026, 9, 22, 12, 0), None, None),
+            effective_mode(ModeKey::parse(""), &local(2026, 9, 22, 12, 0), None, None),
             None
         );
         assert_eq!(
-            effective_mode("sunset-to-sunrise", &local(2026, 9, 22, 12, 0), None, None),
+            effective_mode(ModeKey::parse("sunset-to-sunrise"), &local(2026, 9, 22, 12, 0), None, None),
             None
         );
     }
@@ -595,24 +596,24 @@ mod tests {
     fn effective_mode_auto_reads_the_schedule() {
         let t = times(6.0 * 60.0, 18.0 * 60.0);
         assert_eq!(
-            effective_mode("auto", &local(2026, 9, 22, 12, 0), Some(&t), None),
-            Some("light")
+            effective_mode(ModeKey::Auto, &local(2026, 9, 22, 12, 0), Some(&t), None),
+            Some(Mode::Light)
         );
         assert_eq!(
-            effective_mode("auto", &local(2026, 9, 22, 19, 0), Some(&t), None),
-            Some("dark")
+            effective_mode(ModeKey::Auto, &local(2026, 9, 22, 19, 0), Some(&t), None),
+            Some(Mode::Dark)
         );
     }
 
     #[test]
     fn effective_mode_auto_without_location_reads_the_fallback() {
         assert_eq!(
-            effective_mode("auto", &local(2026, 9, 22, 21, 0), None, None),
-            Some("dark")
+            effective_mode(ModeKey::Auto, &local(2026, 9, 22, 21, 0), None, None),
+            Some(Mode::Dark)
         );
         assert_eq!(
-            effective_mode("auto", &local(2026, 9, 22, 7, 0), None, None),
-            Some("light")
+            effective_mode(ModeKey::Auto, &local(2026, 9, 22, 7, 0), None, None),
+            Some(Mode::Light)
         );
     }
 
@@ -621,37 +622,20 @@ mod tests {
         let t = times(6.0 * 60.0, 18.0 * 60.0);
         let now = local(2026, 9, 22, 12, 0);
         let live = Override {
-            mode: "dark".into(),
+            mode: Mode::Dark,
             until_ms: local(2026, 9, 22, 18, 0).timestamp_millis(),
         };
         assert_eq!(
-            effective_mode("auto", &now, Some(&t), Some(&live)),
-            Some("dark")
+            effective_mode(ModeKey::Auto, &now, Some(&t), Some(&live)),
+            Some(Mode::Dark)
         );
         let expired = Override {
-            mode: "dark".into(),
+            mode: Mode::Dark,
             until_ms: local(2026, 9, 22, 11, 0).timestamp_millis(),
         };
         assert_eq!(
-            effective_mode("auto", &now, Some(&t), Some(&expired)),
-            Some("light")
-        );
-    }
-
-    #[test]
-    fn effective_mode_auto_override_of_an_unknown_mode_reads_as_dark() {
-        let live = Override {
-            mode: "sepia".into(),
-            until_ms: local(2026, 9, 22, 18, 0).timestamp_millis(),
-        };
-        assert_eq!(
-            effective_mode(
-                "auto",
-                &local(2026, 9, 22, 12, 0),
-                Some(&times(6.0 * 60.0, 18.0 * 60.0)),
-                Some(&live)
-            ),
-            Some("dark")
+            effective_mode(ModeKey::Auto, &now, Some(&t), Some(&expired)),
+            Some(Mode::Light)
         );
     }
 

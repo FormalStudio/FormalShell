@@ -1,7 +1,5 @@
 //! `theme` and `wallpaper`: their verbs.
 
-use serde_json::json;
-
 use super::registry::{Function, Reply, Target, Type, Value, ok, text};
 use crate::services::{state, theme};
 use crate::wayland::App;
@@ -38,30 +36,12 @@ fn retheme(_: &mut App, _: &[Value]) -> Reply {
 /// "auto"` the write is a snooze the engine records once it lands, and a
 /// pinned key refuses one outright.
 fn mode(app: &mut App, args: &[Value]) -> Reply {
-    text(theme::set_mode(&app.store, args[0].str())?)
+    let ask = theme::Ask::parse(args[0].str())?;
+    text(theme::set_mode(&app.store, ask)?.as_str())
 }
 
-/// `mode` is the live mode, `modeKey` what settings.json asked for and
-/// `effective` what that key resolves to now.
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    let data = &app.store.state.data;
-    let key = theme::mode_key(app.store.config.settings());
-    let times = app.store.theme.schedule.as_ref();
-    let over = theme::parse_override(&data.mode_override);
-    let schedule = theme::schedule_status(key, times)
-        .map(|s| json!({"sunrise": s.sunrise, "sunset": s.sunset, "polar": s.polar, "source": s.source}));
-    let out = json!({
-        "wallpaper": data.wallpaper,
-        "wallpaperDark": data.wallpaper_dark,
-        "desktop": app.store.desktop(),
-        "mode": data.mode,
-        "themeJsonPresent": app.store.theme.json_present,
-        "modeKey": key,
-        "effective": theme::effective_mode(key, times, over.as_ref(), &data.mode),
-        "schedule": schedule,
-        "override": data.mode_override,
-    });
-    Ok(out)
+    Ok(theme::status(&app.store))
 }
 
 /// An absolute picture path, or `sky` (or the picker's `sky:<step>` cell)
@@ -88,7 +68,7 @@ fn wallpaper_pair(_: &mut App, args: &[Value]) -> Reply {
 
 /// One mode's slot, the mode left alone.
 fn wallpaper_set_for(_: &mut App, args: &[Value]) -> Reply {
-    let Some(half) = state::Half::parse(args[0].str()) else {
+    let Some(half) = fs_theme::theme::Mode::parse_exact(args[0].str()) else {
         return Err("mode must be light or dark".into());
     };
     let path = args[1].str();
@@ -102,6 +82,5 @@ fn wallpaper_set_for(_: &mut App, args: &[Value]) -> Reply {
 /// The picture shown now, the mode's half of a pair.
 fn wallpaper_get(app: &mut App, _: &[Value]) -> Reply {
     let data = &app.store.state.data;
-    let dark = data.mode == "dark" && !data.wallpaper_dark.is_empty();
-    text(if dark { data.wallpaper_dark.clone() } else { data.wallpaper.clone() })
+    text(data.picture(data.mode))
 }

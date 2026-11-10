@@ -162,11 +162,11 @@ fn route<S, D>(slot: &mut S, diff: D, apply: impl FnOnce(&mut S, D) -> Option<To
 impl Store {
     /// What the desktop shows ([`wallpaper::desktop`]).
     pub fn desktop(&self) -> String {
-        self.desktop_for(&self.state.data.mode)
+        self.desktop_for(self.state.data.mode)
     }
 
     /// What the desktop shows in `mode`.
-    pub fn desktop_for(&self, mode: &str) -> String {
+    pub fn desktop_for(&self, mode: fs_theme::theme::Mode) -> String {
         wallpaper::desktop(crate::settings::wallpaper_color(&self.config).as_deref(), &self.state.data, mode, self.sky_step())
     }
 
@@ -179,7 +179,7 @@ impl Store {
         Some(theme::Inputs {
             settings: self.config.settings().clone(),
             wallpaper: self.desktop(),
-            mode: data.mode.clone(),
+            mode: data.mode,
             mode_override: theme::parse_override(&data.mode_override),
             location: crate::settings::location(&self.config),
             sky_at: self.theme.sky_at,

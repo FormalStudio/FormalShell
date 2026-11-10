@@ -25,7 +25,7 @@ fn choose(app: &mut App, a: &[Value]) -> Reply {
 }
 
 fn choose_for(app: &mut App, a: &[Value]) -> Reply {
-    let Some(half) = crate::services::state::Half::parse(a[1].str()) else {
+    let Some(half) = fs_theme::theme::Mode::parse_exact(a[1].str()) else {
         return Err("mode must be light or dark".into());
     };
     app.resolve_launcher();

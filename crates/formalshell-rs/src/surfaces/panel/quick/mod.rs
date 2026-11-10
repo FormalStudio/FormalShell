@@ -320,9 +320,9 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     let nl_reason = (!nl.active).then(|| nl.last_error.lines().next().unwrap_or("").trim()).filter(|r| !r.is_empty());
     out.push(Tile::toggle("night-light", "lightbulb", "Night light", nl.active).unless(nl_reason).does(Action::Run(Run::NightLight)));
 
-    let pinned = matches!(theme::mode_key(store.config.settings()), "dark" | "light");
+    let pinned = theme::mode_key(store.config.settings()).pinned().is_some();
     out.push(
-        Tile::toggle("dark-style", "moon", "Dark style", store.state.data.mode == "dark")
+        Tile::toggle("dark-style", "moon", "Dark style", store.state.data.mode == fs_theme::theme::Mode::Dark)
             .unless(pinned.then_some("Set in settings.json"))
             .does(Action::Run(Run::DarkStyle)),
     );

@@ -1071,6 +1071,7 @@ dependencies = [
  "fs-chrome",
  "fs-devices",
  "fs-js",
+ "fs-theme",
  "fs-types",
  "indexmap",
  "percent-encoding",
@@ -1138,6 +1139,7 @@ dependencies = [
  "fs-js",
  "fs-types",
  "regex",
+ "serde",
  "serde_json",
 ]
 

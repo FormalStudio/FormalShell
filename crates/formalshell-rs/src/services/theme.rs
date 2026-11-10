@@ -60,7 +60,7 @@ use fs_theme::chrome;
 use fs_theme::matugen::{self, BuildOpts};
 use fs_theme::palette::{self, Pin};
 use fs_theme::sun::{self, Override, SunTimes};
-use fs_theme::theme::Theme;
+use fs_theme::theme::{Mode, ModeKey, Theme};
 use futures_lite::future;
 use serde_json::{Map, Value};
 
@@ -264,8 +264,8 @@ pub struct Inputs {
     pub settings: Value,
     /// `State.wallpaper`, empty with none set.
     pub wallpaper: String,
-    /// `State.mode`, "dark" or "light".
-    pub mode: String,
+    /// `State.mode`.
+    pub mode: Mode,
     pub mode_override: Option<Override>,
     /// Latitude and longitude, when one is known.
     pub location: Option<(f64, f64)>,
@@ -276,40 +276,56 @@ pub struct Inputs {
 /// The state.json writes the engine asks for.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Request {
-    SetMode(String),
+    SetMode(Mode),
     SetModeOverride(Option<Override>),
 }
 
-/// `theme.mode`: "" leaves the mode to state.json, "dark" and "light" pin
-/// it, "auto" hands it to the schedule. Anything else reads as "".
-pub fn mode_key(settings: &Value) -> &'static str {
-    match super::config::lookup(settings, crate::settings::THEME_MODE.key).and_then(Value::as_str) {
-        Some("dark") => "dark",
-        Some("light") => "light",
-        Some("auto") => "auto",
-        _ => "",
+/// settings.json's `theme.mode`.
+pub fn mode_key(settings: &Value) -> ModeKey {
+    super::config::lookup(settings, crate::settings::THEME_MODE.key).and_then(Value::as_str).map_or(ModeKey::Unset, ModeKey::parse)
+}
+
+/// A mode write asked for: one mode, or the other one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Ask {
+    Set(Mode),
+    Toggle,
+}
+
+impl Ask {
+    /// `theme mode dark|light|toggle`'s argument.
+    pub fn parse(word: &str) -> Result<Ask, String> {
+        match word {
+            "toggle" => Ok(Ask::Toggle),
+            word => Mode::parse_exact(word).map(Ask::Set).ok_or_else(|| "mode must be dark, light, or toggle".into()),
+        }
     }
 }
 
-/// `theme mode dark|light|toggle`: the mode to write, or the error string
-/// the IPC target answers with. A pinned key says so rather than flipping
-/// and snapping back a tick later.
-pub fn request_mode(m: &str, current: &str, key: &str) -> Result<String, String> {
-    let target = if m == "toggle" { if current == "dark" { "light" } else { "dark" } } else { m };
-    if target != "dark" && target != "light" {
-        return Err("mode must be dark, light, or toggle".into());
+/// The mode `ask` writes over `current`, or the error string the IPC target
+/// answers with. A pinned key says so rather than flipping and snapping
+/// back a tick later.
+pub fn request_mode(ask: Ask, current: Mode, key: ModeKey) -> Result<Mode, String> {
+    if let Some(pinned) = key.pinned() {
+        return Err(format!("theme.mode pins the mode to {}", pinned.as_str()));
     }
-    if key == "dark" || key == "light" {
-        return Err(format!("theme.mode pins the mode to {key}"));
-    }
-    Ok(target.to_owned())
+    Ok(match ask {
+        Ask::Set(mode) => mode,
+        Ask::Toggle => current.toggled(),
+    })
 }
 
-/// `m` written to state.json under [`request_mode`]'s rules: the mode
-/// written, or why not.
-pub fn set_mode(store: &store::Store, m: &str) -> Result<String, String> {
-    let mode = request_mode(m, &store.state.data.mode, mode_key(store.config.settings()))?;
-    state::set(vec![state::Field::Mode(mode.clone())]);
+/// [`request_mode`] against the store.
+pub fn mode_for(store: &store::Store, ask: Ask) -> Result<Mode, String> {
+    request_mode(ask, store.state.data.mode, mode_key(store.config.settings()))
+}
+
+/// `ask` written to state.json under [`request_mode`]'s rules: the mode
+/// written, or why not. Under "auto" the write is a snooze the engine
+/// records once it lands.
+pub fn set_mode(store: &store::Store, ask: Ask) -> Result<Mode, String> {
+    let mode = mode_for(store, ask)?;
+    state::set(vec![state::Field::Mode(mode)]);
     Ok(mode)
 }
 
@@ -322,8 +338,8 @@ pub struct ScheduleStatus {
     pub source: &'static str,
 }
 
-pub fn schedule_status(key: &str, times: Option<&SunTimes>) -> Option<ScheduleStatus> {
-    if key != "auto" {
+pub fn schedule_status(key: ModeKey, times: Option<&SunTimes>) -> Option<ScheduleStatus> {
+    if key != ModeKey::Auto {
         return None;
     }
     Some(match times {
@@ -339,8 +355,31 @@ pub fn schedule_status(key: &str, times: Option<&SunTimes>) -> Option<ScheduleSt
 
 /// What the key resolves to right now, which is what the mode already
 /// carries except in the instant between a boundary and its write.
-pub fn effective_mode(key: &str, times: Option<&SunTimes>, mode_override: Option<&Override>, current: &str) -> String {
-    sun::effective_mode(key, &Local::now(), times, mode_override).map_or_else(|| current.to_owned(), str::to_owned)
+pub fn effective(store: &store::Store) -> Mode {
+    let data = &store.state.data;
+    let key = mode_key(store.config.settings());
+    let over = parse_override(&data.mode_override);
+    sun::effective_mode(key, &Local::now(), store.theme.schedule.as_ref(), over.as_ref()).unwrap_or(data.mode)
+}
+
+/// `theme status`: `mode` is the live mode, `modeKey` what settings.json
+/// asked for and `effective` what that key resolves to now.
+pub fn status(store: &store::Store) -> Value {
+    let data = &store.state.data;
+    let key = mode_key(store.config.settings());
+    let schedule = schedule_status(key, store.theme.schedule.as_ref())
+        .map(|s| serde_json::json!({"sunrise": s.sunrise, "sunset": s.sunset, "polar": s.polar, "source": s.source}));
+    serde_json::json!({
+        "wallpaper": data.wallpaper,
+        "wallpaperDark": data.wallpaper_dark,
+        "desktop": store.desktop(),
+        "mode": data.mode.as_str(),
+        "themeJsonPresent": store.theme.json_present,
+        "modeKey": key.as_str(),
+        "effective": effective(store).as_str(),
+        "schedule": schedule,
+        "override": data.mode_override,
+    })
 }
 
 fn warn(what: impl std::fmt::Display) {
@@ -428,7 +467,7 @@ pub fn start(ctx: &Ctx) {
                 Request::SetMode(mode) => state::Field::Mode(mode),
                 Request::SetModeOverride(None) => state::Field::ModeOverride(Value::Null),
                 Request::SetModeOverride(Some(o)) => {
-                    state::Field::ModeOverride(serde_json::json!({"mode": o.mode, "untilMs": o.until_ms}))
+                    state::Field::ModeOverride(serde_json::json!({"mode": o.mode.as_str(), "untilMs": o.until_ms}))
                 }
             };
             state::set(vec![field]);
@@ -436,9 +475,10 @@ pub fn start(ctx: &Ctx) {
     });
 }
 
-/// `State.modeOverride` as state.json holds it.
+/// `State.modeOverride` as state.json holds it, any mode but `light` read
+/// as dark.
 pub fn parse_override(value: &Value) -> Option<Override> {
-    let mode = value.get("mode")?.as_str()?.to_owned();
+    let mode = Mode::parse(value.get("mode")?.as_str()?);
     let until_ms = value.get("untilMs")?.as_f64()? as i64;
     Some(Override { mode, until_ms })
 }
@@ -486,7 +526,7 @@ pub async fn run(ctx: Ctx, env: Env, inputs: async_channel::Receiver<Inputs>, re
             None => {}
         }
         sky_tick = engine.sync_sky(fired || sky_tick.is_none(), sky_tick);
-        let auto = engine.inputs.borrow().as_ref().is_some_and(|i| mode_key(&i.settings) == "auto");
+        let auto = engine.inputs.borrow().as_ref().is_some_and(|i| mode_key(&i.settings) == ModeKey::Auto);
         tick = match (auto, tick) {
             (false, _) => None,
             (true, Some(at)) if at > Instant::now() => Some(at),
@@ -579,19 +619,19 @@ impl Engine {
             return;
         };
         let key = mode_key(&inputs.settings);
-        if key.is_empty() {
+        if key == ModeKey::Unset {
             return;
         }
         let now = Local::now();
         let times = match (key, inputs.location) {
-            ("auto", Some((lat, lon))) => sun::sun_times(&now, lat, lon, None),
+            (ModeKey::Auto, Some((lat, lon))) => sun::sun_times(&now, lat, lon, None),
             _ => None,
         };
         self.times.replace(times);
         self.ctx.publish(store::Diff::Theme(Diff::Schedule(times)));
         let mut over = inputs.mode_override.clone();
         if let Some(o) = &over
-            && (key != "auto" || o.until_ms <= now.timestamp_millis())
+            && (key != ModeKey::Auto || o.until_ms <= now.timestamp_millis())
         {
             self.request(Request::SetModeOverride(None));
             over = None;
@@ -599,7 +639,7 @@ impl Engine {
         if let Some(want) = sun::effective_mode(key, &now, times.as_ref(), over.as_ref())
             && want != inputs.mode
         {
-            self.request(Request::SetMode(want.to_owned()));
+            self.request(Request::SetMode(want));
         }
     }
 
@@ -611,7 +651,7 @@ impl Engine {
             return;
         };
         let key = mode_key(&inputs.settings);
-        if key.is_empty() {
+        if key == ModeKey::Unset {
             return;
         }
         let now = Local::now();
@@ -620,9 +660,9 @@ impl Engine {
         match resolved {
             None => {}
             Some(r) if r == inputs.mode => {}
-            Some(_) if key != "auto" => self.request(Request::SetMode(key.to_owned())),
+            Some(r) if key != ModeKey::Auto => self.request(Request::SetMode(r)),
             Some(_) => self.request(Request::SetModeOverride(Some(Override {
-                mode: inputs.mode.clone(),
+                mode: inputs.mode,
                 until_ms: sun::next_change(&now, times.as_ref()).timestamp_millis(),
             }))),
         }
@@ -655,7 +695,7 @@ impl Engine {
     /// rather than gsettings: on NixOS the schemas live under per-package
     /// paths a bare gsettings cannot see. Fire and forget.
     fn sync_system_scheme(&self, inputs: &Inputs) {
-        let dark = inputs.mode != "light";
+        let dark = inputs.mode == Mode::Dark;
         let (light, dark_name) = (crate::settings::GTK_THEME.get(&inputs.settings), crate::settings::GTK_THEME_DARK.get(&inputs.settings));
         let theme_name = fs_theme::gtk::gtk_theme_name(dark, light, dark_name);
         let scheme = if dark { "'prefer-dark'" } else { "'prefer-light'" };
@@ -676,7 +716,7 @@ impl Engine {
         };
         self.sync_system_scheme(&inputs);
         if inputs.wallpaper.is_empty() {
-            self.publish_static(palette::fallback(&inputs.mode)).await;
+            self.publish_static(palette::fallback(inputs.mode.as_str())).await;
             return;
         }
         if let Err(err) = self.matugen_run(&inputs).await {
@@ -734,7 +774,7 @@ impl Engine {
         });
         let pin = palette::pinned_palette(&inputs.wallpaper);
         let cfg = match pin {
-            Some(pin) => self.rewrite_templates(&cfg, &inputs.mode, pin).await?,
+            Some(pin) => self.rewrite_templates(&cfg, inputs.mode.as_str(), pin).await?,
             None => cfg,
         };
 
@@ -811,7 +851,7 @@ impl Engine {
                 Ok(())
             })
             .await;
-            self.publish_static(pin.shadcn(&inputs.mode)).await;
+            self.publish_static(pin.shadcn(inputs.mode.as_str())).await;
             return Ok(());
         }
 
@@ -1010,7 +1050,7 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
     }
 
     fn inputs(settings: Value, wallpaper: &str, mode: &str) -> Inputs {
-        Inputs { settings, wallpaper: wallpaper.into(), mode: mode.into(), mode_override: None, location: None, sky_at: None }
+        Inputs { settings, wallpaper: wallpaper.into(), mode: Mode::parse(mode), mode_override: None, location: None, sky_at: None }
     }
 
     #[derive(Default)]
@@ -1076,27 +1116,33 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
 
     #[test]
     fn mode_key_reads_three_values_and_nothing_else() {
-        assert_eq!(mode_key(&json!({ "theme": { "mode": "auto" } })), "auto");
-        assert_eq!(mode_key(&json!({ "theme": { "mode": "dark" } })), "dark");
-        assert_eq!(mode_key(&json!({ "theme": { "mode": "dusk" } })), "");
-        assert_eq!(mode_key(&json!({})), "");
+        assert_eq!(mode_key(&json!({ "theme": { "mode": "auto" } })), ModeKey::Auto);
+        assert_eq!(mode_key(&json!({ "theme": { "mode": "dark" } })), ModeKey::Pinned(Mode::Dark));
+        assert_eq!(mode_key(&json!({ "theme": { "mode": "dusk" } })), ModeKey::Unset);
+        assert_eq!(mode_key(&json!({})), ModeKey::Unset);
     }
 
     #[test]
     fn request_mode_answers_the_ipc_strings() {
-        assert_eq!(request_mode("toggle", "dark", ""), Ok("light".into()));
-        assert_eq!(request_mode("toggle", "light", "auto"), Ok("dark".into()));
-        assert_eq!(request_mode("dusk", "dark", ""), Err("mode must be dark, light, or toggle".into()));
-        assert_eq!(request_mode("light", "dark", "dark"), Err("theme.mode pins the mode to dark".into()));
+        assert_eq!(request_mode(Ask::Toggle, Mode::Dark, ModeKey::Unset), Ok(Mode::Light));
+        assert_eq!(request_mode(Ask::Toggle, Mode::Light, ModeKey::Auto), Ok(Mode::Dark));
+        assert_eq!(Ask::parse("dusk"), Err("mode must be dark, light, or toggle".into()));
+        assert_eq!(request_mode(Ask::Set(Mode::Light), Mode::Dark, ModeKey::Pinned(Mode::Dark)), Err("theme.mode pins the mode to dark".into()));
+    }
+
+    #[test]
+    fn an_override_of_an_unknown_mode_reads_as_dark() {
+        let over = parse_override(&json!({"mode": "sepia", "untilMs": 5})).unwrap();
+        assert_eq!((over.mode, over.until_ms), (Mode::Dark, 5));
     }
 
     #[test]
     fn schedule_status_is_the_auto_keys_alone() {
-        assert_eq!(schedule_status("dark", None), None);
-        let fallback = schedule_status("auto", None).unwrap();
+        assert_eq!(schedule_status(ModeKey::Pinned(Mode::Dark), None), None);
+        let fallback = schedule_status(ModeKey::Auto, None).unwrap();
         assert_eq!((fallback.source, fallback.polar, fallback.sunrise.as_str()), ("fallback", "", ""));
         let times = sun::sun_times(&Local::now(), 52.0, 4.9, None).unwrap();
-        let located = schedule_status("auto", Some(&times)).unwrap();
+        let located = schedule_status(ModeKey::Auto, Some(&times)).unwrap();
         assert_eq!(located.source, "location");
         assert_eq!(located.sunrise, sun::hhmm(times.sunrise_minutes));
     }
@@ -1265,7 +1311,7 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
         let settings = json!({ "theme": { "mode": "dark" } });
         let (_, requests) =
             drive(env, vec![(Duration::ZERO, inputs(settings, "", "light"))], |_, r| !r.is_empty());
-        assert_eq!(requests.first(), Some(&Request::SetMode("dark".into())));
+        assert_eq!(requests.first(), Some(&Request::SetMode(Mode::Dark)));
     }
 
     /// Under "auto", a write that disagrees with the schedule is a snooze
@@ -1274,11 +1320,11 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
     fn a_manual_flip_under_auto_snoozes_one_cycle() {
         let (env, _) = rig("snooze");
         let settings = json!({ "theme": { "mode": "auto" } });
-        let scheduled = sun::effective_mode("auto", &Local::now(), None, None).unwrap();
-        let flipped = if scheduled == "dark" { "light" } else { "dark" };
+        let scheduled = sun::effective_mode(ModeKey::Auto, &Local::now(), None, None).unwrap();
+        let flipped = scheduled.toggled();
         let sends = vec![
-            (Duration::ZERO, inputs(settings.clone(), "", scheduled)),
-            (Duration::from_millis(300), inputs(settings, "", flipped)),
+            (Duration::ZERO, inputs(settings.clone(), "", scheduled.as_str())),
+            (Duration::from_millis(300), inputs(settings, "", flipped.as_str())),
         ];
         let (_, requests) = drive(env, sends, |_, r| r.iter().any(|q| matches!(q, Request::SetModeOverride(Some(_)))));
         let snooze = requests.iter().find_map(|q| match q {

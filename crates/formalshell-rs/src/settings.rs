@@ -567,7 +567,7 @@ mod tests {
     fn the_feature_models_read_the_same_defaults() {
         let toasts = fs_info::notifications::position_spec(None).name;
         assert_eq!(fs_info::notifications::position_spec(Some(NOTIFICATIONS_POSITION.default)).name, toasts);
-        assert_eq!(crate::services::theme::mode_key(&json!({})), "");
+        assert_eq!(crate::services::theme::mode_key(&json!({})), fs_theme::theme::ModeKey::Unset);
         assert!(crate::ui::spectrum::styles::Style::parse(VISUALIZER_STYLE.default).is_some());
         assert_eq!(battery_thresholds(&json!({})), Thresholds::LAPTOP);
     }

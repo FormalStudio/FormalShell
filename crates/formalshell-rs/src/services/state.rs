@@ -16,6 +16,7 @@ use fs_js::lenient;
 use fs_menu::abbrev::Book;
 use fs_menu::frecency::Record;
 use fs_system::display::hdr;
+use fs_theme::theme::Mode;
 use serde::de::{DeserializeOwned, Deserializer};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -110,7 +111,7 @@ keys! {
     /// The picker's choice between a flat colour and the picture: a
     /// `#rrggbb`, `false` for the picture, null when it never chose.
     wallpaper_color: Value => WallpaperColor,
-    mode: String => Mode = "dark".into(),
+    mode: Mode => Mode,
     /// `{ mode, untilMs }` while a manual flip snoozes `theme.mode: "auto"`.
     mode_override: Value => ModeOverride,
     dnd: bool => Dnd,
@@ -159,7 +160,7 @@ macro_rules! whole {
     };
 }
 
-whole!(String, bool, i64, Value, overnight::Record, lights::Record);
+whole!(String, bool, i64, Value, Mode, overnight::Record, lights::Record);
 
 impl<T: DeserializeOwned> Lenient for Vec<T> {
     fn read(value: Value) -> Option<Self> {
@@ -211,15 +212,21 @@ impl Data {
             Choice::Both(path) => (self.wallpaper, self.wallpaper_dark) = (path, String::new()),
             Choice::Pair(light, dark) => (self.wallpaper, self.wallpaper_dark) = (light, dark),
             Choice::Slot(_, path) if covered => (self.wallpaper, self.wallpaper_dark) = (path, String::new()),
-            Choice::Slot(Half::Light, path) => {
+            Choice::Slot(Mode::Light, path) => {
                 if self.wallpaper_dark.is_empty() {
                     self.wallpaper_dark = std::mem::take(&mut self.wallpaper);
                 }
                 self.wallpaper = path;
             }
-            Choice::Slot(Half::Dark, path) => self.wallpaper_dark = path,
+            Choice::Slot(Mode::Dark, path) => self.wallpaper_dark = path,
         }
         self.wallpaper_color = Value::Bool(false);
+    }
+
+    /// The picture `mode` shows: the dark slot in dark mode when it is set,
+    /// else the light one.
+    pub fn picture(&self, mode: Mode) -> &str {
+        if mode == Mode::Dark && !self.wallpaper_dark.is_empty() { &self.wallpaper_dark } else { &self.wallpaper }
     }
 
     /// A key missing or of the wrong type takes its default, and a key the
@@ -334,22 +341,6 @@ pub fn set(fields: Vec<Field>) {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Half {
-    Light,
-    Dark,
-}
-
-impl Half {
-    pub fn parse(mode: &str) -> Option<Half> {
-        match mode {
-            "light" => Some(Half::Light),
-            "dark" => Some(Half::Dark),
-            _ => None,
-        }
-    }
-}
-
 /// What a wallpaper pick writes, `wallpaper` and `wallpaperDark` being
 /// GNOME's `picture-uri` and `picture-uri-dark`.
 #[derive(Clone, Debug, PartialEq)]
@@ -359,21 +350,20 @@ pub enum Choice {
     /// Light, then dark.
     Pair(String, String),
     /// One mode's slot, the other left as it is.
-    Slot(Half, String),
+    Slot(Mode, String),
 }
 
 /// Mode goes first so a retheme the wallpaper change triggers already reads the
-/// final mode. `mode` is the picker's Dark/Light set, ignored when it is
-/// neither. A flat or sky source sets the colour and keeps both slots under
-/// it; a picture sets itself over any colour.
-pub fn set_wallpaper(choice: Choice, mode: Option<&str>) {
+/// final mode. A flat or sky source sets the colour and keeps both slots
+/// under it; a picture sets itself over any colour.
+pub fn set_wallpaper(choice: Choice, mode: Option<Mode>) {
     set(wallpaper_fields(choice, mode));
 }
 
-fn wallpaper_fields(choice: Choice, mode: Option<&str>) -> Vec<Field> {
+fn wallpaper_fields(choice: Choice, mode: Option<Mode>) -> Vec<Field> {
     let mut fields = Vec::new();
-    if let Some(mode @ ("dark" | "light")) = mode {
-        fields.push(Field::Mode(mode.into()));
+    if let Some(mode) = mode {
+        fields.push(Field::Mode(mode));
     }
     let path = match &choice {
         Choice::Both(path) | Choice::Slot(_, path) => Some(path.as_str()),
@@ -745,7 +735,8 @@ mod tests {
     #[test]
     fn unknown_keys_are_dropped_and_wrong_types_take_the_default() {
         let d = Data::parse(r#"{"future":1,"dnd":"yes","mode":"light","appLaunches":{"a":1},"calendarBirthYear":"x"}"#).unwrap();
-        assert_eq!(d.mode, "light");
+        assert_eq!(d.mode, Mode::Light);
+        assert_eq!(Data::parse(r#"{"mode":"sepia"}"#).unwrap().mode, Mode::Dark);
         assert!(!d.dnd);
         assert!(d.picks.is_empty());
         assert_eq!(d.calendar_birth_year, 0);
@@ -761,7 +752,7 @@ mod tests {
     #[test]
     fn set_reports_only_what_moved() {
         let mut data = Data::default();
-        assert_eq!(data.set(vec![Field::Dnd(false), Field::Mode("dark".into())]), Diff(vec![]));
+        assert_eq!(data.set(vec![Field::Dnd(false), Field::Mode(Mode::Dark)]), Diff(vec![]));
         let diff = data.set(vec![Field::Dnd(true), Field::ClockFormat("x".into())]);
         assert_eq!(diff, Diff(vec![Field::Dnd(true), Field::ClockFormat("x".into())]));
     }
@@ -788,21 +779,17 @@ mod tests {
 
     #[test]
     fn wallpaper_and_mode_land_mode_first() {
-        let fields = wallpaper_fields(Choice::Slot(Half::Light, "/w.png".into()), Some("light"));
-        assert_eq!(fields.first(), Some(&Field::Mode("light".into())));
+        let fields = wallpaper_fields(Choice::Slot(Mode::Light, "/w.png".into()), Some(Mode::Light));
+        assert_eq!(fields.first(), Some(&Field::Mode(Mode::Light)));
         assert_eq!(fields.len(), 2);
         let mut data = Data { wallpaper: "/old.png".into(), ..Data::default() };
         data.set(fields);
-        assert_eq!((data.mode.as_str(), data.wallpaper.as_str()), ("light", "/w.png"));
-
-        let mut data = Data::default();
-        data.set(wallpaper_fields(Choice::Both("/x.png".into()), Some("sepia")));
-        assert_eq!((data.mode.as_str(), data.wallpaper.as_str()), ("dark", "/x.png"));
+        assert_eq!((data.mode, data.wallpaper.as_str()), (Mode::Light, "/w.png"));
 
         let mut data = Data::default();
         data.set(wallpaper_fields(Choice::Both("color:#ff8000".into()), None));
         assert_eq!(data.wallpaper_color, json!("#ff8000"));
-        data.set(wallpaper_fields(Choice::Slot(Half::Dark, "sky:-4".into()), None));
+        data.set(wallpaper_fields(Choice::Slot(Mode::Dark, "sky:-4".into()), None));
         assert_eq!(data.wallpaper_color, json!("sky"));
         data.set(wallpaper_fields(Choice::Pair("/l.png".into(), "/d.png".into()), None));
         assert_eq!((data.wallpaper.as_str(), data.wallpaper_dark.as_str(), &data.wallpaper_color), ("/l.png", "/d.png", &json!(false)));
@@ -834,25 +821,25 @@ mod tests {
 
     #[test]
     fn a_filed_single_writes_its_slot_alone() {
-        assert_eq!(picked(("/l.png", "/d.png", json!(false)), Choice::Slot(Half::Dark, "/n.png".into())), slots("/l.png", "/n.png"));
-        assert_eq!(picked(("/l.png", "/d.png", json!(false)), Choice::Slot(Half::Light, "/n.png".into())), slots("/n.png", "/d.png"));
-        assert_eq!(picked(("/w.png", "", json!(false)), Choice::Slot(Half::Dark, "/n.png".into())), slots("/w.png", "/n.png"));
+        assert_eq!(picked(("/l.png", "/d.png", json!(false)), Choice::Slot(Mode::Dark, "/n.png".into())), slots("/l.png", "/n.png"));
+        assert_eq!(picked(("/l.png", "/d.png", json!(false)), Choice::Slot(Mode::Light, "/n.png".into())), slots("/n.png", "/d.png"));
+        assert_eq!(picked(("/w.png", "", json!(false)), Choice::Slot(Mode::Dark, "/n.png".into())), slots("/w.png", "/n.png"));
     }
 
     #[test]
     fn filing_the_light_slot_over_a_single_keeps_it_in_the_dark_one() {
-        assert_eq!(picked(("/w.png", "", json!(false)), Choice::Slot(Half::Light, "/n.png".into())), slots("/n.png", "/w.png"));
-        assert_eq!(picked(("/w.png", "", Value::Null), Choice::Slot(Half::Light, "/n.png".into())), slots("/n.png", "/w.png"));
+        assert_eq!(picked(("/w.png", "", json!(false)), Choice::Slot(Mode::Light, "/n.png".into())), slots("/n.png", "/w.png"));
+        assert_eq!(picked(("/w.png", "", Value::Null), Choice::Slot(Mode::Light, "/n.png".into())), slots("/n.png", "/w.png"));
     }
 
     #[test]
     fn a_slot_pick_under_a_colour_the_sky_or_nothing_sets_both() {
         for color in [json!("#ff8000"), json!("sky")] {
-            for half in [Half::Light, Half::Dark] {
+            for half in [Mode::Light, Mode::Dark] {
                 assert_eq!(picked(("/l.png", "/d.png", color.clone()), Choice::Slot(half, "/n.png".into())), slots("/n.png", ""));
             }
         }
-        assert_eq!(picked(("", "", Value::Null), Choice::Slot(Half::Dark, "/n.png".into())), slots("/n.png", ""));
+        assert_eq!(picked(("", "", Value::Null), Choice::Slot(Mode::Dark, "/n.png".into())), slots("/n.png", ""));
     }
 
     #[test]

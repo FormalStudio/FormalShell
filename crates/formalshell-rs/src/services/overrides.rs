@@ -113,8 +113,8 @@ pub fn parse_value(text: &str) -> Value {
 pub fn current(store: &Store, key: &Key) -> Value {
     if key.key == MODE {
         let mode = match theme::mode_key(store.config.settings()) {
-            "" => store.state.data.mode.as_str(),
-            set => set,
+            fs_theme::theme::ModeKey::Unset => store.state.data.mode.as_str(),
+            set => set.as_str(),
         };
         return Value::String(mode.to_owned());
     }
@@ -158,7 +158,7 @@ pub fn set(store: &Store, key: &str, value: Value) -> Result<(), String> {
     }
     check(entry, &value)?;
     if key == MODE && value != "auto" {
-        let mode = value.as_str().unwrap_or("dark").to_owned();
+        let mode = fs_theme::theme::Mode::parse(value.as_str().unwrap_or("dark"));
         state::set(vec![
             state::Field::SettingKey(MODE.into(), None),
             state::Field::ModeOverride(Value::Null),

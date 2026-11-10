@@ -9,7 +9,7 @@ pub fn snapshot(store: &Store) -> Snapshot {
         overnight: store.state.data.overnight.is_some(),
         caffeinate: store.caffeinate.active,
         dnd: store.notifications.model.dnd,
-        dark: store.state.data.mode == "dark",
+        dark: store.state.data.mode == fs_theme::theme::Mode::Dark,
         lights_on: l.brightness > 0,
         hdr: crate::services::display::hdr_active(store),
         ipad_active: ipad.is_some_and(|i| i.active),
@@ -174,7 +174,8 @@ pub(super) fn row_words(text: String) -> El {
 /// single's mode badge, the caption under it, the cursor's ring round both.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn picker_tile(m: &Model, store: &Store, theme: &Theme, tiles: &[(&str, fs_menu::providers::Item)], row: &Node, i: usize, selected: bool, slot: &Slot) -> El {
-    use fs_menu::providers::{ItemKind, Mode as Filed};
+    use fs_menu::providers::ItemKind;
+    use fs_theme::theme::Mode as Filed;
     let s = &theme.space;
     let item = tiles.iter().map(|(_, t)| t).find(|t| row.id.strip_prefix("wallpaper.") == Some(t.id.as_str()));
     let (w, h) = m.picker_tile_px(theme);

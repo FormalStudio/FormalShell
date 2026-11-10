@@ -1787,7 +1787,7 @@ impl App {
                 nightlight::toggle();
                 Ok(())
             }
-            Run::DarkStyle => theme::set_mode(&self.store, "toggle").map(drop),
+            Run::DarkStyle => theme::set_mode(&self.store, theme::Ask::Toggle).map(drop),
             Run::Dnd => {
                 self.apply(notifications::Op::SetDnd(!self.store.notifications.model.dnd));
                 Ok(())

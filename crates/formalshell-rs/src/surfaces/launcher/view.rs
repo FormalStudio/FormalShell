@@ -669,8 +669,7 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                 // A Style preview runs `theme mode`, which a pinned key refuses.
                 let mode_tile = m.view == View::Picker && n.kind == NodeKind::WallpaperMode;
                 if mode_tile {
-                    let key = crate::services::theme::mode_key(store.config.settings());
-                    if key != "light" && key != "dark" {
+                    if crate::services::theme::mode_key(store.config.settings()).pinned().is_none() {
                         hints.push((format!("Set {} mode", n.label.to_lowercase()), vec!["Enter"], "primary"));
                     }
                 } else if let Some(p) = bar.primary {

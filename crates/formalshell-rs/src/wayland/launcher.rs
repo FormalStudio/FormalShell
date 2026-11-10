@@ -520,7 +520,7 @@ impl App {
                 self.picker_choose(path);
             }
             Intent::WallpaperSetFor(half, path) => {
-                if let Some(half) = crate::services::state::Half::parse(half) {
+                if let Some(half) = fs_theme::theme::Mode::parse_exact(half) {
                     self.picker_choose_for(path, half);
                 }
             }
@@ -583,10 +583,7 @@ impl App {
             Intent::PowerReboot => power::request(power::Action::Reboot),
             Intent::PowerOff => power::request(power::Action::PowerOff),
             Intent::ThemeToggleMode => {
-                let key = crate::services::theme::mode_key(self.store.config.settings());
-                if let Ok(mode) = crate::services::theme::request_mode("toggle", &self.store.state.data.mode, key) {
-                    crate::services::state::set(vec![crate::services::state::Field::Mode(mode)]);
-                }
+                let _ = crate::services::theme::set_mode(&self.store, crate::services::theme::Ask::Toggle);
             }
             Intent::LightsColorInput => self.menu_input_as("Hex color (ff8800)", LIGHTS_COLOR, false),
             Intent::ReminderSet => self.menu_input_as("Reminder (25m coffee)", REMINDER_SET, false),
@@ -814,7 +811,7 @@ impl App {
         chosen
     }
 
-    pub fn picker_choose_for(&mut self, path: &str, half: crate::services::state::Half) -> bool {
+    pub fn picker_choose_for(&mut self, path: &str, half: fs_theme::theme::Mode) -> bool {
         let chosen = self.launcher.choose_for(&self.store, path, half);
         if chosen {
             self.hide_launcher();

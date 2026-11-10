@@ -1,3 +1,5 @@
+use fs_theme::theme::{Mode as ThemeMode, ModeKey};
+
 use super::*;
 
 /// The wallpaper route lists `dir`, and in
@@ -42,18 +44,13 @@ pub fn picker_selection_path() -> std::path::PathBuf {
 /// under `auto`, the mode and when the schedule next turns it.
 pub(super) fn picker_style_note(store: &Store) -> String {
     use crate::services::theme;
-    let key = theme::mode_key(store.config.settings());
-    match key {
-        "dark" | "light" => "Set in settings.json".into(),
-        "auto" => {
-            let data = &store.state.data;
-            let times = store.theme.schedule.as_ref();
-            let over = theme::parse_override(&data.mode_override);
-            let mode = theme::effective_mode(key, times, over.as_ref(), &data.mode);
-            let until = fs_theme::sun::next_change(&chrono::Local::now(), times);
-            format!("Auto, {mode} until {}", until.format("%H:%M"))
+    match theme::mode_key(store.config.settings()) {
+        ModeKey::Pinned(_) => "Set in settings.json".into(),
+        ModeKey::Auto => {
+            let until = fs_theme::sun::next_change(&chrono::Local::now(), store.theme.schedule.as_ref());
+            format!("Auto, {} until {}", theme::effective(store).as_str(), until.format("%H:%M"))
         }
-        _ => String::new(),
+        ModeKey::Unset => String::new(),
     }
 }
 
@@ -82,7 +79,7 @@ impl Model {
     /// under Your wallpapers, then the built-ins and the Sky under Included.
     /// A select request lists the directory's files alone, one flat section.
     pub fn picker_tiles(&self, store: &Store) -> Vec<(&'static str, fs_menu::providers::Item)> {
-        use fs_menu::providers::{Item, ItemKind, Mode as Filed, image_basename};
+        use fs_menu::providers::{Item, ItemKind, image_basename};
         let p = &store.picker;
         let scanned = p.dir == self.picker.dir;
         if self.picker.select {
@@ -94,9 +91,9 @@ impl Model {
         }
         let yours = if scanned { p.items.as_slice() } else { &[] };
         let sky = Item { id: "sky".into(), kind: ItemKind::Sky, title: "Sky".into(), credit: None };
-        let style = [(Filed::Light, "light", "Light"), (Filed::Dark, "dark", "Dark")].map(|(mode, name, title)| {
-            let path = store.desktop_for(name);
-            (STYLE, Item { id: format!("mode-{name}"), kind: ItemKind::Mode { mode, path }, title: title.into(), credit: None })
+        let style = [(ThemeMode::Light, "Light"), (ThemeMode::Dark, "Dark")].map(|(mode, title)| {
+            let path = store.desktop_for(mode);
+            (STYLE, Item { id: format!("mode-{}", mode.as_str()), kind: ItemKind::Mode { mode, path }, title: title.into(), credit: None })
         });
         style
             .into_iter()
@@ -129,7 +126,7 @@ impl Model {
     }
 
     pub(super) fn picker_rows(&self, store: &Store, query: &str) -> Vec<Node> {
-        let dark = store.state.data.mode == "dark";
+        let dark = store.state.data.mode == ThemeMode::Dark;
         let sky = crate::services::wallpaper::sky_source(store.sky_step());
         let tiles = self.picker_tiles(store);
         let mut rows = Vec::new();
@@ -151,7 +148,7 @@ impl Model {
     pub fn picker_current(store: &Store, item: &fs_menu::providers::Item) -> bool {
         use fs_menu::providers::ItemKind;
         match &item.kind {
-            ItemKind::Pair { light, dark } => store.desktop_for("light") == *light && store.desktop_for("dark") == *dark,
+            ItemKind::Pair { light, dark } => store.desktop_for(ThemeMode::Light) == *light && store.desktop_for(ThemeMode::Dark) == *dark,
             ItemKind::Single { path, .. } => store.desktop() == *path,
             ItemKind::Sky => crate::services::wallpaper::sky(&store.desktop()).is_some(),
             ItemKind::Mode { .. } => false,
@@ -160,9 +157,9 @@ impl Model {
 
     /// A Style preview stands for the mode in effect.
     pub fn picker_mode_on(store: &Store, item: &fs_menu::providers::Item) -> bool {
-        use fs_menu::providers::{ItemKind, Mode as Filed};
+        use fs_menu::providers::ItemKind;
         match item.kind {
-            ItemKind::Mode { mode, .. } => (mode == Filed::Dark) == (store.state.data.mode == "dark"),
+            ItemKind::Mode { mode, .. } => mode == store.state.data.mode,
             _ => false,
         }
     }
@@ -171,14 +168,8 @@ impl Model {
     /// (a snooze under `auto`, nothing where settings.json pins the mode,
     /// which the section's far end says), the card left open on the
     /// previews.
-    pub(super) fn picker_style(&mut self, store: &Store, mode: fs_menu::providers::Mode) -> Out {
-        let name = if mode == fs_menu::providers::Mode::Dark { "dark" } else { "light" };
-        let key = crate::services::theme::mode_key(store.config.settings());
-        if let Ok(mode) = crate::services::theme::request_mode(name, &store.state.data.mode, key)
-            && mode != store.state.data.mode
-        {
-            state::set(vec![state::Field::Mode(mode)]);
-        }
+    pub(super) fn picker_style(&mut self, store: &Store, mode: ThemeMode) -> Out {
+        let _ = crate::services::theme::set_mode(store, crate::services::theme::Ask::Set(mode));
         self.placed = true;
         self.dirty = true;
         Out::None
@@ -208,7 +199,7 @@ impl Model {
     /// a mode its slot and that mode (unless settings.json pins the mode),
     /// the Sky the sky over both.
     pub fn choose_image(&mut self, store: &Store, path: &str) -> bool {
-        use fs_menu::providers::{ItemKind, Mode as Filed};
+        use fs_menu::providers::ItemKind;
         if !self.open || !self.on_picker() {
             return false;
         }
@@ -227,10 +218,8 @@ impl Model {
                 ItemKind::Pair { light, dark } => state::set_wallpaper(state::Choice::Pair(light.clone(), dark.clone()), None),
                 ItemKind::Single { path, filed: None } => state::set_wallpaper(state::Choice::Both(path.clone()), None),
                 ItemKind::Single { path, filed: Some(filed) } => {
-                    let (half, name) = if *filed == Filed::Light { (state::Half::Light, "light") } else { (state::Half::Dark, "dark") };
-                    let key = crate::services::theme::mode_key(store.config.settings());
-                    let mode = crate::services::theme::request_mode(name, &store.state.data.mode, key).ok();
-                    state::set_wallpaper(state::Choice::Slot(half, path.clone()), mode.as_deref());
+                    let mode = crate::services::theme::mode_for(store, crate::services::theme::Ask::Set(*filed)).ok();
+                    state::set_wallpaper(state::Choice::Slot(*filed, path.clone()), mode);
                 }
             }
         }
@@ -241,7 +230,7 @@ impl Model {
     /// `picker chooseFor`: one single for one mode's slot, the mode left as
     /// it is. False off the route, in select mode, or for anything but a
     /// listed single.
-    pub fn choose_for(&mut self, store: &Store, path: &str, half: state::Half) -> bool {
+    pub fn choose_for(&mut self, store: &Store, path: &str, half: ThemeMode) -> bool {
         use fs_menu::providers::ItemKind;
         if !self.open || !self.on_picker() || self.picker.select {
             return false;
@@ -257,10 +246,10 @@ impl Model {
 
     /// `pickerStatus`.
     pub fn picker_status(&self, store: &Store) -> Value {
-        use fs_menu::providers::{ItemKind, Mode as Filed};
+        use fs_menu::providers::ItemKind;
         let tiles = self.picker_tiles(store);
         let sections = self.picker_sections(store);
-        let filed = |m: &Option<Filed>| m.map(|m| if m == Filed::Light { "light" } else { "dark" });
+        let filed = |m: &Option<ThemeMode>| m.map(ThemeMode::as_str);
         let items: Vec<Value> = tiles
             .iter()
             .map(|(section, i)| {
@@ -272,8 +261,8 @@ impl Model {
                         ("single", (f != Some("dark")).then_some(path.as_str()), (f != Some("light")).then_some(path.as_str()), f)
                     }
                     ItemKind::Sky => ("sky", None, None, None),
-                    ItemKind::Mode { mode: Filed::Light, path } => ("mode", Some(path.as_str()), None, None),
-                    ItemKind::Mode { mode: Filed::Dark, path } => ("mode", None, Some(path.as_str()), None),
+                    ItemKind::Mode { mode: ThemeMode::Light, path } => ("mode", Some(path.as_str()), None, None),
+                    ItemKind::Mode { mode: ThemeMode::Dark, path } => ("mode", None, Some(path.as_str()), None),
                 };
                 json!({
                     "id": i.id,
@@ -300,7 +289,7 @@ impl Model {
             "cursor": self.cursor,
             "cursorId": self.cursor_id,
             "cachedThumbnails": tiles.iter().filter(|(_, i)| store.picker.warm(i)).count(),
-            "current": {"light": store.desktop_for("light"), "dark": store.desktop_for("dark"), "shown": store.desktop()},
+            "current": {"light": store.desktop_for(ThemeMode::Light), "dark": store.desktop_for(ThemeMode::Dark), "shown": store.desktop()},
             "sections": sections.iter().map(|s| json!({"id": s.id, "title": s.title, "far": s.far, "count": count(s.id)})).collect::<Vec<_>>(),
             "items": items,
         })

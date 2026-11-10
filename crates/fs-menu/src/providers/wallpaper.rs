@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use fs_theme::theme::Mode;
 use serde::Deserialize;
 
 use crate::node::{Kind, Node};
@@ -73,12 +74,6 @@ pub fn tile_rows(items: &[Item], section: &str, dark: bool, sky: &str, query: &s
             }
         })
         .collect()
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Mode {
-    Light,
-    Dark,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

@@ -60,18 +60,16 @@ const SKY: &str = "sky:";
 /// What the session's desktop shows in `mode`: the picker's last colour
 /// (`wallpaperColor` in state.json a hex or `sky`), the picture when it
 /// last chose one (`false`), and with no choice `configured`
-/// (`wallpaper.color`) over the picture. The picture is the dark slot in
-/// dark mode when that slot is set, else the light one. `sky` is the step
-/// the sky stands in now.
-pub fn desktop(configured: Option<&str>, data: &state::Data, mode: &str, sky: i32) -> String {
+/// (`wallpaper.color`) over [`state::Data::picture`]. `sky` is the step the
+/// sky stands in now.
+pub fn desktop(configured: Option<&str>, data: &state::Data, mode: fs_theme::theme::Mode, sky: i32) -> String {
     use serde_json::Value;
     let color = match &data.wallpaper_color {
         Value::String(hex) => Some(hex.as_str()),
         Value::Bool(false) => None,
         _ => configured,
     };
-    let picture = if mode == "dark" && !data.wallpaper_dark.is_empty() { &data.wallpaper_dark } else { &data.wallpaper };
-    source(color, picture, sky)
+    source(color, data.picture(mode), sky)
 }
 
 /// `color` (a hex or `sky`) over `picture`.
@@ -408,6 +406,7 @@ async fn run(ctx: Ctx) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fs_theme::theme::Mode;
     use serde_json::json;
 
     fn data(picked: serde_json::Value, light: &str, dark: &str) -> state::Data {
@@ -416,7 +415,7 @@ mod tests {
 
     #[test]
     fn the_settings_colour_covers_the_picture_until_the_picker_says_otherwise() {
-        let one = |color, picked: &serde_json::Value, picture, sky| desktop(color, &data(picked.clone(), picture, ""), "dark", sky);
+        let one = |color, picked: &serde_json::Value, picture, sky| desktop(color, &data(picked.clone(), picture, ""), Mode::Dark, sky);
         assert_eq!(one(Some("#402484"), &json!(null), "/w.png", 0), "color:#402484");
         assert_eq!(one(None, &json!(null), "/w.png", 0), "/w.png");
         assert_eq!(one(Some("#402484"), &json!(false), "/w.png", 0), "/w.png");
@@ -430,15 +429,15 @@ mod tests {
 
     #[test]
     fn the_mode_picks_the_half() {
-        assert_eq!(desktop(None, &data(json!(false), "/l.png", "/d.png"), "dark", 0), "/d.png");
-        assert_eq!(desktop(None, &data(json!(false), "/l.png", "/d.png"), "light", 0), "/l.png");
-        assert_eq!(desktop(None, &data(json!(false), "/l.png", ""), "dark", 0), "/l.png");
-        assert_eq!(desktop(None, &data(json!(false), "/l.png", ""), "light", 0), "/l.png");
+        assert_eq!(desktop(None, &data(json!(false), "/l.png", "/d.png"), Mode::Dark, 0), "/d.png");
+        assert_eq!(desktop(None, &data(json!(false), "/l.png", "/d.png"), Mode::Light, 0), "/l.png");
+        assert_eq!(desktop(None, &data(json!(false), "/l.png", ""), Mode::Dark, 0), "/l.png");
+        assert_eq!(desktop(None, &data(json!(false), "/l.png", ""), Mode::Light, 0), "/l.png");
     }
 
     #[test]
     fn a_colour_covers_both_halves() {
-        for mode in ["light", "dark"] {
+        for mode in [Mode::Light, Mode::Dark] {
             assert_eq!(desktop(None, &data(json!("#ff8000"), "/l.png", "/d.png"), mode, 0), "color:#ff8000");
             assert_eq!(desktop(None, &data(json!("sky"), "/l.png", "/d.png"), mode, 3), "sky:3");
             assert_eq!(desktop(Some("#402484"), &data(json!(null), "/l.png", "/d.png"), mode, 0), "color:#402484");

@@ -3,6 +3,7 @@
 //! against all three. Settings come in through `get` (one dotted path,
 //! `None` when absent) so this holds no config of its own.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::barpaint::{Paint, Pin};
@@ -12,8 +13,9 @@ use crate::palette::{self, COLOR_KEYS, ColorRole};
 use crate::style::{self, BoxStyle, Clock, Ctx, Radius, Ring, Role};
 use crate::tokens::{self, Easing, FontTokens, LetterSpacing, Radii, Space};
 
-/// The palette's light or dark side.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// The palette's light or dark side, written `dark` or `light`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]
     Dark,
@@ -26,10 +28,62 @@ impl Mode {
         if name == "light" { Self::Light } else { Self::Dark }
     }
 
+    /// `dark` or `light`, nothing else.
+    pub fn parse_exact(name: &str) -> Option<Self> {
+        match name {
+            "dark" => Some(Self::Dark),
+            "light" => Some(Self::Light),
+            _ => None,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Dark => "dark",
             Self::Light => "light",
+        }
+    }
+
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Dark => Self::Light,
+            Self::Light => Self::Dark,
+        }
+    }
+}
+
+/// settings.json's `theme.mode`: unset leaves the mode to state.json, a
+/// mode pins it, `auto` hands it to the schedule. Anything else reads as
+/// unset.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModeKey {
+    #[default]
+    Unset,
+    Pinned(Mode),
+    Auto,
+}
+
+impl ModeKey {
+    pub fn parse(key: &str) -> Self {
+        match key {
+            "auto" => Self::Auto,
+            key => Mode::parse_exact(key).map_or(Self::Unset, Self::Pinned),
+        }
+    }
+
+    pub fn pinned(self) -> Option<Mode> {
+        match self {
+            Self::Pinned(mode) => Some(mode),
+            _ => None,
+        }
+    }
+
+    /// As `theme status` reports it: "" when unset.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unset => "",
+            Self::Pinned(mode) => mode.as_str(),
+            Self::Auto => "auto",
         }
     }
 }

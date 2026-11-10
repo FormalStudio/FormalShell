@@ -14,8 +14,9 @@ use common::*;
 use fs_menu::model::build_tree;
 use fs_menu::node::{Entries, Kind, Provider};
 use fs_menu::providers::{
-    Item, ItemKind, Mode, apply_providers, catalog, image_basename, is_picker_image, items, tile_rows, title_of,
+    Item, ItemKind, apply_providers, catalog, image_basename, is_picker_image, items, tile_rows, title_of,
 };
+use fs_theme::theme::Mode;
 use serde_json::json;
 
 #[test]

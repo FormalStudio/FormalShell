@@ -9,4 +9,5 @@ fs-js = { path = "../fs-js" }
 fs-types = { path = "../fs-types" }
 chrono = "0.4"
 regex = "1"
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
