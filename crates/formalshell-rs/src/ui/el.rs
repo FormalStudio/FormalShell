@@ -264,7 +264,7 @@ pub struct El {
     /// A keyboard cursor stop, addressed by `key`.
     pub stop: bool,
     /// What a click fires, addressed to the surface by this id.
-    pub on: Option<String>,
+    pub on: Option<super::On>,
     pub tip: Option<String>,
     /// Centres a child across a column, rather than starting it at the edge.
     pub centred: bool,
@@ -362,7 +362,7 @@ impl El {
         self
     }
 
-    pub fn on(mut self, action: impl Into<String>) -> Self {
+    pub fn on(mut self, action: impl Into<super::On>) -> Self {
         self.on = Some(action.into());
         self
     }

@@ -37,6 +37,33 @@ use crate::store::{self, Topic};
 use crate::ui::el::Opt;
 use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
 
+/// A press on a control, by its key; `Opt` is a dropdown's row by its index.
+enum Press {
+    Pick(String),
+    Seg(String),
+    Tier(String),
+    Menu(String),
+    Opt(String, usize),
+    Toggle(String),
+    Range(String),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Pick(key) => write!(f, "pick:{key}"),
+            Press::Seg(key) => write!(f, "seg:{key}"),
+            Press::Tier(key) => write!(f, "tier:{key}"),
+            Press::Menu(key) => write!(f, "menu:{key}"),
+            Press::Opt(key, i) => write!(f, "opt:{key}:{i}"),
+            Press::Toggle(key) => write!(f, "toggle:{key}"),
+            Press::Range(key) => write!(f, "range:{key}"),
+        }
+    }
+}
+
 const DEVICE: &str = "__device";
 /// The most entries a choice shows as one segmented row.
 const SEGMENTS: usize = 4;
@@ -132,7 +159,7 @@ impl Earbuds {
             .collect();
         // An index past the end selects nothing, for a value no option holds.
         let index = selected.unwrap_or(usize::MAX);
-        w::group(options, index, true).ring(self.ring(key, opts.len(), selected)).wrap().stop(key.to_owned()).on(format!("pick:{key}"))
+        w::group(options, index, true).ring(self.ring(key, opts.len(), selected)).wrap().stop(key.to_owned()).on(Press::Pick(key.to_owned()))
     }
 
     /// A press writes the device and moves only the ring: the selection
@@ -186,24 +213,24 @@ impl Earbuds {
             let at = picked(ctl, &es);
             let options = es.iter().map(|e| e.label.clone()).collect();
             let mut parts = vec![w::Part::Loose(if heading {
-                w::panel_control(s, choice_heading(s, ctl), w::segmented(options, at.unwrap_or(usize::MAX)).fill().stop(key.clone()).on(format!("seg:{key}")))
+                w::panel_control(s, choice_heading(s, ctl), w::segmented(options, at.unwrap_or(usize::MAX)).fill().stop(key.clone()).on(Press::Seg(key.clone())))
             } else {
-                w::panel_choice(s, options, at.unwrap_or(usize::MAX)).stop(key.clone()).on(format!("seg:{key}"))
+                w::panel_choice(s, options, at.unwrap_or(usize::MAX)).stop(key.clone()).on(Press::Seg(key.clone()))
             })];
             if let Some(e) = at.map(|a| &es[a]).filter(|e| e.tier) {
                 let inner = e.members.iter().position(|m| Some(*m) == selected);
                 let labels = e.members.iter().map(|m| opts[*m].label.clone()).collect();
-                parts.push(w::Part::Loose(w::panel_choice(s, labels, inner.unwrap_or(usize::MAX)).stop(format!("{key}{TIER}")).on(format!("tier:{key}"))));
+                parts.push(w::Part::Loose(w::panel_choice(s, labels, inner.unwrap_or(usize::MAX)).stop(format!("{key}{TIER}")).on(Press::Tier(key.clone()))));
             }
             return parts;
         }
         let open = self.menu == *key;
         let current = selected.map_or("Choose", |i| opts[i].label.as_str());
-        let mut trigger = w::trigger(s, "", current, open).stop(key.clone()).on(format!("menu:{key}"));
+        let mut trigger = w::trigger(s, "", current, open).stop(key.clone()).on(Press::Menu(key.clone()));
         if open {
             let list = opts.iter().enumerate().map(|(i, o)| {
-                let stop = format!("opt:{key}:{i}");
-                w::menu_item(s, "", &o.label, Some(i) == selected, Vec::new()).stop(stop.clone()).on(stop)
+                let press = Press::Opt(key.clone(), i);
+                w::menu_item(s, "", &o.label, Some(i) == selected, Vec::new()).stop(press.to_string()).on(press)
             });
             trigger = trigger.float(w::column(0.0, list.collect()));
         }
@@ -214,12 +241,10 @@ impl Earbuds {
         self.menu = if self.menu == key { String::new() } else { key.to_owned() };
     }
 
-    /// `key:index` from a dropdown row: writes that option and closes it.
-    fn pick_option(&mut self, fx: &Effect, rest: &str) {
+    /// A dropdown's row: writes that option and closes it.
+    fn pick_option(&mut self, fx: &Effect, key: &str, i: usize) {
         self.menu.clear();
-        let Some((key, i)) = rest.rsplit_once(':') else { return };
         let Some(ctl) = model::control(fx.store.earbuds.active(), key) else { return };
-        let Ok(i) = i.parse::<usize>() else { return };
         if model::option_index(Some(ctl)) != Some(i)
             && let Some(value) = option_value(ctl, i)
         {
@@ -436,11 +461,11 @@ fn head_block(s: &fs_theme::tokens::Space, dev: &Device, m: &Motion) -> El {
 fn toggle_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let on = ctl.value == Value::Bool(true);
     let hint = (!ctl.hint.is_empty()).then(|| ctl.hint.clone());
-    w::panel_switch(s, "", &ctl.label, hint, on, format!("toggle:{}", ctl.key)).stop(ctl.key.clone()).on(format!("toggle:{}", ctl.key))
+    w::panel_switch(s, "", &ctl.label, hint, on, Press::Toggle(ctl.key.clone())).stop(ctl.key.clone()).on(Press::Toggle(ctl.key.clone()))
 }
 
 fn range_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
-    let track = w::slider(model::range_fraction(Some(ctl))).on(format!("range:{}", ctl.key));
+    let track = w::slider(model::range_fraction(Some(ctl))).on(Press::Range(ctl.key.clone()));
     w::panel_meter(s, None, &ctl.label, vec![w::panel_value(model::range_text(Some(ctl)))], Some(track)).stop(ctl.key.clone())
 }
 
@@ -552,28 +577,28 @@ impl Panel for Earbuds {
             earbuds::send(earbuds::Cmd::Recenter);
             return;
         }
-        let Some((verb, key)) = ev.on.split_once(':') else { return };
-        if verb != "menu" && verb != "opt" {
+        let Some(press) = ev.on.get::<Press>() else { return };
+        if !matches!(press, Press::Menu(_) | Press::Opt(..)) {
             self.menu.clear();
         }
         let dev = fx.store.earbuds.active();
-        match (verb, &ev.what) {
-            ("pick", What::Pick(i)) => self.press(fx, *i),
-            ("seg", What::Pick(i)) => self.pick_entry(fx, key, *i),
-            ("tier", What::Pick(i)) => self.pick_member(fx, key, *i),
-            ("menu", _) => self.toggle_menu(key),
-            ("opt", _) => self.pick_option(fx, key),
-            ("toggle", What::Toggle(_) | What::Click) => {
+        match (press, &ev.what) {
+            (Press::Pick(_), What::Pick(i)) => self.press(fx, *i),
+            (Press::Seg(key), What::Pick(i)) => self.pick_entry(fx, key, *i),
+            (Press::Tier(key), What::Pick(i)) => self.pick_member(fx, key, *i),
+            (Press::Menu(key), _) => self.toggle_menu(key),
+            (Press::Opt(key, i), _) => self.pick_option(fx, key, *i),
+            (Press::Toggle(key), What::Toggle(_) | What::Click) => {
                 if let Some(ctl) = model::control(dev, key) {
                     set(fx, key, (ctl.value != Value::Bool(true)).to_string());
                 }
             }
-            ("range", What::Fraction(f)) => {
+            (Press::Range(key), What::Fraction(f)) => {
                 if let Some(ctl) = model::control(dev, key) {
                     set(fx, key, fs_js::num_str(ctl.min + f * (ctl.max - ctl.min)));
                 }
             }
-            ("range", What::Wheel(d)) => {
+            (Press::Range(key), What::Wheel(d)) => {
                 if let Some(ctl) = model::control(dev, key) {
                     Self::step_range(fx, ctl, *d as f64);
                 }
@@ -595,7 +620,10 @@ impl Panel for Earbuds {
             return;
         }
         if let Some(rest) = stop.strip_prefix("opt:") {
-            self.pick_option(fx, rest);
+            self.menu.clear();
+            if let Some((key, i)) = rest.rsplit_once(':').and_then(|(key, i)| Some((key, i.parse().ok()?))) {
+                self.pick_option(fx, key, i);
+            }
             return;
         }
         match model::control(e.active(), stop) {

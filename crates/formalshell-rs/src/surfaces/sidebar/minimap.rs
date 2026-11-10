@@ -36,7 +36,28 @@ use crate::store::Store;
 use crate::surfaces::bar::cell::Action;
 use crate::paint::{Kit, Painter};
 use crate::text::TextStyle;
-use crate::ui::{El, w};
+use crate::ui::{El, On, w};
+
+/// A press on the map: a window's icon, a row, or the empty row past the
+/// last.
+#[derive(Clone)]
+pub enum Press {
+    Window(WindowId),
+    Row(usize),
+    New,
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Window(id) => write!(f, "window:{id}"),
+            Press::Row(i) => write!(f, "row:{i}"),
+            Press::New => f.write_str("new"),
+        }
+    }
+}
 
 use super::Geo;
 
@@ -47,8 +68,8 @@ const MIN_ROWS: usize = 3;
 
 /// Whether a control is the map's own: a pass over it shows the rows'
 /// numbers, and a wheel over it scrolls the rows.
-pub fn on_map(on: &str) -> bool {
-    on == "new" || on.starts_with("row:") || on.starts_with("window:")
+pub fn on_map(on: &On) -> bool {
+    on.get::<Press>().is_some()
 }
 /// The cap past which a row stops listing windows.
 const MAX: usize = 64;
@@ -272,8 +293,8 @@ impl Map {
         let Some(c) = &self.cursor else { return Action::None };
         match (&c.window, self.rows.get(c.row)) {
             (Some(id), _) => Action::Window(id.clone()),
-            (None, Some(_)) => self.action(&format!("row:{}", c.row)),
-            (None, None) => self.action("new"),
+            (None, Some(_)) => self.action(&Press::Row(c.row)),
+            (None, None) => self.action(&Press::New),
         }
     }
 
@@ -342,15 +363,15 @@ impl Map {
             .take(self.fits)
             .map(|(i, ids)| {
                 let current = self.rows.get(i).is_some_and(|r| r.current);
-                let on = if i == last { "new".to_owned() } else { format!("row:{i}") };
+                let on = if i == last { Press::New } else { Press::Row(i) };
                 let stop = if i == last { "new".to_owned() } else { format!("r:{i}") };
-                row(theme, &g, current, target == Some(i), ids, &on).on(on).stop(stop)
+                row(theme, &g, current, target == Some(i), ids, Some(&on)).on(on).stop(stop)
             })
             .collect();
         // Pond's grid is never under three rows: dots stand in for the rest.
         if self.fits >= shown.len() {
             while col.len() < MIN_ROWS {
-                col.push(row(theme, &g, false, false, &[], ""));
+                col.push(row(theme, &g, false, false, &[], None));
             }
         }
         // The plates reach half a gap past the rows, so the card's own
@@ -403,10 +424,14 @@ impl Map {
     }
 
     /// A press on hit `on` at `at`: a window's icon may be lifted.
-    pub fn press(&mut self, on: &str, at: (f64, f64)) {
+    pub fn press(&mut self, on: Option<&Press>, at: (f64, f64)) {
         self.handed = false;
         let row = |id: &WindowId| self.held().iter().position(|r| r.contains(id));
-        self.drag = on.strip_prefix("window:").map(WindowId::new).map(|id| Drag {
+        let window = match on {
+            Some(Press::Window(id)) => Some(id.clone()),
+            _ => None,
+        };
+        self.drag = window.map(|id| Drag {
             row: row(&id),
             id,
             from: at,
@@ -511,14 +536,21 @@ impl Map {
     /// straddle (the right one on a right edge).
     pub fn paint(&mut self, hits: &[crate::ui::Hit], theme: &Theme, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect, card: (f64, f64), right: bool, now: Instant) -> bool {
         self.column = Some(card);
-        self.slots = hits.iter().filter_map(|h| Some((WindowId::new(h.on.as_ref()?.strip_prefix("window:")?), h.rect))).collect();
+        let press = |h: &crate::ui::Hit| h.on.as_ref().and_then(|on| on.get::<Press>()).cloned();
+        self.slots = hits
+            .iter()
+            .filter_map(|h| match press(h)? {
+                Press::Window(id) => Some((id, h.rect)),
+                _ => None,
+            })
+            .collect();
         let last = self.rows.len();
         self.row_boxes = hits
             .iter()
-            .filter_map(|h| {
-                let on = h.on.as_deref()?;
-                let i = if on == "new" { last } else { on.strip_prefix("row:")?.parse().ok()? };
-                Some((i, h.rect))
+            .filter_map(|h| match press(h)? {
+                Press::Row(i) => Some((i, h.rect)),
+                Press::New => Some((last, h.rect)),
+                Press::Window(_) => None,
             })
             .collect();
         let ms = Clock::Spatial.ms(theme) * kit.motion_scale;
@@ -535,11 +567,12 @@ impl Map {
         }
         let ring = super::outline(theme);
         let focus = theme.colors.get(ColorRole::Ring);
-        let at = self.cursor.as_ref().and_then(|c| c.window.as_ref()).map(|id| format!("window:{id}"));
+        let at = self.cursor.as_ref().and_then(|c| c.window.as_ref());
         let d = g.slot.round() as i32;
-        for h in hits.iter().filter(|h| h.rect.w == h.rect.h && h.rect.w <= d && h.on.as_deref().is_some_and(on_map)) {
+        for h in hits.iter().filter(|h| h.rect.w == h.rect.h && h.rect.w <= d && h.on.as_ref().is_some_and(on_map)) {
             // The swatches draw no cursor of their own, so the keyboard's ring is this one.
-            let (ink, width) = if h.on == at { (focus, theme.border_width * 2.0) } else { (ring, theme.border_width) };
+            let cursor = matches!(press(h), Some(Press::Window(id)) if Some(&id) == at);
+            let (ink, width) = if cursor { (focus, theme.border_width * 2.0) } else { (ring, theme.border_width) };
             p.framed(h.rect, Rgba::TRANSPARENT, h.rect.w as f32 / 2.0, ink, width as f32);
         }
         let mut moving = false;
@@ -607,12 +640,12 @@ impl Map {
             .take(self.fits)
             .map(|(i, ids)| {
                 let current = self.rows.get(i).is_some_and(|r| r.current);
-                let on = if i == last { "new".to_owned() } else { format!("row:{i}") };
+                let on = if i == last { Press::New } else { Press::Row(i) };
                 let n = if current { ids.len().min(self.circles) } else { 0 };
                 let plate = if n == 0 { r.row } else { r.header + n as f64 * r.pitch - r.row_gap + r.plate_pad };
                 let mut col = vec![w::space(if n == 0 { plate } else { r.header })];
                 if n > 0 {
-                    let circles = ids.iter().take(n).map(|id| w::dot(Rgba::TRANSPARENT, r.circle).on(format!("window:{id}")).centred()).collect();
+                    let circles = ids.iter().take(n).map(|id| w::dot(Rgba::TRANSPARENT, r.circle).on(Press::Window(id.clone())).centred()).collect();
                     col.push(w::column(r.pitch - r.circle, circles).fill());
                     col.push(w::space(r.plate_pad));
                 }
@@ -667,17 +700,15 @@ impl Map {
         }
     }
 
-    pub fn action(&self, on: &str) -> Action {
-        let (verb, arg) = on.split_once(':').unwrap_or((on, ""));
-        match verb {
-            "window" => Action::Window(WindowId::new(arg)),
-            "row" => match arg.parse::<usize>().ok().and_then(|i| self.rows.get(i)) {
+    pub fn action(&self, press: &Press) -> Action {
+        match press {
+            Press::Window(id) => Action::Window(id.clone()),
+            Press::Row(i) => match self.rows.get(*i) {
                 Some(r) if r.id.is_empty() => Action::WorkspaceAt(r.idx),
                 Some(r) => Action::Workspace(r.id.clone()),
                 None => Action::None,
             },
-            "new" => Action::WorkspaceAt(self.next_idx()),
-            _ => Action::None,
+            Press::New => Action::WorkspaceAt(self.next_idx()),
         }
     }
 
@@ -862,7 +893,7 @@ fn drop_on(order: &[Vec<WindowId>], from: usize, id: &WindowId, t: usize, j: usi
 /// the current row an empty one's first slot as a circle too. The row is
 /// its plate, `plate_inset` in from the card's side and half a gap past
 /// the circles, drawn where it is current or a drag's target.
-fn row(theme: &Theme, g: &Geo, current: bool, lit: bool, ids: &[WindowId], row_on: &str) -> El {
+fn row(theme: &Theme, g: &Geo, current: bool, lit: bool, ids: &[WindowId], row_on: Option<&Press>) -> El {
     let s = &theme.space;
     // The rings are painted over the circles' hits (`Map::paint`).
     let circle = |fill: Rgba| w::dot(fill, g.slot);
@@ -872,11 +903,11 @@ fn row(theme: &Theme, g: &Geo, current: bool, lit: bool, ids: &[WindowId], row_o
             if id.is_empty() {
                 return circle(theme.colors.get(ColorRole::Muted));
             }
-            circle(Rgba::TRANSPARENT).on(format!("window:{id}")).stop(format!("w:{id}"))
+            circle(Rgba::TRANSPARENT).on(Press::Window(id.clone())).stop(format!("w:{id}"))
         })
         .collect();
-    if slots.is_empty() && current {
-        slots.push(circle(Rgba::TRANSPARENT).on(row_on.to_owned()));
+    if let Some(on) = row_on.filter(|_| slots.is_empty() && current) {
+        slots.push(circle(Rgba::TRANSPARENT).on(on.clone()));
     }
     let lines = slots.len().div_ceil(ACROSS).max(1);
     let dot = theme.colors.get(ColorRole::MutedForeground).with_alpha(0.3);

@@ -16,6 +16,21 @@ use crate::services::overrides::{self, Control, Key, Page};
 use crate::store::Topic;
 use crate::ui::{El, Event, Ink, What, w};
 
+/// A press on a row's reset button, by its key.
+enum Press {
+    Reset(&'static str),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Reset(key) => write!(f, "reset:{key}"),
+        }
+    }
+}
+
 pub struct SettingsPage {
     page: &'static Page,
 }
@@ -80,7 +95,7 @@ fn mark(v: &View, key: &Key) -> Option<El> {
         return Some(w::icon("lock").ink(Ink::Muted).tip("Set in settings.json"));
     }
     overrides::override_of(v.store, key.key)
-        .map(|_| w::icon_button("rotate-ccw").tip("Reset").on(format!("reset:{}", key.key)).stop(format!("reset:{}", key.key)))
+        .map(|_| w::icon_button("rotate-ccw").tip("Reset").on(Press::Reset(key.key)).stop(Press::Reset(key.key).to_string()))
 }
 
 /// A key's row in its group; for a choice, its caption over the segmented
@@ -172,8 +187,8 @@ impl Panel for SettingsPage {
         if follow(&ev.on, fx) {
             return;
         }
-        if let Some(key) = ev.on.strip_prefix("reset:").and_then(overrides::find) {
-            wrote(overrides::reset(fx.store, key.key));
+        if let Some(&Press::Reset(key)) = ev.on.get::<Press>() {
+            wrote(overrides::reset(fx.store, key));
             return;
         }
         let Some(key) = key_of(&ev.on) else { return };

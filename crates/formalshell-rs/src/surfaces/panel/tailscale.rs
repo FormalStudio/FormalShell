@@ -16,6 +16,21 @@ use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, w};
 
+/// A press on a row carrying an address to copy.
+enum Press {
+    Copy(String),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Copy(ip) => write!(f, "copy:{ip}"),
+        }
+    }
+}
+
 pub struct Tailscale;
 
 fn toggle(fx: &Effect) {
@@ -98,7 +113,7 @@ impl Panel for Tailscale {
             parts.push(w::panel_error(s, t.error));
         }
         if let Some(ip) = model::self_ip(status) {
-            parts.push(w::panel_row(s, "copy", "IP", None, vec![w::panel_value(ip.clone())]).stop("self").on(format!("copy:{ip}")));
+            parts.push(w::panel_row(s, "copy", "IP", None, vec![w::panel_value(ip.clone())]).stop("self").on(Press::Copy(ip.clone())));
         }
 
         let primary = v.theme.colors.get(ColorRole::Primary);
@@ -112,7 +127,7 @@ impl Panel for Tailscale {
                 let dot = w::dot(if p.online { primary } else { muted }, s.sm).pulse(t.action == Action::Up);
                 let row = w::panel_row(s, "", p.name.clone(), Some(detail), vec![dot]).stop(format!("peer{i}"));
                 match &p.ip {
-                    Some(ip) => row.on(format!("copy:{ip}")),
+                    Some(ip) => row.on(Press::Copy(ip.clone())),
                     None => row,
                 }
             })
@@ -125,9 +140,9 @@ impl Panel for Tailscale {
         match ev.on.as_str() {
             "toggle" => toggle(fx),
             "refresh" => kick(Source::Tailscale),
-            on => {
-                if let Some(ip) = on.strip_prefix("copy:") {
-                    copy(fx, Some(ip.to_owned()));
+            _ => {
+                if let Some(Press::Copy(ip)) = ev.on.get::<Press>() {
+                    copy(fx, Some(ip.clone()));
                 }
             }
         }

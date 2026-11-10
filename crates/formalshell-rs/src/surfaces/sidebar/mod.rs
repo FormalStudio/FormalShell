@@ -215,7 +215,7 @@ pub struct Sidebar {
     /// The column's box in the window, as last drawn.
     strip: IRect,
     /// The control a press landed on, by its `on`.
-    pressed: Option<String>,
+    pressed: Option<crate::ui::On>,
     /// The clock's face over the time card.
     face: Vec<NodeId>,
     /// Notification app icons fitted at `Geo::glyph`, by entry id.
@@ -407,8 +407,7 @@ impl Sidebar {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn paint_face(&mut self, collapsed: bool, store: &Store, g: &Geo, raster: f64, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect) -> Option<NodeId> {
-        let time = Intent::Panel(PanelId::Calendar).on();
-        let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some(time.as_str())).map(|h| h.rect);
+        let card = self.top.hits.iter().find(|h| h.on.as_ref().and_then(|on| on.get::<Intent>()) == Some(&Intent::Panel(PanelId::Calendar))).map(|h| h.rect);
         let mut nodes = std::mem::take(&mut self.face);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
         self.rail_lines.clear();
@@ -463,7 +462,7 @@ impl Sidebar {
     pub fn hover(&mut self, i: Option<usize>) -> bool {
         let hit = i.and_then(|i| self.hit_at(i));
         let path = hit.map(|h| h.path.clone());
-        let over = hit.and_then(|h| h.on.as_deref()).is_some_and(minimap::on_map);
+        let over = hit.and_then(|h| h.on.as_ref()).is_some_and(minimap::on_map);
         let n = self.top.hits.len();
         let (top, foot) = match i {
             Some(i) if i >= n => (None, path),
@@ -493,14 +492,13 @@ impl Sidebar {
 
     /// Where the control carrying `intent` sits.
     pub fn anchor_of(&self, intent: Intent) -> Option<f64> {
-        let on = intent.on();
         let n = self.top.hits.len() + self.foot.hits.len();
-        (0..n).find(|i| self.hit_at(*i).is_some_and(|h| h.on.as_deref() == Some(on.as_str()))).map(|i| self.anchor(i))
+        (0..n).find(|i| self.hit_at(*i).and_then(|h| h.on.as_ref()?.get::<Intent>()) == Some(&intent)).map(|i| self.anchor(i))
     }
 
     /// A wheel over hit `i`: on the minimap it scrolls its rows.
     pub fn wheel(&mut self, i: usize, notches: f64) -> bool {
-        let on_map = self.hit_at(i).and_then(|h| h.on.as_deref()).is_some_and(minimap::on_map);
+        let on_map = self.hit_at(i).and_then(|h| h.on.as_ref()).is_some_and(minimap::on_map);
         on_map && notches != 0.0 && self.map.scroll(notches.signum() as i32)
     }
 
@@ -510,7 +508,7 @@ impl Sidebar {
     pub fn press(&mut self, i: usize, at: (f64, f64)) {
         let on = self.hit_at(i).and_then(|h| h.on.clone());
         // Pond lifts no icon off its collapsed column.
-        let lift = if self.collapsed { "" } else { on.as_deref().unwrap_or_default() };
+        let lift = on.as_ref().filter(|_| !self.collapsed).and_then(|on| on.get::<minimap::Press>());
         self.map.press(lift, at);
         self.pressed = on;
     }
@@ -572,32 +570,23 @@ pub enum Intent {
     Collapse(bool),
 }
 
-impl Intent {
-    pub fn on(self) -> String {
+impl crate::ui::on::HitId for Intent {}
+
+impl std::fmt::Display for Intent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Intent::Panel(id) => format!("panel:{id}"),
-            Intent::Center => format!("panel:{}", center::ID),
-            Intent::Software(packages::Change::Apply) => "software:apply".into(),
-            Intent::Software(packages::Change::Undo) => "software:undo".into(),
-            Intent::Overflow => "overflow".into(),
-            Intent::Collapse(true) => "collapse".into(),
-            Intent::Collapse(false) => "expand".into(),
+            Intent::Panel(id) => write!(f, "panel:{id}"),
+            Intent::Center => write!(f, "panel:{}", center::ID),
+            Intent::Software(packages::Change::Apply) => f.write_str("software:apply"),
+            Intent::Software(packages::Change::Undo) => f.write_str("software:undo"),
+            Intent::Overflow => f.write_str("overflow"),
+            Intent::Collapse(true) => f.write_str("collapse"),
+            Intent::Collapse(false) => f.write_str("expand"),
         }
     }
+}
 
-    fn parse(on: &str) -> Option<Intent> {
-        Some(match on.split_once(':').unwrap_or((on, "")) {
-            ("panel", id) if id == center::ID => Intent::Center,
-            ("panel", id) => Intent::Panel(PanelId::parse(id)?),
-            ("software", "apply") => Intent::Software(packages::Change::Apply),
-            ("software", "undo") => Intent::Software(packages::Change::Undo),
-            ("overflow", "") => Intent::Overflow,
-            ("collapse", "") => Intent::Collapse(true),
-            ("expand", "") => Intent::Collapse(false),
-            _ => return None,
-        })
-    }
-
+impl Intent {
     /// Runs it: what the bar opens, or nothing once the column did it.
     fn run(self) -> Action {
         match self {
@@ -618,13 +607,16 @@ impl Intent {
 
 /// What a click on `on` asks for: the column's own, an Activity row's (the
 /// panel holds its actions), or the minimap's.
-fn action(on: &str, map: &minimap::Map) -> Action {
-    if let Some(intent) = Intent::parse(on) {
+fn action(on: &crate::ui::On, map: &minimap::Map) -> Action {
+    if let Some(&intent) = on.get::<Intent>() {
         return intent.run();
+    }
+    if let Some(press) = on.get::<minimap::Press>() {
+        return map.action(press);
     }
     match ActivityVerb::parse(on) {
         Some((ActivityVerb::Open, _)) => Action::Panel(PanelId::Activity),
-        _ => map.action(on),
+        _ => Action::None,
     }
 }
 
@@ -784,14 +776,14 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
     let battery = if store.power.battery.is_some() { g.battery_h } else { 0.0 };
     let mut out = vec![(
         "time",
-        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), Intent::Panel(PanelId::Calendar).on()).fill(),
+        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), Intent::Panel(PanelId::Calendar)).fill(),
     )];
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
     if let Some(media) = media(store, g, cover) {
-        out.push(("media", w::action_card(media.height(inner(g.media_h)), Intent::Panel(PanelId::Media).on()).fill()));
+        out.push(("media", w::action_card(media.height(inner(g.media_h)), Intent::Panel(PanelId::Media)).fill()));
     }
     let row = notifications(theme, store, g, icons, width - g.row_pad * 2.0, kit);
-    out.push(("notifications", w::action_card(row.height(inner(g.row_h)).pad_start(g.row_pad - s.md), Intent::Center.on()).fill()));
+    out.push(("notifications", w::action_card(row.height(inner(g.row_h)).pad_start(g.row_pad - s.md), Intent::Center).fill()));
     if let Some(card) = activity::installs_card(store) {
         out.push(("activity", card));
     }
@@ -818,7 +810,7 @@ fn software_rows(theme: &Theme, store: &Store) -> Vec<El> {
         w::row(s.icon_gap, r)
     };
     let dim = |text: String| w::para(text, Type::Caption, Weight::Normal, Ink::Muted, 3);
-    let button = |glyph: &str, tip: &str, on: &str| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on);
+    let button = |glyph: &str, tip: &str, on: Intent| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on);
     if !store.activity.fspec.installed {
         return vec![row("refresh-cw", vec![dim("Updates need fspec".into())], None)];
     }
@@ -833,11 +825,11 @@ fn software_rows(theme: &Theme, store: &Store) -> Vec<El> {
         Some(Err(why)) => row("refresh-cw", vec![dim(why.clone())], None),
         // The checkout already fast-forwarded, so only the apply failed:
         // the row keeps its retry.
-        Some(Ok((0, _))) if retry => row("refresh-cw", vec![w::label("Failed").elide(), dim("Not applied".into())], Some(button("rotate-ccw", "Apply again", &Intent::Software(Change::Apply).on()))),
+        Some(Ok((0, _))) if retry => row("refresh-cw", vec![w::label("Failed").elide(), dim("Not applied".into())], Some(button("rotate-ccw", "Apply again", Intent::Software(Change::Apply)))),
         Some(Ok((0, _))) => row("refresh-cw", vec![dim("Up to date".into())], None),
         Some(Ok((n, upstream))) => {
             let label = if *n == 1 { "1 update".to_owned() } else { format!("{n} updates") };
-            let (caption, apply) = if sw.applying { ("Applying\u{2026}".to_owned(), None) } else { (upstream.clone(), Some(button("download", "Apply", &Intent::Software(Change::Apply).on()))) };
+            let (caption, apply) = if sw.applying { ("Applying\u{2026}".to_owned(), None) } else { (upstream.clone(), Some(button("download", "Apply", Intent::Software(Change::Apply)))) };
             row("refresh-cw", vec![w::label(label).elide(), dim(caption)], apply)
         }
     };
@@ -849,7 +841,7 @@ fn software_rows(theme: &Theme, store: &Store) -> Vec<El> {
             Verb::Uninstall => ("package-minus", "Removed"),
         };
         let undoing = store.activity.activity.live().iter().any(|i| i.origin == Origin::Fspec && i.kind == "undo" && i.state == Run::Running);
-        let undo = (!undoing).then(|| button("undo-2", "Undo", &Intent::Software(Change::Undo).on()));
+        let undo = (!undoing).then(|| button("undo-2", "Undo", Intent::Software(Change::Undo)));
         out.push(row(icon, vec![w::label(words), dim(app.to_owned())], undo));
     }
     if let Some((_, why)) = &sw.failed {
@@ -913,7 +905,7 @@ fn media(store: &Store, g: &Geo, cover: &Option<Bitmap>) -> Option<El> {
 fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     let theme = &store.theme.theme;
     let tall = (g.row_h - theme.space.md * 2.0).max(0.0);
-    let button = |glyph: &str, tip: &str, on: &str| {
+    let button = |glyph: &str, tip: &str, on: Intent| {
         w::cell(w::column(0.0, vec![w::icon(glyph).size(Type::Caption).ink(Ink::Muted).centred()]))
             .ghost()
             .cell_state(|c| c.tight = true)
@@ -924,14 +916,14 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
             .fill()
     };
     let mut row = vec![
-        button("wifi", "Network", &Intent::Panel(PanelId::Network).on()),
-        button(chevron_glyph(edge), "Quick settings", &Intent::Overflow.on()),
-        button("settings", "Settings", &Intent::Panel(PanelId::Settings).on()),
+        button("wifi", "Network", Intent::Panel(PanelId::Network)),
+        button(chevron_glyph(edge), "Quick settings", Intent::Overflow),
+        button("settings", "Settings", Intent::Panel(PanelId::Settings)),
     ];
     if !store.tray.items.is_empty() {
-        row.push(button("ellipsis", "Tray", &Intent::Panel(PanelId::TrayOverflow).on()));
+        row.push(button("ellipsis", "Tray", Intent::Panel(PanelId::TrayOverflow)));
     }
-    row.push(button(fold_glyph(edge, false), "Collapse", &Intent::Collapse(true).on()));
+    row.push(button(fold_glyph(edge, false), "Collapse", Intent::Collapse(true)));
     w::card(w::row(0.0, row).fill()).fill()
 }
 
@@ -953,7 +945,7 @@ fn fold_glyph(edge: Edge, collapsed: bool) -> &'static str {
 /// settings and expand, stacked.
 fn rail_foot(edge: Edge, g: &Geo) -> El {
     let r = &g.rail;
-    let button = |glyph: &str, tip: &str, on: &str| {
+    let button = |glyph: &str, tip: &str, on: Intent| {
         w::cell(w::column(0.0, vec![w::icon(glyph).size(Type::Caption).ink(Ink::Muted).centred()]).fill())
             .ghost()
             .cell_state(|c| c.inset = Some((0.0, 0.0)))
@@ -964,10 +956,10 @@ fn rail_foot(edge: Edge, g: &Geo) -> El {
             .fill()
     };
     let buttons = vec![
-        button("wifi", "Network", &Intent::Panel(PanelId::Network).on()),
-        button(chevron_glyph(edge), "Quick settings", &Intent::Overflow.on()),
-        button("settings", "Settings", &Intent::Panel(PanelId::Settings).on()),
-        button(fold_glyph(edge, true), "Expand", &Intent::Collapse(false).on()),
+        button("wifi", "Network", Intent::Panel(PanelId::Network)),
+        button(chevron_glyph(edge), "Quick settings", Intent::Overflow),
+        button("settings", "Settings", Intent::Panel(PanelId::Settings)),
+        button(fold_glyph(edge, true), "Expand", Intent::Collapse(false)),
     ];
     w::card(w::column(0.0, buttons).fill()).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()
 }
@@ -979,10 +971,10 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
     let r = &g.rail;
     let bare = |c: &mut crate::ui::el::CellState| c.inset = Some((0.0, 0.0));
     let square = |child: El| w::cell(w::column(0.0, vec![child.centred()]).fill()).ghost().cell_state(bare).height(r.square).fill();
-    let mut out = vec![("time", w::action_card(w::space(r.time_h), Intent::Panel(PanelId::Calendar).on()).cell_state(bare).fill())];
+    let mut out = vec![("time", w::action_card(w::space(r.time_h), Intent::Panel(PanelId::Calendar)).cell_state(bare).fill())];
     out.push(("spaces", w::card(map.rail_view()).cell_state(bare).fill()));
     if store.media.active().is_some() {
-        out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), Intent::Panel(PanelId::Media).on()).cell_state(bare).fill()));
+        out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), Intent::Panel(PanelId::Media)).cell_state(bare).fill()));
     }
     let m = &store.notifications.model;
     let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);
@@ -991,7 +983,7 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
         0 => bell,
         n => w::row(r.tight, vec![bell, w::caption(n.to_string()).mono().weight(Weight::Medium).ink(Ink::Muted)]),
     };
-    out.push(("notifications", w::action_card(square(bell), Intent::Center.on()).cell_state(bare).fill()));
+    out.push(("notifications", w::action_card(square(bell), Intent::Center).cell_state(bare).fill()));
     let groups = store.activity.activity.groups();
     if !groups.is_empty() {
         let rows = groups
@@ -1009,7 +1001,7 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
                     .fill()
             })
             .collect();
-        out.push(("activity", w::action_card(w::column(0.0, rows).fill(), Intent::Panel(PanelId::Activity).on()).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
+        out.push(("activity", w::action_card(w::column(0.0, rows).fill(), Intent::Panel(PanelId::Activity)).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
     }
     out
 }

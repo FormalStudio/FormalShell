@@ -78,11 +78,11 @@ impl Popup {
 
     /// Every control's `on` and rect, in the surface's own pixels.
     pub fn controls(&self) -> Vec<(String, IRect)> {
-        self.ui.hits.iter().filter_map(|h| Some((h.on.clone()?, h.rect))).collect()
+        self.ui.hits.iter().filter_map(|h| Some((h.on.clone()?.into(), h.rect))).collect()
     }
 
     /// The `on` of the control under a point, in the surface's own pixels.
-    pub fn hit(&self, x: f64, y: f64) -> Option<String> {
+    pub fn hit(&self, x: f64, y: f64) -> Option<crate::ui::On> {
         self.ui.hit(x, y).and_then(|h| h.on.clone())
     }
 }

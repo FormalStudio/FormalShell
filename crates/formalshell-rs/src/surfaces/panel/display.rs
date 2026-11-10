@@ -23,6 +23,27 @@ use crate::store::{Store, Topic};
 use crate::services::compositor::OutputsState;
 use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 
+/// A press on an output's or a brightness device's control, by its name or id.
+enum Press {
+    Enable(String),
+    Scale(String),
+    Hdr(String),
+    Brightness(String),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Enable(name) => write!(f, "enable:{name}"),
+            Press::Scale(name) => write!(f, "scale:{name}"),
+            Press::Hdr(name) => write!(f, "hdr:{name}"),
+            Press::Brightness(id) => write!(f, "brightness:{id}"),
+        }
+    }
+}
+
 /// The brightness step, the wheel's and the keyboard's.
 const STEP: f64 = 5.0;
 
@@ -93,7 +114,7 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
         w::label(&row.name).weight(Weight::Medium).elide().fill(),
     ];
     let toggles = display::config_available() && outputs::can_toggle(rows, &row.name);
-    head.push(w::switch(row.enabled).enabled(toggles).on(format!("enable:{}", row.name)));
+    head.push(w::switch(row.enabled).enabled(toggles).on(Press::Enable(row.name.clone())));
 
     let mut lines = vec![w::row(s.panel_gap, head).fill().height(s.panel_row).mid()];
     if !row.enabled {
@@ -122,14 +143,14 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
         lines.push(w::caption(card).mono().elide());
     }
     if configurable {
-        let slider = w::slider(outputs::fraction_for_scale(row.scale)).on(format!("scale:{}", row.name));
+        let slider = w::slider(outputs::fraction_for_scale(row.scale)).on(Press::Scale(row.name.clone()));
         lines.push(w::meter(s, None, "Scale", vec![w::panel_value(outputs::format_scale(row.scale))], Some(slider)));
     }
     w::panel_cell(s, w::column(s.xxs, lines).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("output:{}", row.name))
 }
 
 fn brightness_row(v: &View, d: &Brightness) -> El {
-    let track = w::slider(d.percent as f64 / 100.0).on(format!("brightness:{}", d.id));
+    let track = w::slider(d.percent as f64 / 100.0).on(Press::Brightness(d.id.clone()));
     w::panel_meter(&v.theme.space, Some("sun"), &d.label, vec![w::panel_value(format!("{}%", d.percent))], Some(track)).stop(format!("brightness:{}", d.id))
 }
 
@@ -173,7 +194,7 @@ impl Panel for Display {
         if !hdr.is_empty() {
             let list = hdr
                 .iter()
-                .map(|n| w::panel_switch(s, "sun", n.as_str(), None, display::hdr_on(store, n), format!("hdr:{n}")).stop(format!("hdr:{n}")))
+                .map(|n| w::panel_switch(s, "sun", n.as_str(), None, display::hdr_on(store, n), Press::Hdr(n.to_string())).stop(format!("hdr:{n}")))
                 .collect();
             parts.push(w::panel_section_n(s, "HDR", hdr.len(), list, ""));
         }
@@ -196,31 +217,30 @@ impl Panel for Display {
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
         let store = fx.store;
         let rows = sorted(store);
-        let (what, arg) = ev.on.split_once(':').unwrap_or((ev.on.as_str(), ""));
-        match (what, &ev.what) {
-            ("enable", What::Toggle(_)) => toggle_output(&rows, arg),
-            ("scale", What::Fraction(f)) => {
-                if let Some(row) = outputs::find_output(&rows, arg).filter(|r| r.enabled) {
+        match (ev.on.get::<Press>(), &ev.what) {
+            (Some(Press::Enable(name)), What::Toggle(_)) => toggle_output(&rows, name),
+            (Some(Press::Scale(name)), What::Fraction(f)) => {
+                if let Some(row) = outputs::find_output(&rows, name).filter(|r| r.enabled) {
                     set_scale(row, outputs::scale_for_fraction(*f));
                 }
             }
-            ("scale", What::Wheel(d)) => {
-                if let Some(row) = outputs::find_output(&rows, arg).filter(|r| r.enabled) {
+            (Some(Press::Scale(name)), What::Wheel(d)) => {
+                if let Some(row) = outputs::find_output(&rows, name).filter(|r| r.enabled) {
                     set_scale(row, outputs::step_scale(row.scale, (*d).signum() as f64));
                 }
             }
-            ("brightness", What::Fraction(f)) => {
-                if let Some(d) = store.display.devices().iter().find(|d| d.id == arg) {
+            (Some(Press::Brightness(id)), What::Fraction(f)) => {
+                if let Some(d) = store.display.devices().iter().find(|d| &d.id == id) {
                     set_brightness(fx, d, f * 100.0);
                 }
             }
-            ("brightness", What::Wheel(n)) => {
-                if let Some(d) = store.display.devices().iter().find(|d| d.id == arg) {
+            (Some(Press::Brightness(id)), What::Wheel(n)) => {
+                if let Some(d) = store.display.devices().iter().find(|d| &d.id == id) {
                     set_brightness(fx, d, d.percent as f64 + (*n).signum() as f64 * STEP);
                 }
             }
-            ("hdr", What::Toggle(on)) => fx.push(Out::Quick(quick::Run::HdrOutput(arg.to_owned(), *on))),
-            ("mirror", What::Toggle(on)) => set_mirror(store, &rows, *on),
+            (Some(Press::Hdr(name)), What::Toggle(on)) => fx.push(Out::Quick(quick::Run::HdrOutput(name.clone(), *on))),
+            (None, What::Toggle(on)) if ev.on == "mirror" => set_mirror(store, &rows, *on),
             _ => {}
         }
     }

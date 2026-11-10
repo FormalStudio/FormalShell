@@ -27,6 +27,17 @@ use crate::surfaces::card::{Card, CardSpec, Sizing};
 use crate::surfaces::popup::Popup;
 use crate::ui::{El, Ink, Size, Type, w};
 
+/// A press on a profile's chip, by its index into `PROFILES`.
+struct Chip(usize);
+
+impl crate::ui::on::HitId for Chip {}
+
+impl std::fmt::Display for Chip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "profile:{}", self.0)
+    }
+}
+
 const PROFILES: [(Profile, &str); 3] = [(Profile::PowerSaver, "leaf"), (Profile::Balanced, "gauge"), (Profile::Performance, "zap")];
 
 /// How strongly the charge tints the outline.
@@ -48,7 +59,7 @@ fn level_colour(b: &crate::services::devices::power::Battery) -> ColorRole {
 
 pub(super) struct Pill {
     pub(super) popup: Popup,
-    pressed: Option<String>,
+    pressed: Option<crate::ui::On>,
 }
 
 /// Which profiles take a click, and the active one; none without the daemon.
@@ -79,7 +90,7 @@ fn body(store: &crate::store::Store, side: f64, gap: f64) -> El {
                 .width(Size::Px(side))
                 .height(side)
                 .tip(if offer.is_some() { name.to_owned() } else { format!("{name}: power-profiles-daemon is not running") });
-            if enabled { chip.interactive().on(format!("profile:{i}")) } else { chip }
+            if enabled { chip.interactive().on(Chip(i)) } else { chip }
         })
         .collect();
     w::column(gap, buttons)
@@ -164,7 +175,7 @@ impl App {
             PointerEventKind::Release { .. } => {
                 let here = p.popup.hit(at.0, at.1);
                 let Some(on) = p.pressed.take().filter(|on| Some(on) == here.as_ref()) else { return };
-                let Some((profile, ..)) = on.strip_prefix("profile:").and_then(|i| i.parse::<usize>().ok()).and_then(|i| PROFILES.get(i)) else { return };
+                let Some((profile, ..)) = on.get::<Chip>().and_then(|&Chip(i)| PROFILES.get(i)) else { return };
                 devices::power::send(devices::power::Cmd::Profile(*profile));
             }
             PointerEventKind::Leave { .. } => p.pressed = None,

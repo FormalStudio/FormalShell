@@ -108,7 +108,7 @@ pub fn card(child: El) -> El {
 
 /// A sidebar card that opens something: the whole card takes the click,
 /// and the controls inside it keep their own hits over it.
-pub fn action_card(child: El, action: impl Into<String>) -> El {
+pub fn action_card(child: El, action: impl Into<super::On>) -> El {
     card(child).interactive().on(action)
 }
 
@@ -286,7 +286,7 @@ pub struct Hero {
     pub trailing: Option<El>,
     /// The rail under it, 0 to 1, or none.
     pub rail: Option<f64>,
-    pub rail_on: Option<String>,
+    pub rail_on: Option<super::On>,
 }
 
 /// A panel's lead row (the panel language's §4 row, not a banner): a
@@ -451,7 +451,7 @@ pub fn panel_row_checked(s: &Space, glyph: &str, name: impl Into<String>, detail
 }
 
 /// A row whose one trailing control is a switch firing `on`.
-pub fn panel_switch(s: &Space, glyph: &str, name: impl Into<String>, detail: Option<String>, checked: bool, on: impl Into<String>) -> El {
+pub fn panel_switch(s: &Space, glyph: &str, name: impl Into<String>, detail: Option<String>, checked: bool, on: impl Into<super::On>) -> El {
     panel_row(s, glyph, name, detail, vec![switch(checked).on(on)])
 }
 

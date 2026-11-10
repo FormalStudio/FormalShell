@@ -14,6 +14,21 @@ use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, w};
 
+/// A press on a pull request's or an issue's row, by its URL.
+enum Press {
+    Open(String),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Open(url) => write!(f, "open:{url}"),
+        }
+    }
+}
+
 pub struct Github;
 
 fn open(url: &str, fx: &mut Effect) {
@@ -72,7 +87,7 @@ impl Panel for Github {
                     // The query fetches a page; the last row says what it left out.
                     let hidden = (total as usize).saturating_sub(rows.len());
                     let trailing = if i + 1 == rows.len() && hidden > 0 { vec![w::panel_value(format!("{hidden} more"))] } else { Vec::new() };
-                    w::panel_row(s, "", r.title.clone(), repo, trailing).stop(format!("row{}", first + i)).on(format!("open:{}", r.url))
+                    w::panel_row(s, "", r.title.clone(), repo, trailing).stop(format!("row{}", first + i)).on(Press::Open(r.url.clone()))
                 })
                 .collect();
             w::panel_section(s, title, cells, "None")
@@ -83,7 +98,7 @@ impl Panel for Github {
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
-        if let Some(url) = ev.on.strip_prefix("open:") {
+        if let Some(Press::Open(url)) = ev.on.get::<Press>() {
             open(url, fx);
         }
     }

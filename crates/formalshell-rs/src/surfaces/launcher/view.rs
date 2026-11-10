@@ -585,7 +585,7 @@ impl Shown {
 
     /// The foot's buttons on the output, each by what a click on it does.
     pub fn foot_hints(&self) -> Vec<(String, IRect)> {
-        self.foot.hits.iter().filter_map(|h| Some((h.on.clone()?, self.on_output(h.rect)))).collect()
+        self.foot.hits.iter().filter_map(|h| Some((h.on.clone()?.into(), self.on_output(h.rect)))).collect()
     }
 
     /// What the pointer hovers in the list and in the column: the row's

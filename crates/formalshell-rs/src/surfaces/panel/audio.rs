@@ -19,6 +19,23 @@ use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, What, w};
 
+/// A press on a mute switch or a volume track, by the stop key of the row it sits on.
+enum Press {
+    Mute(String),
+    Volume(String),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Mute(key) => write!(f, "mute:{key}"),
+            Press::Volume(key) => write!(f, "volume:{key}"),
+        }
+    }
+}
+
 /// AudioModel's step.
 const STEP: f64 = 0.05;
 
@@ -62,7 +79,7 @@ fn device_row(id_key: String, glyph: &str, r: &Row, selected: bool, s: &fs_theme
 /// A label, a percent and a mute switch over a track: the input master
 /// and every stream row.
 fn mixer_row(s: &fs_theme::tokens::Space, glyph: Option<&str>, label: &str, volume: f64, muted: bool, key: &str, track: El) -> El {
-    let values = vec![w::panel_value(format!("{}%", (volume * 100.0).round())), w::switch(!muted).on(format!("mute:{key}"))];
+    let values = vec![w::panel_value(format!("{}%", (volume * 100.0).round())), w::switch(!muted).on(Press::Mute(key.to_owned()))];
     w::panel_meter(s, glyph, label, values, Some(track))
 }
 
@@ -122,9 +139,9 @@ impl Panel for Audio {
                     title: if a.name.is_empty() { "Output".into() } else { a.name.clone() },
                     meta: if a.muted { "Muted" } else { "Active" }.into(),
                     readout: format!("{}%", (volume * 100.0).round()),
-                    trailing: Some(w::switch(!a.muted).on("mute:output-slider")),
+                    trailing: Some(w::switch(!a.muted).on(Press::Mute("output-slider".into()))),
                     rail: Some(volume),
-                    rail_on: Some("volume:output-slider".into()),
+                    rail_on: Some(Press::Volume("output-slider".into()).into()),
                 },
             )
             .stop("output-slider");
@@ -141,7 +158,7 @@ impl Panel for Audio {
         }
         if !l.inputs.is_empty() {
             let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume.as_f64()), r.muted));
-            let track = w::slider(volume).on("volume:input-slider");
+            let track = w::slider(volume).on(Press::Volume("input-slider".into()));
             let master = mixer_row(s, Some(if muted { "mic-off" } else { "mic" }), "Level", volume, muted, "input-slider", track);
             let source = l.source.as_ref().map(|r| r.id);
             let mut rows = vec![master.stop("input-slider")];
@@ -157,7 +174,7 @@ impl Panel for Audio {
                 .map(|r| {
                     let key = format!("stream:{}", r.id);
                     let volume = r.volume.as_f64();
-                    let track = w::slider(volume / 1.5).notch(1.0 / 1.5).on(format!("volume:{key}"));
+                    let track = w::slider(volume / 1.5).notch(1.0 / 1.5).on(Press::Volume(key.clone()));
                     let label = if r.label.is_empty() { "Stream" } else { &r.label };
                     mixer_row(s, None, label, volume, r.muted, &key, track).stop(key)
                 })
@@ -171,15 +188,14 @@ impl Panel for Audio {
         let store = fx.store;
         let Some(l) = lists(store).cloned() else { return };
         let a = &store.audio;
-        let (verb, key) = ev.on.split_once(':').unwrap_or((ev.on.as_str(), ""));
-        match (verb, &ev.what) {
-            ("mute", What::Toggle(_)) => Self::mute(fx, key),
-            ("volume", What::Fraction(_) | What::Wheel(_)) => {
+        match (ev.on.get::<Press>(), &ev.what) {
+            (Some(Press::Mute(key)), What::Toggle(_)) => Self::mute(fx, key),
+            (Some(Press::Volume(key)), What::Fraction(_) | What::Wheel(_)) => {
                 let step = |cur: Visual| match ev.what {
                     What::Wheel(d) => cur.as_f64() + d as f64 * STEP,
                     _ => cur.as_f64(),
                 };
-                match key {
+                match key.as_str() {
                     "output-slider" => {
                         if let Some(id) = l.sink {
                             let to = if let What::Fraction(f) = ev.what { f } else { step(a.volume.unwrap_or_default()) };

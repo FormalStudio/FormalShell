@@ -30,6 +30,7 @@ mod draw;
 pub use draw::{elided, icon, paint, resolve, ring_strokes, ring_turn, shape};
 pub mod el;
 pub mod field;
+pub mod on;
 pub mod spectrum;
 pub mod thumb;
 pub mod w;
@@ -50,6 +51,7 @@ use crate::scene::{IRect, NodeId, Scene};
 use crate::paint::Kit;
 
 pub use el::{El, Ink, Size, Type, Variant, Weight};
+pub use on::On;
 
 /// What a click, a drag or a key asked of an element.
 #[derive(Clone, Debug, PartialEq)]
@@ -78,7 +80,7 @@ pub enum Button {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Event {
     /// The element's `on` action.
-    pub on: String,
+    pub on: On,
     pub what: What,
     /// The button behind it; a key, a wheel or a drag reads as `Left`.
     pub button: Button,
@@ -89,7 +91,7 @@ pub struct Event {
 pub struct Hit {
     pub rect: IRect,
     pub path: String,
-    pub on: Option<String>,
+    pub on: Option<On>,
     pub tip: Option<String>,
     /// The cursor stop this rect belongs to, if any.
     pub stop: Option<String>,
@@ -674,7 +676,7 @@ impl Cx<'_> {
             p.finish();
             self.done(last);
             let what = if room.is_some() { HitWhat::Scroll } else { HitWhat::Hover };
-            self.hit(Hit { rect: r, path: path.clone(), on: room.map(|_| "float".to_owned()), tip: None, stop: None, what });
+            self.hit(Hit { rect: r, path: path.clone(), on: room.map(|_| "float".into()), tip: None, stop: None, what });
             let inner = IRect::new(r.x, (y + pad).round() as i32, r.w, view.round() as i32);
             if room.is_some() {
                 self.clip = Some(inner.intersect(&irect(area)));

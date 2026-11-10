@@ -23,6 +23,23 @@ use crate::paint::{Kit, Painter};
 use crate::text::{ShapedText, TextStyle};
 use crate::ui::{self, El, Ink, Size, Type, Ui, w};
 
+/// A press on a row of the session or user menu, by its index.
+pub enum Press {
+    Session(usize),
+    User(usize),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Session(i) => write!(f, "session:{i}"),
+            Press::User(i) => write!(f, "user:{i}"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Menu {
     Closed,
@@ -235,10 +252,10 @@ impl Controls<'_> {
     pub fn el(&self, theme: &Theme) -> El {
         let s = &theme.space;
         // Power on its own row: beside two chips it runs out of the column.
-        let (items, current, key) = match self.menu {
-            Menu::Sessions => (self.sessions, self.session, "session"),
-            Menu::Users => (self.users, self.user, "user"),
-            Menu::Closed => (&[][..], 0, ""),
+        let (items, current, press): (&[String], usize, fn(usize) -> Press) = match self.menu {
+            Menu::Sessions => (self.sessions, self.session, Press::Session),
+            Menu::Users => (self.users, self.user, Press::User),
+            Menu::Closed => (&[][..], 0, Press::Session),
         };
         let list = || {
             let rows = items
@@ -246,7 +263,7 @@ impl Controls<'_> {
                 .enumerate()
                 .map(|(i, label)| {
                     let check = w::icon("check").size(Type::BodySmall).ink(if i == current { Ink::Fg } else { Ink::Color(Rgba::TRANSPARENT) });
-                    w::cell(w::row(s.icon_gap, vec![check, w::text(label.clone()).size(Type::BodySmall).elide()])).selected(i == current).interactive().on(format!("{key}:{i}"))
+                    w::cell(w::row(s.icon_gap, vec![check, w::text(label.clone()).size(Type::BodySmall).elide()])).selected(i == current).interactive().on(press(i))
                 })
                 .collect();
             w::column(0.0, rows)

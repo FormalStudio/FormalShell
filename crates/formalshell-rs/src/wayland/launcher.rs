@@ -1308,7 +1308,7 @@ impl App {
         }
         let Some(w) = &mut self.launch.win else { return true };
         let (x, y) = e.position;
-        let on = |w: &Window| w.shown.hit(x, y).and_then(|h| h.on).or_else(|| (!w.shown.modal.win.on_card(x, y)).then(|| "outside".into()));
+        let on = |w: &Window| w.shown.hit(x, y).and_then(|h| h.on.map(String::from)).or_else(|| (!w.shown.modal.win.on_card(x, y)).then(|| "outside".into()));
         match e.kind {
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                 if w.shown.set_hover(w.shown.hit(x, y).map(|h| h.path)) {

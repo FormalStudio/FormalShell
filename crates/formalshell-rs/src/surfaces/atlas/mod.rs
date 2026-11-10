@@ -22,6 +22,25 @@ use crate::services::clipboard;
 use crate::services::radio::{self, Ask, Cmd, Reply};
 use globe::{Globe, Out};
 
+/// What a press on one of the list's rows names, by its index.
+pub enum Hit {
+    Row(usize),
+    Fav(usize),
+    Output(usize),
+}
+
+impl crate::ui::on::HitId for Hit {}
+
+impl std::fmt::Display for Hit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Hit::Row(i) => write!(f, "row:{i}"),
+            Hit::Fav(i) => write!(f, "fav:{i}"),
+            Hit::Output(i) => write!(f, "output:{i}"),
+        }
+    }
+}
+
 pub const WORLD_LIMIT: usize = 5000;
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(300);
 const PREFERRED: (f64, f64) = (1180.0, 760.0);
@@ -99,7 +118,7 @@ pub enum Verb {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Press {
+pub enum Press {
     Escape,
     Up,
     Down,
@@ -911,28 +930,31 @@ impl Atlas {
     }
 
     /// A control clicked, by its `on`; true when it closes the overlay.
-    pub fn act(&mut self, r: &radio::State, on: &str, what: Option<What>) -> bool {
+    pub fn act(&mut self, r: &radio::State, on: &crate::ui::On, what: Option<What>) -> bool {
         self.dirty = true;
         if on != "search" {
             self.editing = false;
         }
-        if let Some(i) = on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
-            self.set_selection(r, Some(i), false);
-            self.play_selected(r);
-            return false;
-        }
-        if let Some(i) = on.strip_prefix("fav:").and_then(|i| i.parse::<usize>().ok()) {
-            if let Some(s) = self.display(r).get(i).cloned() {
-                radio::send(Cmd::ToggleFavorite(s));
+        match on.get::<Hit>() {
+            Some(&Hit::Row(i)) => {
+                self.set_selection(r, Some(i), false);
+                self.play_selected(r);
+                return false;
             }
-            return false;
+            Some(&Hit::Fav(i)) => {
+                if let Some(s) = self.display(r).get(i).cloned() {
+                    radio::send(Cmd::ToggleFavorite(s));
+                }
+                return false;
+            }
+            Some(&Hit::Output(i)) => {
+                let id = if i == 0 { String::new() } else { r.outputs.get(i - 1).map(|(id, _)| id.clone()).unwrap_or_default() };
+                self.select_output(id);
+                return false;
+            }
+            None => {}
         }
-        if let Some(i) = on.strip_prefix("output:").and_then(|i| i.parse::<usize>().ok()) {
-            let id = if i == 0 { String::new() } else { r.outputs.get(i - 1).map(|(id, _)| id.clone()).unwrap_or_default() };
-            self.select_output(id);
-            return false;
-        }
-        match (on, what) {
+        match (on.as_str(), what) {
             ("outside" | "close", _) => return true,
             ("search", _) => self.editing = true,
             ("shuffle", _) => self.tune_random(r),

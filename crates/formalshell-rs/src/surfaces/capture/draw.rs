@@ -17,6 +17,17 @@ use crate::paint::{Kit, Painter};
 use crate::ui::el::CellState;
 use crate::ui::{El, Ink, Ui, w};
 
+/// A press on the toolbar's tool, by its index into `TOOLS`.
+pub struct Tool(pub usize);
+
+impl crate::ui::on::HitId for Tool {}
+
+impl std::fmt::Display for Tool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "tool:{}", self.0)
+    }
+}
+
 pub struct Sheet {
     pub scene: Scene,
     nodes: Vec<NodeId>,
@@ -179,7 +190,7 @@ fn toolbar(picker: &Picker, theme: &Theme) -> El {
                 c.selected = tool == i as i32;
             })
             .interactive()
-            .on(format!("tool:{i}"))
+            .on(Tool(i))
     };
     let label = |text: &str| w::section_label(s, text, None, false);
     let rec = picker.recording();

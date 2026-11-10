@@ -360,14 +360,14 @@ fn list_el(a: &Atlas, r: &radio::State, s: &fs_theme::tokens::Space, theme: &The
         let star = w::icon_button("star")
             .variant(if favorite { Variant::Default } else { Variant::Ghost })
             .tip(if favorite { "Remove favorite" } else { "Add favorite" })
-            .on(format!("fav:{i}"));
+            .on(super::Hit::Fav(i));
         let content = w::row(
             0.0,
             vec![strut(s.control_height * 2.0 - s.control_padding_y * 2.0), w::column(s.xxs, vec![name, meta]).fill(), w::space(s.icon_gap), star],
         )
         .fill();
         let cursor = a.keyboard_selection && a.selected_index == Some(i);
-        let cell = w::cell(content).ghost().interactive().selected(is_playing).cell_state(|c| c.cursor = cursor).on(format!("row:{i}")).key(st.uuid.clone());
+        let cell = w::cell(content).ghost().interactive().selected(is_playing).cell_state(|c| c.cursor = cursor).on(super::Hit::Row(i)).key(st.uuid.clone());
         let tail = if i + 1 < stations.len() { w::separator() } else { w::space(theme.border_width) };
         rows.push(w::column(0.0, vec![cell, tail]).fill());
     }
@@ -385,7 +385,7 @@ fn outputs_el(a: &Atlas, r: &radio::State, s: &fs_theme::tokens::Space) -> (bool
                 .interactive()
                 .selected(id == r.output)
                 .cell_state(|c| c.cursor = cursor)
-                .on(format!("output:{i}"))
+                .on(super::Hit::Output(i))
                 .key(format!("output:{id}")),
         );
     }

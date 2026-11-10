@@ -17,6 +17,25 @@ use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Variant, What, w};
 
+/// A press on a device's row or its buttons.
+enum Press {
+    Row(BtAddress),
+    Forget(BtAddress),
+    Trust(BtAddress),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Row(a) => write!(f, "row:{a}"),
+            Press::Forget(a) => write!(f, "forget:{a}"),
+            Press::Trust(a) => write!(f, "trust:{a}"),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Bluetooth;
 
@@ -69,17 +88,17 @@ fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
     if d.paired && revealed {
         let word = if d.trusted { "Untrust" } else { "Trust" };
         let el = w::button(word).variant(Variant::Outline);
-        trailing.push(if idle { el.on(format!("trust:{}", d.address)) } else { el.enabled(false) });
+        trailing.push(if idle { el.on(Press::Trust(d.address)) } else { el.enabled(false) });
     }
     if bucket == Bucket::Paired && revealed {
         let el = w::icon("trash").ink(Ink::Muted);
-        trailing.push(if idle { el.on(format!("forget:{}", d.address)).tip("Forget") } else { el });
+        trailing.push(if idle { el.on(Press::Forget(d.address)).tip("Forget") } else { el });
     }
     let connected = bucket == Bucket::Connected;
     let glyph = if connected { "bluetooth-connected" } else { "bluetooth" };
     let detail = (failed.is_none() && !status.is_empty()).then(|| status.clone());
     let row = w::panel_row_checked(s, glyph, &d.name, detail, trailing, connected).stop(key);
-    let row = if idle { row.on(format!("row:{}", d.address)) } else { row };
+    let row = if idle { row.on(Press::Row(d.address)) } else { row };
     match failed {
         Some(_) => w::column(0.0, vec![row, w::panel_error(s, status)]),
         None => row,
@@ -90,8 +109,7 @@ fn run(address: BtAddress, kind: ActionKind) {
     send(Cmd::Run(address, kind));
 }
 
-fn activate(bt: &Bt, address: &str) {
-    let Some(address) = BtAddress::parse(address) else { return };
+fn activate(bt: &Bt, address: BtAddress) {
     if bt.action.is_some() {
         return;
     }
@@ -106,16 +124,14 @@ fn activate(bt: &Bt, address: &str) {
     );
 }
 
-fn forget(bt: &Bt, address: &str) {
-    let Some(address) = BtAddress::parse(address) else { return };
+fn forget(bt: &Bt, address: BtAddress) {
     if bt.action.is_none() && find(bt, address).is_some_and(|(b, _)| b == Bucket::Paired) {
         run(address, ActionKind::Forget);
     }
 }
 
 /// Only a device BlueZ reports `paired` has anything to trust.
-fn trust(bt: &Bt, address: &str) {
-    let Some(address) = BtAddress::parse(address) else { return };
+fn trust(bt: &Bt, address: BtAddress) {
     if bt.action.is_some() {
         return;
     }
@@ -176,27 +192,24 @@ impl Panel for Bluetooth {
         match (ev.on.as_str(), &ev.what) {
             ("power", What::Toggle(on)) => send(Cmd::Power(*on)),
             ("rescan", What::Click) => send(Cmd::Rescan),
-            (on, What::Click) => {
-                if let Some(a) = on.strip_prefix("row:") {
-                    activate(bt, a);
-                } else if let Some(a) = on.strip_prefix("forget:") {
-                    forget(bt, a);
-                } else if let Some(a) = on.strip_prefix("trust:") {
-                    trust(bt, a);
-                }
-            }
+            (_, What::Click) => match ev.on.get::<Press>() {
+                Some(&Press::Row(a)) => activate(bt, a),
+                Some(&Press::Forget(a)) => forget(bt, a),
+                Some(&Press::Trust(a)) => trust(bt, a),
+                None => {}
+            },
             _ => {}
         }
     }
 
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        if let Some(a) = stop.strip_prefix("dev:") {
+        if let Some(a) = stop.strip_prefix("dev:").and_then(BtAddress::parse) {
             activate(&fx.store.bluetooth, a);
         }
     }
 
     fn delete(&mut self, stop: &str, fx: &mut Effect) {
-        if let Some(a) = stop.strip_prefix("dev:") {
+        if let Some(a) = stop.strip_prefix("dev:").and_then(BtAddress::parse) {
             forget(&fx.store.bluetooth, a);
         }
     }

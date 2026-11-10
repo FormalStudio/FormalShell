@@ -411,7 +411,7 @@ impl Greeter {
     }
 
     /// A card control, clicked.
-    fn activate(&mut self, on: &str, what: What) {
+    fn activate(&mut self, on: &crate::ui::On, what: What) {
         if let Some(action) = power::Action::parse(on) {
             let _ = std::thread::Builder::new().name("fs-power".into()).spawn(move || {
                 let method = action.method();
@@ -422,15 +422,14 @@ impl Greeter {
             return;
         }
         let toggle = |m: Menu, now: Menu| if now == m { Menu::Closed } else { m };
-        match (on, what) {
+        match (on.as_str(), what) {
             ("sessions", _) => self.menu = toggle(Menu::Sessions, self.menu),
             ("users", _) => self.menu = toggle(Menu::Users, self.menu),
             _ => {
-                let Some((kind, i)) = on.split_once(':').and_then(|(k, i)| Some((k, i.parse::<usize>().ok()?))) else { return };
-                match kind {
-                    "session" => self.pick(i),
-                    "user" => self.pick_user(i),
-                    _ => return,
+                match on.get::<login::Press>() {
+                    Some(&login::Press::Session(i)) => self.pick(i),
+                    Some(&login::Press::User(i)) => self.pick_user(i),
+                    None => return,
                 }
                 self.menu = Menu::Closed;
             }

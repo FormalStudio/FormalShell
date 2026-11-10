@@ -34,7 +34,7 @@ pub struct Window {
     cursor: Option<String>,
     /// The keyboard put the cursor there, so its ring draws.
     ring: bool,
-    pressed: Option<String>,
+    pressed: Option<crate::ui::On>,
     pub(super) dirty: bool,
 }
 
@@ -160,7 +160,7 @@ impl App {
         }
         let Some(w) = &mut self.plugin_overlay else { return true };
         let (x, y) = e.position;
-        let hit = |w: &Window| w.ui.hit(x, y).and_then(|h| h.on.clone()).or_else(|| (!w.modal.win.on_card(x, y)).then(|| "outside".to_owned()));
+        let hit = |w: &Window| w.ui.hit(x, y).and_then(|h| h.on.clone()).or_else(|| (!w.modal.win.on_card(x, y)).then(|| "outside".into()));
         match e.kind {
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                 let path = w.ui.hit(x, y).map(|h| h.path.clone());

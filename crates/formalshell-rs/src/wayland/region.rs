@@ -38,7 +38,7 @@ pub struct Pickers {
     pub surfaces: Vec<PickerSurface>,
     /// Where the left button went down, in global coordinates, and whether
     /// it went down on a toolbar cell.
-    press: Option<(f64, f64, Option<String>)>,
+    press: Option<(f64, f64, Option<crate::ui::On>)>,
 }
 
 impl App {
@@ -219,7 +219,7 @@ impl App {
         }
     }
 
-    fn picker_motion(&mut self, i: usize, lx: f64, ly: f64, gx: f64, gy: f64, hit: Option<String>) {
+    fn picker_motion(&mut self, i: usize, lx: f64, ly: f64, gx: f64, gy: f64, hit: Option<crate::ui::On>) {
         if let Some(p) = self.pickers.surfaces.get_mut(i) {
             let path = p.sheet.toolbar.hit(lx, ly).map(|h| h.path.clone());
             if p.sheet.toolbar.hover != path {
@@ -238,12 +238,12 @@ impl App {
         self.picker_sync();
     }
 
-    fn picker_action(&mut self, on: &str) {
+    fn picker_action(&mut self, on: &crate::ui::On) {
         if on == "commit" {
             let _ = cap::picker_commit(self, false);
-        } else if let Some(i) = on.strip_prefix("tool:").and_then(|i| i.parse::<i32>().ok()) {
+        } else if let Some(&crate::surfaces::capture::draw::Tool(i)) = on.get() {
             let c = cap::cands(self);
-            let _ = self.capture.picker.set_tool(&c, i);
+            let _ = self.capture.picker.set_tool(&c, i as i32);
         }
         self.picker_sync();
     }

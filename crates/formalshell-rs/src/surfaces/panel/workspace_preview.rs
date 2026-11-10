@@ -33,6 +33,21 @@ use crate::store::Topic;
 use crate::ui::el::Pic;
 use crate::ui::{El, Event, Ink, Size, What, w};
 
+/// A press on a window's thumbnail, by its id.
+enum Press {
+    Focus(String),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Focus(id) => write!(f, "focus:{id}"),
+        }
+    }
+}
+
 /// The card's name in the panel host.
 pub const ID: &str = "workspaces";
 
@@ -147,7 +162,7 @@ impl Panel for WorkspacePreview {
                 let icon = v.store.appicon.get(&icon_key(&p.id), edge, v.raster).and_then(|i| i.image);
                 Some(Tile {
                     key: format!("win:{}", p.id),
-                    on: format!("focus:{}", p.id),
+                    on: Press::Focus(p.id.to_string()).into(),
                     rect,
                     picture: Pic(shared.thumbs.get(&p.id).cloned()),
                     icon: Pic(icon),
@@ -176,7 +191,7 @@ impl Panel for WorkspacePreview {
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
-        if let Some(id) = ev.on.strip_prefix("focus:") {
+        if let Some(Press::Focus(id)) = ev.on.get::<Press>() {
             self.focus(id, fx);
             return;
         }

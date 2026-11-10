@@ -18,7 +18,7 @@ use crate::services::radio::{self, Cmd, Reply};
 use crate::store::Diff;
 use crate::services::earth;
 use crate::surfaces::atlas::view::Shown;
-use crate::surfaces::atlas::{Atlas, Cursor, Key};
+use crate::surfaces::atlas::{Atlas, Cursor, Hit, Key};
 use crate::surfaces::modal::{Modal, Part};
 use crate::surfaces::tooltip;
 use crate::ui::What;
@@ -27,7 +27,7 @@ const NAMESPACE: &str = "formalshell:radio";
 
 pub struct Window {
     pub shown: Shown,
-    pressed: Option<String>,
+    pressed: Option<crate::ui::On>,
     /// The volume track under a held button.
     sliding: bool,
 }
@@ -281,7 +281,7 @@ impl App {
                         None => self.tips.hide(None, now),
                     }
                 }
-                if let Some(i) = hit.and_then(|h| h.on).and_then(|on| on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok())) {
+                if let Some(&Hit::Row(i)) = hit.as_ref().and_then(|h| h.on.as_ref()).and_then(|on| on.get::<Hit>()) {
                     m.hover_row(&r, i);
                 }
             }
@@ -324,7 +324,9 @@ impl App {
                     return true;
                 }
                 let what = hit.as_ref().and_then(|h| crate::ui::Ui::event(h, x, crate::ui::Button::Left)).map(|e| e.what);
-                self.atlas_action(on.as_deref().unwrap_or(""), what);
+                if let Some(on) = on {
+                    self.atlas_action(&on, what);
+                }
             }
             PointerEventKind::Axis { vertical, .. } => {
                 let notches = crate::scroll::notches(&vertical);
@@ -334,7 +336,7 @@ impl App {
                 if on_globe {
                     m.zoom_globe(notches);
                 } else if let Some(w) = &self.atlas.win
-                    && w.shown.hit(x, y).and_then(|h| h.on).is_some_and(|on| on.starts_with("row:") || on.starts_with("fav:"))
+                    && w.shown.hit(x, y).and_then(|h| h.on).is_some_and(|on| matches!(on.get::<Hit>(), Some(Hit::Row(_) | Hit::Fav(_))))
                 {
                     m.scroll_list(&r, vertical.absolute);
                 }
@@ -348,7 +350,7 @@ impl App {
         true
     }
 
-    fn atlas_action(&mut self, on: &str, what: Option<What>) {
+    fn atlas_action(&mut self, on: &crate::ui::On, what: Option<What>) {
         let r = self.store.media.radio.clone();
         if self.atlas.model.act(&r, on, what) {
             self.atlas_close();

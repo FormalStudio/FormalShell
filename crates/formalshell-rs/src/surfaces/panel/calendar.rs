@@ -262,7 +262,7 @@ mod tests {
     fn click(c: &mut Calendar, on: &str) {
         let store = Store::default();
         let mut fx = Effect::new(&store, None);
-        c.event(&Event { on: on.to_owned(), what: What::Click, button: Button::Left }, &mut fx);
+        c.event(&Event { on: on.into(), what: What::Click, button: Button::Left }, &mut fx);
     }
 
     fn press(c: &mut Calendar, text: &str) {

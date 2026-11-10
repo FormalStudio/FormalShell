@@ -7,7 +7,7 @@ use vello_cpu::kurbo::Rect;
 
 use crate::scene::IRect;
 use crate::ui::el::Pic;
-use crate::ui::{Cx, Hit, HitWhat, Stop, Widget, boxes, irect, thumb};
+use crate::ui::{Cx, Hit, HitWhat, On, Stop, Widget, boxes, irect, thumb};
 
 /// One tile of a `Strip`, placed freely in the strip's content: a picture
 /// once one has landed, a schematic box with its icon and title until then.
@@ -16,7 +16,7 @@ pub struct Tile {
     /// Its cursor stop and its identity across draws.
     pub key: String,
     /// What a click on it fires.
-    pub on: String,
+    pub on: On,
     /// Its box in the content, before the scroll.
     pub rect: (f64, f64, f64, f64),
     pub picture: Pic,
@@ -39,7 +39,7 @@ pub struct Strip {
     pub inset: f64,
     pub scroll: (f64, f64),
     pub tiles: Vec<Tile>,
-    pub on: String,
+    pub on: On,
 }
 
 impl Widget for Strip {
@@ -55,7 +55,7 @@ impl Widget for Strip {
 /// The frame is the `cell` box; the tiles are clipped to the viewport
 /// `inset` inside it, scrolled by `scroll`, and each one is a stop and a
 /// click. The viewport itself takes the wheel.
-fn paint(cx: &mut Cx, on: &str, r: Rect, inset: f64, scroll: (f64, f64), tiles: &[Tile], path: &str) {
+fn paint(cx: &mut Cx, on: &On, r: Rect, inset: f64, scroll: (f64, f64), tiles: &[Tile], path: &str) {
     let t = cx.theme;
     let frame = irect(r);
     let b = t.box_style(Role::Cell, Some("rest"));
@@ -69,7 +69,7 @@ fn paint(cx: &mut Cx, on: &str, r: Rect, inset: f64, scroll: (f64, f64), tiles: 
 
     let view = Rect::new(r.x0 + inset, r.y0 + inset, r.x1 - inset, r.y1 - inset);
     let vi = irect(view);
-    cx.hit(Hit { rect: vi, path: path.into(), on: Some(on.to_owned()), tip: None, stop: None, what: HitWhat::Scroll });
+    cx.hit(Hit { rect: vi, path: path.into(), on: Some(on.clone()), tip: None, stop: None, what: HitWhat::Scroll });
     let saved = cx.clip;
     cx.clip = Some(saved.map_or(vi, |c| c.intersect(&vi)));
     let mut order: Vec<&Tile> = tiles.iter().collect();

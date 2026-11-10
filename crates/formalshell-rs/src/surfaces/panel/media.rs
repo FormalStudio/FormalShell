@@ -24,6 +24,7 @@ use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 use crate::ui::spectrum::styles;
+
 use fs_theme::icons;
 use fs_types::Fraction;
 
@@ -37,6 +38,24 @@ use crate::settings::{APPLE_MUSIC_ART, VISUALIZER, VISUALIZER_STYLE};
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
 use crate::ui::{El, Event, Ink, Type, What, w};
+
+/// A press on a row the panel lists: a source or output by its id, a lyric
+/// line by its index.
+enum Press {
+    Pick(String),
+    Lyric(usize),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Pick(id) => write!(f, "pick:{id}"),
+            Press::Lyric(i) => write!(f, "lyric:{i}"),
+        }
+    }
+}
 
 const SEEK_STEP: f64 = 5.0;
 const VOLUME_STEP: f64 = 0.05;
@@ -192,7 +211,7 @@ impl Media {
         rows.into_iter()
             .map(|(id, label, icon, playing, current)| {
                 let playing = playing.then(|| w::icon("play").size(Type::Caption).ink(Ink::Muted));
-                w::menu_item(s, icon, label, current, playing.into_iter().collect()).stop(format!("pick:{id}")).on(format!("pick:{id}"))
+                w::menu_item(s, icon, label, current, playing.into_iter().collect()).stop(format!("pick:{id}")).on(Press::Pick(id))
             })
             .collect()
     }
@@ -446,15 +465,15 @@ impl Panel for Media {
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
-        if let Some(id) = ev.on.strip_prefix("pick:") {
-            self.pick(id, fx);
-            return;
-        }
-        if let Some(i) = ev.on.strip_prefix("lyric:").and_then(|i| i.parse::<usize>().ok()) {
-            if let Some(line) = fx.store.lyrics.lines.get(i) {
-                fx.store.media.seek_to(seconds(line.time));
+        match ev.on.get::<Press>() {
+            Some(Press::Pick(id)) => return self.pick(id, fx),
+            Some(&Press::Lyric(i)) => {
+                if let Some(line) = fx.store.lyrics.lines.get(i) {
+                    fx.store.media.seek_to(seconds(line.time));
+                }
+                return;
             }
-            return;
+            None => {}
         }
         let a = fx.store.media.active();
         match (ev.on.as_str(), &ev.what) {

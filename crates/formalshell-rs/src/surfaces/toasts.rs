@@ -110,20 +110,14 @@ enum Press {
     Action(String),
 }
 
-impl Press {
-    fn on(&self) -> String {
-        match self {
-            Press::Close => "close".into(),
-            Press::Body => "body".into(),
-            Press::Action(key) => format!("action:{key}"),
-        }
-    }
+impl ui::on::HitId for Press {}
 
-    fn parse(on: &str) -> Option<Press> {
-        match on {
-            "close" => Some(Press::Close),
-            "body" => Some(Press::Body),
-            _ => on.strip_prefix("action:").map(|key| Press::Action(key.to_owned())),
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Close => f.write_str("close"),
+            Press::Body => f.write_str("body"),
+            Press::Action(key) => write!(f, "action:{key}"),
         }
     }
 }
@@ -236,7 +230,7 @@ pub struct Toasts {
     stack: IRect,
     /// The pointer over the stack: it fans out and every toast in it holds.
     pub hovered: bool,
-    pressed: Option<(String, String)>,
+    pressed: Option<(String, ui::On)>,
     /// Pictures fitted to the icon slot, per entry.
     fitted: HashMap<NotificationId, (f64, Option<Bitmap>)>,
     /// When the relative times were last recomputed.
@@ -285,7 +279,7 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
     // A bare caption-sized glyph rather than an icon button: the button is
     // `controlHeight` tall, so the header grew by it on hover.
     head.push(if hovered {
-        w::icon("x").size(Type::Caption).ink(Ink::Muted).width(ui::Size::Px(slot)).on(Press::Close.on())
+        w::icon("x").size(Type::Caption).ink(Ink::Muted).width(ui::Size::Px(slot)).on(Press::Close)
     } else {
         w::space(slot)
     });
@@ -299,10 +293,10 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
     }
     let actions = model::button_actions(e);
     if !actions.is_empty() {
-        let buttons = actions.iter().map(|a| w::button(a.label.clone()).variant(Variant::Outline).on(Press::Action(a.key.clone()).on())).collect();
+        let buttons = actions.iter().map(|a| w::button(a.label.clone()).variant(Variant::Outline).on(Press::Action(a.key.clone()))).collect();
         words.push(w::row(s.sm, buttons).pad(0.0, s.row_gap, 0.0, 0.0));
     }
-    w::row(s.sm, vec![mark, w::column(s.row_gap, words).fill()]).top().on(Press::Body.on())
+    w::row(s.sm, vec![mark, w::column(s.row_gap, words).fill()]).top().on(Press::Body)
 }
 
 pub fn card_width(theme: &Theme) -> f64 {
@@ -652,12 +646,12 @@ impl Toasts {
     }
 
     /// The card under a point, front first, and what in it.
-    fn hit(&self, x: f64, y: f64) -> Option<(String, String)> {
+    fn hit(&self, x: f64, y: f64) -> Option<(String, ui::On)> {
         let mut over: Vec<(&String, &Slot)> =
             self.slots.iter().filter(|(_, s)| !s.departing && Self::contains(s.rect, x, y)).collect();
         over.sort_by_key(|(_, s)| std::cmp::Reverse(s.z));
         let (k, slot) = over.into_iter().next()?;
-        let on = slot.ui.hit(x, y).and_then(|h| h.on.clone()).unwrap_or_else(|| Press::Body.on());
+        let on = slot.ui.hit(x, y).and_then(|h| h.on.clone()).unwrap_or_else(|| Press::Body.into());
         Some((k.clone(), on))
     }
 
@@ -714,15 +708,15 @@ impl Toasts {
         if let Some(source) = key.strip_prefix(ACTIVITY) {
             return match Verb::parse(&on) {
                 Some((verb, _)) => Act::Activity(verb, source.to_owned()),
-                None if Press::parse(&on) == Some(Press::Body) => Act::Activity(Verb::Open, source.to_owned()),
+                None if on.get::<Press>() == Some(&Press::Body) => Act::Activity(Verb::Open, source.to_owned()),
                 None => Act::None,
             };
         }
         let members = slot.members.clone();
-        match Press::parse(&on) {
+        match on.get::<Press>() {
             Some(Press::Close) => Act::Dismiss(members),
             Some(Press::Body) => Act::Body(members),
-            Some(Press::Action(key)) => members.last().map_or(Act::None, |&id| Act::Action(id, key)),
+            Some(Press::Action(key)) => members.last().map_or(Act::None, |&id| Act::Action(id, key.clone())),
             None => Act::None,
         }
     }
@@ -781,12 +775,13 @@ impl Toasts {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn every_press_prints_and_parses_back() {
-        for (press, on) in [(Press::Close, "close"), (Press::Body, "body"), (Press::Action("default".into()), "action:default")] {
-            assert_eq!(press.on(), on);
-            assert_eq!(Press::parse(on), Some(press));
+    fn every_press_carries_its_words_and_itself() {
+        for (press, words) in [(Press::Close, "close"), (Press::Body, "body"), (Press::Action("default".into()), "action:default")] {
+            let on = ui::On::from(press.clone());
+            assert_eq!(on.as_str(), words);
+            assert_eq!(on.get::<Press>(), Some(&press));
         }
-        assert_eq!(Press::parse("open:app:x"), None);
+        assert_eq!(ui::On::from("open:app:x").get::<Press>(), None);
     }
 
     use super::*;

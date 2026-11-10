@@ -22,6 +22,25 @@ use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Variant, What, w};
 
+/// A press on a network's row or its buttons, by the SSID or device name.
+enum Press {
+    Row(String),
+    Forget(String),
+    Wired(String),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Row(ssid) => write!(f, "row:{ssid}"),
+            Press::Forget(ssid) => write!(f, "forget:{ssid}"),
+            Press::Wired(name) => write!(f, "wired:{name}"),
+        }
+    }
+}
+
 /// The mask the passphrase field draws.
 const MASK: char = '\u{25CF}';
 
@@ -161,10 +180,10 @@ impl Network {
         let mut trailing = Vec::new();
         // Forget reveals on the row the pointer is on.
         if r.known && !r.connected && v.hovered.as_deref() == Some(key.as_str()) && n.action.is_none() {
-            trailing.push(w::icon("trash").ink(Ink::Muted).on(format!("forget:{}", r.ssid)).tip("Forget"));
+            trailing.push(w::icon("trash").ink(Ink::Muted).on(Press::Forget(r.ssid.clone())).tip("Forget"));
         }
         if r.connected {
-            trailing.push(w::button("Disconnect").variant(Variant::Ghost).enabled(n.action.is_none()).on(format!("row:{}", r.ssid)));
+            trailing.push(w::button("Disconnect").variant(Variant::Ghost).enabled(n.action.is_none()).on(Press::Row(r.ssid.clone())));
         } else if r.secured {
             trailing.push(w::icon("lock").ink(Ink::Muted));
         }
@@ -181,7 +200,7 @@ impl Network {
             parts.push(w::column(s.panel_gap, fields).pad(0.0, 0.0, 0.0, s.panel_gap));
         }
         let bare = parts.len() == 1;
-        let cell = w::panel_cell(s, w::column(0.0, parts).fill()).stop(key).on(format!("row:{}", r.ssid));
+        let cell = w::panel_cell(s, w::column(0.0, parts).fill()).stop(key).on(Press::Row(r.ssid.clone()));
         if bare { cell.height(s.panel_row) } else { cell }
     }
 
@@ -294,10 +313,10 @@ impl Panel for Network {
             .wired_rows
             .iter()
             .map(|d| {
-                let button = w::button(if d.connected { "Disconnect" } else { "Connect" }).variant(Variant::Ghost).on(format!("wired:{}", d.name));
+                let button = w::button(if d.connected { "Disconnect" } else { "Connect" }).variant(Variant::Ghost).on(Press::Wired(d.name.clone()));
                 w::panel_row_with(s, Some(w::panel_chip(s, "ethernet-port", d.connected)), w::label(d.name.clone()), None, vec![button])
                     .stop(format!("wired:{}", d.name))
-                    .on(format!("wired:{}", d.name))
+                    .on(Press::Wired(d.name.clone()))
             })
             .collect();
         let mut empty = (n.wired_rows.is_empty() && n.wifi_device.is_none()).then(|| w::panel_empty(s, "No devices"));
@@ -375,15 +394,12 @@ impl Panel for Network {
             ("share", What::Click) => net::send(net::Cmd::ToggleQr),
             ("password", What::Click) => net::send(net::Cmd::TogglePassword),
             ("known", What::Click) => self.known_open = !self.known_open,
-            (on, What::Click) => {
-                if let Some(ssid) = on.strip_prefix("row:") {
-                    self.activate_row(ssid, fx);
-                } else if let Some(ssid) = on.strip_prefix("forget:") {
-                    self.forget(ssid, fx);
-                } else if let Some(name) = on.strip_prefix("wired:") {
-                    Self::wired(name, fx);
-                }
-            }
+            (_, What::Click) => match ev.on.get::<Press>() {
+                Some(Press::Row(ssid)) => self.activate_row(ssid, fx),
+                Some(Press::Forget(ssid)) => self.forget(ssid, fx),
+                Some(Press::Wired(name)) => Self::wired(name, fx),
+                None => {}
+            },
             _ => {}
         }
     }

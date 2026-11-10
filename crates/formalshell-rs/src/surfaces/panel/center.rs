@@ -22,6 +22,26 @@ use crate::store::{self, Topic};
 use crate::ui::el::Kind;
 use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
 
+/// A press on one entry, by the entry's group key.
+enum Press {
+    Dismiss(String),
+    Row(String),
+    /// An action's key, then the group's.
+    Action(String, String),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Dismiss(key) => write!(f, "dismiss:{key}"),
+            Press::Row(key) => write!(f, "row:{key}"),
+            Press::Action(action, key) => write!(f, "action:{action}:{key}"),
+        }
+    }
+}
+
 pub const ID: &str = "notifications-center";
 
 const FILTERS: [&str; 3] = ["All", "This PC", "iPhone"];
@@ -67,7 +87,7 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     head.push(w::caption(e.app_name.clone()).weight(Weight::Semibold).ink(Ink::Fg).elide());
     head.push(w::caption(meta).mono());
     head.push(w::spacer());
-    head.push(w::icon_button("x").tip("Dismiss").on(format!("dismiss:{key}")));
+    head.push(w::icon_button("x").tip("Dismiss").on(Press::Dismiss(key.to_owned())));
     let mut parts = vec![w::row(s.icon_gap, head), w::para(e.summary.clone(), Type::Body, Weight::Medium, Ink::Fg, 2)];
     let body = model::sanitize_body(&e.body, &e.app_name, &e.app_icon);
     if !body.is_empty() {
@@ -77,12 +97,12 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     if !actions.is_empty() {
         let buttons = actions
             .iter()
-            .map(|a| w::button(a.label.clone()).variant(Variant::Outline).on(format!("action:{}:{key}", a.key)))
+            .map(|a| w::button(a.label.clone()).variant(Variant::Outline).on(Press::Action(a.key.clone(), key.to_owned())))
             .collect();
         parts.push(w::row(s.sm, buttons));
     }
     let words = w::column(s.row_gap, parts).fill();
-    w::panel_cell(s, w::row(s.panel_gap, vec![chip, words]).fill().pad(0.0, s.md, 0.0, s.md)).on(format!("row:{key}")).stop(key)
+    w::panel_cell(s, w::row(s.panel_gap, vec![chip, words]).fill().pad(0.0, s.md, 0.0, s.md)).on(Press::Row(key.to_owned())).stop(key)
 }
 
 /// Pending oldest first, seen newest first, each grouped.
@@ -182,21 +202,20 @@ impl Panel for Center {
             "dnd" => send(fx, Op::SetDnd(!fx.store.notifications.model.dnd)),
             "clear" => send(fx, Op::ClearHistory),
             "activity-clear" => activity_service::send(Input::ClearHistory),
-            _ => {
-                if let Some(key) = on.strip_prefix("dismiss:") {
+            _ => match ev.on.get::<Press>() {
+                Some(Press::Dismiss(key)) => {
                     if let Some(g) = find(fx.store, key) {
                         send(fx, Op::DismissGroup(g.member_ids.clone()));
                     }
-                } else if let Some(key) = on.strip_prefix("row:") {
-                    activate_row(fx, key);
-                } else if let Some(rest) = on.strip_prefix("action:") {
-                    if let Some((action, key)) = rest.split_once(':') {
-                        if let Some(g) = find(fx.store, key) {
-                            send(fx, Op::Invoke(g.id, action.to_owned()));
-                        }
+                }
+                Some(Press::Row(key)) => activate_row(fx, key),
+                Some(Press::Action(action, key)) => {
+                    if let Some(g) = find(fx.store, key) {
+                        send(fx, Op::Invoke(g.id, action.clone()));
                     }
                 }
-            }
+                None => {}
+            },
         }
     }
 

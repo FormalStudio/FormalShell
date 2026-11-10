@@ -432,7 +432,7 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
         } else if v.cursor.is_some_and(|c| c < lines.len()) {
             cx.stop(Stop { key: format!("lyric:{i}"), rect: row_rect.intersect(&vpi), radius: t.radii.md });
         }
-        cx.hit(Hit { rect: row_rect.intersect(&clip), path: rpath, on: Some(format!("lyric:{i}")), tip: None, stop: None, what: HitWhat::Click });
+        cx.hit(Hit { rect: row_rect.intersect(&clip), path: rpath, on: Some(super::Press::Lyric(i).into()), tip: None, stop: None, what: HitWhat::Click });
     }
     cx.keep(pane);
 
