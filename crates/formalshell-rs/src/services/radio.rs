@@ -243,7 +243,7 @@ fn runtime_dir() -> Option<PathBuf> {
 }
 
 fn cache_dir() -> PathBuf {
-    crate::paths::cache().join("formalshell").join("radio-atlas")
+    crate::paths::shell_cache().join("radio-atlas")
 }
 
 fn cache_path(country: Option<&str>) -> PathBuf {
@@ -270,7 +270,7 @@ fn stale_doc(doc: &Value) -> bool {
 }
 
 fn state_path() -> PathBuf {
-    crate::paths::state().join("formalshell").join("radio-atlas.json")
+    crate::paths::shell_state().join("radio-atlas.json")
 }
 
 async fn fetch(req: &http::Request) -> Option<String> {

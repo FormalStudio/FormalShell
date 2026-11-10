@@ -255,7 +255,7 @@ pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: 
 }
 
 fn cache_dir() -> PathBuf {
-    crate::paths::cache().join("formalshell").join("lyrics")
+    crate::paths::shell_cache().join("lyrics")
 }
 
 enum Outcome {

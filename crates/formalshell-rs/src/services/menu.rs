@@ -406,7 +406,7 @@ fn base_over(inputs: &BaseInputs, user: &Entries) -> Tree {
 }
 
 fn user_menu_path() -> PathBuf {
-    crate::paths::config().join("formalshell").join("menu.jsonc")
+    crate::paths::shell_config().join("menu.jsonc")
 }
 
 /// The Files route's rows: the user directories that exist, then the

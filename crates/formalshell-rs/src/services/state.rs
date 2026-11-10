@@ -308,7 +308,7 @@ impl State {
 }
 
 pub fn state_path() -> PathBuf {
-    crate::paths::state().join("formalshell").join("state.json")
+    crate::paths::shell_state().join("state.json")
 }
 
 static SETTERS: OnceLock<async_channel::Sender<Vec<Field>>> = OnceLock::new();

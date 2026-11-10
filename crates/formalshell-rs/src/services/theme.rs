@@ -216,16 +216,13 @@ impl Env {
     /// package wrapper points at.
     pub fn from_process() -> Self {
         let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty());
-        let home = crate::paths::home();
-        let state = crate::paths::state();
-        let config = crate::paths::config();
         Self {
             template_dir: var("FS_TEMPLATE_DIR").map_or_else(|| PathBuf::from("crates/fs-theme/templates"), PathBuf::from),
-            state_dir: state.join("formalshell"),
-            config_dir: config,
+            state_dir: crate::paths::shell_state(),
+            config_dir: crate::paths::config(),
             matugen: "matugen".into(),
             dconf: "dconf".into(),
-            home,
+            home: crate::paths::home(),
         }
     }
 
@@ -252,10 +249,10 @@ impl Env {
         self.state_dir.join("pinned-templates")
     }
     fn user_config(&self) -> PathBuf {
-        self.home.join(".config/matugen/config.toml")
+        self.config_dir.join("matugen/config.toml")
     }
     fn drop_in_dir(&self) -> PathBuf {
-        self.home.join(".config/formalshell/matugen.d")
+        self.config_dir.join(crate::paths::SHELL_DIR).join("matugen.d")
     }
 }
 

@@ -136,7 +136,7 @@ pub fn want(id: u64, w: Option<Want>) {
 }
 
 fn cache_dir() -> String {
-    crate::paths::cache().join("formalshell/applemusic-art").to_string_lossy().into_owned()
+    crate::paths::shell_cache().join("applemusic-art").to_string_lossy().into_owned()
 }
 
 /// The decode running for one slot: the child's pid, the flag that holds

@@ -9,7 +9,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-/// The shell's own directory under the runtime dir.
+/// The shell's own directory under each XDG base and the runtime dir.
 pub const SHELL_DIR: &str = "formalshell";
 
 /// Left by the login script before the compositor starts; the shell raises
@@ -76,6 +76,21 @@ pub fn runtime() -> PathBuf {
 /// `<runtime>/formalshell`.
 pub fn shell_runtime() -> PathBuf {
     runtime().join(SHELL_DIR)
+}
+
+/// `<config>/formalshell`: settings.json, menu.jsonc, plugins.
+pub fn shell_config() -> PathBuf {
+    config().join(SHELL_DIR)
+}
+
+/// `<state>/formalshell`: state.json and the theme engine's output.
+pub fn shell_state() -> PathBuf {
+    state().join(SHELL_DIR)
+}
+
+/// `<cache>/formalshell`.
+pub fn shell_cache() -> PathBuf {
+    cache().join(SHELL_DIR)
 }
 
 /// `$WAYLAND_DISPLAY` as a file name: one socket per display, so a nested

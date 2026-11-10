@@ -366,7 +366,7 @@ pub fn launcher(open: bool) {
 }
 
 pub fn directory() -> PathBuf {
-    crate::paths::config().join("formalshell").join("plugins")
+    crate::paths::shell_config().join("plugins")
 }
 
 fn publish(ctx: &Ctx, diff: Diff) {

@@ -125,7 +125,7 @@ pub fn images_dir() -> PathBuf {
 }
 
 pub fn thumb_dir() -> String {
-    crate::paths::cache().join("formalshell/thumbnails").to_string_lossy().into_owned()
+    crate::paths::shell_cache().join("thumbnails").to_string_lossy().into_owned()
 }
 
 /// The store's half of a capture, with the bytes already in `$tmp` under

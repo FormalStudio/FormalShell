@@ -354,7 +354,7 @@ pub fn overrides(value: Value) {
 }
 
 pub fn settings_path() -> PathBuf {
-    crate::paths::config().join("formalshell").join("settings.json")
+    crate::paths::shell_config().join("settings.json")
 }
 
 /// settings.json read once, synchronously, for what has to be known before

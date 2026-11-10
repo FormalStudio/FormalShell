@@ -346,12 +346,11 @@ fn spawn_info(ctx: &Ctx, id: String) {
 /// Flathub reuses one last segment (`image-1_752x423@1.png`) across apps.
 fn shot_path(url: &str) -> PathBuf {
     use std::hash::{Hash, Hasher};
-    let base = crate::paths::cache();
     let mut h = std::collections::hash_map::DefaultHasher::new();
     url.hash(&mut h);
     // `image::open` reads the format off the extension.
     let ext = url.rsplit('/').next().and_then(|last| last.rsplit_once('.')).map(|(_, e)| e).filter(|e| !e.is_empty() && e.chars().all(|c| c.is_ascii_alphanumeric())).unwrap_or("png");
-    base.join("formalshell/install-shots").join(format!("{:016x}.{ext}", h.finish()))
+    crate::paths::shell_cache().join("install-shots").join(format!("{:016x}.{ext}", h.finish()))
 }
 
 /// The spec's directory, off `FSPEC_SPEC` as fspec reads it (a directory
