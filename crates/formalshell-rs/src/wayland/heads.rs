@@ -231,7 +231,7 @@ impl App {
     }
 
     /// Everything hanging off the live bar, shut at once.
-    fn close_bar_cards(&mut self) {
+    pub(super) fn close_bar_cards(&mut self) {
         self.panel = None;
         self.drop_tray_menu();
         self.outgoing = None;

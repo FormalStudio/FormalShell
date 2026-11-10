@@ -483,10 +483,7 @@ impl App {
                 crate::trace::mapped(crate::trace::Surface::Bar, crate::trace::State::UnmappedUnderFullscreen);
             }
             live!(self).zones.clear();
-            self.panel = None;
-            self.drop_tray_menu();
-            self.outgoing = None;
-            self.tip_card = None;
+            self.close_bar_cards();
             self.sync_join();
             return;
         }
@@ -598,9 +595,7 @@ impl App {
         let moved = self.bars.apply(|b| b.set_edge(edge));
         let relaid = self.bars.apply(|b| b.set_layout(resolved.clone()));
         if moved || relaid {
-            self.panel = None;
-            self.drop_tray_menu();
-            self.outgoing = None;
+            self.close_bar_cards();
         }
         if moved {
             self.place_chrome();
