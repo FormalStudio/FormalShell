@@ -86,6 +86,7 @@ use crate::surfaces::card::{Card, CardSpec, Join, Scrim, Sizing};
 use crate::surfaces::card_window::CardWindow;
 use crate::surfaces::modal::Modal;
 use crate::surfaces::panel::{self, Name, Out, host::{Host, Opener, Place}, quick};
+use crate::surfaces::sidebar::minimap;
 use crate::surfaces::tooltip;
 use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
 
@@ -1723,8 +1724,14 @@ impl App {
                 self.set_cursor(true);
             }
             PointerEventKind::Motion { .. } => {
-                if matches!(self.pressed, Some((Target::Bar, _))) && live!(self).bar.sidebar_motion((x, y)) {
-                    live!(self).dirty = true;
+                if matches!(self.pressed, Some((Target::Bar, _))) {
+                    let moved = live!(self).bar.sidebar_motion((x, y));
+                    if moved != minimap::Moved::Still {
+                        live!(self).dirty = true;
+                    }
+                    if moved == minimap::Moved::Overview {
+                        self.overview_action(overview::Action::Open);
+                    }
                 }
                 self.pointer_on = owner;
                 self.hover(owner, (x, y));

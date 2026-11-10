@@ -64,7 +64,7 @@ use crate::services::{clipboard, compositor, power};
 use crate::surface::{Backend, Surface};
 use crate::store::Topic;
 use crate::surfaces::dissolve::{self, Dissolve};
-use crate::surfaces::lock::{self as view, Button, Buttons, NowPlaying, Shared, TKey, View};
+use crate::surfaces::lock::{self as view, Button, Buttons, Control, Cursor, NowPlaying, Shared, TKey, View};
 
 /// What finishes off the UI thread and comes back to the lock.
 pub enum LockMsg {
@@ -145,7 +145,8 @@ pub struct Lock {
     /// Ends a password check PAM has not answered in `CHECK_DEADLINE`.
     check_deadline: Option<RegistrationToken>,
     pub(super) dirty: bool,
-    transport: i32,
+    /// The keyboard's place past the field.
+    cursor: Cursor,
     /// The track's cover at each output's scale, for the art URL it was
     /// decoded from.
     art: Option<(String, Vec<Bitmap>)>,
@@ -201,7 +202,7 @@ impl Lock {
             clock: None,
             check_deadline: None,
             dirty: false,
-            transport: -1,
+            cursor: Cursor::default(),
             art: None,
             fade: Animated::new(1.0, Clock::Effects.curve()),
             rise: Animated::new(0.0, Clock::Spatial.curve()),
@@ -462,7 +463,7 @@ impl App {
         self.lock.reports.clear();
         self.lock.password = field();
         self.lock.checking = false;
-        self.lock.transport = -1;
+        self.lock.cursor.clear();
         self.lock.armed.clear();
         self.lock.entered = false;
         self.lock.departing = false;
@@ -916,18 +917,16 @@ impl App {
         buttons
     }
 
-    /// The transport's stops, then the buttons'.
-    fn lock_media_stops(&self) -> i32 {
-        if self.lock_media().is_some() { view::TRANSPORT as i32 } else { 0 }
+    /// The controls the keyboard walks past the field.
+    fn lock_controls(&self) -> Vec<Control> {
+        view::controls(self.lock_media().is_some(), &self.lock_buttons())
     }
 
     /// The transport's and the buttons' keys first (Lock/model.js's
     /// `transportKey` through the field's own key filter, over both), then
     /// the field's.
     fn transport_key(&mut self, event: &KeyEvent) -> bool {
-        let media = self.lock_media_stops();
-        let buttons = self.lock_buttons();
-        let count = media + buttons.len() as i32;
+        let controls = self.lock_controls();
         let key = match event.keysym {
             Keysym::Tab => TKey::Tab,
             Keysym::ISO_Left_Tab => TKey::Backtab,
@@ -939,25 +938,24 @@ impl App {
             | Keysym::ISO_Level3_Shift | Keysym::Meta_L | Keysym::Meta_R | Keysym::Super_L | Keysym::Super_R | Keysym::Caps_Lock => TKey::Modifier,
             _ => TKey::Other,
         };
-        let step = view::transport_key(self.lock.transport, count, key);
-        self.lock.transport = step.index;
-        let on = usize::try_from(step.index - media).ok().and_then(|i| buttons.get(i).copied());
-        self.lock.armed.keep(on.as_ref());
-        if step.press {
-            match on {
-                Some(b) => {
-                    if self.lock.armed.press(b) {
-                        self.lock_button(b);
-                    }
+        let (taken, pressed) = self.lock.cursor.key(&controls, key);
+        let button = match self.lock.cursor.on(&controls) {
+            Some(Control::Button(b)) => Some(b),
+            _ => None,
+        };
+        self.lock.armed.keep(button.as_ref());
+        match pressed {
+            Some(Control::Button(b)) => {
+                if self.lock.armed.press(b) {
+                    self.lock_button(b);
                 }
-                None => match step.index {
-                    0 => self.store.media.previous(),
-                    1 => self.store.media.play_pause(),
-                    _ => self.store.media.next(),
-                },
             }
+            Some(Control::Previous) => self.store.media.previous(),
+            Some(Control::PlayPause) => self.store.media.play_pause(),
+            Some(Control::Next) => self.store.media.next(),
+            None => {}
         }
-        step.taken
+        taken
     }
 
     /// A confirmed button. logind is asked without interactive
@@ -1007,7 +1005,7 @@ impl App {
             Topic::Depth if self.store.wallpaper.latest().is_some_and(|p| self.store.depth.wrote(&p.path)) => self.load_lock_backdrops(),
             Topic::Media => {
                 if self.lock_media().is_none() {
-                    self.lock.transport = -1;
+                    self.lock.cursor.clear();
                 }
                 self.load_lock_art();
             }
@@ -1263,12 +1261,13 @@ impl App {
             blanked,
             wake: (self.lock.wake.value(now) * self.lock.depart.value(now)).clamp(0.0, 1.0) as f32,
             buttons: Buttons::default(),
+            cursor: None,
         };
         let active = self.lock_media();
         let mpris = active.as_ref().and_then(|a| self.store.media.mpris.iter().find(|p| p.id == a.id));
         let arts = self.lock.art.as_ref().filter(|(u, _)| active.as_ref().is_some_and(|a| a.art_url == *u)).map(|(_, b)| b.as_slice());
-        let media = self.lock_media_stops();
         let shown = self.lock_buttons();
+        let cursor = self.lock.cursor.on(&self.lock_controls());
         let mut shared = Shared {
             media: active.as_ref().map(|a| NowPlaying {
                 title: &a.title,
@@ -1279,9 +1278,9 @@ impl App {
                 can_next: mpris.is_none_or(|p| p.can_next),
                 progress: (!a.length.is_zero()).then(|| a.position.as_secs_f64() / a.length.as_secs_f64()),
                 art: None,
-                cursor: if self.lock.transport < media { self.lock.transport } else { -1 },
             }),
-            buttons: Buttons { shown, cursor: if self.lock.transport >= media { self.lock.transport - media } else { -1 }, armed: self.lock.armed.get().copied() },
+            buttons: Buttons { shown, armed: self.lock.armed.get().copied() },
+            cursor,
             ..shared
         };
         let qh = self.qh.clone();
@@ -1384,7 +1383,10 @@ impl App {
                 "outputs": outputs,
                 "boot": self.lock.login,
                 "buttons": self.lock_buttons().iter().map(|b| b.id()).collect::<Vec<_>>(),
-                "buttonCursor": usize::try_from(self.lock.transport - self.lock_media_stops()).ok().and_then(|i| self.lock_buttons().get(i).map(|b| b.id())),
+                "buttonCursor": match self.lock.cursor.on(&self.lock_controls()) {
+                    Some(Control::Button(b)) => Some(b.id()),
+                    _ => None,
+                },
                 "armed": self.lock.armed.get().copied().map(Button::id),
             })
         };

@@ -14,26 +14,13 @@ use fs_theme::theme::Theme;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use super::globe::Ink as GlobeInk;
-use super::{Atlas, PREFERRED};
+use super::{Atlas, BINDINGS, PREFERRED};
 use crate::scene::{IRect, NodeId, Paint};
 use crate::services::radio;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::modal::Modal;
 use crate::ui::el::Opt;
 use crate::ui::{self, El, Ink, Size, Type, Ui, Variant, Weight, w};
-
-const KEYBOARD: [(&[&str], &str); 10] = [
-    (&["/"], "Search"),
-    (&["Up", "Down"], "Select station"),
-    (&["Enter"], "Play selected station"),
-    (&["Space"], "Play or pause"),
-    (&["R"], "Tune randomly"),
-    (&["F"], "Favorite selected station"),
-    (&["M"], "Mute or unmute"),
-    (&["+", "-"], "Change volume"),
-    (&["Esc"], "Back, clear, or close"),
-    (&["?"], "Show or hide controls"),
-];
 
 const MOUSE: [(&str, &str); 4] = [
     ("Drag or flick", "Spin globe"),
@@ -189,10 +176,11 @@ impl Shown {
             let width = cw.min(920.0);
             let gap = s.section_gap * 3.0;
             let col_w = (width - gap) / 2.0;
-            let keyboard: Vec<El> = KEYBOARD
+            let keyboard: Vec<El> = BINDINGS
                 .iter()
-                .map(|(keys, action)| {
-                    w::row(0.0, vec![w::row(0.0, vec![w::chord_keys(&s, keys)]).width(Size::Px(col_w * 0.4)), w::text(*action).ink(Ink::Muted).elide().fill()])
+                .map(|(action, binds)| {
+                    let keys: Vec<&str> = binds.iter().map(|b| b.cap).filter(|c| !c.is_empty()).collect();
+                    w::row(0.0, vec![w::row(0.0, vec![w::chord_keys(&s, &keys)]).width(Size::Px(col_w * 0.4)), w::text(*action).ink(Ink::Muted).elide().fill()])
                         .pad_start(s.control_padding_x)
                 })
                 .map(|e| w::row(0.0, vec![w::column(0.0, vec![w::space(ctl)]).width(Size::Px(0.0)), e.fill()]))

@@ -97,13 +97,17 @@ fn level(f: &Face) -> Option<Percent> {
         .or_else(|| of(BatteryId::Case))
 }
 
+/// The name over "Connected": what `size` measures and `content` draws.
+fn lines(f: &Face) -> [El; 2] {
+    [w::label(f.name.clone()), w::text("Connected").ink(Ink::Muted)]
+}
+
 /// The capsule's (width, height): the picture's and the ring's slots, the
 /// gaps beside the words and the wider of its two lines, by a slot and its
 /// padding.
 pub fn size(f: &Face, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
     let (p, n) = (pad(theme), slot(theme));
-    let mut wide = |el: El| ui::measure(&el, f64::MAX, theme, kit).0;
-    let words = wide(w::label(f.name.clone())).max(wide(w::text("Connected")));
+    let words = lines(f).iter().map(|el| ui::measure(el, f64::MAX, theme, kit).0).fold(0.0, f64::max);
     let width = (p + n + theme.space.md) * 2.0 + words;
     (width.clamp(n * 4.0 + p * 2.0, theme.space.popup_width_narrow).ceil(), n + p * 2.0)
 }
@@ -119,7 +123,7 @@ fn content(f: &Face, theme: &Theme, scale: f64) -> El {
     };
     // Eliding fills a row; held to its own width it still elides and centres.
     let line = |el: El| el.elide().width(Size::AtMost(1.0)).centred();
-    let words = w::column(0.0, vec![line(w::label(f.name.clone())), line(w::text("Connected").ink(Ink::Muted))]);
+    let words = w::column(0.0, lines(f).into_iter().map(line).collect());
     w::row(s.md, vec![lead, words.fill(), w::space(size)]).mid()
 }
 

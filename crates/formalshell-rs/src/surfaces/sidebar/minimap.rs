@@ -105,6 +105,15 @@ pub struct Drag {
     pressed: Instant,
 }
 
+/// What a move with the button held asks of the host.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Moved {
+    Still,
+    Redraw,
+    /// The press went to the overview, which opens.
+    Overview,
+}
+
 /// Window ids by workspace index.
 type Held = Vec<(i64, Vec<WindowId>)>;
 
@@ -409,35 +418,33 @@ impl Map {
     }
 
     /// An icon lifted out past the column, or a press held past
-    /// `LONG_PRESS`, opens the overview. The press stays this surface's
-    /// until it lets go, so the gesture ends here and its release does
-    /// nothing.
-    fn open_overview(&mut self, now: Instant) {
-        let Some(d) = self.drag.as_ref() else { return };
+    /// `LONG_PRESS`, opens the overview: true when the press is handed to
+    /// it now. The press stays this surface's until it lets go, so the
+    /// gesture ends here and its release does nothing.
+    pub fn hand_over(&mut self, now: Instant) -> bool {
+        let Some(d) = self.drag.as_ref() else { return false };
         let left = d.lifted && self.column.is_some_and(|(x, w)| d.at.0 < x || d.at.0 >= x + w);
         let held = !d.lifted && now >= d.pressed + LONG_PRESS;
         if left || held {
             self.drag = None;
             self.handed = true;
-            crate::wayland::overview::ask(crate::wayland::overview::Action::Open);
         }
+        left || held
     }
 
-    /// The pointer moved with a button held; true when the map needs a
-    /// pass.
-    pub fn motion(&mut self, at: (f64, f64)) -> bool {
-        let Some(d) = &mut self.drag else { return false };
+    /// The pointer moved with a button held.
+    pub fn motion(&mut self, at: (f64, f64)) -> Moved {
+        let Some(d) = &mut self.drag else { return Moved::Still };
         d.at = at;
         if !d.lifted && (at.0 - d.from.0).hypot(at.1 - d.from.1) < LIFT_PX {
-            return false;
+            return Moved::Still;
         }
         d.lifted = true;
         let target = self.target(at);
         if let Some(d) = &mut self.drag {
             d.target = target;
         }
-        self.open_overview(Instant::now());
-        true
+        if self.hand_over(Instant::now()) { Moved::Overview } else { Moved::Redraw }
     }
 
     /// The row under `at` (above the first is the first, below the empty
@@ -504,7 +511,6 @@ impl Map {
     /// straddle (the right one on a right edge).
     pub fn paint(&mut self, hits: &[crate::ui::Hit], theme: &Theme, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect, card: (f64, f64), right: bool, now: Instant) -> bool {
         self.column = Some(card);
-        self.open_overview(now);
         self.slots = hits.iter().filter_map(|h| Some((WindowId::new(h.on.as_ref()?.strip_prefix("window:")?), h.rect))).collect();
         let last = self.rows.len();
         self.row_boxes = hits

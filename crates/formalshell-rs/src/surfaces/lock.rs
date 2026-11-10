@@ -55,6 +55,8 @@ pub struct Shared<'a> {
     /// black, 1 the whole screen.
     pub wake: f32,
     pub buttons: Buttons,
+    /// Where the keyboard's cursor rests past the field.
+    pub cursor: Option<Control>,
 }
 
 /// The buttons under the field, in order.
@@ -97,8 +99,6 @@ impl Button {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Buttons {
     pub shown: Vec<Button>,
-    /// The keyboard's cursor among them, -1 on the field or the transport.
-    pub cursor: i32,
     /// Asked once: the next Return on it goes ahead.
     pub armed: Option<Button>,
 }
@@ -168,20 +168,65 @@ pub struct NowPlaying<'a> {
     /// Position over length, when the player has a timeline.
     pub progress: Option<f64>,
     pub art: Option<&'a Bitmap>,
-    /// The transport cursor, -1 while the field has every key.
-    pub cursor: i32,
+}
+
+/// A control the keyboard's cursor rests on past the field: the
+/// transport's, then the buttons under the field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Control {
+    Previous,
+    PlayPause,
+    Next,
+    Button(Button),
 }
 
 /// The transport's three buttons, in order.
-pub const TRANSPORT: usize = 3;
+pub const TRANSPORT: [Control; 3] = [Control::Previous, Control::PlayPause, Control::Next];
+
+/// The controls in the cursor's order: the transport while a track
+/// shows, then `buttons`.
+pub fn controls(media: bool, buttons: &[Button]) -> Vec<Control> {
+    let transport: &[Control] = if media { &TRANSPORT } else { &[] };
+    transport.iter().copied().chain(buttons.iter().map(|&b| Control::Button(b))).collect()
+}
+
+/// The keyboard's place in a row of controls, or the field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cursor(i32);
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Self(-1)
+    }
+}
+
+impl Cursor {
+    /// Back on the field.
+    pub fn clear(&mut self) {
+        self.0 = -1;
+    }
+
+    /// The control it rests on.
+    pub fn on(self, controls: &[Control]) -> Option<Control> {
+        usize::try_from(self.0).ok().and_then(|i| controls.get(i).copied())
+    }
+
+    /// A key over `controls`: whether the field must not see it, and the
+    /// control it pressed.
+    pub fn key(&mut self, controls: &[Control], key: TKey) -> (bool, Option<Control>) {
+        let step = transport_key(self.0, controls.len() as i32, key);
+        self.0 = step.index;
+        (step.taken, if step.press { self.on(controls) } else { None })
+    }
+}
 
 /// Lock/model.js's `transportKey`: where a key moves the transport cursor,
 /// whether the field must not see it, and whether it pressed the button.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Step {
-    pub index: i32,
-    pub taken: bool,
-    pub press: bool,
+struct Step {
+    index: i32,
+    taken: bool,
+    press: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -196,7 +241,7 @@ pub enum TKey {
     Other,
 }
 
-pub fn transport_key(index: i32, count: i32, key: TKey) -> Step {
+fn transport_key(index: i32, count: i32, key: TKey) -> Step {
     let mut out = Step { index, taken: false, press: false };
     if count <= 0 {
         out.index = -1;
@@ -265,7 +310,8 @@ impl View {
         let (enter, rise) = s.enter;
         let fade = enter * s.wake;
         let pr = &s.prompt;
-        let media = s.media.as_ref().map(|m| now_playing(m, theme));
+        let ring = TRANSPORT.iter().position(|c| Some(*c) == s.cursor);
+        let media = s.media.as_ref().map(|m| now_playing(m, ring, theme));
         let card = login::Card {
             now: s.now,
             name: s.name,
@@ -306,11 +352,10 @@ impl View {
         p.finish();
 
         self.ui.anchor = last;
-        let cursor = s.media.as_ref().map_or(-1, |m| m.cursor);
-        let button = usize::try_from(s.buttons.cursor).ok().and_then(|i| s.buttons.shown.get(i).copied());
-        self.ui.cursor = match button {
-            Some(b) => Some(stop(b)),
-            None => (cursor >= 0).then(|| "transport".to_owned()),
+        self.ui.cursor = match s.cursor {
+            Some(Control::Button(b)) => Some(stop(b)),
+            Some(_) => Some("transport".to_owned()),
+            None => None,
         };
         self.ui.ring = self.ui.cursor.is_some();
         let drawn = self.ui.draw(&body, inner, None, fade, theme, kit, &mut self.scene, now);
@@ -324,7 +369,7 @@ impl View {
             "depthRect": front.as_ref().map(|(r, _, _)| r.to_json()),
             "mediaCard": s.media.is_some().then(|| card_json.clone()),
             "nowPlaying": s.media.is_some(),
-            "transportCursor": cursor,
+            "transportCursor": ring.map_or(-1, |i| i as i32),
         });
         drawn.animating
     }
@@ -389,7 +434,8 @@ fn splash_at(b: &Bitmap, (w, h): (i32, i32)) -> (i32, i32) {
 }
 
 /// The card's cover, words and controls.
-fn now_playing(m: &NowPlaying, theme: &Theme) -> El {
+/// `ring` is the transport button the cursor is on.
+fn now_playing(m: &NowPlaying, ring: Option<usize>, theme: &Theme) -> El {
     let s = &theme.space;
     let title = if m.title.is_empty() { "Unknown title" } else { m.title };
     let mut words = vec![w::label(title).elide()];
@@ -421,7 +467,7 @@ fn now_playing(m: &NowPlaying, theme: &Theme) -> El {
             o
         })
         .collect();
-    let group = w::group(options, usize::MAX, false).stop("transport").ring(m.cursor.max(0) as usize);
+    let group = w::group(options, usize::MAX, false).stop("transport").ring(ring.unwrap_or(0));
     rows.push(group.centred());
     w::column(s.sm, rows)
 }
@@ -657,6 +703,22 @@ mod tests {
     }
 
     #[test]
+    fn one_cursor_walks_the_transport_then_the_buttons() {
+        let row = controls(true, &[Button::PowerOff, Button::Reboot]);
+        let mut c = Cursor::default();
+        for _ in 0..4 {
+            assert_eq!(c.key(&row, TKey::Tab), (true, None));
+        }
+        assert_eq!(c.on(&row), Some(Control::Button(Button::PowerOff)));
+        assert_eq!(c.key(&row, TKey::Enter), (true, Some(Control::Button(Button::PowerOff))));
+        let bare = controls(false, &[Button::PowerOff, Button::Reboot]);
+        assert_eq!(c.on(&bare), None);
+        c.clear();
+        assert_eq!(c.key(&bare, TKey::Tab), (true, None));
+        assert_eq!(c.on(&bare), Some(Control::Button(Button::PowerOff)));
+    }
+
+    #[test]
     fn blank_and_wake_crossfade_the_backdrop() {
         use crate::render::Renderer;
         let theme = Theme::resolve(|_| None, &Default::default());
@@ -681,6 +743,7 @@ mod tests {
                 blanked: true,
                 wake,
                 buttons: Buttons::default(),
+                cursor: None,
             };
             let mut view = View::new(w, h);
             view.draw(&shared, &theme, &mut kit, Instant::now());
@@ -716,6 +779,7 @@ mod tests {
             blanked: false,
             wake: 1.0,
             buttons: Buttons::default(),
+            cursor: None,
         };
         let mut view = View::new(w, h);
         view.draw(&shared(None), &theme, &mut kit, Instant::now());
@@ -767,6 +831,7 @@ mod tests {
                 blanked: true,
                 wake,
                 buttons: Buttons::default(),
+                cursor: None,
             };
             let mut view = View::new(w, h);
             view.draw(&shared, &theme, &mut kit, Instant::now());
@@ -808,6 +873,7 @@ mod tests {
                 blanked: false,
                 wake: 1.0,
                 buttons: Buttons::default(),
+                cursor: None,
             };
             let mut view = View::new(900, 700);
             let now = Instant::now();

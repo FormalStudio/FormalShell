@@ -8,11 +8,11 @@
 //! glide moves all of it through one transform, so nothing is laid out
 //! again and nothing snaps to whole pixels while it moves.
 //!
-//! This is the model and the drawing; `wayland::overview` owns the window,
-//! the clocks, the captures and the input.
+//! This is the model, its phases and clocks, and the drawing;
+//! `wayland::overview` owns the window, the captures and the input.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use fs_chrome::bar::workspaces::{self, SlotOpts};
 use fs_theme::palette::ColorRole;
@@ -39,6 +39,10 @@ pub const GAP: f64 = 0.05;
 pub const DIM: f64 = 0.75;
 /// How far a press travels before it lifts the window.
 pub const LIFT_PX: f64 = 6.0;
+/// The longest the zoom waits for the current workspace's frames.
+pub const WAIT: Duration = Duration::from_millis(150);
+/// Scroll travel (wl_pointer axis units) that moves the selection one step.
+pub const SCROLL_STEP: f64 = 15.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Phase {
@@ -249,23 +253,71 @@ pub struct Drag {
     pub over: Option<usize>,
 }
 
+/// What the close focuses before it zooms back onto it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Focus {
+    Window(WindowId),
+    Workspace(WorkspaceId),
+    /// The empty slot: the workspace at this index, made by focusing it.
+    WorkspaceAt(i64),
+}
+
+/// What a close asks of the host.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Closing {
+    pub focus: Option<Focus>,
+    /// The zoom has nothing to run back: unmap now.
+    pub unmap: bool,
+}
+
+/// A step of the selection, off a key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Step {
+    Row(i32),
+    Win(i32),
+    /// The row's first window, or its last.
+    Edge(bool),
+}
+
+/// What a button let go asks of the host.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Release {
+    Nothing,
+    /// A lifted window let go: moved onto the workspace at this index, or
+    /// nowhere.
+    Dropped(Option<(WindowId, i64)>),
+    /// A click: the selection is on what it hit, and the overview closes.
+    Close,
+}
+
+/// The pace a glide or the zoom runs at.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pace {
+    pub ms: f64,
+    pub curve: Curve,
+}
+
 #[derive(Default)]
 pub struct Overview {
-    pub phase: Phase,
-    pub rows: Vec<Row>,
-    pub sel: Sel,
-    pub geo: Geometry,
-    pub output: String,
+    phase: Phase,
+    rows: Vec<Row>,
+    sel: Sel,
+    geo: Geometry,
+    output: String,
     /// 0 is the live desktop, 1 the overview at rest.
-    pub zoom: Option<Animated>,
+    zoom: Option<Animated>,
     /// The stack's centre row.
-    pub glide: Option<Animated>,
+    glide: Option<Animated>,
     /// Each row's sideways slide, by workspace id.
-    pub slides: HashMap<WorkspaceId, Animated>,
-    pub opened_at: Option<Instant>,
-    pub drag: Option<Drag>,
-    pub opens: u64,
-    pub nodes: Vec<NodeId>,
+    slides: HashMap<WorkspaceId, Animated>,
+    opened_at: Option<Instant>,
+    drag: Option<Drag>,
+    /// The press, before it lifts or lets go: the row and window under it.
+    pressed: Option<(usize, Option<usize>)>,
+    /// Wheel travel short of a step.
+    scroll: f64,
+    opens: u64,
+    nodes: Vec<NodeId>,
 }
 
 /// What one draw reads.
@@ -286,11 +338,234 @@ impl Overview {
         self.phase != Phase::Closed
     }
 
-    pub fn progress(&self, now: Instant) -> f64 {
+    pub fn phase(&self) -> Phase {
+        self.phase
+    }
+
+    /// Opening or open: keys and asks to close are its.
+    pub fn holding(&self) -> bool {
+        matches!(self.phase, Phase::Opening | Phase::Open)
+    }
+
+    pub fn output(&self) -> &str {
+        &self.output
+    }
+
+    pub fn rows(&self) -> &[Row] {
+        &self.rows
+    }
+
+    /// Opens on `output`'s rows with `sel` selected: mapped clear, the zoom
+    /// held at the live desktop until the current row's frames land.
+    pub fn begin(&mut self, output: String, rows: Vec<Row>, sel: Sel, now: Instant, curve: Curve) {
+        self.output = output;
+        self.rows = rows;
+        self.sel = sel;
+        self.phase = Phase::Opening;
+        self.zoom = Some(Animated::new(0.0, curve));
+        self.glide = Some(Animated::new(sel.row as f64, curve));
+        self.slides.clear();
+        self.drag = None;
+        self.pressed = None;
+        self.scroll = 0.0;
+        self.opened_at = Some(now);
+        self.opens += 1;
+    }
+
+    /// Backs out of a close still running: the stack zooms out again.
+    /// False when no close was running.
+    pub fn reopen(&mut self, now: Instant, ms: f64) -> bool {
+        if self.phase != Phase::Closing {
+            return false;
+        }
+        self.phase = Phase::Open;
+        if let Some(z) = &mut self.zoom {
+            z.set(now, 1.0, ms);
+        }
+        true
+    }
+
+    /// Zooms back onto the selection, which the host focuses first.
+    pub fn close(&mut self, now: Instant, ms: f64) -> Closing {
+        let Some(row) = self.rows.get(self.sel.row) else {
+            return Closing { focus: None, unmap: true };
+        };
+        let focus = match self.sel.win.and_then(|j| row.windows.get(j)) {
+            Some(w) => Focus::Window(w.id.clone()),
+            None if row.workspace_id.is_empty() => Focus::WorkspaceAt(row.idx),
+            None => Focus::Workspace(row.workspace_id.clone()),
+        };
+        self.drag = None;
+        let was = std::mem::replace(&mut self.phase, Phase::Closing);
+        // The zoom never left the desktop: nothing to run back.
+        if was == Phase::Opening {
+            return Closing { focus: Some(focus), unmap: true };
+        }
+        if let Some(z) = &mut self.zoom {
+            z.set(now, 0.0, ms);
+        }
+        Closing { focus: Some(focus), unmap: false }
+    }
+
+    pub fn unmapped(&mut self) {
+        self.phase = Phase::Closed;
+        self.zoom = None;
+        self.glide = None;
+        self.slides.clear();
+        self.drag = None;
+        self.pressed = None;
+        self.nodes.clear();
+        self.opened_at = None;
+    }
+
+    /// The current row's windows, whose frames the zoom waits on.
+    pub fn current_windows(&self) -> impl Iterator<Item = &WindowId> {
+        self.rows.get(self.current_row()).into_iter().flat_map(|r| r.windows.iter().map(|w| &w.id))
+    }
+
+    /// Starts the zoom once the current row's frames have `landed` or
+    /// `WAIT` has run out; true when it started.
+    pub fn start_zoom(&mut self, now: Instant, ms: f64, landed: bool) -> bool {
+        if self.phase != Phase::Opening || !(landed || self.opened_at.is_some_and(|t| now >= t + WAIT)) {
+            return false;
+        }
+        self.phase = Phase::Open;
+        if let Some(z) = &mut self.zoom {
+            z.set(now, 1.0, ms);
+        }
+        true
+    }
+
+    /// When the zoom stops waiting on the frames.
+    pub fn deadline(&self) -> Option<Instant> {
+        (self.phase == Phase::Opening).then(|| self.opened_at.map(|t| t + WAIT)).flatten()
+    }
+
+    /// The close has zoomed all the way back.
+    pub fn closed_out(&self, now: Instant) -> bool {
+        self.phase == Phase::Closing && !self.animating(now)
+    }
+
+    /// The rows read again: the windows whose frame is of an old shape (a
+    /// window that moved workspace or changed size; a drop re-tiles both
+    /// rows), or None when nothing moved.
+    pub fn reread(&mut self, rows: Vec<Row>, now: Instant, pace: Pace) -> Option<Vec<WindowId>> {
+        if rows == self.rows {
+            return None;
+        }
+        let sel = self.sel.follow(&self.rows, &rows);
+        let shape = |rows: &[Row]| -> HashMap<WindowId, (WorkspaceId, i64, i64)> {
+            rows.iter().flat_map(|r| r.windows.iter().map(|w| (w.id.clone(), (r.workspace_id.clone(), w.rect.width.round() as i64, w.rect.height.round() as i64)))).collect()
+        };
+        let before = shape(&self.rows);
+        let stale = shape(&rows).into_iter().filter(|(id, now)| before.get(id).is_some_and(|b| b != now)).map(|(id, _)| id).collect();
+        self.rows = rows;
+        self.select(sel, now, pace.ms, pace.curve);
+        Some(stale)
+    }
+
+    /// A new size: laid out again with nothing to glide from.
+    pub fn lay_out(&mut self, geo: Geometry, now: Instant, pace: Pace) {
+        self.geo = geo;
+        self.slides.clear();
+        self.select(self.sel, now, pace.ms, pace.curve);
+        for s in self.slides.values_mut() {
+            let t = s.target();
+            s.jump(t);
+        }
+    }
+
+    /// A key's step of the selection.
+    pub fn step(&mut self, step: Step, now: Instant, pace: Pace) {
+        let (rows, sel) = (&self.rows, self.sel);
+        let next = match step {
+            Step::Row(by) => sel.step_row(rows, by),
+            Step::Win(by) => sel.step_win(rows, by),
+            Step::Edge(last) => sel.edge(rows, last),
+        };
+        self.select(next, now, pace.ms, pace.curve);
+    }
+
+    /// Wheel travel `by`, along the row when `along`; true when it moved
+    /// the selection.
+    pub fn wheel(&mut self, along: bool, by: f64, now: Instant, pace: Pace) -> bool {
+        if self.phase != Phase::Open {
+            return false;
+        }
+        self.scroll += by;
+        let steps = (self.scroll / SCROLL_STEP).trunc();
+        if steps == 0.0 {
+            return false;
+        }
+        self.scroll -= steps * SCROLL_STEP;
+        let sel = if along { self.sel.step_win(&self.rows, steps as i32) } else { self.sel.step_row(&self.rows, steps as i32) };
+        self.select(sel, now, pace.ms, pace.curve);
+        true
+    }
+
+    /// A press while open: what is under it, a window starting a drag.
+    pub fn press(&mut self, at: (f64, f64), now: Instant) {
+        if self.phase != Phase::Open {
+            return;
+        }
+        let hit = self.hit(at, now);
+        self.pressed = hit;
+        if let Some((i, Some(j))) = hit {
+            let w = self.rows[i].windows[j].clone();
+            let t = self.geo.transform(self.progress(now), self.glide_at(now));
+            let r = self.geo.win_at(i, &w);
+            let origin = t * kurbo::Point::new(r.x, r.y);
+            let slide = self.slide(i, now);
+            self.drag = Some(Drag { id: w.id, from_row: i, from: at, at, grab: (at.0 - origin.x - slide, at.1 - origin.y), lifted: false, over: None });
+        }
+    }
+
+    /// The pointer moved: a held window follows it, lifting past
+    /// `LIFT_PX`. True when the frame changed.
+    pub fn drag_to(&mut self, at: (f64, f64), now: Instant) -> bool {
+        let Some(d) = &mut self.drag else { return false };
+        d.at = at;
+        if !d.lifted && (at.0 - d.from.0).hypot(at.1 - d.from.1) >= LIFT_PX {
+            d.lifted = true;
+        }
+        if !d.lifted {
+            return false;
+        }
+        // Over a card or one of its windows; over the backdrop the drop
+        // moves nothing.
+        let over = self.hit(at, now).map(|(i, _)| i);
+        if let Some(d) = &mut self.drag {
+            d.over = over;
+        }
+        true
+    }
+
+    /// The button let go at `at`.
+    pub fn release(&mut self, at: (f64, f64), now: Instant, pace: Pace) -> Release {
+        let pressed = self.pressed.take();
+        let drag = self.drag.take();
+        if self.phase != Phase::Open {
+            return Release::Nothing;
+        }
+        if let Some(d) = drag.filter(|d| d.lifted) {
+            let idx = d.over.filter(|&i| i != d.from_row).and_then(|i| self.rows.get(i)).map(|r| r.idx);
+            return Release::Dropped(idx.map(|idx| (d.id, idx)));
+        }
+        let hit = self.hit(at, now);
+        if hit != pressed {
+            return Release::Nothing;
+        }
+        if let Some((row, win)) = hit {
+            self.select(Sel { row, win }, now, pace.ms, pace.curve);
+        }
+        Release::Close
+    }
+
+    fn progress(&self, now: Instant) -> f64 {
         self.zoom.as_ref().map_or(0.0, |z| z.value(now).clamp(0.0, 1.0))
     }
 
-    pub fn glide_at(&self, now: Instant) -> f64 {
+    fn glide_at(&self, now: Instant) -> f64 {
         self.glide.as_ref().map_or(self.sel.row as f64, |g| g.value(now))
     }
 
@@ -301,7 +576,7 @@ impl Overview {
     }
 
     /// The selection moved: the stack and the row follow on `ms`.
-    pub fn select(&mut self, sel: Sel, now: Instant, ms: f64, curve: Curve) {
+    fn select(&mut self, sel: Sel, now: Instant, ms: f64, curve: Curve) {
         self.sel = sel;
         let g = self.glide.get_or_insert_with(|| Animated::new(sel.row as f64, curve));
         if g.target() != sel.row as f64 {
@@ -331,7 +606,7 @@ impl Overview {
     }
 
     /// What is under a point on the surface: a row, and a window in it.
-    pub fn hit(&self, at: (f64, f64), now: Instant) -> Option<(usize, Option<usize>)> {
+    fn hit(&self, at: (f64, f64), now: Instant) -> Option<(usize, Option<usize>)> {
         let inside = |r: Rect| r.contains(at.0, at.1);
         for (i, row) in self.rows.iter().enumerate() {
             // Floating windows are drawn last, so they are hit first.
@@ -365,6 +640,13 @@ impl Overview {
     }
 
     pub fn draw(&mut self, input: &Input, kit: &mut Kit, scene: &mut Scene) {
+        // Until the zoom starts the surface is clear over the desktop.
+        if self.phase == Phase::Opening {
+            let mut p = Painter::new(scene, &mut self.nodes, None);
+            p.rect(IRect::new(0, 0, 0, 0), Rgba::TRANSPARENT, 0.0);
+            p.finish();
+            return;
+        }
         let t = input.theme;
         let now = input.now;
         let p = self.progress(now);
@@ -545,6 +827,27 @@ mod tests {
         assert_eq!(sel.step_row(&rows, -1), sel);
         assert_eq!(sel.step_win(&rows, 1), sel);
         assert_eq!(sel.step_win(&rows, -1), Sel { row: 0, win: Some(0) });
+    }
+
+    #[test]
+    fn the_zoom_waits_on_the_frames_then_the_close_focuses_the_selection() {
+        let pace = Pace { ms: 100.0, curve: Curve::new(&[0.0, 0.0, 1.0, 1.0]) };
+        let t0 = Instant::now();
+        let rows = rows(&snapshot(), "DP-1", (0.0, 0.0));
+        let sel = Sel::of(&rows, &"1".into(), &"b".into());
+        let mut o = Overview::default();
+        o.begin("DP-1".into(), rows, sel, t0, pace.curve);
+        assert_eq!(o.deadline(), Some(t0 + WAIT));
+        assert!(!o.start_zoom(t0, pace.ms, false));
+        assert!(o.start_zoom(t0, pace.ms, true));
+        assert_eq!(o.phase(), Phase::Open);
+        o.step(Step::Row(1), t0, pace);
+        let closing = o.close(t0, pace.ms);
+        assert_eq!(closing, Closing { focus: Some(Focus::Window("c".into())), unmap: false });
+        assert!(o.reopen(t0, pace.ms));
+        o.step(Step::Row(1), t0, pace);
+        assert_eq!(o.close(t0, pace.ms).focus, Some(Focus::WorkspaceAt(3)));
+        assert!(o.closed_out(t0 + std::time::Duration::from_millis(200)));
     }
 
     #[test]

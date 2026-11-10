@@ -319,6 +319,10 @@ impl Owner for Bar {
     }
 
     fn present(&self, app: &mut App, now: Instant) {
+        if live!(app).bar.sidebar_hand_over(now) {
+            live!(app).dirty = true;
+            app.overview_action(super::overview::Action::Open);
+        }
         let qh = app.qh.clone();
         let animating = live!(app).bar.animating(&app.kit, now);
         let stepping = animating || live!(app).bar.marquee_due(&app.kit, now);
@@ -668,7 +672,7 @@ impl Owner for Switcher {
     /// change, since its cells show windows, icons and titles off many
     /// slices.
     fn reads(&self, app: &App, topic: Topic) -> bool {
-        topic == Topic::Compositor || app.switcher.model.open || app.switcher.win.is_some()
+        topic == Topic::Compositor || app.switcher.model.open() || app.switcher.win.is_some()
     }
 
     fn changed(&self, app: &mut App, topic: Topic) {

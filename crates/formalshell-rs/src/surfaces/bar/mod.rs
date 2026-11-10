@@ -280,10 +280,15 @@ impl Bar {
         sb.map.drag.is_some()
     }
 
-    /// The pointer moved with a button held; true when the column needs a
-    /// pass.
-    pub fn sidebar_motion(&mut self, at: (f64, f64)) -> bool {
-        self.sidebar_mut().is_some_and(|sb| sb.map.motion(at))
+    /// The pointer moved with a button held.
+    pub fn sidebar_motion(&mut self, at: (f64, f64)) -> crate::surfaces::sidebar::minimap::Moved {
+        self.sidebar_mut().map_or(crate::surfaces::sidebar::minimap::Moved::Still, |sb| sb.map.motion(at))
+    }
+
+    /// A minimap press held past its long press goes to the overview:
+    /// true when it did now.
+    pub fn sidebar_hand_over(&mut self, now: Instant) -> bool {
+        self.sidebar_mut().is_some_and(|sb| sb.map.hand_over(now))
     }
 
     /// The button let go over the sidebar: a drop's commands, or `None`

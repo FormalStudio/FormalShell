@@ -15,11 +15,12 @@ use std::time::{Duration, Instant};
 
 use model::{self as rm, EstimateCache};
 use fs_media::radio::stations::Station;
+use crate::ui::What;
 use crate::ui::field::{self, Modifiers, Outcome};
 
 use crate::services::clipboard;
 use crate::services::radio::{self, Ask, Cmd, Reply};
-use globe::Globe;
+use globe::{Globe, Out};
 
 pub const WORLD_LIMIT: usize = 5000;
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(300);
@@ -82,41 +83,117 @@ pub enum Key {
     Text(String),
 }
 
+/// What a control does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verb {
+    Search,
+    Select(i64),
+    Play,
+    PlayPause,
+    Random,
+    Favorite,
+    Mute,
+    Volume(i64),
+    Back,
+    Help,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Press {
+    Escape,
+    Up,
+    Down,
+    Enter,
+    Space,
+    /// Typed text, letters either case.
+    Text(&'static str),
+}
+
+impl Press {
+    fn matches(self, key: &Key) -> bool {
+        match (self, key) {
+            (Press::Escape, Key::Escape) | (Press::Up, Key::Up) | (Press::Down, Key::Down) | (Press::Enter, Key::Enter) | (Press::Space, Key::Space) => true,
+            (Press::Text(a), Key::Text(t)) => t.eq_ignore_ascii_case(a),
+            _ => false,
+        }
+    }
+}
+
+/// One key of a control: its keycap in the controls, empty for one they
+/// leave out.
+pub struct Bind {
+    pub cap: &'static str,
+    press: Press,
+    verb: Verb,
+}
+
+const fn bind(cap: &'static str, press: Press, verb: Verb) -> Bind {
+    Bind { cap, press, verb }
+}
+
+/// The keys the atlas answers outside the search field, in the order the
+/// controls list them.
+pub const BINDINGS: [(&str, &[Bind]); 10] = [
+    ("Search", &[bind("/", Press::Text("/"), Verb::Search)]),
+    ("Select station", &[bind("Up", Press::Up, Verb::Select(-1)), bind("Down", Press::Down, Verb::Select(1))]),
+    ("Play selected station", &[bind("Enter", Press::Enter, Verb::Play)]),
+    ("Play or pause", &[bind("Space", Press::Space, Verb::PlayPause)]),
+    ("Tune randomly", &[bind("R", Press::Text("r"), Verb::Random)]),
+    ("Favorite selected station", &[bind("F", Press::Text("f"), Verb::Favorite)]),
+    ("Mute or unmute", &[bind("M", Press::Text("m"), Verb::Mute)]),
+    ("Change volume", &[bind("+", Press::Text("+"), Verb::Volume(5)), bind("", Press::Text("="), Verb::Volume(5)), bind("-", Press::Text("-"), Verb::Volume(-5))]),
+    ("Back, clear, or close", &[bind("Esc", Press::Escape, Verb::Back)]),
+    ("Show or hide controls", &[bind("?", Press::Text("?"), Verb::Help)]),
+];
+
+fn verb(key: &Key) -> Option<Verb> {
+    BINDINGS.iter().flat_map(|(_, binds)| binds.iter()).find(|b| b.press.matches(key)).map(|b| b.verb)
+}
+
+/// The pointer's shape over the card.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cursor {
+    Default,
+    Grab,
+    Grabbing,
+    Pointer,
+}
+
 pub struct Atlas {
-    pub open: bool,
-    pub mode: Mode,
-    pub world: Vec<Station>,
-    pub results: Vec<Station>,
-    pub active_code: String,
-    pub active_name: String,
-    pub help: bool,
-    pub outputs: bool,
-    pub output_cursor: usize,
-    pub selected_index: Option<usize>,
-    pub selected: Option<Station>,
-    pub keyboard_selection: bool,
-    pub fetching: bool,
-    pub fetch_error: String,
+    open: bool,
+    mode: Mode,
+    world: Vec<Station>,
+    results: Vec<Station>,
+    active_code: String,
+    active_name: String,
+    help: bool,
+    outputs: bool,
+    output_cursor: usize,
+    selected_index: Option<usize>,
+    selected: Option<Station>,
+    keyboard_selection: bool,
+    fetching: bool,
+    fetch_error: String,
     token: u64,
     fetch_gen: u64,
     pending: HashMap<u64, (Purpose, u64)>,
     misses: u32,
     expanding: bool,
-    pub expand_at: Option<Instant>,
-    pub search: field::Field,
-    pub editing: bool,
-    pub search_at: Option<Instant>,
+    expand_at: Option<Instant>,
+    search: field::Field,
+    editing: bool,
+    search_at: Option<Instant>,
     countries_asked: bool,
     earth_asked: bool,
     estimates: EstimateCache,
     geo_inputs: Option<(Mode, Vec<String>, usize, bool)>,
-    pub geo: Vec<Station>,
-    pub globe: Globe,
-    pub scroll: f64,
-    pub list_h: f64,
-    pub row_h: f64,
+    geo: Vec<Station>,
+    globe: Globe,
+    scroll: f64,
+    list_h: f64,
+    row_h: f64,
     geo_world_first: Option<String>,
-    pub dirty: bool,
+    dirty: bool,
 }
 
 impl Default for Atlas {
@@ -165,6 +242,37 @@ fn remote(mode: Mode) -> bool {
 }
 
 impl Atlas {
+    pub fn open(&self) -> bool {
+        self.open
+    }
+
+    /// The search field has the keys.
+    pub fn editing(&self) -> bool {
+        self.editing
+    }
+
+    pub fn dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn redraw(&mut self) {
+        self.dirty = true;
+    }
+
+    pub fn drawn(&mut self) {
+        self.dirty = false;
+    }
+
+    /// The globe is moving on its own.
+    pub fn animating(&self) -> bool {
+        self.globe.animating()
+    }
+
+    /// The window is gone: the satellite picture is let go.
+    pub fn unmapped(&mut self) {
+        self.globe.drop_earth();
+    }
+
     pub fn display<'a>(&'a self, r: &'a radio::State) -> &'a [Station] {
         match self.mode {
             Mode::Favorites => &r.favorites,
@@ -544,8 +652,16 @@ impl Atlas {
         self.expand_at = Some(now + Duration::from_millis(delay_ms.max(500)));
     }
 
-    /// The atlas's own timers: the search debounce and the world expansion.
+    /// One pass: the atlas's own timers, the globe's motion and its
+    /// stations.
     pub fn tick(&mut self, r: &radio::State, now: Instant) {
+        self.timers(r, now);
+        self.globe.tick(now);
+        self.sync_geo(r);
+    }
+
+    /// The search debounce and the world expansion.
+    fn timers(&mut self, r: &radio::State, now: Instant) {
         if self.search_at.is_some_and(|t| t <= now) {
             self.search_at = None;
             self.search_now(r);
@@ -730,7 +846,7 @@ impl Atlas {
     /// when it asked the overlay to close.
     pub fn key(&mut self, r: &radio::State, key: Key, close: &mut bool) -> bool {
         self.dirty = true;
-        let help_key = matches!(&key, Key::Text(t) if t == "?");
+        let verb = verb(&key);
         if self.editing {
             match key {
                 Key::Escape => {
@@ -749,7 +865,7 @@ impl Atlas {
             return true;
         }
         if self.help {
-            if key == Key::Escape || help_key {
+            if matches!(verb, Some(Verb::Back | Verb::Help)) {
                 self.toggle_controls();
                 return true;
             }
@@ -769,35 +885,142 @@ impl Atlas {
             }
             return true;
         }
-        match key {
-            Key::Escape => {
+        let Some(verb) = verb else { return false };
+        match verb {
+            Verb::Back => {
                 if self.search.is_empty() {
                     *close = true;
                 } else {
                     self.show_world(r, true);
                 }
             }
-            _ if help_key => self.toggle_controls(),
-            Key::Text(t) if t == "/" => self.editing = true,
-            Key::Up => self.move_selection(r, -1),
-            Key::Down => self.move_selection(r, 1),
-            Key::Enter => self.play_selected(r),
-            Key::Space => self.play_pause(r),
-            Key::Text(t) if t.eq_ignore_ascii_case("r") => self.tune_random(r),
-            Key::Text(t) if t == "+" || t == "=" => radio::send(Cmd::SetVolume(r.volume.step(5))),
-            Key::Text(t) if t == "-" => radio::send(Cmd::SetVolume(r.volume.step(-5))),
-            Key::Text(t) if t.eq_ignore_ascii_case("m") => radio::send(Cmd::ToggleMute),
-            Key::Text(t) if t.eq_ignore_ascii_case("f") && self.selected.is_some() => {
-                radio::send(Cmd::ToggleFavorite(self.selected.clone().expect("selected")));
-            }
-            _ => return false,
+            Verb::Help => self.toggle_controls(),
+            Verb::Search => self.editing = true,
+            Verb::Select(by) => self.move_selection(r, by),
+            Verb::Play => self.play_selected(r),
+            Verb::PlayPause => self.play_pause(r),
+            Verb::Random => self.tune_random(r),
+            Verb::Volume(by) => radio::send(Cmd::SetVolume(r.volume.step(by))),
+            Verb::Mute => radio::send(Cmd::ToggleMute),
+            Verb::Favorite => match self.selected.clone() {
+                Some(s) => radio::send(Cmd::ToggleFavorite(s)),
+                None => return false,
+            },
         }
         true
     }
 
+    /// A control clicked, by its `on`; true when it closes the overlay.
+    pub fn act(&mut self, r: &radio::State, on: &str, what: Option<What>) -> bool {
+        self.dirty = true;
+        if on != "search" {
+            self.editing = false;
+        }
+        if let Some(i) = on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
+            self.set_selection(r, Some(i), false);
+            self.play_selected(r);
+            return false;
+        }
+        if let Some(i) = on.strip_prefix("fav:").and_then(|i| i.parse::<usize>().ok()) {
+            if let Some(s) = self.display(r).get(i).cloned() {
+                radio::send(Cmd::ToggleFavorite(s));
+            }
+            return false;
+        }
+        if let Some(i) = on.strip_prefix("output:").and_then(|i| i.parse::<usize>().ok()) {
+            let id = if i == 0 { String::new() } else { r.outputs.get(i - 1).map(|(id, _)| id.clone()).unwrap_or_default() };
+            self.select_output(id);
+            return false;
+        }
+        match (on, what) {
+            ("outside" | "close", _) => return true,
+            ("search", _) => self.editing = true,
+            ("shuffle", _) => self.tune_random(r),
+            ("help", _) => self.toggle_controls(),
+            ("tab", Some(What::Pick(i))) => self.show_tab(r, i),
+            ("transport", Some(What::Pick(i))) => match i {
+                0 => radio::send(Cmd::Previous),
+                1 => self.play_pause(r),
+                2 => radio::send(Cmd::Next),
+                _ => radio::send(Cmd::Stop),
+            },
+            ("outputs", _) => self.toggle_outputs(r),
+            ("mute", _) => radio::send(Cmd::ToggleMute),
+            ("playing-fav", _) => {
+                if let Some(s) = r.station.clone() {
+                    radio::send(Cmd::ToggleFavorite(s));
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// Whether `(x, y)` is on the globe, which the controls cover.
+    pub fn on_globe(&self, x: f64, y: f64) -> bool {
+        !self.help && self.globe.contains(x, y)
+    }
+
+    /// The pointer moved, `on_globe` or not: the globe follows a drag or
+    /// hovers its stations. Its shape over the card.
+    pub fn hover(&mut self, x: f64, y: f64, time: Option<u32>, on_globe: bool) -> Cursor {
+        if !(self.globe.grabbing() || on_globe) {
+            self.globe.leave();
+            return Cursor::Default;
+        }
+        self.globe.motion(x, y, time);
+        self.keyboard_selection = false;
+        if self.globe.grabbing() {
+            Cursor::Grabbing
+        } else if self.globe.over_station() {
+            Cursor::Pointer
+        } else {
+            Cursor::Grab
+        }
+    }
+
+    /// The pointer over list row `i` selects it.
+    pub fn hover_row(&mut self, r: &radio::State, i: usize) {
+        if self.selected_index != Some(i) || self.keyboard_selection {
+            self.set_selection(r, Some(i), false);
+        }
+    }
+
+    pub fn leave(&mut self) {
+        self.globe.leave();
+    }
+
+    pub fn press_globe(&mut self, x: f64, y: f64) {
+        self.globe.press(x, y);
+        self.keyboard_selection = false;
+        self.editing = false;
+    }
+
+    /// A press on the globe let go: a station clicked plays, a country
+    /// clicked is browsed.
+    pub fn release_globe(&mut self, r: &radio::State, x: f64, y: f64, time: u32, now: Instant) {
+        match self.globe.release(x, y, time, now) {
+            Out::Station(s) => self.activate_map_station(r, &s),
+            Out::Country(code, name) => self.browse_country(r, &code, &name),
+            _ => {}
+        }
+    }
+
+    /// Wheel notches over the globe zoom it.
+    pub fn zoom_globe(&mut self, notches: f64) {
+        self.globe.wheel(-notches * 120.0);
+        self.keyboard_selection = false;
+    }
+
+    /// Wheel travel over the list scrolls it.
+    pub fn scroll_list(&mut self, r: &radio::State, by: f64) {
+        let max = (self.display(r).len() as f64 * self.row_h - self.list_h).max(0.0);
+        self.scroll = (self.scroll + by).clamp(0.0, max);
+    }
+
     /// currentGeoStations: the world and the list on show, merged and given
     /// a guessed point when they carry none, recomputed when either moved.
-    pub fn sync_geo(&mut self, r: &radio::State) {
+    fn sync_geo(&mut self, r: &radio::State) {
         let display = self.display(r).to_vec();
         let inputs = (self.mode, display.iter().map(|s| s.uuid.clone()).collect::<Vec<_>>(), self.world.len(), self.globe.countries.is_some());
         if self.geo_inputs.as_ref() == Some(&inputs) && self.geo_world_first == self.world.first().map(|s| s.uuid.clone()) {
@@ -809,5 +1032,24 @@ impl Atlas {
         self.geo_inputs = Some(inputs);
         self.geo_world_first = self.world.first().map(|s| s.uuid.clone());
         self.globe.set_stations(self.geo.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keys_come_off_the_table_the_controls_list() {
+        let text = |t: &str| Key::Text(t.into());
+        assert_eq!(verb(&text("R")), Some(Verb::Random));
+        assert_eq!(verb(&text("r")), Some(Verb::Random));
+        assert_eq!(verb(&text("=")), Some(Verb::Volume(5)));
+        assert_eq!(verb(&Key::Up), Some(Verb::Select(-1)));
+        assert_eq!(verb(&Key::Escape), Some(Verb::Back));
+        assert_eq!(verb(&Key::Backspace), None);
+        assert_eq!(verb(&text("rr")), None);
+        let caps: Vec<&str> = BINDINGS[7].1.iter().map(|b| b.cap).filter(|c| !c.is_empty()).collect();
+        assert_eq!(caps, ["+", "-"]);
     }
 }

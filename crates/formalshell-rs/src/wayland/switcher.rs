@@ -1,5 +1,5 @@
-//! The switcher's window, timers and captures;
-//! the card itself is `surfaces::switcher`.
+//! The switcher's window and captures; the card and its clocks are
+//! `surfaces::switcher`.
 //!
 //! One full-output overlay surface, created when the card shows and gone
 //! once its fade has run out, so a quick Alt+Tab maps nothing. It takes the
@@ -18,7 +18,7 @@ use super::capture::Owner;
 use crate::scene::{Bitmap, Scene};
 use crate::services::{appicon, compositor};
 use crate::surface::{Backend, Surface};
-use crate::surfaces::switcher::{self, Input, Switcher, model};
+use crate::surfaces::switcher::{Input, Switcher};
 
 pub const OFF: &str = "switcher is off (switcher.enabled)";
 
@@ -50,8 +50,7 @@ impl App {
     }
 
     fn switcher_entries(&self) -> Vec<&Window> {
-        let m = &self.switcher.model;
-        model::entries(&self.store.compositor.snapshot.windows, &m.open_history, &m.open_workspace)
+        self.switcher.model.entries(&self.store.compositor.snapshot.windows)
     }
 
     fn switcher_probe(&self) {
@@ -78,34 +77,25 @@ impl App {
     /// every one after walks the row.
     pub fn switcher_step(&mut self, direction: i32) {
         let now = Instant::now();
-        if self.switcher.model.open {
+        if self.switcher.model.open() {
             let count = self.switcher_entries().len();
-            let m = &mut self.switcher.model;
-            m.index = model::advance(m.index, count, direction);
+            self.switcher.model.walk(count, direction);
             self.switcher.dirty = true;
             return;
         }
-        let m = &mut self.switcher.model;
-        // A repeat spawned just before Alt came up can land after the commit.
-        if m.committed_at.is_some_and(|t| now.duration_since(t) < switcher::COMMIT_RACE) {
-            return;
-        }
-        m.open_history = m.history().to_vec();
-        m.open_workspace = if crate::settings::SWITCHER_CURRENT_WORKSPACE.get(&self.store.config) {
+        let workspace = if crate::settings::SWITCHER_CURRENT_WORKSPACE.get(&self.store.config) {
             self.store.compositor.snapshot.focused_workspace_id.clone()
         } else {
             WorkspaceId::default()
         };
+        if !self.switcher.model.begin(workspace, now) {
+            return;
+        }
         let count = self.switcher_entries().len();
-        let m = &mut self.switcher.model;
-        m.index = model::advance(0, count, direction);
-        m.primed = false;
-        m.open = true;
-        m.scroll = 0.0;
-        m.show_at = Some(now + switcher::SHOW_AFTER);
+        self.switcher.model.walk(count, direction);
         compositor::send(compositor::Command::RefreshWindows);
         self.switcher_probe();
-        if self.switcher.model.commit_pending.take().is_some() {
+        if self.switcher.model.take_pending_commit() {
             self.switcher_commit_now();
         }
     }
@@ -113,43 +103,28 @@ impl App {
     /// Bound to a modifier's release, so it arrives on every tap: with
     /// nothing open it waits a moment for the `next` it may have overtaken.
     pub fn switcher_commit(&mut self) -> bool {
-        if self.switcher.model.open {
+        if self.switcher.model.open() {
             return self.switcher_commit_now();
         }
-        self.switcher.model.commit_pending = Some(Instant::now() + switcher::COMMIT_RACE);
+        self.switcher.model.defer_commit(Instant::now());
         true
     }
 
     fn switcher_commit_now(&mut self) -> bool {
         let now = Instant::now();
-        let id = self.switcher_entries().get(self.switcher.model.index).map(|w| w.id.clone()).unwrap_or_default();
-        let (primed, shown) = (self.switcher.model.primed, self.switcher.model.shown);
+        let id = self.switcher_entries().get(self.switcher.model.index()).map(|w| w.id.clone()).unwrap_or_default();
+        let any = !id.is_empty();
+        let focus = self.switcher.model.commit(id, now);
         self.switcher_close();
-        self.switcher.model.committed_at = Some(now);
-        if id.is_empty() {
-            return false;
-        }
-        // Inside the prime the layer still holds the keyboard exclusively,
-        // and Hyprland hands focus back to where it came from once it lets
-        // go: one dispatch after that release, not one either side of it.
-        if primed || !shown {
+        if let Some(id) = focus {
             compositor::focus_window(&id);
-        } else {
-            self.switcher.model.refocus = Some((id, now + switcher::REFOCUS));
         }
-        true
+        any
     }
 
     pub fn switcher_close(&mut self) {
         let now = Instant::now();
-        let theme = &self.store.theme.theme;
-        let m = &mut self.switcher.model;
-        m.show_at = None;
-        m.open = false;
-        if m.shown {
-            m.shown = false;
-            m.set_fade(theme, now, self.motion_scale, false);
-        }
+        self.switcher.model.close(&self.store.theme.theme, now, self.motion_scale);
         if let Some((s, _)) = &self.switcher.win {
             s.layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             s.layer.commit();
@@ -157,15 +132,10 @@ impl App {
         self.switcher.dirty = true;
     }
 
-    fn switcher_show(&mut self, now: Instant) {
-        let m = &mut self.switcher.model;
-        m.shown = true;
-        m.shows += 1;
-        m.capturing = false;
-        m.prime_at = None;
-        let theme = &self.store.theme.theme;
-        m.set_fade(theme, now, self.motion_scale, true);
-        if self.switcher.win.is_none() {
+    /// The card shows: a new window, or the one still fading out takes
+    /// the keyboard back.
+    fn switcher_show(&mut self, fresh: bool) {
+        if fresh {
             let surface = self.compositor.create_surface(&self.qh);
             let layer = self.layer_shell.create_layer_surface(&self.qh, surface, Layer::Overlay, Some("formalshell:switcher"), None);
             layer.set_anchor(Anchor::all());
@@ -180,8 +150,6 @@ impl App {
         } else if let Some((s, _)) = &self.switcher.win {
             s.layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
             s.layer.commit();
-            self.switcher.model.prime_at = Some(now + switcher::PRIME);
-            self.switcher.model.capture_at = Some(now + switcher::CAPTURE_AFTER);
         }
         self.switcher.dirty = true;
         self.log("switcher shown");
@@ -189,7 +157,7 @@ impl App {
 
     /// A key while the card holds the keyboard, as its KeyCatcher binds it.
     pub fn switcher_key(&mut self, key: Keysym) -> bool {
-        if !self.switcher.model.shown {
+        if !self.switcher.model.shown() {
             return false;
         }
         match key {
@@ -207,24 +175,24 @@ impl App {
     pub fn switcher_state(&self) -> serde_json::Value {
         let m = &self.switcher.model;
         let entries = self.switcher_entries();
-        let selected = entries.get(m.index);
+        let selected = entries.get(m.index());
         let cells: Vec<serde_json::Value> = entries
             .iter()
             .map(|w| serde_json::json!({"id": w.id, "captured": self.capture_image(Owner::Switcher, &w.id).is_some()}))
             .collect();
         let captured = entries.iter().filter(|w| self.capture_image(Owner::Switcher, &w.id).is_some()).count();
         serde_json::json!({
-            "open": m.open,
-            "shown": m.shown,
-            "shows": m.shows,
+            "open": m.open(),
+            "shown": m.shown(),
+            "shows": m.shows(),
             "capturedCells": cells,
-            "index": m.index,
+            "index": m.index(),
             "count": entries.len(),
             "id": selected.map_or("", |w| w.id.as_str()),
             "title": selected.map_or("", |w| w.title.as_str()),
             "captured": captured,
             "capturing": self.capture_sourced(Owner::Switcher),
-            "cells": if m.shown { m.cells_json() } else { serde_json::json!([]) },
+            "cells": if m.shown() { m.cells_json() } else { serde_json::json!([]) },
         })
     }
 
@@ -234,11 +202,11 @@ impl App {
         if topic == Topic::Compositor {
             let id = self.store.compositor.snapshot.focused_window_id.clone();
             self.switcher.model.focused(&id);
-            if self.switcher.model.open {
+            if self.switcher.model.open() {
                 self.switcher_probe();
             }
         }
-        if self.switcher.model.open || self.switcher.win.is_some() {
+        if self.switcher.model.open() || self.switcher.win.is_some() {
             self.switcher.dirty = true;
         }
     }
@@ -252,20 +220,15 @@ impl App {
         }
     }
 
-    /// The switcher's own clocks, read off its deadlines.
     pub fn switcher_deadline(&self) -> Option<Instant> {
-        let m = &self.switcher.model;
-        let refresh = m.refresh_at.filter(|_| m.shown && m.capturing);
-        [m.show_at, m.commit_pending, m.prime_at, m.capture_at, refresh, m.refocus.as_ref().map(|r| r.1)].into_iter().flatten().min()
+        self.switcher.model.deadline()
     }
 
     pub fn switcher_frame(&mut self) {
         let now = Instant::now();
         let Some((s, _)) = &mut self.switcher.win else { return };
         if s.landed(now) {
-            let m = &mut self.switcher.model;
-            m.prime_at = Some(now + switcher::PRIME);
-            m.capture_at = Some(now + switcher::CAPTURE_AFTER);
+            self.switcher.model.landed(now);
         }
         self.switcher.dirty = true;
     }
@@ -282,57 +245,33 @@ impl App {
     /// Runs what is due, then draws the card.
     pub fn switcher_present(&mut self) {
         let now = Instant::now();
-        let due = |t: Option<Instant>| t.is_some_and(|t| t <= now);
-        let m = &mut self.switcher.model;
-        if due(m.commit_pending) {
-            m.commit_pending = None;
+        let window = self.switcher.win.is_some();
+        let due = self.switcher.model.tick(&self.store.theme.theme, now, self.motion_scale, window);
+        if let Some(id) = &due.refocus {
+            compositor::focus_window(id);
         }
-        if m.refocus.as_ref().is_some_and(|r| r.1 <= now) {
-            let (id, _) = m.refocus.take().expect("refocus");
-            if !m.open {
-                compositor::focus_window(&id);
-            }
+        if let Some(fresh) = due.show {
+            self.switcher_show(fresh);
         }
-        if due(m.show_at) {
-            m.show_at = None;
-            if m.open {
-                self.switcher_show(now);
-            }
+        if due.prime
+            && let Some((s, _)) = &self.switcher.win
+        {
+            s.layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
+            s.layer.commit();
         }
-        let m = &mut self.switcher.model;
-        if due(m.prime_at) {
-            m.prime_at = None;
-            if m.shown {
-                m.primed = true;
-                if let Some((s, _)) = &self.switcher.win {
-                    s.layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
-                    s.layer.commit();
-                }
-            }
+        if due.capture {
+            self.switcher.dirty = true;
         }
-        let m = &mut self.switcher.model;
-        if due(m.capture_at) {
-            m.capture_at = None;
-            if m.shown {
-                m.capturing = true;
-                m.refresh_at = Some(now + switcher::REFRESH);
-                self.switcher.dirty = true;
-            }
-        }
-        let m = &mut self.switcher.model;
-        if m.shown && m.capturing && due(m.refresh_at) {
-            m.refresh_at = Some(now + switcher::REFRESH);
-            if let Some(id) = self.switcher_entries().get(self.switcher.model.index).map(|w| w.id.clone()) {
-                self.capture_refresh(Owner::Switcher, &id);
-            }
+        if due.refresh
+            && let Some(id) = self.switcher_entries().get(self.switcher.model.index()).map(|w| w.id.clone())
+        {
+            self.capture_refresh(Owner::Switcher, &id);
         }
 
         let (alpha, fading) = self.switcher.model.alpha(now);
-        if self.switcher.win.as_ref().is_some_and(|(s, _)| s.mapped()) && !self.switcher.model.shown && !fading {
+        if self.switcher.win.as_ref().is_some_and(|(s, _)| s.mapped()) && !self.switcher.model.shown() && !fading {
             self.switcher.win = None;
-            self.switcher.model.capturing = false;
-            self.switcher.model.cells.clear();
-            self.switcher.model.nodes.clear();
+            self.switcher.model.unmapped();
             self.capture_clear(Owner::Switcher);
             self.log("switcher unmapped");
             return;
@@ -364,7 +303,7 @@ impl App {
         self.switcher.model.draw(&input, &mut self.kit, scene);
         let qh = self.qh.clone();
         surface.present(scene, fading, &qh);
-        if self.switcher.model.capturing && self.switcher.model.shown {
+        if self.switcher.model.capturing() && self.switcher.model.shown() {
             let wants = self.switcher.model.thumb_sizes(&refs);
             let scale = self.switcher.win.as_ref().map_or(1.0, |(s, _)| s.scale());
             self.capture_set(Owner::Switcher, &wants, false, scale);

@@ -17,9 +17,9 @@ use super::App;
 use crate::services::radio::{self, Cmd, Reply};
 use crate::store::Diff;
 use crate::services::earth;
-use crate::surfaces::atlas::globe::{self, Out};
+use crate::surfaces::atlas::globe;
 use crate::surfaces::atlas::view::Shown;
-use crate::surfaces::atlas::{Atlas, Key};
+use crate::surfaces::atlas::{Atlas, Cursor, Key};
 use crate::surfaces::modal::{Modal, Part};
 use crate::surfaces::tooltip;
 use crate::ui::What;
@@ -43,16 +43,16 @@ pub struct State {
 
 impl App {
     pub fn atlas_open(&self) -> bool {
-        self.atlas.model.open
+        self.atlas.model.open()
     }
 
     pub fn atlas_toggle(&mut self) {
-        if self.atlas.model.open { self.atlas_close() } else { self.atlas_show() }
+        if self.atlas.model.open() { self.atlas_close() } else { self.atlas_show() }
     }
 
     /// RadioOverlay.open(): whatever panel is current gives way.
     pub fn atlas_show(&mut self) {
-        if self.atlas.model.open {
+        if self.atlas.model.open() {
             return;
         }
         self.close_panels();
@@ -102,7 +102,7 @@ impl App {
     }
 
     pub fn atlas_close(&mut self) {
-        if !self.atlas.model.open {
+        if !self.atlas.model.open() {
             return;
         }
         self.atlas.model.closed();
@@ -135,19 +135,19 @@ impl App {
                     }
                 }
             }
-            Topic::Theme => self.atlas.model.dirty = true,
+            Topic::Theme => self.atlas.model.redraw(),
             _ => {}
         }
     }
 
     pub fn atlas_deadline(&self) -> Option<Instant> {
-        self.atlas.model.open.then(|| self.atlas.model.deadline()).flatten()
+        self.atlas.model.open().then(|| self.atlas.model.deadline()).flatten()
     }
 
     pub(super) fn present_atlas(&mut self, now: Instant) {
         if self.atlas.win.as_ref().is_some_and(|w| w.shown.modal.win.finished(now)) {
             self.atlas.win = None;
-            self.atlas.model.globe.drop_earth();
+            self.atlas.model.unmapped();
             self.sync_join();
             self.log("radio unmapped");
             return;
@@ -156,18 +156,15 @@ impl App {
         let r = self.store.media.radio.clone();
         let m = &mut self.atlas.model;
         m.tick(&r, now);
-        m.globe.tick(now);
-        m.sync_geo(&r);
         let qh = self.qh.clone();
         let theme = &self.store.theme.theme;
-        let moving = m.globe.animating();
-        let animating = w.shown.animating(now) || moving;
-        if m.dirty || animating || !w.shown.modal.win.surface.mapped() {
+        let animating = w.shown.animating(now) || m.animating();
+        if m.dirty() || animating || !w.shown.modal.win.surface.mapped() {
             w.shown.modal.sync_region(&self.compositor);
             w.shown.layout(m, &r, theme, &mut self.kit, now);
-            m.dirty = false;
+            m.drawn();
         }
-        let animating = w.shown.animating(now) || m.globe.animating();
+        let animating = w.shown.animating(now) || m.animating();
         w.shown.modal.present(animating, now, &qh);
         if w.shown.modal.win.animating(now) {
             self.sync_join();
@@ -181,7 +178,7 @@ impl App {
     pub(super) fn atlas_frame(&mut self, part: Part, now: Instant) {
         let Some(w) = &mut self.atlas.win else { return };
         if w.shown.modal.frame(part, now) {
-            self.atlas.model.dirty = true;
+            self.atlas.model.redraw();
             self.sync_join();
         }
     }
@@ -190,23 +187,23 @@ impl App {
         let Some(w) = &mut self.atlas.win else { return };
         w.shown.modal.configure(part, width, height);
         if part == Part::Card {
-            self.atlas.model.dirty = true;
+            self.atlas.model.redraw();
         }
     }
 
     pub(super) fn atlas_closed(&mut self) {
         self.atlas.win = None;
         self.atlas.model.closed();
-        self.atlas.model.globe.drop_earth();
+        self.atlas.model.unmapped();
         self.sync_join();
     }
 
     /// One key while the atlas holds the keyboard.
     pub(super) fn atlas_key(&mut self, event: &KeyEvent) -> bool {
-        if !self.atlas.model.open || self.atlas.win.as_ref().is_none_or(|w| !w.shown.modal.open) {
+        if !self.atlas.model.open() || self.atlas.win.as_ref().is_none_or(|w| !w.shown.modal.open) {
             return false;
         }
-        if self.atlas.model.editing && !matches!(event.keysym, Keysym::Escape | Keysym::Up | Keysym::Down | Keysym::Return | Keysym::KP_Enter) {
+        if self.atlas.model.editing() && !matches!(event.keysym, Keysym::Escape | Keysym::Up | Keysym::Down | Keysym::Return | Keysym::KP_Enter) {
             let r = self.store.media.radio.clone();
             self.atlas.model.edit(&r, crate::input::field_key(event.keysym), self.mods, event.utf8.as_deref(), Instant::now());
             return true;
@@ -234,7 +231,7 @@ impl App {
 
     /// The clipboard's text into the search field, when it holds the keyboard.
     pub(super) fn atlas_paste(&mut self, text: &str) -> bool {
-        if !self.atlas.model.open {
+        if !self.atlas.model.open() {
             return false;
         }
         let r = self.store.media.radio.clone();
@@ -251,28 +248,18 @@ impl App {
         let (x, y) = e.position;
         let Some(w) = &mut self.atlas.win else { return true };
         let m = &mut self.atlas.model;
-        m.dirty = true;
-        let on_globe = !m.help && m.globe.contains(x, y);
+        m.redraw();
+        let on_globe = m.on_globe(x, y);
         let mut shape = None;
         match e.kind {
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
-                if m.globe.grabbing() || on_globe {
-                    let time = if let PointerEventKind::Motion { time } = e.kind { Some(time) } else { None };
-                    if m.globe.motion(x, y, time) == Out::Interaction {
-                        m.keyboard_selection = false;
-                    }
-                    m.keyboard_selection = false;
-                    shape = Some(if m.globe.grabbing() {
-                        Shape::Grabbing
-                    } else if m.globe.over_station() {
-                        Shape::Pointer
-                    } else {
-                        Shape::Grab
-                    });
-                } else {
-                    m.globe.leave();
-                    shape = Some(Shape::Default);
-                }
+                let time = if let PointerEventKind::Motion { time } = e.kind { Some(time) } else { None };
+                shape = Some(match m.hover(x, y, time, on_globe) {
+                    Cursor::Default => Shape::Default,
+                    Cursor::Grab => Shape::Grab,
+                    Cursor::Grabbing => Shape::Grabbing,
+                    Cursor::Pointer => Shape::Pointer,
+                });
                 if on_globe {
                     self.tips.hide(None, now);
                 }
@@ -296,14 +283,12 @@ impl App {
                     }
                 }
                 if let Some(i) = hit.and_then(|h| h.on).and_then(|on| on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok())) {
-                    if m.selected_index != Some(i) || m.keyboard_selection {
-                        m.set_selection(&r, Some(i), false);
-                    }
+                    m.hover_row(&r, i);
                 }
             }
             PointerEventKind::Leave { .. } => {
                 self.tips.hide(None, now);
-                m.globe.leave();
+                m.leave();
                 w.shown.set_hover(None);
             }
             PointerEventKind::Press { button, .. } => {
@@ -311,9 +296,7 @@ impl App {
                     return true;
                 }
                 if on_globe {
-                    m.globe.press(x, y);
-                    m.keyboard_selection = false;
-                    m.editing = false;
+                    m.press_globe(x, y);
                     w.pressed = Some("globe".into());
                     shape = Some(Shape::Grabbing);
                 } else {
@@ -333,11 +316,7 @@ impl App {
                 w.sliding = false;
                 let pressed = w.pressed.take();
                 if pressed.as_deref() == Some("globe") {
-                    match m.globe.release(x, y, time, now) {
-                        Out::Station(s) => m.activate_map_station(&r, &s),
-                        Out::Country(code, name) => m.browse_country(&r, &code, &name),
-                        _ => {}
-                    }
+                    m.release_globe(&r, x, y, time, now);
                     return true;
                 }
                 let hit = w.shown.hit(x, y);
@@ -354,13 +333,11 @@ impl App {
                     return true;
                 }
                 if on_globe {
-                    m.globe.wheel(-notches * 120.0);
-                    m.keyboard_selection = false;
+                    m.zoom_globe(notches);
                 } else if let Some(w) = &self.atlas.win
                     && w.shown.hit(x, y).and_then(|h| h.on).is_some_and(|on| on.starts_with("row:") || on.starts_with("fav:"))
                 {
-                    let max = (m.display(&r).len() as f64 * m.row_h - m.list_h).max(0.0);
-                    m.scroll = (m.scroll + vertical.absolute).clamp(0.0, max);
+                    m.scroll_list(&r, vertical.absolute);
                 }
             }
         }
@@ -374,47 +351,8 @@ impl App {
 
     fn atlas_action(&mut self, on: &str, what: Option<What>) {
         let r = self.store.media.radio.clone();
-        let m = &mut self.atlas.model;
-        m.dirty = true;
-        if on != "search" {
-            m.editing = false;
-        }
-        if let Some(i) = on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
-            m.set_selection(&r, Some(i), false);
-            m.play_selected(&r);
-            return;
-        }
-        if let Some(i) = on.strip_prefix("fav:").and_then(|i| i.parse::<usize>().ok()) {
-            if let Some(s) = m.display(&r).get(i).cloned() {
-                radio::send(Cmd::ToggleFavorite(s));
-            }
-            return;
-        }
-        if let Some(i) = on.strip_prefix("output:").and_then(|i| i.parse::<usize>().ok()) {
-            let id = if i == 0 { String::new() } else { r.outputs.get(i - 1).map(|(id, _)| id.clone()).unwrap_or_default() };
-            m.select_output(id);
-            return;
-        }
-        match (on, what) {
-            ("outside" | "close", _) => self.atlas_close(),
-            ("search", _) => m.editing = true,
-            ("shuffle", _) => m.tune_random(&r),
-            ("help", _) => m.toggle_controls(),
-            ("tab", Some(What::Pick(i))) => m.show_tab(&r, i),
-            ("transport", Some(What::Pick(i))) => match i {
-                0 => radio::send(Cmd::Previous),
-                1 => m.play_pause(&r),
-                2 => radio::send(Cmd::Next),
-                _ => radio::send(Cmd::Stop),
-            },
-            ("outputs", _) => m.toggle_outputs(&r),
-            ("mute", _) => radio::send(Cmd::ToggleMute),
-            ("playing-fav", _) => {
-                if let Some(s) = r.station.clone() {
-                    radio::send(Cmd::ToggleFavorite(s));
-                }
-            }
-            _ => {}
+        if self.atlas.model.act(&r, on, what) {
+            self.atlas_close();
         }
     }
 }

@@ -747,7 +747,6 @@ fn shots(dir: &Path, doc: &Value, env: &theme::Env) {
             can_next: true,
             progress: Some(0.4),
             art: None,
-            cursor: -1,
         });
         let shared = lock::Shared {
             now: Local::now(),
@@ -764,7 +763,8 @@ fn shots(dir: &Path, doc: &Value, env: &theme::Env) {
             enter: (1.0, 0.0),
             blanked: false,
             wake: 1.0,
-            buttons: lock::Buttons { shown: vec![lock::Button::PowerOff, lock::Button::Reboot], cursor: -1, armed: None },
+            buttons: lock::Buttons { shown: vec![lock::Button::PowerOff, lock::Button::Reboot], armed: None },
+            cursor: None,
         };
         view.draw(&shared, &theme, &mut kit, Instant::now());
         let mut r = Renderer::new(w as u16, h as u16);

@@ -5,8 +5,8 @@
 //! compositor's own binds drive it; it maps only 150 ms into a hold, so a
 //! quick Alt+Tab switches with no card at all.
 //!
-//! This is the switcher's state and its drawing; `wayland::switcher` owns
-//! its window, its timers and its captures.
+//! This is the switcher's state, its clocks and its drawing;
+//! `wayland::switcher` owns its window and its captures.
 
 pub mod model;
 
@@ -27,15 +27,15 @@ use crate::text::TextStyle;
 use crate::ui::boxes;
 
 /// How long the card waits before it maps (macOS's Cmd+Tab).
-pub const SHOW_AFTER: Duration = Duration::from_millis(150);
+const SHOW_AFTER: Duration = Duration::from_millis(150);
 /// The window in which a release and its `next` may arrive out of order.
-pub const COMMIT_RACE: Duration = Duration::from_millis(80);
-pub const PRIME: Duration = Duration::from_millis(75);
-pub const REFOCUS: Duration = Duration::from_millis(80);
+const COMMIT_RACE: Duration = Duration::from_millis(80);
+const PRIME: Duration = Duration::from_millis(75);
+const REFOCUS: Duration = Duration::from_millis(80);
 /// Two frames at 60Hz: the card is on screen before the first capture.
-pub const CAPTURE_AFTER: Duration = Duration::from_millis(32);
+const CAPTURE_AFTER: Duration = Duration::from_millis(32);
 /// The selected thumbnail's refresh, five a second; the rest hold one frame.
-pub const REFRESH: Duration = Duration::from_millis(200);
+const REFRESH: Duration = Duration::from_millis(200);
 
 /// One cell as drawn, in output pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -48,27 +48,45 @@ pub struct CellRects {
 #[derive(Default)]
 pub struct Switcher {
     /// A switch is under way, from the first step to the commit or cancel.
-    pub open: bool,
+    open: bool,
     /// The card is mapped for it.
-    pub shown: bool,
-    pub shows: u64,
-    pub index: usize,
+    shown: bool,
+    shows: u64,
+    index: usize,
     history: Vec<WindowId>,
-    pub open_history: Vec<WindowId>,
-    pub open_workspace: WorkspaceId,
-    pub commit_pending: Option<Instant>,
-    pub committed_at: Option<Instant>,
-    pub show_at: Option<Instant>,
-    pub primed: bool,
-    pub prime_at: Option<Instant>,
-    pub refocus: Option<(WindowId, Instant)>,
-    pub capturing: bool,
-    pub capture_at: Option<Instant>,
-    pub refresh_at: Option<Instant>,
-    pub fade: Option<Animated>,
-    pub scroll: f64,
-    pub cells: Vec<CellRects>,
-    pub nodes: Vec<NodeId>,
+    /// The history and the workspace the switch opened on.
+    open_history: Vec<WindowId>,
+    open_workspace: WorkspaceId,
+    commit_pending: Option<Instant>,
+    committed_at: Option<Instant>,
+    show_at: Option<Instant>,
+    /// The layer has let the keyboard go to OnDemand.
+    primed: bool,
+    prime_at: Option<Instant>,
+    refocus: Option<(WindowId, Instant)>,
+    capturing: bool,
+    capture_at: Option<Instant>,
+    refresh_at: Option<Instant>,
+    fade: Option<Animated>,
+    scroll: f64,
+    cells: Vec<CellRects>,
+    nodes: Vec<NodeId>,
+}
+
+/// What the clocks that came due ask of the host, in this order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Due {
+    /// A commit's focus held for the keyboard's release.
+    pub refocus: Option<WindowId>,
+    /// The card shows: `fresh` when it needs a new window, else the one
+    /// still fading out takes the keyboard back.
+    pub show: Option<bool>,
+    /// The keyboard goes to OnDemand.
+    pub prime: bool,
+    /// The captures start.
+    pub capture: bool,
+    /// The selected thumbnail is captured again.
+    pub refresh: bool,
 }
 
 /// What one layout pass reads.
@@ -125,8 +143,165 @@ impl Switcher {
         self.history.truncate(32);
     }
 
-    pub fn history(&self) -> &[WindowId] {
-        &self.history
+    pub fn open(&self) -> bool {
+        self.open
+    }
+
+    pub fn shown(&self) -> bool {
+        self.shown
+    }
+
+    pub fn shows(&self) -> u64 {
+        self.shows
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// The thumbnails are captured.
+    pub fn capturing(&self) -> bool {
+        self.capturing
+    }
+
+    /// The windows the switch walks, in the order it opened on.
+    pub fn entries<'a>(&self, windows: &'a [Window]) -> Vec<&'a Window> {
+        model::entries(windows, &self.open_history, &self.open_workspace)
+    }
+
+    /// The first `next` or `prev` opens the switch on `workspace` (empty
+    /// for every one), with the history as it stands. False inside a
+    /// commit's race, where a repeat sent before Alt came up lands late.
+    pub fn begin(&mut self, workspace: WorkspaceId, now: Instant) -> bool {
+        if self.committed_at.is_some_and(|t| now.duration_since(t) < COMMIT_RACE) {
+            return false;
+        }
+        self.open_history = self.history.clone();
+        self.open_workspace = workspace;
+        self.index = 0;
+        self.primed = false;
+        self.open = true;
+        self.scroll = 0.0;
+        self.show_at = Some(now + SHOW_AFTER);
+        true
+    }
+
+    /// The cursor `step` along `count` entries.
+    pub fn walk(&mut self, count: usize, step: i32) {
+        self.index = model::advance(self.index, count, step);
+    }
+
+    /// A commit with nothing open yet waits a moment for the `next` it
+    /// may have overtaken.
+    pub fn defer_commit(&mut self, now: Instant) {
+        self.commit_pending = Some(now + COMMIT_RACE);
+    }
+
+    /// A commit that was waiting on this switch's opening.
+    pub fn take_pending_commit(&mut self) -> bool {
+        self.commit_pending.take().is_some()
+    }
+
+    /// Commits to `id`: the window to focus now, or none when the focus
+    /// waits for the keyboard's release. Inside the prime the layer still
+    /// holds the keyboard exclusively, and Hyprland hands focus back to
+    /// where it came from once it lets go: one dispatch after that
+    /// release, not one either side of it.
+    pub fn commit(&mut self, id: WindowId, now: Instant) -> Option<WindowId> {
+        let (primed, shown) = (self.primed, self.shown);
+        self.committed_at = Some(now);
+        if id.is_empty() {
+            return None;
+        }
+        if primed || !shown {
+            return Some(id);
+        }
+        self.refocus = Some((id, now + REFOCUS));
+        None
+    }
+
+    /// The switch ends; a shown card fades out.
+    pub fn close(&mut self, theme: &Theme, now: Instant, scale: f64) {
+        self.show_at = None;
+        self.open = false;
+        if self.shown {
+            self.shown = false;
+            self.set_fade(theme, now, scale, false);
+        }
+    }
+
+    /// The window's first frame landed.
+    pub fn landed(&mut self, now: Instant) {
+        self.prime_at = Some(now + PRIME);
+        self.capture_at = Some(now + CAPTURE_AFTER);
+    }
+
+    /// The window went with its fade: nothing drawn or captured is kept.
+    pub fn unmapped(&mut self) {
+        self.capturing = false;
+        self.cells.clear();
+        self.nodes.clear();
+    }
+
+    /// When the next clock comes due.
+    pub fn deadline(&self) -> Option<Instant> {
+        let refresh = self.refresh_at.filter(|_| self.shown && self.capturing);
+        [self.show_at, self.commit_pending, self.prime_at, self.capture_at, refresh, self.refocus.as_ref().map(|r| r.1)].into_iter().flatten().min()
+    }
+
+    /// Runs the clocks due at `now`; `window` says whether the card's
+    /// window is still up from the last show.
+    pub fn tick(&mut self, theme: &Theme, now: Instant, scale: f64, window: bool) -> Due {
+        let due = |t: Option<Instant>| t.is_some_and(|t| t <= now);
+        let mut out = Due::default();
+        if due(self.commit_pending) {
+            self.commit_pending = None;
+        }
+        if self.refocus.as_ref().is_some_and(|r| r.1 <= now) {
+            let (id, _) = self.refocus.take().expect("refocus");
+            if !self.open {
+                out.refocus = Some(id);
+            }
+        }
+        if due(self.show_at) {
+            self.show_at = None;
+            if self.open {
+                self.show(theme, now, scale, window);
+                out.show = Some(!window);
+            }
+        }
+        if due(self.prime_at) {
+            self.prime_at = None;
+            if self.shown {
+                self.primed = true;
+                out.prime = true;
+            }
+        }
+        if due(self.capture_at) {
+            self.capture_at = None;
+            if self.shown {
+                self.capturing = true;
+                self.refresh_at = Some(now + REFRESH);
+                out.capture = true;
+            }
+        }
+        if self.shown && self.capturing && due(self.refresh_at) {
+            self.refresh_at = Some(now + REFRESH);
+            out.refresh = true;
+        }
+        out
+    }
+
+    fn show(&mut self, theme: &Theme, now: Instant, scale: f64, window: bool) {
+        self.shown = true;
+        self.shows += 1;
+        self.capturing = false;
+        self.prime_at = None;
+        self.set_fade(theme, now, scale, true);
+        if window {
+            self.prime_at = Some(now + PRIME);
+            self.capture_at = Some(now + CAPTURE_AFTER);
+        }
     }
 
     /// The card's opacity now, and whether it is still moving.
@@ -137,7 +312,7 @@ impl Switcher {
         }
     }
 
-    pub fn set_fade(&mut self, theme: &Theme, now: Instant, scale: f64, open: bool) {
+    fn set_fade(&mut self, theme: &Theme, now: Instant, scale: f64, open: bool) {
         let motion = theme.motion();
         let curve = Curve::from_table(&motion.switcher_curve);
         let f = self.fade.get_or_insert_with(|| Animated::new(0.0, curve));
@@ -278,5 +453,36 @@ impl Switcher {
     pub fn cells_json(&self) -> Value {
         let r = |r: &IRect| r.to_json();
         Value::Array(self.cells.iter().map(|c| json!({"cell": r(&c.cell), "thumb": r(&c.thumb), "icon": r(&c.icon)})).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_card_shows_only_past_the_hold() {
+        let theme = Theme::default();
+        let t0 = Instant::now();
+        let mut s = Switcher::default();
+        assert!(s.begin(WorkspaceId::default(), t0));
+        assert_eq!(s.tick(&theme, t0 + Duration::from_millis(100), 1.0, false).show, None);
+        assert_eq!(s.tick(&theme, t0 + SHOW_AFTER, 1.0, false).show, Some(true));
+        assert!(s.shown());
+    }
+
+    #[test]
+    fn a_quick_tap_commits_with_no_card_and_a_late_step_is_dropped() {
+        let theme = Theme::default();
+        let t0 = Instant::now();
+        let mut s = Switcher::default();
+        assert!(s.begin(WorkspaceId::default(), t0));
+        let at = t0 + Duration::from_millis(40);
+        assert_eq!(s.commit("w".into(), at), Some("w".into()));
+        s.close(&theme, at, 1.0);
+        assert_eq!(s.tick(&theme, t0 + SHOW_AFTER * 2, 1.0, false), Due::default());
+        assert!(!s.shown() && s.shows() == 0);
+        assert!(!s.begin(WorkspaceId::default(), at + Duration::from_millis(10)));
+        assert!(s.begin(WorkspaceId::default(), at + COMMIT_RACE));
     }
 }
