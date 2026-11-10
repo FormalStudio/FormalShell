@@ -62,14 +62,6 @@ pub(super) fn licence_name(spdx: &str) -> String {
     }
 }
 
-pub(super) fn write_picker_selection(payload: &Value) {
-    let path = picker_selection_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let _ = std::fs::write(&path, payload.to_string());
-}
-
 impl Model {
     pub fn on_picker(&self) -> bool {
         self.mode == Mode::Menu && self.level.as_deref() == Some(PICKER_ROUTE)
@@ -168,8 +160,8 @@ impl Model {
     /// (a snooze under `auto`, nothing where settings.json pins the mode,
     /// which the section's far end says), the card left open on the
     /// previews.
-    pub(super) fn picker_style(&mut self, store: &Store, mode: ThemeMode) -> Out {
-        let _ = crate::services::theme::set_mode(store, crate::services::theme::Ask::Set(mode));
+    pub(super) fn picker_style(&mut self, mode: ThemeMode) -> Out {
+        self.ask(Request::Mode(mode));
         self.placed = true;
         self.dirty = true;
         Out::None
@@ -209,17 +201,16 @@ impl Model {
             return false;
         };
         if self.picker.select {
-            write_picker_selection(&json!({"token": self.picker.token, "value": path}));
-            self.picker.token.clear();
+            self.picker_answer(Some(path));
         } else {
             match &item.kind {
                 ItemKind::Mode { .. } => return false,
-                ItemKind::Sky => state::set_wallpaper(state::Choice::Both(fs_theme::theme::SKY.into()), None),
-                ItemKind::Pair { light, dark } => state::set_wallpaper(state::Choice::Pair(light.clone(), dark.clone()), None),
-                ItemKind::Single { path, filed: None } => state::set_wallpaper(state::Choice::Both(path.clone()), None),
+                ItemKind::Sky => self.ask(Request::Wallpaper(state::Choice::Both(fs_theme::theme::SKY.into()), None)),
+                ItemKind::Pair { light, dark } => self.ask(Request::Wallpaper(state::Choice::Pair(light.clone(), dark.clone()), None)),
+                ItemKind::Single { path, filed: None } => self.ask(Request::Wallpaper(state::Choice::Both(path.clone()), None)),
                 ItemKind::Single { path, filed: Some(filed) } => {
                     let mode = crate::services::theme::mode_for(store, crate::services::theme::Ask::Set(*filed)).ok();
-                    state::set_wallpaper(state::Choice::Slot(*filed, path.clone()), mode);
+                    self.ask(Request::Wallpaper(state::Choice::Slot(*filed, path.clone()), mode));
                 }
             }
         }
@@ -239,7 +230,7 @@ impl Model {
         if !single {
             return false;
         }
-        state::set_wallpaper(state::Choice::Slot(half, path.into()), None);
+        self.ask(Request::Wallpaper(state::Choice::Slot(half, path.into()), None));
         self.close();
         true
     }
@@ -304,13 +295,17 @@ impl Model {
             self.picker.from = None;
         }
         self.picker.pending = false;
-        crate::services::picker::command(crate::services::picker::Cmd::Scan(self.picker.dir.clone()));
+        self.ask(Request::Picker(crate::services::picker::Cmd::Scan(self.picker.dir.clone())));
+    }
+
+    fn picker_answer(&mut self, value: Option<&str>) {
+        let token = std::mem::take(&mut self.picker.token);
+        self.ask(Request::PickerSelected(Selected { token, value: value.map(str::to_owned), cancelled: value.is_none(), secret: false }));
     }
 
     pub(super) fn picker_abandon(&mut self) {
         if self.picker.select && !self.picker.token.is_empty() {
-            write_picker_selection(&json!({"token": self.picker.token, "cancelled": true}));
-            self.picker.token.clear();
+            self.picker_answer(None);
         }
     }
 

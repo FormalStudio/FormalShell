@@ -25,7 +25,7 @@ use crate::services::menu::{self as index, Ask};
 use crate::services::notifications::{self, Op};
 use crate::store::{Diff, Topic};
 use crate::surface::{Backend, Surface};
-use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
+use crate::surfaces::launcher::{ABBREV_EDIT, Out, Request, Selected, Shown, Target as Pick, keys};
 use crate::surfaces::modal::{Modal, Part};
 use crate::text::{Family, TextStyle};
 use crate::ui::field::{self, Modifiers};
@@ -458,6 +458,10 @@ impl App {
                     self.run_intent(&intent, Some(&subject));
                 }
             }
+            Out::Target(pick) => {
+                self.hide_launcher();
+                self.run_target(pick);
+            }
             Out::Spawn(argv) => {
                 if !self.launcher.open {
                     self.hide_launcher();
@@ -473,6 +477,49 @@ impl App {
                     self.launcher.after_unmap = Some(call);
                 } else {
                     self.run_call(&call);
+                }
+            }
+        }
+    }
+
+    fn run_target(&self, pick: Pick) {
+        use crate::services::{compositor, launch, localsend};
+        match pick {
+            Pick::Open { id, argv } => launch::spawn(&self.store, &id, &argv),
+            Pick::Send { peer, payload } => localsend::command(localsend::Cmd::Send { peer, payload }),
+            Pick::Move { windows, idx, output } => {
+                for id in windows {
+                    compositor::send(compositor::Command::MoveWindowTo { id, idx, output: output.clone() });
+                }
+            }
+        }
+    }
+
+    /// What the model asked of the services since the last call.
+    fn launcher_requests(&mut self) {
+        use crate::services::{clipboard, localsend, mirror, packages, picker, plugins};
+        for request in self.launcher.take_requests() {
+            match request {
+                Request::Index(ask) => index::ask(ask),
+                Request::Mirror(cmd) => mirror::command(cmd),
+                Request::Picker(cmd) => picker::command(cmd),
+                Request::Packages(cmd) => packages::send(cmd),
+                Request::PackageSearch(q) => packages::search_for(&self.store, &q),
+                Request::Plugin(id, line) => plugins::send(&id, line),
+                Request::Plugins(open) => plugins::launcher(open),
+                Request::PeerScan => localsend::command(localsend::Cmd::Scan { force: false }),
+                Request::Clipboard(cmd) => clipboard::command(cmd),
+                Request::Selected(answer) => {
+                    write_selection(&crate::surfaces::launcher::selection_path(), &answer);
+                    self.selection_answer(answer);
+                }
+                Request::SelectionCleared => {
+                    let _ = std::fs::remove_file(crate::surfaces::launcher::selection_path());
+                }
+                Request::PickerSelected(answer) => write_selection(&crate::surfaces::launcher::picker_selection_path(), &answer),
+                Request::Wallpaper(choice, mode) => crate::services::state::set_wallpaper(choice, mode),
+                Request::Mode(mode) => {
+                    let _ = crate::services::theme::set_mode(&self.store, crate::services::theme::Ask::Set(mode));
                 }
             }
         }
@@ -663,22 +710,21 @@ impl App {
         }
     }
 
-    /// The answers whose token an in-process owner holds.
-    fn launcher_answers(&mut self) {
-        for (token, value, cancelled) in self.launcher.take_resolved() {
-            if token == WIFI_IDENTITY || token == WIFI_PASSWORD {
-                self.wifi_answer(&token, value, cancelled);
-            } else if token == WIFI_SHOWN {
-                if !cancelled {
-                    self.menu_open(Some("wifi"));
-                }
-            } else if token == REMINDER_SET {
-                self.reminder_answer(value, cancelled);
-            } else if token == LIGHTS_COLOR {
-                self.lights_answer(value, cancelled);
-            } else if token == ABBREV_EDIT {
-                self.launcher.edit_answer(&self.store, value, cancelled);
+    /// An answer whose token an in-process owner holds.
+    fn selection_answer(&mut self, answer: Selected) {
+        let Selected { token, value, cancelled, .. } = answer;
+        if token == WIFI_IDENTITY || token == WIFI_PASSWORD {
+            self.wifi_answer(&token, value, cancelled);
+        } else if token == WIFI_SHOWN {
+            if !cancelled {
+                self.menu_open(Some("wifi"));
             }
+        } else if token == REMINDER_SET {
+            self.reminder_answer(value, cancelled);
+        } else if token == LIGHTS_COLOR {
+            self.lights_answer(value, cancelled);
+        } else if token == ABBREV_EDIT {
+            self.launcher.edit_answer(&self.store, value, cancelled);
         }
     }
 
@@ -1135,8 +1181,15 @@ impl App {
         self.launch.win.as_ref().map_or_else(|| self.store.display.scales.primary(), |w| w.shown.modal.win.surface.scale())
     }
 
+    /// The model's asks go out on either side of the present, which can
+    /// resolve the model again.
     pub(super) fn present_launcher(&mut self, now: Instant) {
-        self.launcher_answers();
+        self.launcher_requests();
+        self.present_launcher_window(now);
+        self.launcher_requests();
+    }
+
+    fn present_launcher_window(&mut self, now: Instant) {
         if let Some(w) = &mut self.launch.win {
             let want = self.launcher.open && w.shown.modal.open && self.launcher.level.as_deref() == Some("wifi");
             if want != w.scan.is_some() {
@@ -1472,4 +1525,19 @@ fn warm_styles(look: &crate::paint::Look, f: &fs_theme::tokens::FontTokens) -> V
         }
     }
     out
+}
+
+/// menu-selection.txt's and picker-selection.txt's one line, which `dev/`
+/// legs read: the token and the value, or `cancelled`, a secret answer
+/// filed as cancelled with `secret`.
+fn write_selection(path: &std::path::Path, answer: &Selected) {
+    let line = match answer {
+        Selected { secret: true, .. } => serde_json::json!({"token": answer.token, "cancelled": true, "secret": true}),
+        Selected { value: Some(value), cancelled: false, .. } => serde_json::json!({"token": answer.token, "value": value}),
+        _ => serde_json::json!({"token": answer.token, "cancelled": true}),
+    };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, line.to_string());
 }

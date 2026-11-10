@@ -90,7 +90,7 @@ pub(super) fn peer_targets(store: &Store) -> Vec<Node> {
 
 /// What a target action picks from. Workspaces: the focused output's, by
 /// slot, then the next free one as a new one. Apps: every installed one,
-/// by name. Peers: LocalSend's last scan, which a listing asks again.
+/// by name. Peers: LocalSend's last scan.
 pub(super) fn targets_for(store: &Store, kind: TargetKind) -> Vec<Node> {
     match kind {
         TargetKind::App => {
@@ -101,11 +101,7 @@ pub(super) fn targets_for(store: &Store, kind: TargetKind) -> Vec<Node> {
             apps.sort_by_key(|n| n.label.to_lowercase());
             apps
         }
-        TargetKind::Peer => {
-            use crate::services::localsend;
-            localsend::command(localsend::Cmd::Scan { force: false });
-            peer_targets(store)
-        }
+        TargetKind::Peer => peer_targets(store),
         TargetKind::Workspace => {
             let snap = &store.compositor.snapshot;
             let output = &snap.focused_output_name;

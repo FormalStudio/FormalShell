@@ -34,7 +34,7 @@ use crate::motion::{Animated, Kind as Clock};
 use crate::scene::NodeId;
 use crate::scroll::{Touchpad, Travel};
 use crate::services::menu::{self as index, Ask};
-use crate::services::{clipboard, compositor, plugins, state};
+use crate::services::{clipboard, plugins, state};
 use crate::store::Store;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::modal::Modal;
@@ -172,7 +172,9 @@ impl Grab {
 }
 
 pub struct Model {
-    resolved: Vec<(String, Option<String>, bool)>,
+    /// Behind a cell: rows and subjects are read through `&self` and ask
+    /// as they are read.
+    requests: std::cell::RefCell<Vec<Request>>,
     pub open: bool,
     pub mode: Mode,
     pub level: Option<String>,
@@ -443,7 +445,7 @@ impl Default for Model {
             select_prompt: String::new(),
             select_options: Vec::new(),
             select_token: String::new(),
-            resolved: Vec::new(),
+            requests: Default::default(),
             rows: Vec::new(),
             sections: Vec::new(),
             view: View::AppGrid,
@@ -501,6 +503,54 @@ pub enum Out {
     Intent(Intent, SubjectId, bool),
     /// A command line the App spawns.
     Spawn(Vec<String>),
+    /// A target action's pick, the launcher already closed.
+    Target(Target),
+}
+
+/// What a target action's pick does.
+pub enum Target {
+    /// Desktop entry `id` launched on `argv`, the file last.
+    Open { id: String, argv: Vec<String> },
+    Send { peer: fs_devices::localsend::Peer, payload: crate::services::localsend::Payload },
+    /// The windows onto workspace `idx` of `output`.
+    Move { windows: Vec<WindowId>, idx: i64, output: String },
+}
+
+/// A service ask the model makes as it changes level, query or row. The
+/// host sends them in order ([`Model::take_requests`]).
+pub enum Request {
+    Index(Ask),
+    Mirror(crate::services::mirror::Cmd),
+    Picker(crate::services::picker::Cmd),
+    Packages(crate::services::packages::Cmd),
+    /// Install mode's search for a query.
+    PackageSearch(String),
+    /// One event line for plugin `id`.
+    Plugin(String, String),
+    /// The launcher opened or closed, for the launcher plugins.
+    Plugins(bool),
+    PeerScan,
+    Clipboard(clipboard::Cmd),
+    /// A select or input step's answer, for menu-selection.txt and the
+    /// in-process token owners.
+    Selected(Selected),
+    /// A fresh select or input step: menu-selection.txt holds no answer.
+    SelectionCleared,
+    /// `openImageSelect`'s answer, for picker-selection.txt.
+    PickerSelected(Selected),
+    /// A picture picked, and the mode it sets.
+    Wallpaper(state::Choice, Option<fs_theme::theme::Mode>),
+    /// A Style preview's mode, under `theme mode`'s rules.
+    Mode(fs_theme::theme::Mode),
+}
+
+/// One answer of a select, input or image select step. A secret value is
+/// held for the in-process owners alone.
+pub struct Selected {
+    pub token: String,
+    pub value: Option<String>,
+    pub cancelled: bool,
+    pub secret: bool,
 }
 
 /// The row action a first press armed.
@@ -527,6 +577,15 @@ impl Confirm {
 
 
 impl Model {
+    fn ask(&self, request: Request) {
+        self.requests.borrow_mut().push(request);
+    }
+
+    /// Every ask since the last call, in the order made.
+    pub fn take_requests(&mut self) -> Vec<Request> {
+        std::mem::take(self.requests.get_mut())
+    }
+
     fn view_id(&self) -> ViewId {
         ViewId {
             key: self.key.clone(),
@@ -916,7 +975,7 @@ impl Model {
         // while it is down would never be sent once it is back.
         let asked = self.plugin_mode().filter(|_| self.open).map(|id| (id.to_owned(), self.query.text().to_owned()));
         if let Some((id, text)) = asked.as_ref().filter(|a| self.plugin_query.as_ref() != Some(a)) {
-            plugins::send(id, plugins::query_event(text));
+            self.ask(Request::Plugin(id.clone(), plugins::query_event(text)));
         }
         self.plugin_query = asked;
         self.refresh_peers(store);
@@ -1409,7 +1468,7 @@ impl Model {
         self.grab.cancel();
         self.abandon_select();
         self.ask_fresh(store);
-        plugins::launcher(true);
+        self.ask(Request::Plugins(true));
         let route = route.filter(|r| !r.is_empty());
         let prefill = route.filter(|r| r.starts_with(':')).unwrap_or("").to_owned();
         let mut target = None;
@@ -1445,12 +1504,12 @@ impl Model {
                 when.into_iter().chain(checked)
             })
             .collect();
-        index::ask(Ask::Conds(conds));
-        index::ask(Ask::Binds);
-        index::ask(Ask::Files);
+        self.ask(Request::Index(Ask::Conds(conds)));
+        self.ask(Request::Index(Ask::Binds));
+        self.ask(Request::Index(Ask::Files));
         let paths: Vec<String> = store.state.data.picks.iter().filter_map(|r| match SubjectId::parse(&r.id) { SubjectId::File(path) => Some(path), _ => None }).collect();
         if !paths.is_empty() {
-            index::ask(Ask::Stat(paths));
+            self.ask(Request::Index(Ask::Stat(paths)));
         }
     }
 
@@ -1496,38 +1555,22 @@ impl Model {
         self.monitor_wants = None;
         self.monitor_armed.clear();
         if self.on_mirror() {
-            crate::services::mirror::command(crate::services::mirror::Cmd::Stream(None));
+            self.ask(Request::Mirror(crate::services::mirror::Cmd::Stream(None)));
         }
         self.open = false;
         self.confirm.clear();
         self.column = None;
         self.children.clear();
         self.panel = None;
-        plugins::launcher(false);
+        self.ask(Request::Plugins(false));
         self.plugin_query = None;
     }
 
-    /// Every input and select answer since the last call, for the in-process
-    /// token owners: the token, the value (a secret one included, held only
-    /// here), and whether it was cancelled.
-    pub fn take_resolved(&mut self) -> Vec<(String, Option<String>, bool)> {
-        std::mem::take(&mut self.resolved)
-    }
-
-    fn write_selection(&mut self, payload: Value) {
-        let token = payload.get("token").cloned().unwrap_or(Value::Null);
-        self.resolved.push((
-            token.as_str().unwrap_or_default().to_owned(),
-            payload.get("value").and_then(Value::as_str).map(str::to_owned),
-            payload.get("cancelled").and_then(Value::as_bool).unwrap_or(false),
-        ));
-        let filed = if self.query.secret { json!({"token": token, "cancelled": true, "secret": true}) } else { payload };
-        let path = selection_path();
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let _ = std::fs::write(&path, filed.to_string());
-        if self.query.secret {
+    fn write_selection(&mut self, value: Option<String>) {
+        let secret = self.query.secret;
+        let token = self.select_token.clone();
+        self.ask(Request::Selected(Selected { token, cancelled: value.is_none(), value, secret }));
+        if secret {
             self.query.clear();
             self.query.secret = false;
             self.query.shown = false;
@@ -1536,8 +1579,7 @@ impl Model {
 
     fn abandon_select(&mut self) {
         if self.mode != Mode::Menu {
-            let token = self.select_token.clone();
-            self.write_selection(json!({"token": token, "cancelled": true}));
+            self.write_selection(None);
             self.mode = Mode::Menu;
         }
     }
@@ -1548,13 +1590,12 @@ impl Model {
         let pending = self.mode != Mode::Menu;
         self.abandon_select();
         if !pending {
-            let _ = std::fs::remove_file(selection_path());
+            self.ask(Request::SelectionCleared);
         }
     }
 
     fn complete_select(&mut self, value: &str) {
-        let token = self.select_token.clone();
-        self.write_selection(json!({"token": token, "value": value}));
+        self.write_selection(Some(value.to_owned()));
         self.mode = Mode::Menu;
         self.close();
     }
@@ -1567,9 +1608,9 @@ impl Model {
         self.monitor_armed.clear();
         if id.as_deref() == Some(MIRROR_ROUTE) {
             self.mirror_current.clear();
-            crate::services::mirror::command(crate::services::mirror::Cmd::List);
+            self.ask(Request::Mirror(crate::services::mirror::Cmd::List));
         } else if self.level.as_deref() == Some(MIRROR_ROUTE) {
-            crate::services::mirror::command(crate::services::mirror::Cmd::Stream(None));
+            self.ask(Request::Mirror(crate::services::mirror::Cmd::Stream(None)));
         }
         if id.as_deref() == Some(MONITOR_ROUTE) && self.level.as_deref() != Some(MONITOR_ROUTE) {
             self.monitor_history = MonitorHistory::default();
@@ -1595,7 +1636,7 @@ impl Model {
         self.from_keys = true;
         self.query.clear();
         if self.level.as_deref() == Some("emoji") && store.menu.emoji.is_none() {
-            index::ask(Ask::Emoji);
+            self.ask(Request::Index(Ask::Emoji));
         }
     }
 
@@ -1606,7 +1647,7 @@ impl Model {
             // One listing is held at a time: the folder stepped back into
             // is read again.
             if let Some(Children { into: Into::Folder(path), .. }) = self.children.last() {
-                index::ask(Ask::Folder(path.clone()));
+                self.ask(Request::Index(Ask::Folder(path.clone())));
             }
             self.query.clear();
             self.confirm.clear();
@@ -1684,7 +1725,7 @@ impl Model {
         let removable = match &node.entry {
             Some(entry) if node.kind == NodeKind::App && store.activity.fspec.installed => {
                 if !store.packages.owners.contains_key(&entry.id) {
-                    crate::services::packages::send(crate::services::packages::Cmd::Owner(entry.id.clone()));
+                    self.ask(Request::Packages(crate::services::packages::Cmd::Owner(entry.id.clone())));
                 }
                 store.packages.removable(&entry.id)
             }
@@ -1740,7 +1781,7 @@ impl Model {
         let subject = fs_menu::actions::subject_id(&node).to_string();
         let asked_at = Instant::now();
         for id in &asked {
-            plugins::send(id, plugins::actions_event(&subject, kind, &node.path));
+            self.ask(Request::Plugin(id.clone(), plugins::actions_event(&subject, kind, &node.path)));
         }
         self.close_actions();
         self.select(index);
@@ -1883,6 +1924,9 @@ impl Model {
         match action.run {
             Run::Note => return Out::None,
             Run::Target(kind) => {
+                if kind == TargetKind::Peer {
+                    self.ask(Request::PeerScan);
+                }
                 let targets = targets_for(store, kind);
                 if let Some(c) = &mut self.column {
                     c.target = Some((action.clone(), targets));
@@ -1964,12 +2008,12 @@ impl Model {
     /// A target action's pick: the subject's windows onto a workspace, a
     /// file opened in an app or sent to a peer.
     fn run_target(&mut self, store: &Store, node: &Node, action: &Action, target: &Node) -> Out {
-        match action.run {
+        let pick = match action.run {
             Run::Target(TargetKind::App) => {
                 let Some(id) = target.id.strip_prefix("target-app:") else { return Out::None };
                 let Some(mut argv) = crate::services::launch::app_argv(&store.menu, id) else { return Out::None };
                 argv.push(node.path.clone());
-                crate::services::launch::spawn(store, id, &argv);
+                Target::Open { id: id.to_owned(), argv }
             }
             Run::Target(TargetKind::Peer) => {
                 use crate::services::localsend;
@@ -1983,7 +2027,7 @@ impl Model {
                     }
                     None => localsend::Payload::Path(node.path.clone()),
                 };
-                localsend::command(localsend::Cmd::Send { peer: peer.clone(), payload });
+                Target::Send { peer: peer.clone(), payload }
             }
             Run::Target(TargetKind::Workspace) => {
                 let Some(idx) = target.id.strip_prefix("workspace:").and_then(|i| i.parse::<i64>().ok()) else { return Out::None };
@@ -1991,16 +2035,14 @@ impl Model {
                     Some(entry) if node.kind == NodeKind::App => app_windows(store, entry),
                     _ => vec![WindowId::new(node.path.clone())],
                 };
-                let output = store.compositor.snapshot.focused_output_name.clone();
-                for id in windows.into_iter().filter(|w| !w.is_empty()) {
-                    compositor::send(compositor::Command::MoveWindowTo { id, idx, output: output.clone() });
-                }
+                let windows = windows.into_iter().filter(|w| !w.is_empty()).collect();
+                Target::Move { windows, idx, output: store.compositor.snapshot.focused_output_name.clone() }
             }
             _ => return Out::None,
-        }
+        };
         self.picked(store, node);
         self.close();
-        Out::Close
+        Out::Target(pick)
     }
 
     /// `Edit abbreviation`'s answer: the subject pinned under the new
@@ -2022,7 +2064,7 @@ impl Model {
         if self.view == View::Picker
             && let Some(fs_menu::providers::ItemKind::Mode { mode, .. }) = self.picker_tile_of(store, &node.id).map(|t| t.kind)
         {
-            return self.picker_style(store, mode);
+            return self.picker_style(mode);
         }
         match fs_menu::actions::first_action(&self.subject(store, &node)) {
             Some(action) => self.run(store, &node, &action),
@@ -2071,7 +2113,7 @@ impl Model {
                 } else if node.kind == NodeKind::App {
                     Some(Into::Windows(id.clone()))
                 } else if fs_menu::providers::is_folder_subject(node) {
-                    index::ask(Ask::Folder(node.path.clone()));
+                    self.ask(Request::Index(Ask::Folder(node.path.clone())));
                     Some(Into::Folder(node.path.clone()))
                 } else if fs_menu::providers::is_wifi_network(node) {
                     Some(Into::Network(node.label.clone()))
@@ -2142,7 +2184,7 @@ impl Model {
         }
         self.close();
         match out {
-            Out::Call(_) | Out::Intent(..) | Out::Spawn(_) => out,
+            Out::Call(_) | Out::Intent(..) | Out::Spawn(_) | Out::Target(_) => out,
             Out::None | Out::Close => Out::Close,
         }
     }
@@ -2235,12 +2277,12 @@ impl Model {
             field::Outcome::Pass => return Out::None,
             field::Outcome::Held => {}
             field::Outcome::Edited => self.query_changed(store),
-            field::Outcome::Copy(t) => clipboard::command(clipboard::Cmd::SetText(t)),
+            field::Outcome::Copy(t) => self.ask(Request::Clipboard(clipboard::Cmd::SetText(t))),
             field::Outcome::Cut(t) => {
-                clipboard::command(clipboard::Cmd::SetText(t));
+                self.ask(Request::Clipboard(clipboard::Cmd::SetText(t)));
                 self.query_changed(store);
             }
-            field::Outcome::Paste => clipboard::command(clipboard::Cmd::Paste),
+            field::Outcome::Paste => self.ask(Request::Clipboard(clipboard::Cmd::Paste)),
         }
         self.dirty = true;
         Out::None
@@ -2265,19 +2307,19 @@ impl Model {
         match level {
             Some("emoji") => {
                 let Some(index) = &store.menu.emoji else {
-                    index::ask(Ask::Emoji);
+                    self.ask(Request::Index(Ask::Emoji));
                     return json!([]);
                 };
                 return Value::Array(index.rows(q, true, &store.state.data.emoji_uses, crate::runtime::now_ms() as f64).iter().map(|n| json!({"id": n.id, "label": n.label, "icon": n.icon, "kind": n.kind.as_str()})).collect());
             }
             Some("keybinds") => {
-                index::ask(Ask::Binds);
+                self.ask(Request::Index(Ask::Binds));
                 let reply = store.menu.binds.as_ref().map(|r| r.as_deref().map_err(|_| ()));
                 return noted(fs_menu::keybinds::rows_for(reply, q));
             }
             Some("radio.search") => return noted(index::radio_search_rows(store, q)),
             Some(fs_menu::providers::INSTALL_ROUTE) => {
-                crate::services::packages::search_for(store, q);
+                self.ask(Request::PackageSearch(q.to_owned()));
                 return noted(crate::surfaces::packages::install_rows(store, q));
             }
             _ => {}
