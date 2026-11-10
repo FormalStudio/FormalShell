@@ -98,9 +98,7 @@ leg_localsend_assert() {
 
   if [ ! -s "$localsend_status_before_path" ]; then fail "no localsend status reply"; fi
   cat "$localsend_status_before_path"; echo
-  if ! grep -qF '"installed":true' "$localsend_status_before_path" || ! grep -qF '"receiving":true' "$localsend_status_before_path"; then
-    fail "localsend status never reported a running receiver: $(cat "$localsend_status_before_path")"
-  fi
+  expect_jq "$localsend_status_before_path" '.installed == true and .receiving == true' "localsend status never reported a running receiver"
 
   if [ ! -s "$localsend_send_out_path" ]; then fail "no output from the second localsend-cli send process"; fi
   cat "$localsend_send_out_path"

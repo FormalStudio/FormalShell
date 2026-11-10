@@ -130,12 +130,8 @@ leg_gpu_assert() {
     fail "no monitor gpu produced"
   fi
   cat "$gpu_cards_path"; echo
-  if ! grep -qF '"card":"card0","driver":"nvidia"' "$gpu_cards_path"; then
-    fail "the shimmed collector's dGPU never reached the card list. Got: $(cat "$gpu_cards_path")"
-  fi
-  if ! grep -qF '"card":"card1","driver":"i915"' "$gpu_cards_path"; then
-    fail "the shimmed collector's iGPU never reached the card list. Got: $(cat "$gpu_cards_path")"
-  fi
+  expect_jq "$gpu_cards_path" 'any(.cards[]; .card == "card0" and .driver == "nvidia")' "the shimmed collector's dGPU never reached the card list"
+  expect_jq "$gpu_cards_path" 'any(.cards[]; .card == "card1" and .driver == "i915")' "the shimmed collector's iGPU never reached the card list"
   # Three claims on card0: fan.speed's `[N/A]` became null rather than 0,
   # nvidia-smi's marketing name is what named the card, and boot_vga (0 on
   # this card) is what made it the discrete one, not its card NUMBER, which
@@ -143,9 +139,7 @@ leg_gpu_assert() {
   if ! jq -e '.cards[] | select(.card == "card0") | .metrics.fanPercent == null and .name == "NVIDIA GeForce RTX 5070 Laptop GPU" and .discrete == true' "$gpu_cards_path" > /dev/null; then
     fail "the nvidia-smi row did not merge into card0 as an unavailable fan on a discrete card. Got: $(cat "$gpu_cards_path")"
   fi
-  if ! grep -qF '"busy":0.16' "$gpu_cards_path"; then
-    fail "nvidia-smi's 16% utilization did not land as a 0..1 fraction. Got: $(cat "$gpu_cards_path")"
-  fi
+  expect_jq "$gpu_cards_path" 'any(.cards[]; .metrics.busy == 0.16)' "nvidia-smi's 16% utilization did not land as a 0..1 fraction"
   # i915 has no unprivileged utilisation counter, so an empty metrics record
   # beside a named card is the honest answer, never a zero.
   if ! jq -e '.cards[] | select(.card == "card1") | .metrics.available == false and ([.metrics[] | select(. != null and . != false)] | length) == 0 and .name == "Onboard - Video" and .discrete == false' "$gpu_cards_path" > /dev/null; then
@@ -153,13 +147,11 @@ leg_gpu_assert() {
   fi
   # The external display hangs off the dGPU on this machine and the internal
   # panel off the iGPU, which is the whole reason connectors are collected.
-  if ! grep -qF '{"name":"HDMI-A-1","connected":true}' "$gpu_cards_path"; then
-    fail "card0's connected HDMI connector never reached the record. Got: $(cat "$gpu_cards_path")"
-  fi
+  expect_jq "$gpu_cards_path" 'any(.cards[].outputs[]; . == {"name": "HDMI-A-1", "connected": true})' "card0's connected HDMI connector never reached the record"
   # The fixture pair is the whole list: this machine's own cards are out of
   # the collector's view for the one command that reads /sys/class/drm (see
   # the header), so a third card here would mean the replacement leaked.
-  gpu_card_count=$(grep -oF '"card":"card' "$gpu_cards_path" | wc -l | tr -d ' ')
+  gpu_card_count=$("$jq_bin" '[.cards[] | select(.card | startswith("card"))] | length' "$gpu_cards_path" 2>/dev/null)
   if [ "$gpu_card_count" != "2" ]; then
     fail "monitor gpu reported $gpu_card_count cards, want the fixture's 2: $(cat "$gpu_cards_path")"
   fi

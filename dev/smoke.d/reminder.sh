@@ -57,34 +57,24 @@ leg_reminder_assert() {
     fail "notifications setDnd true did not report on, got: $(cat "$reminder_dnd_path" 2>/dev/null)"
   fi
   cat "$reminder_set_reply_path"; echo
-  if ! grep -qF '"message":"SMOKE REMINDER FIXTURE"' "$reminder_set_reply_path" \
-    || ! grep -qF '"id":"rem-' "$reminder_set_reply_path"; then
-    fail "reminder set did not answer with the stored entry: $(cat "$reminder_set_reply_path")"
-  fi
+  expect_jq "$reminder_set_reply_path" '.message == "SMOKE REMINDER FIXTURE" and (.id | startswith("rem-"))' \
+    "reminder set did not answer with the stored entry"
   cat "$reminder_status1_path"; echo
-  if ! grep -qF '"count":1' "$reminder_status1_path" \
-    || ! grep -qF '"message":"SMOKE REMINDER FIXTURE"' "$reminder_status1_path"; then
-    fail "reminder status did not report the pending entry: $(cat "$reminder_status1_path")"
-  fi
+  expect_jq "$reminder_status1_path" '.count == 1 and any(.reminders[]; .message == "SMOKE REMINDER FIXTURE")' \
+    "reminder status did not report the pending entry"
   if ! grep -qF 'SMOKE REMINDER FIXTURE' "$reminder_state1_path"; then
     fail "state.json did not carry the pending reminder: $(cat "$reminder_state1_path")"
   fi
   [ -f "$reminder_pending_png" ] || fail "no pending-reminder screenshot produced at $reminder_pending_png"
 
   cat "$reminder_status2_path"; echo
-  if ! grep -qF '"count":0' "$reminder_status2_path"; then
-    fail "reminder status did not empty after the deadline: $(cat "$reminder_status2_path")"
-  fi
+  expect_jq "$reminder_status2_path" '.count == 0' "reminder status did not empty after the deadline"
   if grep -qF 'SMOKE REMINDER FIXTURE' "$reminder_state2_path"; then
     fail "a fired reminder is still in state.json: $(cat "$reminder_state2_path")"
   fi
   cat "$reminder_notifications_path"; echo
-  if ! grep -qF '"dnd":true' "$reminder_notifications_path"; then
-    fail "DND was not on when the reminder fired: $(cat "$reminder_notifications_path")"
-  fi
-  if grep -qF '"popups":0' "$reminder_notifications_path"; then
-    fail "the fired reminder did not bypass DND into the popup tier: $(cat "$reminder_notifications_path")"
-  fi
+  expect_jq "$reminder_notifications_path" '.dnd == true' "DND was not on when the reminder fired"
+  expect_jq "$reminder_notifications_path" '.popups > 0' "the fired reminder did not bypass DND into the popup tier"
   [ -f "$reminder_fired_png" ] || fail "no fired-reminder screenshot produced at $reminder_fired_png"
   echo "SMOKE_REMINDER_PENDING $reminder_pending_png"
   echo "SMOKE_REMINDER_FIRED $reminder_fired_png"

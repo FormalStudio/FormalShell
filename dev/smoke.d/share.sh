@@ -53,9 +53,7 @@ leg_share_assert() {
     fail "no localsend status reply produced"
   fi
   cat "$share_status_path"; echo
-  if ! grep -qF '"installed":true' "$share_status_path"; then
-    fail "localsend status never reported installed:true; the packaged localsend-cli should always resolve through the formalshell wrapper's own PATH. Got: $(cat "$share_status_path")"
-  fi
+  expect_jq "$share_status_path" '.installed == true' "localsend status never reported installed:true; the packaged localsend-cli should always resolve through the formalshell wrapper's own PATH"
 
   if [ ! -f "$share_menu_path" ]; then
     fail "no share-menu screenshot produced"

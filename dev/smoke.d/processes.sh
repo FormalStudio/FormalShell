@@ -106,10 +106,8 @@ leg_processes_assert() {
   cat "$processes_filtered_path"; echo
   # The filter's own claim: one row out of the whole table, and it is the
   # fixture, matched on a name the kernel's comm holds whole.
-  if [ "$(grep -oF "\"name\":\"$processes_victim_name\"" "$processes_filtered_path" | wc -l | tr -d ' ')" != "1" ] \
-    || ! grep -qF "\"pid\":$victim_pid," "$processes_filtered_path"; then
-    fail "the filter did not narrow to the fixture process (pid $victim_pid): $(cat "$processes_filtered_path")"
-  fi
+  expect_jq "$processes_filtered_path" "([.rows[] | select(.name == \"$processes_victim_name\")] | length) == 1 and any(.rows[]; .pid == $victim_pid)" \
+    "the filter did not narrow to the fixture process (pid $victim_pid)"
   for f in "$processes_full_png" "$processes_view_png" "$processes_confirm_png" "$processes_killed_png"; do
     if [ ! -f "$f" ]; then
       fail "no processes screenshot produced at $f"
@@ -123,15 +121,12 @@ leg_processes_assert() {
   if [ "$(cat "$processes_alive_fire_path" 2>/dev/null)" = "0" ]; then
     fail "pid $victim_pid survived the confirming press"
   fi
-  if grep -qF "\"name\":\"$processes_victim_name\"" "$processes_after_path" 2>/dev/null; then
-    fail "the killed fixture is still in the table: $(cat "$processes_after_path" 2>/dev/null)"
-  fi
+  expect_jq "$processes_after_path" "all(.rows[]; .name != \"$processes_victim_name\")" "the killed fixture is still in the table"
   # The kill's own exit status, which the synchronous IPC reply could not
   # carry: ProcessService.lastResult is where it lands, and the next dump
   # reports it.
-  if ! grep -qF "\"lastAction\":{\"pid\":$victim_pid,\"action\":\"TERM\",\"ok\":true" "$processes_after_path"; then
-    fail "no successful TERM recorded for pid $victim_pid: $(cat "$processes_after_path")"
-  fi
+  expect_jq "$processes_after_path" ".lastAction.pid == $victim_pid and .lastAction.action == \"TERM\" and .lastAction.ok == true" \
+    "no successful TERM recorded for pid $victim_pid" .lastAction
   # The restart leg proves what no screenshot can: one smokerestart alive
   # afterwards, under a pid that is not the one it was started with.
   # `monitor restart` answers `ok:<pid>`, not a bare ok.

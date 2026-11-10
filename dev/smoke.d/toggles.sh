@@ -61,20 +61,14 @@ EOF
   hypr_exec_once "bash $script"
 }
 
-# One ranked row out of a debug query reply. The row objects hold no nested
-# objects, so the id-anchored span up to the next "}" is the whole row.
-# `|| true`: a query that ranked no such row is a real outcome this leg
-# reports itself, and under pipefail grep's own miss would otherwise abort
-# with no message at all.
+# One ranked row out of a debug query reply, nothing when the query ranked
+# no such row, which this leg reports itself.
 toggles_row() {
-  grep -o "{\"id\":\"$2\"[^}]*}" "$1" | head -n1 || true
+  "$jq_bin" -c --arg id "$2" 'first(.[] | select(.id == $id)) // empty' "$1" 2>/dev/null || true
 }
 
 toggles_checked() {
-  case "$1" in
-    *'"checked":true'*) echo true ;;
-    *) echo false ;;
-  esac
+  "$jq_bin" -r '.checked == true' <<< "$1" 2>/dev/null || echo false
 }
 
 leg_toggles_assert() {
@@ -88,10 +82,7 @@ leg_toggles_assert() {
   done
 
   cat "$toggles_menu_status1_path"; echo
-  if ! grep -qF '"isOpen":true' "$toggles_menu_status1_path" \
-    || ! grep -qF '"level":"toggles"' "$toggles_menu_status1_path"; then
-    fail "menu did not summon to the toggles hub: $(cat "$toggles_menu_status1_path")"
-  fi
+  expect_jq "$toggles_menu_status1_path" '.isOpen == true and .level == "toggles"' "menu did not summon to the toggles hub"
   if [ "$(jq -c 'del(.checked)' "$toggles_menu_status1_path")" != "$(jq -c 'del(.checked)' "$toggles_menu_status2_path")" ]; then
     diff "$toggles_menu_status1_path" "$toggles_menu_status2_path" >&2 || true
     fail "menu state changed across the toggles (a rebuild or reopen, not a live repaint)"
@@ -109,8 +100,8 @@ leg_toggles_assert() {
   nl_checked2=$(toggles_checked "$nl_row2")
   nl_active1=false
   nl_active2=false
-  grep -qF '"active":true' "$toggles_nl_status1_path" && nl_active1=true
-  grep -qF '"active":true' "$toggles_nl_status2_path" && nl_active2=true
+  "$jq_bin" -e '.active == true' "$toggles_nl_status1_path" > /dev/null 2>&1 && nl_active1=true
+  "$jq_bin" -e '.active == true' "$toggles_nl_status2_path" > /dev/null 2>&1 && nl_active2=true
   if [ "$nl_checked1" != "$nl_active1" ] || [ "$nl_checked2" != "$nl_active2" ]; then
     cat "$toggles_nl_status1_path" >&2; echo >&2
     cat "$toggles_nl_status2_path" >&2
@@ -119,7 +110,7 @@ leg_toggles_assert() {
   if [ "$nl_active2" = "true" ]; then
     echo "SMOKE_TOGGLES_NIGHTLIGHT wlsunset held: the row's checkmark flipped with it"
   else
-    echo "SMOKE_TOGGLES_NIGHTLIGHT wlsunset could not hold this session (lastError: $(sed -n 's/.*"lastError":"\([^"]*\)".*/\1/p' "$toggles_nl_status2_path")); the row honestly stayed unchecked"
+    echo "SMOKE_TOGGLES_NIGHTLIGHT wlsunset could not hold this session (lastError: $("$jq_bin" -r '.lastError // empty' "$toggles_nl_status2_path" 2>/dev/null)); the row honestly stayed unchecked"
   fi
 
   dnd_row1=$(toggles_row "$toggles_dnd_query1_path" "toggles.dnd")
@@ -136,7 +127,7 @@ leg_toggles_assert() {
     echo "$dnd_row1" >&2; echo "$dnd_row2" >&2
     fail "the DND row's checkmark did not flip false -> true inside the open hub"
   fi
-  if ! grep -qF '"dnd":false' "$toggles_dnd_status1_path" || ! grep -qF '"dnd":true' "$toggles_dnd_status2_path"; then
+  if ! "$jq_bin" -e '.dnd == false' "$toggles_dnd_status1_path" > /dev/null 2>&1 || ! "$jq_bin" -e '.dnd == true' "$toggles_dnd_status2_path" > /dev/null 2>&1; then
     cat "$toggles_dnd_status1_path" >&2; echo >&2
     cat "$toggles_dnd_status2_path" >&2
     fail "notifications status does not back the DND row's own flip"

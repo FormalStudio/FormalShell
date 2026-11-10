@@ -28,7 +28,7 @@
 leg_record_flag="--record"
 leg_record_order=210
 leg_record_claims="recording.noDmabuf=true recording.webcam=true"
-leg_record_needs="file ffprobe"
+leg_record_needs="file ffprobe jq"
 
 record_start_reply_path="$shot_dir/record-start-reply.txt"
 record_status1_path="$shot_dir/record-status-1.json"
@@ -57,12 +57,7 @@ leg_record_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call record start screen desktop > "$record_start_reply_path" 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call record status > "$record_status1_path" 2>&1
-  grep -qF '"active":true' "$record_status1_path" && break
-  sleep 0.5
-done
+until_jq 15 "$record_status1_path" '.active == true' call record status
 # Long enough that the container holds real frames rather than a header: the
 # GIF transcode below has to have something to read.
 sleep 4
@@ -70,37 +65,19 @@ $ipc call record status > "$record_status1_path" 2>&1
 "$grim_bin" "$record_active_path" > /dev/null 2>&1
 sleep 2
 $ipc call record stop > "$record_stop_reply_path" 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call record status > "$record_status2_path" 2>&1
-  grep -qF '"active":false' "$record_status2_path" && break
-  sleep 1
-done
+until_jq 15 "$record_status2_path" '.active == false' call record status
 # wf-recorder has already exited here, but RecordingService's finalize pass
 # (two ffprobes plus one ffmpeg encode) still owns the file; waiting on the
 # flag it exposes for exactly this is what makes the ffprobe read below land
 # on the settled file.
-SECONDS=0
-while [ "\$SECONDS" -lt 20 ]; do
-  $ipc call record status > "$record_finalize_status_path" 2>&1
-  grep -qF '"finalizing":false' "$record_finalize_status_path" && break
-  sleep 1
-done
+until_jq 20 "$record_finalize_status_path" '.finalizing == false' call record status
 rec_file=\$(head -n1 "$record_start_reply_path" | tr -d '\r')
 "$ffprobe_bin" -v error -show_entries format=duration:stream=codec_type \\
   -of default=noprint_wrappers=1 "\$rec_file" > "$record_ffprobe_path" 2>&1
 $ipc call record gif "\$rec_file" > "$record_gif_reply_path" 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 40 ]; do
-  $ipc call record status > "$record_status3_path" 2>&1
-  if grep -qF '"transcoding":false' "$record_status3_path" && grep -qF '"lastGifPath":"/' "$record_status3_path"; then
-    break
-  fi
-  # A populated lastError is a settled answer too, and waiting out the
-  # ceiling for it would only delay the failure below.
-  grep -qF '"lastError":""' "$record_status3_path" || break
-  sleep 1
-done
+# A populated lastError is a settled answer too, and waiting out the
+# ceiling for it would only delay the failure below.
+until_jq 40 "$record_status3_path" '(.transcoding == false and ((.lastGifPath // "") | startswith("/"))) or .lastError != ""' call record status || true
 EOF
   hypr_exec_once "bash $script"
 }
@@ -132,13 +109,11 @@ leg_record_assert() {
   # The one failure this leg must never soften: wf-recorder either captured
   # or it did not, and its own stderr is what says why.
   cat "$record_status1_path"; echo
-  if ! grep -qF '"active":true' "$record_status1_path"; then
-    echo "SMOKE_FAIL: wf-recorder stderr: $(sed -n 's/.*"lastError":"\([^"]*\)".*/\1/p' "$record_status1_path")" >&2
+  if ! "$jq_bin" -e '.active == true' "$record_status1_path" > /dev/null 2>&1; then
+    echo "SMOKE_FAIL: wf-recorder stderr: $("$jq_bin" -r '.lastError // empty' "$record_status1_path" 2>/dev/null)" >&2
     fail "wf-recorder never started, record status: $(cat "$record_status1_path")"
   fi
-  if ! grep -qF "\"path\":\"$record_file\"" "$record_status1_path"; then
-    fail "record status reported a different destination than start replied ($record_file): $(cat "$record_status1_path")"
-  fi
+  expect_jq "$record_status1_path" ".path == \"$record_file\"" "record status reported a different destination than start replied ($record_file)"
   if [ ! -f "$record_active_path" ]; then
     fail "no recording-indicator screenshot produced at $record_active_path"
   fi
@@ -152,14 +127,10 @@ leg_record_assert() {
     fail "record stop did not return ok. Got: $(cat "$record_stop_reply_path" 2>/dev/null)"
   fi
   cat "$record_status2_path"; echo
-  if ! grep -qF '"active":false' "$record_status2_path" || ! grep -qF '"lastError":""' "$record_status2_path"; then
-    fail "recording did not settle clean after stop: $(cat "$record_status2_path")"
-  fi
+  expect_jq "$record_status2_path" '.active == false and .lastError == ""' "recording did not settle clean after stop"
 
   cat "$record_finalize_status_path"; echo
-  if ! grep -qF '"finalizing":false' "$record_finalize_status_path"; then
-    fail "finalize never settled: $(cat "$record_finalize_status_path")"
-  fi
+  expect_jq "$record_finalize_status_path" '.finalizing == false' "finalize never settled"
   cat "$record_ffprobe_path"; echo
   if ! grep -qF "codec_type=audio" "$record_ffprobe_path"; then
     fail "finalized recording lost its audio stream: $(cat "$record_ffprobe_path")"
@@ -189,11 +160,8 @@ leg_record_assert() {
   if ! "$file_bin" "$record_gif_file" | grep -q "GIF image data"; then
     fail "transcode is not a GIF, file(1) says: $("$file_bin" -b "$record_gif_file")"
   fi
-  if ! grep -qF "\"lastGifPath\":\"$record_gif_file\"" "$record_status3_path" \
-    || ! grep -qF '"transcoding":false' "$record_status3_path" \
-    || ! grep -qF '"lastError":""' "$record_status3_path"; then
-    fail "transcode did not settle clean: $(cat "$record_status3_path")"
-  fi
+  expect_jq "$record_status3_path" ".lastGifPath == \"$record_gif_file\" and .transcoding == false and .lastError == \"\"" \
+    "transcode did not settle clean"
   echo "SMOKE_RECORD_GIF $record_gif_file ($(wc -c < "$record_gif_file" | tr -d ' ') bytes)"
   echo "SMOKE_RECORD_INDICATOR $record_active_path"
 }

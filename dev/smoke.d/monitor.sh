@@ -78,12 +78,8 @@ leg_monitor_assert() {
   # cpuDelta returns null until it has two /proc/stat samples (the surfaces
   # render that as a dash, never a fabricated 0%), so a real fraction here
   # proves the collector is ticking, not merely that the service loaded.
-  if ! grep -q '"cpu":{"available":true,"aggregate":[0-9]' "$monitor_status_path"; then
-    fail "monitor status carries no real CPU sample: $(cat "$monitor_status_path")"
-  fi
-  if ! grep -q '"mem":{"available":true,"totalBytes":[1-9]' "$monitor_status_path"; then
-    fail "monitor status carries no real memory sample: $(cat "$monitor_status_path")"
-  fi
+  expect_jq "$monitor_status_path" '.cpu.available == true and (.cpu.aggregate | type) == "number"' "monitor status carries no real CPU sample" .cpu
+  expect_jq "$monitor_status_path" '.mem.available == true and .mem.totalBytes > 0' "monitor status carries no real memory sample" .mem
   if [ ! -s "$monitor_gpu_path" ]; then
     fail "no monitor gpu produced"
   fi
@@ -94,21 +90,20 @@ leg_monitor_assert() {
   # none. Connector entries (card0-Virtual-1) are not cards, hence the
   # anchored match.
   sys_card_count=$(ls /sys/class/drm 2>/dev/null | grep -cE '^card[0-9]+$' || true)
-  gpu_card_count=$(grep -oF '"card":"card' "$monitor_gpu_path" | wc -l | tr -d ' ')
+  gpu_card_count=$("$jq_bin" '[.cards[] | select(.card | startswith("card"))] | length' "$monitor_gpu_path" 2>/dev/null)
   if [ "$sys_card_count" != "$gpu_card_count" ]; then
     fail "monitor gpu reported $gpu_card_count cards, /sys/class/drm holds $sys_card_count: $(cat "$monitor_gpu_path")"
   fi
-  if [ "$sys_card_count" = "0" ] && ! grep -qF '"available":false,"cards":[]' "$monitor_gpu_path"; then
-    fail "a machine with no card did not report the honest no-GPU state: $(cat "$monitor_gpu_path")"
+  if [ "$sys_card_count" = "0" ]; then
+    expect_jq "$monitor_gpu_path" '.available == false and .cards == []' "a machine with no card did not report the honest no-GPU state"
   fi
   # The cell is opt-in, so the screenshot below only means something if the
   # layout the shell resolved is the one the fixture asked for.
   if [ ! -s "$monitor_dump_path" ]; then
     fail "no debug dump produced"
   fi
-  if ! grep -qF '"right":["monitor"' "$monitor_dump_path"; then
-    fail "the resolved settings do not lead bar.layout's right region with monitor, the opt-in cell was never placed"
-  fi
+  expect_jq "$monitor_dump_path" '.configLoaded.bar.layout.right[0] == "monitor"' \
+    "the resolved settings do not lead bar.layout's right region with monitor, the opt-in cell was never placed" .configLoaded.bar.layout
   if [ ! -f "$monitor_bar_png" ]; then
     fail "no monitor-bar screenshot produced"
   fi
@@ -131,9 +126,7 @@ leg_monitor_assert() {
   # The claim the frame cannot make on its own: the launcher is sitting on
   # the monitor route itself (an app view), not on a row list that happens
   # to mention it.
-  if ! grep -qF '"isOpen":true,"level":"monitor"' "$monitor_menu_status_path" 2>/dev/null; then
-    fail "the launcher is not on the monitor app view: $(cat "$monitor_menu_status_path" 2>/dev/null)"
-  fi
+  expect_jq "$monitor_menu_status_path" '.isOpen == true and .level == "monitor"' "the launcher is not on the monitor app view"
   cat "$monitor_menu_status_path"; echo
   if [ ! -f "$monitor_view_png" ]; then
     fail "no monitor-view screenshot produced"

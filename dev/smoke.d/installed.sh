@@ -146,7 +146,7 @@ leg_installed_drive() {
 $(installed_podman_fn)
 ipc() { pm exec $installed_container $installed_prefix/bin/formalshell-ipc call "\$@"; }
 for _ in \$(seq 60); do
-  ipc debug dump > "$installed_dump_path" 2>/dev/null && grep -qF '"compositor":"hyprland","available":true' "$installed_dump_path" && break
+  ipc debug dump > "$installed_dump_path" 2>/dev/null && "$jq_bin" -e '.compositor == "hyprland" and .available == true' "$installed_dump_path" > /dev/null 2>&1 && break
   sleep 1
 done
 sleep 3
@@ -197,8 +197,7 @@ leg_installed_assert() {
   grep -q '^wrote /etc/pam.d/formalshell-lock' "$shot_dir/installed-build.log" \
     || fail "installed: formalshell install did not write the PAM file"
   cat "$installed_dump_path"; echo
-  grep -qF '"compositor":"hyprland","available":true' "$installed_dump_path" \
-    || fail "installed: the dump does not report a connected hyprland backend: $(cat "$installed_dump_path")"
+  expect_jq "$installed_dump_path" '.compositor == "hyprland" and .available == true' "installed: the dump does not report a connected hyprland backend"
   # The strip's own band: a bare desktop there is one flat colour.
   top_sd=$($convert_bin "$installed_bar_png" -crop 1920x40+0+0 +repage -colorspace gray -format '%[fx:standard_deviation]' info:)
   echo "installed: bar band stddev $top_sd"

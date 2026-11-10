@@ -15,6 +15,7 @@
 # lastError is the one shape that never is: a silent no-op.
 leg_nightlight_flag="--nightlight"
 leg_nightlight_order=210
+leg_nightlight_needs="jq"
 leg_nightlight_claims="nightlight location"
 
 nightlight_active_path="$shot_dir/nightlight-active.png"
@@ -36,23 +37,12 @@ leg_nightlight_drive() {
   local script="$shot_dir/nightlight-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-SECONDS=0
-while [ "\$SECONDS" -lt 12 ]; do
-  $ipc call nightlight status > "$nightlight_status0_path" 2>&1
-  grep -qF '"active":true' "$nightlight_status0_path" && break
-  sleep 1
-done
+until_jq 12 "$nightlight_status0_path" '.active == true' call nightlight status
 $ipc call nightlight enable > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 8 ]; do
-  $ipc call nightlight status > "$nightlight_status1_path" 2>&1
-  grep -qF '"active":true' "$nightlight_status1_path" && break
-  # A populated lastError is a settled answer too, so the poll stops there
-  # rather than spinning out its whole budget on a session that already said
-  # what went wrong.
-  grep -qF '"lastError":""' "$nightlight_status1_path" || break
-  sleep 1
-done
+# A populated lastError is a settled answer too, so the poll stops there
+# rather than spinning out its whole budget on a session that already said
+# what went wrong.
+until_jq 8 "$nightlight_status1_path" '.active == true or .lastError != ""' call nightlight status
 "$grim_bin" "$nightlight_active_path" > /dev/null 2>&1
 $ipc call nightlight disable > /dev/null 2>&1
 sleep 1
@@ -63,16 +53,11 @@ EOF
 
 leg_nightlight_assert() {
   cat "$nightlight_status0_path"; echo
-  if ! grep -qF '"schedule":"sun"' "$nightlight_status0_path" \
-      || ! grep -qF '"scheduleDark":true' "$nightlight_status0_path" \
-      || ! grep -qF '"source":"location"' "$nightlight_status0_path"; then
-    fail "the schedule did not read solar midnight off the fixture location: $(cat "$nightlight_status0_path")"
-  fi
-  if ! grep -qF '"active":true' "$nightlight_status0_path" && grep -qF '"lastError":""' "$nightlight_status0_path"; then
-    fail "the schedule said dark but nothing started wlsunset: $(cat "$nightlight_status0_path")"
-  fi
-  if grep -qF '"active":true' "$nightlight_status1_path" && ! grep -qF '"active":true' "$nightlight_status0_path"; then
-    fail "wlsunset holds on a manual enable but the schedule's never came up: $(cat "$nightlight_status0_path")"
+  expect_jq "$nightlight_status0_path" '.schedule == "sun" and .scheduleDark == true and .source == "location"' \
+    "the schedule did not read solar midnight off the fixture location"
+  expect_jq "$nightlight_status0_path" '.active == true or .lastError != ""' "the schedule said dark but nothing started wlsunset"
+  if "$jq_bin" -e '.active == true' "$nightlight_status1_path" > /dev/null 2>&1; then
+    expect_jq "$nightlight_status0_path" '.active == true' "wlsunset holds on a manual enable but the schedule's never came up"
   fi
   [ -f "$nightlight_active_path" ] || fail "no nightlight-active screenshot produced"
   echo "SMOKE_NIGHTLIGHT_ACTIVE $nightlight_active_path"
@@ -80,15 +65,13 @@ leg_nightlight_assert() {
     fail "no nightlight status produced after enable"
   fi
   cat "$nightlight_status1_path"; echo
-  if grep -qF '"active":true' "$nightlight_status1_path"; then
+  if "$jq_bin" -e '.active == true' "$nightlight_status1_path" > /dev/null 2>&1; then
     echo "nightlight: reached active:true, this session implements wlr-gamma-control-unstable-v1"
-  elif grep -qF '"active":false' "$nightlight_status1_path" && ! grep -qF '"lastError":""' "$nightlight_status1_path"; then
+  elif "$jq_bin" -e '.active == false and .lastError != ""' "$nightlight_status1_path" > /dev/null 2>&1; then
     echo "nightlight: honest failure surface (active:false, lastError populated), this session likely lacks wlr-gamma-control-unstable-v1"
   else
     fail "nightlight enable produced neither active:true nor an honest lastError, got: $(cat "$nightlight_status1_path")"
   fi
-  if [ ! -s "$nightlight_status2_path" ] || ! grep -qF '"active":false' "$nightlight_status2_path"; then
-    fail "nightlight disable did not confirm active:false, got: $(cat "$nightlight_status2_path" 2>/dev/null)"
-  fi
+  expect_jq "$nightlight_status2_path" '.active == false' "nightlight disable did not confirm active:false"
   cat "$nightlight_status2_path"; echo
 }

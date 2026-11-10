@@ -22,7 +22,7 @@
 leg_screensaver_gif_flag="--screensaver-gif"
 leg_screensaver_gif_commits="docs/media screensaver-*.gif"
 leg_screensaver_gif_order=240
-leg_screensaver_gif_needs="convert"
+leg_screensaver_gif_needs="convert jq"
 
 leg_screensaver_gif_takeover() {
   local hold=8 budget=120 fps=60
@@ -81,7 +81,7 @@ $ipc call screensaver frame 0 > /dev/null 2>&1
 convergence=0
 for _ in \$(seq 40); do
   $ipc call screensaver frameInfo > "$info_path" 2>&1
-  convergence=\$(grep -o '"convergenceFrame":[0-9]*' "$info_path" | cut -d: -f2)
+  convergence=\$("$jq_bin" -r '.convergenceFrame // empty' "$info_path" 2>/dev/null)
   [ "\${convergence:-0}" -gt 0 ] && break
   sleep 0.5
 done
@@ -142,7 +142,7 @@ EOF
         timeout -k 10 300 $hyprland_bin --config "$cfg" > "$hypr_log" 2>&1 || true
     fi
 
-    if [ ! -s "$info_path" ] || ! grep -q "\"effect\":\"$effect\"" "$info_path"; then
+    if ! "$jq_bin" -e --arg e "$effect" '.effect == $e' "$info_path" > /dev/null 2>&1; then
       echo "SMOKE_FAIL: screensaver frameInfo did not report effect '$effect', got: $(cat "$info_path" 2>/dev/null)" >&2
       tail -20 "$shell_log" >&2 2>/dev/null || true
       exit 1
@@ -150,11 +150,11 @@ EOF
     # The engine is asserted, not assumed: with ttfx missing from the shell's
     # wrapper PATH the surface silently falls back to its builtin
     # effects, which would still record a plausible GIF of the wrong thing.
-    if ! grep -q '"engine":"ttfx"' "$info_path"; then
+    if ! "$jq_bin" -e '.engine == "ttfx"' "$info_path" > /dev/null 2>&1; then
       echo "SMOKE_FAIL: screensaver is not running the ttfx engine, got: $(cat "$info_path" 2>/dev/null)" >&2
       exit 1
     fi
-    convergence=$(grep -o '"convergenceFrame":[0-9]*' "$info_path" | cut -d: -f2)
+    convergence=$("$jq_bin" -r '.convergenceFrame // empty' "$info_path" 2>/dev/null)
     if [ -z "$convergence" ] || [ "$convergence" -le 0 ]; then
       echo "SMOKE_FAIL: screensaver frameInfo reported no frames for '$effect', got: $(cat "$info_path" 2>/dev/null)" >&2
       exit 1

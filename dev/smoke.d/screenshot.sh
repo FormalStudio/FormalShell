@@ -18,7 +18,7 @@
 leg_screenshot_flag="--screenshot"
 leg_screenshot_order=205
 leg_screenshot_claims="screen=shared"
-leg_screenshot_needs="wl-paste file"
+leg_screenshot_needs="wl-paste file jq"
 
 screenshot_reply_path="$shot_dir/screenshot-reply.txt"
 screenshot_status_path="$shot_dir/screenshot-status.json"
@@ -49,7 +49,7 @@ $ipc call screenshot status > "$screenshot_cancelled_status_path" 2>&1
 $ipc call screenshot full "" > "$screenshot_reply_path" 2>&1
 for _ in \$(seq 1 20); do
   $ipc call screenshot status > "$screenshot_status_path" 2>&1
-  if grep -q '"capturing":false' "$screenshot_status_path"; then
+  if "$jq_bin" -e '.capturing == false' "$screenshot_status_path" > /dev/null 2>&1; then
     break
   fi
   sleep 0.5
@@ -72,9 +72,7 @@ leg_screenshot_assert() {
   if [ ! -s "$screenshot_slurp_before_path" ]; then
     fail "no slurp process found while the region capture was pending, slurp never launched"
   fi
-  if ! grep -q '"capturing":true' "$screenshot_region_status_path"; then
-    fail "status did not report capturing:true while slurp was pending: $(cat "$screenshot_region_status_path" 2>/dev/null)"
-  fi
+  expect_jq "$screenshot_region_status_path" '.capturing == true' "status did not report capturing:true while slurp was pending"
   if ! grep -q '^ok$' "$screenshot_cancel_reply_path"; then
     fail "screenshot cancel did not return ok. Got: $(cat "$screenshot_cancel_reply_path" 2>/dev/null)"
   fi
@@ -85,11 +83,8 @@ leg_screenshot_assert() {
     fail "no post-cancel screenshot status produced"
   fi
   cat "$screenshot_cancelled_status_path"
-  if ! grep -q '"capturing":false' "$screenshot_cancelled_status_path" \
-    || ! grep -q '"lastCancelled":true' "$screenshot_cancelled_status_path" \
-    || ! grep -q '"lastError":""' "$screenshot_cancelled_status_path"; then
-    fail "post-cancel status did not settle to a clean cancel: $(cat "$screenshot_cancelled_status_path")"
-  fi
+  expect_jq "$screenshot_cancelled_status_path" '.capturing == false and .lastCancelled == true and .lastError == ""' \
+    "post-cancel status did not settle to a clean cancel"
   if [ -e "$screenshot_region_file" ]; then
     fail "cancelled region capture still wrote a file: $screenshot_region_file"
   fi
@@ -114,12 +109,8 @@ leg_screenshot_assert() {
     fail "no screenshot status produced"
   fi
   cat "$screenshot_status_path"
-  if ! grep -q '"capturing":false' "$screenshot_status_path" || ! grep -q '"lastError":""' "$screenshot_status_path"; then
-    fail "screenshot status did not settle clean: $(cat "$screenshot_status_path")"
-  fi
-  if ! grep -qF "\"lastPath\":\"$screenshot_file\"" "$screenshot_status_path"; then
-    fail "screenshot status lastPath does not match the reply path ($screenshot_file): $(cat "$screenshot_status_path")"
-  fi
+  expect_jq "$screenshot_status_path" '.capturing == false and .lastError == ""' "screenshot status did not settle clean"
+  expect_jq "$screenshot_status_path" ".lastPath == \"$screenshot_file\"" "screenshot status lastPath does not match the reply path ($screenshot_file)" .lastPath
   if [ -s "$screenshot_types_path" ] && grep -q "image/png" "$screenshot_types_path"; then
     cat "$screenshot_types_path"
   else

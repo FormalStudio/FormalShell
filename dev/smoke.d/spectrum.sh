@@ -13,7 +13,7 @@
 # read by hand for the band's fills under the now-playing block.
 leg_spectrum_flag="--spectrum"
 leg_spectrum_order=225
-leg_spectrum_needs="mpv ffmpeg convert"
+leg_spectrum_needs="mpv ffmpeg convert jq"
 leg_spectrum_claims="media.player=shared bar.layout.center"
 
 spectrum_track_path="$shot_dir/spectrum-tone.flac"
@@ -56,12 +56,7 @@ leg_spectrum_drive() {
 "$mpv_bin" --no-video --really-quiet "$spectrum_track_path" &
 mpv_pid=\$!
 echo "\$mpv_pid" > "$spectrum_pid_path"
-SECONDS=0
-while [ "\$SECONDS" -lt 8 ]; do
-  $ipc call media status > "$spectrum_status_path" 2>&1
-  grep -qF "\"title\":\"$spectrum_track_title\"" "$spectrum_status_path" && break
-  sleep 1
-done
+until_jq 8 "$spectrum_status_path" '.title == "$spectrum_track_title"' call media status
 pgrep -f -- "cava -p" > "$spectrum_pgrep_before_path" 2>&1 || true
 $ipc call panel open media > /dev/null 2>&1
 for _ in \$(seq 1 20); do pgrep -f -- "cava -p" > /dev/null && break; sleep 0.25; done
@@ -85,9 +80,8 @@ EOF
 }
 
 leg_spectrum_assert() {
-  if [ ! -s "$spectrum_status_path" ] || ! grep -qF "\"title\":\"$spectrum_track_title\"" "$spectrum_status_path"; then
-    fail "media status never showed the spectrum smoke tone, got: $(cat "$spectrum_status_path" 2>/dev/null)"
-  fi
+  [ -s "$spectrum_status_path" ] || fail "media status never showed the spectrum smoke tone, got no reply"
+  expect_jq "$spectrum_status_path" ".title == \"$spectrum_track_title\"" "media status never showed the spectrum smoke tone" .title
   if [ -s "$spectrum_pgrep_before_path" ]; then
     fail "cava is already running before the media panel opened (no visualizer cell in bar.layout, so panelWants alone should gate it), pgrep output: $(cat "$spectrum_pgrep_before_path")"
   fi

@@ -44,9 +44,8 @@ leg_mic_assert() {
   if [ ! -s "$mic_dump_path" ]; then
     fail "no debug dump produced"
   fi
-  if ! grep -qF '"right":["microphone"' "$mic_dump_path"; then
-    fail "the resolved settings do not lead bar.layout's right region with microphone, the opt-in cell was never placed"
-  fi
+  expect_jq "$mic_dump_path" '.configLoaded.bar.layout.right[0] == "microphone"' \
+    "the resolved settings do not lead bar.layout's right region with microphone, the opt-in cell was never placed" .configLoaded.bar.layout
   [ -f "$mic_bar_png" ] || fail "no mic screenshot produced at $mic_bar_png"
   echo "SMOKE_MIC $mic_bar_png (this VM has no capture device, so a dim NO MIC cell is the correct rendering; a glyph here would mean an invented device)"
 }

@@ -77,8 +77,8 @@ leg_host_binds_assert() {
     END { exit bad }
   ' "$host_binds_out" || fail "a host form did not reach its target (see above)"
   local before_mode after_mode
-  before_mode=$(awk '/^CMD .* theme status$/{n++} n==1 && /^REPLY /{print; exit}' "$host_binds_out" | grep -o '"mode":"[a-z]*"')
-  after_mode=$(awk '/^CMD .* theme status$/{n++} n==2 && /^REPLY /{print; exit}' "$host_binds_out" | grep -o '"mode":"[a-z]*"')
+  before_mode=$(awk '/^CMD .* theme status$/{n++} n==1 && /^REPLY /{sub(/^REPLY /, ""); print; exit}' "$host_binds_out" | "$jq_bin" -r '.mode // empty' 2>/dev/null)
+  after_mode=$(awk '/^CMD .* theme status$/{n++} n==2 && /^REPLY /{sub(/^REPLY /, ""); print; exit}' "$host_binds_out" | "$jq_bin" -r '.mode // empty' 2>/dev/null)
   [ -n "$before_mode" ] && [ "$before_mode" != "$after_mode" ] || fail "theme mode toggle left the mode at $before_mode -> $after_mode"
   local daemons
   daemons=$(grep '^DAEMONS ' "$host_binds_out")

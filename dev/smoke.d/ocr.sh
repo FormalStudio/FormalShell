@@ -97,19 +97,11 @@ pgrep -x slurp > "$ocr_slurp_after_path" 2>&1 || true
 # nothing, the assertion only needs a real word to come back.
 geom="0,0 \$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0] | "\(.width)x\(.height)"')"
 $ipc call capture textAt "\$geom" > /dev/null 2>&1
-for _ in \$(seq 1 30); do
-  $ipc call capture status > "$ocr_textat_status_path" 2>&1
-  grep -qF '"capturing":false' "$ocr_textat_status_path" && break
-  sleep 0.5
-done
+until_jq 15 "$ocr_textat_status_path" '.capturing == false' call capture status
 "$wl_paste_bin" --no-newline > "$ocr_textat_clipboard_path" 2>&1 || true
 
 $ipc call capture colorAt '0,0 1x1' > /dev/null 2>&1
-for _ in \$(seq 1 30); do
-  $ipc call capture status > "$ocr_colorat_status_path" 2>&1
-  grep -qF '"capturing":false' "$ocr_colorat_status_path" && break
-  sleep 0.5
-done
+until_jq 15 "$ocr_colorat_status_path" '.capturing == false' call capture status
 "$wl_paste_bin" --no-newline > "$ocr_colorat_clipboard_path" 2>&1 || true
 EOF
   hypr_exec_once "bash $fixture_script"
@@ -130,32 +122,20 @@ leg_ocr_assert() {
   fi
 
   cat "$ocr_text_status_path"; echo
-  if ! grep -qF '"capturing":true' "$ocr_text_status_path" || ! grep -qF '"mode":"text"' "$ocr_text_status_path"; then
-    fail "capture text did not enter the text pipeline: $(cat "$ocr_text_status_path")"
-  fi
+  expect_jq "$ocr_text_status_path" '.capturing == true and .mode == "text"' "capture text did not enter the text pipeline"
   # The region-mode argv, not just "some slurp": the two verbs differ only in
   # the flags they hand slurp, so the process itself is the evidence.
   if [ ! -s "$ocr_text_slurp_path" ]; then
     fail "no 'slurp -d' process while capture text was pending: the region overlay never launched"
   fi
-  if ! grep -qF '"capturing":false' "$ocr_text_cancel_path" \
-    || ! grep -qF '"lastCancelled":true' "$ocr_text_cancel_path" \
-    || ! grep -qF '"lastError":""' "$ocr_text_cancel_path"; then
-    fail "capture text did not cancel clean: $(cat "$ocr_text_cancel_path")"
-  fi
+  expect_jq "$ocr_text_cancel_path" '.capturing == false and .lastCancelled == true and .lastError == ""' "capture text did not cancel clean"
 
   cat "$ocr_color_status_path"; echo
-  if ! grep -qF '"capturing":true' "$ocr_color_status_path" || ! grep -qF '"mode":"color"' "$ocr_color_status_path"; then
-    fail "capture color did not enter the colour pipeline: $(cat "$ocr_color_status_path")"
-  fi
+  expect_jq "$ocr_color_status_path" '.capturing == true and .mode == "color"' "capture color did not enter the colour pipeline"
   if [ ! -s "$ocr_color_slurp_path" ]; then
     fail "no 'slurp -p' process while capture color was pending: the point overlay never launched"
   fi
-  if ! grep -qF '"capturing":false' "$ocr_color_cancel_path" \
-    || ! grep -qF '"lastCancelled":true' "$ocr_color_cancel_path" \
-    || ! grep -qF '"lastError":""' "$ocr_color_cancel_path"; then
-    fail "capture color did not cancel clean: $(cat "$ocr_color_cancel_path")"
-  fi
+  expect_jq "$ocr_color_cancel_path" '.capturing == false and .lastCancelled == true and .lastError == ""' "capture color did not cancel clean"
   if [ -s "$ocr_slurp_after_path" ]; then
     fail "slurp still running after both cancels (pids: $(cat "$ocr_slurp_after_path"))"
   fi
@@ -166,9 +146,7 @@ leg_ocr_assert() {
   # The selection-free half: these two DO complete, so the assertion is the
   # clipboard itself rather than the overlay's presence.
   cat "$ocr_textat_status_path"; echo
-  if ! grep -qF '"lastError":""' "$ocr_textat_status_path"; then
-    fail "capture textAt errored: $(cat "$ocr_textat_status_path")"
-  fi
+  expect_jq "$ocr_textat_status_path" '.lastError == ""' "capture textAt errored"
   ocr_got=$(cat "$ocr_textat_clipboard_path" 2>/dev/null)
   if [ "$ocr_got" = "ocr smoke sentinel" ] || [ -z "$ocr_got" ]; then
     fail "capture textAt put no OCR text on the clipboard, still: '$ocr_got'"

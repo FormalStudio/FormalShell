@@ -10,7 +10,7 @@
 leg_console_flag="--console"
 leg_console_order=90
 leg_console_claims="console"
-leg_console_needs="foot"
+leg_console_needs="foot jq"
 
 console_status_open_path="$shot_dir/console-status-open.json"
 console_status_parked_path="$shot_dir/console-status-parked.json"
@@ -61,24 +61,18 @@ leg_console_assert() {
     fi
     cat "$f"; echo
   done
-  console_open_id=$(sed -n 's/.*"windowId":"\([^"]*\)".*/\1/p' "$console_status_open_path")
-  console_parked_id=$(sed -n 's/.*"windowId":"\([^"]*\)".*/\1/p' "$console_status_parked_path")
-  console_return_id=$(sed -n 's/.*"windowId":"\([^"]*\)".*/\1/p' "$console_status_return_path")
+  console_open_id=$("$jq_bin" -r '.windowId // empty' "$console_status_open_path" 2>/dev/null)
+  console_parked_id=$("$jq_bin" -r '.windowId // empty' "$console_status_parked_path" 2>/dev/null)
+  console_return_id=$("$jq_bin" -r '.windowId // empty' "$console_status_return_path" 2>/dev/null)
   if [ -z "$console_open_id" ]; then
     fail "console toggle opened no window. Got: $(cat "$console_status_open_path")"
   fi
-  if ! grep -q '"visible":true' "$console_status_open_path"; then
-    fail "console not reported visible after the first toggle. Got: $(cat "$console_status_open_path")"
-  fi
-  if ! grep -q '"visible":false' "$console_status_parked_path"; then
-    fail "console still reported visible after the hide. Got: $(cat "$console_status_parked_path")"
-  fi
+  expect_jq "$console_status_open_path" '.visible == true' "console not reported visible after the first toggle"
+  expect_jq "$console_status_parked_path" '.visible == false' "console still reported visible after the hide"
   if [ "$console_parked_id" != "$console_open_id" ]; then
     fail "the parked console is not the window that was opened (open=$console_open_id parked=$console_parked_id)"
   fi
-  if ! grep -q '"visible":true' "$console_status_return_path"; then
-    fail "console not reported visible again after the third toggle. Got: $(cat "$console_status_return_path")"
-  fi
+  expect_jq "$console_status_return_path" '.visible == true' "console not reported visible again after the third toggle"
   if [ "$console_return_id" != "$console_open_id" ]; then
     fail "the console that came back is a different window (open=$console_open_id return=$console_return_id)"
   fi

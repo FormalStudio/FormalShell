@@ -112,11 +112,7 @@ $ipc call screensaver start > /dev/null 2>&1
 sleep 1
 "$grim_bin" "$ss_manual_path" > /dev/null 2>&1
 $ipc call screensaver frameInfo > "$ss_cycle_info1_path" 2>&1
-while [ "\$SECONDS" -lt 71 ]; do
-  $ipc call screensaver frameInfo > "$ss_cycle_info2_path" 2>&1
-  grep -q '"cycles":0}' "$ss_cycle_info2_path" || break
-  sleep 1
-done
+until_jq \$((71 - SECONDS)) "$ss_cycle_info2_path" '.cycles != 0' call screensaver frameInfo
 # The converged banner, reached by pinning rather than by waiting: pinning
 # frame 0 is what makes a streaming ttfx run's frame count knowable at all
 # (screensaver_gif.sh's own header explains why), and the last frame of any
@@ -134,7 +130,7 @@ fi
 $ipc call screensaver frame 0 > /dev/null 2>&1
 sleep 3
 $ipc call screensaver frameInfo > "$ss_solid_info_path" 2>&1
-ss_convergence=\$(grep -o '"convergenceFrame":[0-9]*' "$ss_solid_info_path" | cut -d: -f2)
+ss_convergence=\$("$jq_bin" -r '.convergenceFrame // empty' "$ss_solid_info_path" 2>/dev/null)
 if [ -z "\$ss_convergence" ] || [ "\$ss_convergence" -lt 1 ]; then
   ss_convergence=1
 fi
@@ -199,15 +195,9 @@ leg_screensaver_assert() {
     fail "no screensaver guard-status produced"
   fi
   cat "$ss_guard_status_path"; echo
-  if ! grep -q '"isIdle":true' "$ss_guard_status_path"; then
-    fail "screensaver status did not report isIdle:true while mpv was still playing, got: $(cat "$ss_guard_status_path")"
-  fi
-  if ! grep -q '"active":false' "$ss_guard_status_path"; then
-    fail "screensaver activated despite the media guard while mpv was still playing, got: $(cat "$ss_guard_status_path")"
-  fi
-  if ! grep -q '"mediaPlaying":true' "$ss_guard_status_path"; then
-    fail "screensaver status did not report mediaPlaying:true while mpv was still playing, got: $(cat "$ss_guard_status_path")"
-  fi
+  expect_jq "$ss_guard_status_path" '.isIdle == true' "screensaver status did not report isIdle:true while mpv was still playing"
+  expect_jq "$ss_guard_status_path" '.active == false' "screensaver activated despite the media guard while mpv was still playing"
+  expect_jq "$ss_guard_status_path" '.mediaPlaying == true' "screensaver status did not report mediaPlaying:true while mpv was still playing"
   # Auto-trigger proof: mpv killed, no `screensaver start` call at all, so the
   # guard clearing alone has to flip active true.
   if [ ! -f "$ss_auto_path" ]; then
@@ -218,12 +208,8 @@ leg_screensaver_assert() {
     fail "no screensaver auto-status produced"
   fi
   cat "$ss_auto_status_path"; echo
-  if ! grep -q '"active":true' "$ss_auto_status_path"; then
-    fail "screensaver did not auto-activate once the media guard cleared, got: $(cat "$ss_auto_status_path")"
-  fi
-  if [ ! -s "$ss_dismiss_status_path" ] || ! grep -q '"active":false' "$ss_dismiss_status_path"; then
-    fail "screensaver stop IPC call did not flip active back to false, got: $(cat "$ss_dismiss_status_path" 2>/dev/null)"
-  fi
+  expect_jq "$ss_auto_status_path" '.active == true' "screensaver did not auto-activate once the media guard cleared"
+  expect_jq "$ss_dismiss_status_path" '.active == false' "screensaver stop IPC call did not flip active back to false"
   # Manual IPC start/stop proof, independent of the idle timer.
   if [ ! -f "$ss_manual_path" ]; then
     fail "no screensaver-manual screenshot produced"
@@ -233,16 +219,12 @@ leg_screensaver_assert() {
   # manual activation, and the read-only poll has to have seen the counter
   # leave 0 with no IPC nudge, the reroll coming purely from the effect
   # converging and the hold elapsing.
-  if [ ! -s "$ss_cycle_info1_path" ] || ! grep -q '"cycles":0}' "$ss_cycle_info1_path"; then
-    fail "screensaver frameInfo baseline was not cycles:0 right after the manual start, got: $(cat "$ss_cycle_info1_path" 2>/dev/null)"
-  fi
+  expect_jq "$ss_cycle_info1_path" '.cycles == 0' "screensaver frameInfo baseline was not cycles:0 right after the manual start"
   cat "$ss_cycle_info1_path"; echo
-  if [ ! -s "$ss_cycle_info2_path" ] || ! grep -q '"cycles":' "$ss_cycle_info2_path" || grep -q '"cycles":0}' "$ss_cycle_info2_path"; then
-    fail "screensaver cycles never left 0 within the drive's deadline, got: $(cat "$ss_cycle_info2_path" 2>/dev/null)"
-  fi
+  expect_jq "$ss_cycle_info2_path" 'has("cycles") and .cycles != 0' "screensaver cycles never left 0 within the drive's deadline"
   cat "$ss_cycle_info2_path"; echo
-  ss_cycle_effect1=$(grep -o '"effect":"[a-z]*"' "$ss_cycle_info1_path")
-  ss_cycle_effect2=$(grep -o '"effect":"[a-z]*"' "$ss_cycle_info2_path")
+  ss_cycle_effect1=$("$jq_bin" -r '.effect // empty' "$ss_cycle_info1_path" 2>/dev/null)
+  ss_cycle_effect2=$("$jq_bin" -r '.effect // empty' "$ss_cycle_info2_path" 2>/dev/null)
   if [ -n "${SCREENSAVER_EFFECT:-}" ]; then
     # A pinned effect has to replay itself across the reroll.
     if [ "$ss_cycle_effect1" != "$ss_cycle_effect2" ]; then
@@ -266,9 +248,7 @@ leg_screensaver_assert() {
   # vertical span there is no scanline the banner failed to touch. A stripe
   # between two rows of solid blocks is exactly such a scanline, so the
   # regression cannot come back quietly.
-  if [ ! -s "$ss_solid_info_path" ] || ! grep -q '"convergenceFrame":' "$ss_solid_info_path"; then
-    fail "no screensaver frameInfo for the pinned converged frame, got: $(cat "$ss_solid_info_path" 2>/dev/null)"
-  fi
+  expect_jq "$ss_solid_info_path" 'has("convergenceFrame")' "no screensaver frameInfo for the pinned converged frame"
   cat "$ss_solid_info_path"; echo
   [ -f "$ss_solid_path" ] || fail "no converged-banner screenshot produced"
   ss_height=$($convert_bin "$ss_solid_path" -format '%h' info: 2>/dev/null)
@@ -304,10 +284,8 @@ leg_screensaver_assert() {
   fi
   echo "SMOKE_SCREENSAVER_SOLID $ss_gap_rows background scanlines across rows $ss_first-$ss_last, longest unbroken ink run ${ss_run}px on row $ss_busy"
   echo "SMOKE_SCREENSAVER_BANNER $ss_solid_path"
-  if [ ! -s "$ss_final_status_path" ] || ! grep -q '"active":false' "$ss_final_status_path"; then
-    fail "screensaver did not report active:false after the final stop, got: $(cat "$ss_final_status_path" 2>/dev/null)"
-  fi
-  if ! grep -q '^true$' "$ss_chain_locked_path" 2>/dev/null || ! grep -q '"active":true' "$ss_chain_status_path" 2>/dev/null; then
+  expect_jq "$ss_final_status_path" '.active == false' "screensaver did not report active:false after the final stop"
+  if ! grep -q '^true$' "$ss_chain_locked_path" 2>/dev/null || ! "$jq_bin" -e '.active == true' "$ss_chain_status_path" > /dev/null 2>&1; then
     fail "screensaver.lockAfterSeconds did not chain the showing screensaver into the lock, isLocked: $(cat "$ss_chain_locked_path" 2>/dev/null), status: $(cat "$ss_chain_status_path" 2>/dev/null)"
   fi
   echo "SMOKE_SCREENSAVER_CHAIN $ss_chain_path"

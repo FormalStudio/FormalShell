@@ -63,12 +63,10 @@ leg_systemupdate_assert() {
   if [ ! -s "$systemupdate_dump_path" ]; then
     fail "no debug dump produced"
   fi
-  if ! grep -qF "\"flakeDir\":\"$systemupdate_flake_dir\"" "$systemupdate_dump_path"; then
-    fail "the resolved settings do not point systemUpdate.flakeDir at the fixture flake ($systemupdate_flake_dir)"
-  fi
-  if ! grep -qF '"right":["systemUpdate"' "$systemupdate_dump_path"; then
-    fail "the resolved settings do not lead bar.layout's right region with systemUpdate, the opt-in cell was never placed, so nothing flipped the panel's pollEnabled"
-  fi
+  expect_jq "$systemupdate_dump_path" ".configLoaded.systemUpdate.flakeDir == \"$systemupdate_flake_dir\"" \
+    "the resolved settings do not point systemUpdate.flakeDir at the fixture flake ($systemupdate_flake_dir)" .configLoaded.systemUpdate
+  expect_jq "$systemupdate_dump_path" '.configLoaded.bar.layout.right[0] == "systemUpdate"' \
+    "the resolved settings do not lead bar.layout's right region with systemUpdate, the opt-in cell was never placed, so nothing flipped the panel's pollEnabled" .configLoaded.bar.layout
   # One shared poll behind the cell: the cell has to be on the strip, whole.
   jq -e '.[].cells[] | select(.name == "systemUpdate" and .whole == true and .width > 0)' "$systemupdate_room_path" > /dev/null \
     || fail "the systemUpdate cell is not whole on the strip: $(cat "$systemupdate_room_path" 2>/dev/null)"

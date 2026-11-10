@@ -36,12 +36,7 @@ leg_hdr_drive() {
 #!/usr/bin/env bash
 "$hyprctl_bin" monitors all -j > "$hdr_monitors_path" 2>&1
 out=\$("$jq_bin" -r '.[0].name' "$hdr_monitors_path")
-SECONDS=0
-while [ "\$SECONDS" -lt 10 ]; do
-  $ipc call hdr status > "$hdr_status_path" 2>&1
-  grep -qF '"reason":"Checking"' "$hdr_status_path" || grep -qF '"outputs":[]' "$hdr_status_path" || break
-  sleep 1
-done
+until_jq 10 "$hdr_status_path" '.outputs != [] and all(.outputs[]; .reason != "Checking")' call hdr status
 $ipc call hdr enable > "$hdr_enable_path" 2>&1
 $ipc call hdr toggle > "$hdr_toggle_path" 2>&1
 $ipc call hdr setOutput "\$out" true > "$hdr_set_path" 2>&1

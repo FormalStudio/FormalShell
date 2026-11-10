@@ -86,10 +86,10 @@ leg_instance_assert() {
     fail "no instance-status.json produced, the second daemon may never have launched"
   fi
   cat "$instance_status_path"
-  instance_old=$(grep -o '"oldPid":[A-Za-z0-9]*' "$instance_status_path" | cut -d: -f2)
-  instance_new=$(grep -o '"newPid":[A-Za-z0-9]*' "$instance_status_path" | cut -d: -f2)
-  instance_survivor=$(grep -o '"survivorPid":[A-Za-z0-9]*' "$instance_status_path" | cut -d: -f2)
-  instance_final_count=$(grep -o '"finalCount":[0-9]*' "$instance_status_path" | cut -d: -f2)
+  instance_old=$("$jq_bin" -r '.oldPid' "$instance_status_path" 2>/dev/null)
+  instance_new=$("$jq_bin" -r '.newPid' "$instance_status_path" 2>/dev/null)
+  instance_survivor=$("$jq_bin" -r '.survivorPid' "$instance_status_path" 2>/dev/null)
+  instance_final_count=$("$jq_bin" -r '.finalCount // empty' "$instance_status_path" 2>/dev/null)
   # Both sides' log lines are surfaced pass or fail: a failure needs to be
   # loud about what each instance logged, not just that the pids disagreed.
   # The primary writes into the scaffold's own shell log.

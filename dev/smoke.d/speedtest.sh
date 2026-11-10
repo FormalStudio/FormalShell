@@ -11,6 +11,7 @@
 # poll ceiling reached with neither fails the run.
 leg_speedtest_flag="--speedtest"
 leg_speedtest_order=200
+leg_speedtest_needs="jq"
 leg_speedtest_claims="panel=shared"
 
 speedtest_panel_path="$shot_dir/speedtest-panel.png"
@@ -27,12 +28,7 @@ leg_speedtest_drive() {
 $ipc call panel open network > /dev/null 2>&1
 until_settled
 $ipc call network speedtest > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 25 ]; do
-  $ipc call network speedstatus > "$speedtest_status_path" 2>&1
-  grep -qF '"phase":"done"' "$speedtest_status_path" && break
-  sleep 1
-done
+until_jq 25 "$speedtest_status_path" '.phase == "done"' call network speedstatus
 "$grim_bin" "$speedtest_panel_path" > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
@@ -45,10 +41,8 @@ leg_speedtest_assert() {
     fail "no network speedstatus produced"
   fi
   cat "$speedtest_status_path"; echo
-  if ! grep -qF '"phase":"done"' "$speedtest_status_path"; then
-    fail "speed test never reached phase:done, got: $(cat "$speedtest_status_path")"
-  fi
-  if grep -qF '"error":""' "$speedtest_status_path"; then
+  expect_jq "$speedtest_status_path" '.phase == "done"' "speed test never reached phase:done"
+  if "$jq_bin" -e '.error == ""' "$speedtest_status_path" > /dev/null 2>&1; then
     echo "speedtest: reached done with a real measurement"
   else
     echo "speedtest: reached done via an honest failure surface"

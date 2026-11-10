@@ -25,7 +25,7 @@
 # desktop that would look identical to the card's own background.
 leg_capture_edit_flag="--capture-edit"
 leg_capture_edit_order=225
-leg_capture_edit_needs="foot file"
+leg_capture_edit_needs="foot file jq"
 leg_capture_edit_claims="toasts=shared"
 
 capture_edit_reply_path="$shot_dir/capture-edit-reply.txt"
@@ -70,7 +70,7 @@ sleep 1
 $ipc call screenshot full "" > "$capture_edit_reply_path" 2>&1
 for _ in \$(seq 1 20); do
   $ipc call screenshot status > "$capture_edit_status_path" 2>&1
-  if grep -q '"capturing":false' "$capture_edit_status_path"; then
+  if "$jq_bin" -e '.capturing == false' "$capture_edit_status_path" > /dev/null 2>&1; then
     break
   fi
   sleep 0.5
@@ -110,12 +110,8 @@ leg_capture_edit_assert() {
     fail "no screenshot status produced"
   fi
   cat "$capture_edit_status_path"
-  if ! grep -q '"capturing":false' "$capture_edit_status_path" || ! grep -q '"lastError":""' "$capture_edit_status_path"; then
-    fail "screenshot status did not settle clean before the edit handoff: $(cat "$capture_edit_status_path")"
-  fi
-  if ! grep -qF "\"lastPath\":\"$capture_edit_file\"" "$capture_edit_status_path"; then
-    fail "screenshot status lastPath does not match the reply path ($capture_edit_file): $(cat "$capture_edit_status_path")"
-  fi
+  expect_jq "$capture_edit_status_path" '.capturing == false and .lastError == ""' "screenshot status did not settle clean before the edit handoff"
+  expect_jq "$capture_edit_status_path" ".lastPath == \"$capture_edit_file\"" "screenshot status lastPath does not match the reply path ($capture_edit_file)" .lastPath
   # The toast's thumbnail and EDIT action are read by eye off this frame:
   # NotificationsIpc's status() counts popups, it does not dump their content.
   if [ ! -f "$capture_edit_toast_path" ]; then

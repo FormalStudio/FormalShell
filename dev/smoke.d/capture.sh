@@ -85,7 +85,7 @@ $ipc call screenshot pickerStatus > "$capture_cycled_status_path" 2>&1
 $ipc call screenshot key ctrl-return > "$capture_pick_reply_path" 2>&1
 for _ in \$(seq 1 20); do
   $ipc call screenshot status > "$capture_status_path" 2>&1
-  if grep -q '"capturing":false' "$capture_status_path"; then
+  if "$jq_bin" -e '.capturing == false' "$capture_status_path" > /dev/null 2>&1; then
     break
   fi
   sleep 0.5
@@ -95,7 +95,7 @@ done
 # wf-recorder child and this leg would fail on "already recording".
 SECONDS=0
 while [ "\$SECONDS" -lt 45 ]; do
-  $ipc call record status 2>&1 | grep -qF '"active":false' && break
+  $ipc call record status 2>&1 | "$jq_bin" -e '.active == false' > /dev/null 2>&1 && break
   sleep 1
 done
 $ipc call screenshot pick smart default > /dev/null 2>&1
@@ -112,7 +112,7 @@ $ipc call record stop > /dev/null 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 20 ]; do
   $ipc call record status > "$capture_rec_stopped_path" 2>&1
-  grep -qF '"active":false' "$capture_rec_stopped_path" && break
+  "$jq_bin" -e '.active == false' "$capture_rec_stopped_path" > /dev/null 2>&1 && break
   sleep 1
 done
 $ipc call screenshot pick region default > /dev/null 2>&1
@@ -134,9 +134,7 @@ leg_capture_assert() {
     fi
   done
   cat "$capture_open_status_path"; echo
-  if ! grep -q '"open":true' "$capture_open_status_path"; then
-    fail "picker did not report open after 'screenshot pick smart': $(cat "$capture_open_status_path")"
-  fi
+  expect_jq "$capture_open_status_path" '.open == true' "picker did not report open after 'screenshot pick smart'"
   if [ ! -f "$capture_picker_path" ]; then
     fail "no picker screenshot produced at $capture_picker_path"
   fi
@@ -144,8 +142,8 @@ leg_capture_assert() {
   # The load-bearing assertion of this leg. The session holds exactly one
   # real tiled window and Hyprland reports a box for it, so it MUST arrive
   # drawable, with nothing left in the named-only card.
-  capture_drawable=$(sed -n 's/.*"drawableWindows":\([0-9]*\).*/\1/p' "$capture_open_status_path")
-  capture_named=$(sed -n 's/.*"namedWindows":\([0-9]*\).*/\1/p' "$capture_open_status_path")
+  capture_drawable=$("$jq_bin" -r '.drawableWindows // empty' "$capture_open_status_path" 2>/dev/null)
+  capture_named=$("$jq_bin" -r '.namedWindows // empty' "$capture_open_status_path" 2>/dev/null)
   if [ -z "$capture_drawable" ] || [ "$capture_drawable" -lt 1 ]; then
     fail "picker reported no drawable windows under Hyprland, so the window path was never exercised: $(cat "$capture_open_status_path")"
   fi
@@ -155,21 +153,18 @@ leg_capture_assert() {
   echo "SMOKE_CAPTURE_WINDOWS $capture_drawable drawable, $capture_named named-only, the expected Hyprland split"
 
   cat "$capture_cycled_status_path"; echo
-  capture_cursor=$(sed -n 's/.*"cursor":\(-\{0,1\}[0-9]*\).*/\1/p' "$capture_cycled_status_path")
+  capture_cursor=$("$jq_bin" -r '.cursor // empty' "$capture_cycled_status_path" 2>/dev/null)
   if [ -z "$capture_cursor" ] || [ "$capture_cursor" -lt 0 ]; then
     fail "TAB did not move the picker cursor off its pointer-driven default: $(cat "$capture_cycled_status_path")"
   fi
-  if ! grep -q '"selectionLabel":"[^"]' "$capture_cycled_status_path"; then
-    fail "cycled selection carried no label, so the selected row had nothing to render: $(cat "$capture_cycled_status_path")"
-  fi
+  expect_jq "$capture_cycled_status_path" '(.selectionLabel | type) == "string" and .selectionLabel != ""' \
+    "cycled selection carried no label, so the selected row had nothing to render"
 
   if ! grep -q '^ok$' "$capture_pick_reply_path"; then
     fail "CTRL+RETURN did not commit a selection. Got: $(cat "$capture_pick_reply_path" 2>/dev/null)"
   fi
-  if ! grep -q '"capturing":false' "$capture_status_path" || ! grep -q '"lastError":""' "$capture_status_path"; then
-    fail "capture did not settle clean: $(cat "$capture_status_path")"
-  fi
-  capture_file=$(sed -n 's/.*"lastPath":"\([^"]*\)".*/\1/p' "$capture_status_path")
+  expect_jq "$capture_status_path" '.capturing == false and .lastError == ""' "capture did not settle clean"
+  capture_file=$("$jq_bin" -r '.lastPath // empty' "$capture_status_path" 2>/dev/null)
   if [ -z "$capture_file" ] || [ ! -f "$capture_file" ]; then
     fail "capture reported no existing file, lastPath was '$capture_file': $(cat "$capture_status_path")"
   fi
@@ -194,14 +189,11 @@ leg_capture_assert() {
     fi
   done
   cat "$capture_tool_status_path"; echo
-  if ! grep -qF '"action":"record"' "$capture_tool_status_path" \
-    || ! grep -qF '"tool":3' "$capture_tool_status_path" \
-    || ! grep -qF '"mode":"fullscreen"' "$capture_tool_status_path"; then
-    fail "the REC SCREEN toolbar cell did not take: $(cat "$capture_tool_status_path")"
-  fi
+  expect_jq "$capture_tool_status_path" '.action == "record" and .tool == 3 and .mode == "fullscreen"' \
+    "the REC SCREEN toolbar cell did not take"
   # SCREEN preselects the focused output, so the commit has something to act
   # on with no pointer anywhere near the surface.
-  capture_tool_cursor=$(sed -n 's/.*"cursor":\(-\{0,1\}[0-9]*\).*/\1/p' "$capture_tool_status_path")
+  capture_tool_cursor=$("$jq_bin" -r '.cursor // empty' "$capture_tool_status_path" 2>/dev/null)
   if [ -z "$capture_tool_cursor" ] || [ "$capture_tool_cursor" -lt 0 ]; then
     fail "REC SCREEN left nothing selected: $(cat "$capture_tool_status_path")"
   fi
@@ -220,12 +212,10 @@ leg_capture_assert() {
   # was ever launched, which is a failure of the handoff and is treated as
   # one.
   cat "$capture_rec_status_path"; echo
-  if grep -qF '"active":true' "$capture_rec_status_path"; then
+  if "$jq_bin" -e '.active == true' "$capture_rec_status_path" > /dev/null 2>&1; then
     cat "$capture_rec_stopped_path"; echo
-    if ! grep -qF '"active":false' "$capture_rec_stopped_path"; then
-      fail "the picker's recording never stopped: $(cat "$capture_rec_stopped_path")"
-    fi
-    capture_rec_file=$(sed -n 's/.*"path":"\([^"]*\)".*/\1/p' "$capture_rec_stopped_path")
+    expect_jq "$capture_rec_stopped_path" '.active == false' "the picker's recording never stopped"
+    capture_rec_file=$("$jq_bin" -r '.path // empty' "$capture_rec_stopped_path" 2>/dev/null)
     # The path is built from the answering instance's $HOME, so one outside
     # this run's isolated HOME names a different formalshell on this machine.
     case "$capture_rec_file" in
@@ -238,7 +228,7 @@ leg_capture_assert() {
     if ! "$file_bin" -b "$capture_rec_file" | grep -qi "ISO Media"; then
       fail "the picker's recording is not an MP4 container, file(1) says: $("$file_bin" -b "$capture_rec_file")"
     fi
-    if grep -qF '"lastError":""' "$capture_rec_stopped_path"; then
+    if "$jq_bin" -e '.lastError == ""' "$capture_rec_stopped_path" > /dev/null 2>&1; then
       echo "SMOKE_CAPTURE_RECORD $capture_rec_file ($("$file_bin" -b "$capture_rec_file"))"
     else
       # Where this leg stops is where the environment stops, and it says
@@ -250,7 +240,7 @@ leg_capture_assert() {
       # not the length. Everything the SHELL owns is still proven: the
       # toolbar switched tools, the commit was accepted, a real recorder ran
       # and its container is on disk with this run's own name on it.
-      capture_rec_err=$(sed -n 's/.*"lastError":"\([^"]*\)".*/\1/p' "$capture_rec_stopped_path")
+      capture_rec_err=$("$jq_bin" -r '.lastError // empty' "$capture_rec_stopped_path" 2>/dev/null)
       case "$capture_rec_err" in
         *"ignored SIGTERM"*)
           echo "SMOKE_CAPTURE_RECORD_TRUNCATED $capture_rec_file ($("$file_bin" -b "$capture_rec_file"))"
@@ -261,7 +251,7 @@ leg_capture_assert() {
       esac
     fi
   else
-    capture_rec_err=$(sed -n 's/.*"lastError":"\([^"]*\)".*/\1/p' "$capture_rec_status_path")
+    capture_rec_err=$("$jq_bin" -r '.lastError // empty' "$capture_rec_status_path" 2>/dev/null)
     if [ -z "$capture_rec_err" ]; then
       fail "the picker's record commit launched nothing at all, no recorder ran and no error was reported: $(cat "$capture_rec_status_path")"
     fi
@@ -276,9 +266,7 @@ leg_capture_assert() {
   fi
 
   # Escape must leave nothing mapped.
-  if ! grep -q '"open":false' "$capture_escape_status_path"; then
-    fail "picker still open after ESCAPE: $(cat "$capture_escape_status_path")"
-  fi
+  expect_jq "$capture_escape_status_path" '.open == false' "picker still open after ESCAPE"
   echo "SMOKE_CAPTURE_PICKER $capture_picker_path"
   echo "SMOKE_CAPTURE_CANCEL escape closed the picker clean"
 }
