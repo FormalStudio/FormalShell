@@ -31,7 +31,7 @@ use async_process::{ChildStdin, Stdio};
 use fs_dbus::Backoff;
 use fs_devices::bluetooth::Device as BtDevice;
 use fs_types::BtAddress;
-use fs_devices::earbuds::motion::{Quat, Sample, parse_sample};
+use fs_devices::earbuds::motion::{AutoRecenter, Quat, Sample, parse_sample};
 use fs_devices::earbuds::{self as model, Device, HeartSample, Motion, Value, airpods, nothing, samsung, soundcore};
 use futures_lite::io::{BufReader, Lines};
 use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, FutureExt, StreamExt, future};
@@ -611,6 +611,7 @@ struct MotionState {
     /// The first sample of the watch or of a bud taking the stream over, or
     /// where `recenter` last took it.
     reference: Option<Quat>,
+    auto: AutoRecenter,
     /// The daemon answered the watch with an `error:` line, or it could not
     /// be opened; not tried again until the panel is reopened.
     failed: bool,
@@ -790,8 +791,10 @@ impl Airpods {
         // old reference means nothing in.
         if self.motion.latest.is_some_and(|last| last.bud != sample.bud) {
             self.motion.reference = None;
+            self.motion.auto = AutoRecenter::default();
         }
-        self.motion.reference.get_or_insert(sample.orientation);
+        let reference = *self.motion.reference.get_or_insert(sample.orientation);
+        self.motion.reference = Some(self.motion.auto.follow(reference, &sample));
         self.motion.latest = Some(sample);
         self.republish(ctx);
     }
@@ -801,6 +804,7 @@ impl Airpods {
         self.lines = None;
         self.motion.latest = None;
         self.motion.reference = None;
+        self.motion.auto = AutoRecenter::default();
         self.republish(ctx);
     }
 

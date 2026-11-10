@@ -244,7 +244,8 @@ pub struct Motion {
     /// The latest sample, None before the first.
     pub latest: Option<motion::Sample>,
     /// The orientation yaw, pitch and roll are measured from: the first
-    /// sample of a watch, or wherever the wearer last recentred, always
+    /// sample of a watch or wherever the wearer last recentred, turned
+    /// round to a held heading by [`motion::AutoRecenter`], always
     /// read off the same bud as `latest`.
     pub reference: Option<motion::Quat>,
 }

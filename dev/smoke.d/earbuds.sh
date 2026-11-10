@@ -58,11 +58,13 @@
 #     Head motion rides the same stub: its status carries `motion`
 #     available, and the panel opening reaches the socket as `motion:watch`
 #     (logged apart from the verbs, in librepods-motion.txt). The stub
-#     starts 25 degrees round and turns 40 more over a 6 s hold; with the
-#     panel still open from the noise loop, `earbuds status` reads the motion
-#     live, yaw 35 to 45 (so measured from the watch's first sample, not
-#     65), pitch near 0 and a gravity triple, `earbuds recenter` brings yaw
-#     within 3 degrees of 0 mid-hold, and closing the panel ends the watch
+#     starts 25 degrees round and turns 40 more over a 6 s hold; as the
+#     turn lands on the panel's quarter speed reopen, `earbuds status` reads
+#     the motion live, yaw 35 to 45 (so measured from the watch's first
+#     sample, not 65), pitch near 0 and a gravity triple, 4.5 s into the
+#     hold auto recenter has eased yaw to within 15 degrees of ahead, after
+#     the noise loop `earbuds recenter` brings yaw within 3 degrees of 0,
+#     and closing the panel ends the watch
 #     (`motion:end`; so does each other close). A stub answering the watch
 #     with `error: ...` leaves the device with no `motion`, and a status
 #     with no `motion` key (the noheart one) is never watched.
@@ -310,7 +312,20 @@ call panel close > /dev/null 2>&1
 sleep 1
 call debug motionScale 400 > /dev/null 2>&1
 call panel open earbuds > /dev/null 2>&1
-sleep 7
+opened=\$(date +%s%N)
+# The stub's head turns 40 degrees 1s into this watch and holds it for 6s;
+# auto recenter eases a hold away from 2s in, so catch the turn as it lands.
+for _ in \$(seq 40); do
+  call earbuds status > "$earbuds_dir/airpods-motion-turn.json" 2>&1
+  [ "\$("$jq_bin" -r '(.device.motion.yaw // 0) > 35' "$earbuds_dir/airpods-motion-turn.json" 2>/dev/null)" = true ] && break
+  sleep 0.1
+done
+# 4.5s into the hold, eased back toward ahead.
+left=\$(( opened + 6500000000 - \$(date +%s%N) ))
+[ \$left -gt 0 ] && sleep "\$(printf '%d.%09d' \$((left / 1000000000)) \$((left % 1000000000)))"
+call earbuds status > "$earbuds_dir/airpods-motion-eased.json" 2>&1
+left=\$(( opened + 7000000000 - \$(date +%s%N) ))
+[ \$left -gt 0 ] && sleep "\$(printf '%d.%09d' \$((left / 1000000000)) \$((left % 1000000000)))"
 for i in 0 1 2 3 4 5 6 7; do
   "$grim_bin" "$earbuds_heart_beat_dir-\$i.png" > /dev/null 2>&1
   sleep 0.4
@@ -320,13 +335,6 @@ for mode in anc transparency adaptive off; do
   echo "\$mode: \$(call earbuds set noise \$mode 2>&1)" >> "$earbuds_airpods_replies"
   sleep 2
   call earbuds status > "$earbuds_dir/airpods-status-\$mode.json" 2>&1
-done
-# The stub's head turns 40 degrees and holds it for 6s; the watch has run
-# since the reopen, so catch the hold wherever the cycle is.
-for _ in \$(seq 40); do
-  call earbuds status > "$earbuds_dir/airpods-motion-turn.json" 2>&1
-  [ "\$("$jq_bin" -r '(.device.motion.yaw // 0) > 35' "$earbuds_dir/airpods-motion-turn.json" 2>/dev/null)" = true ] && break
-  sleep 0.2
 done
 echo "recenter: \$(call earbuds recenter 2>&1)" >> "$earbuds_motion_replies"
 sleep 0.5
@@ -567,6 +575,9 @@ motion:watch" ] || fail "earbuds: librepods should get a motion:watch per panel 
   got=$("$jq_bin" -r '.device.motion | [.live, (.yaw > 35 and .yaw < 45), (.pitch > -3 and .pitch < 3), (.gravity | length == 3 and any(. != 0)), (.sampledAtMs > 0)] | map(tostring) | join(",")' "$earbuds_dir/airpods-motion-turn.json" 2>/dev/null)
   [ "$got" = "true,true,true,true,true" ] \
     || fail "earbuds: the open panel should read live head motion 35 to 45 degrees round from its first sample, level, with gravity, got '$got' from $(cat "$earbuds_dir/airpods-motion-turn.json")"
+  got=$("$jq_bin" -r '.device.motion | [.live, (.yaw > -15 and .yaw < 15)] | map(tostring) | join(",")' "$earbuds_dir/airpods-motion-eased.json" 2>/dev/null)
+  [ "$got" = "true,true" ] \
+    || fail "earbuds: auto recenter should ease a 40 degree turn held 4.5s to within 15 degrees of ahead, got '$got' from $(cat "$earbuds_dir/airpods-motion-eased.json")"
   [ "$(cat "$earbuds_motion_replies")" = "recenter: ok" ] || fail "earbuds: recenter was refused: $(cat "$earbuds_motion_replies")"
   got=$("$jq_bin" -r '.device.motion | [.live, (.yaw > -3 and .yaw < 3)] | map(tostring) | join(",")' "$earbuds_dir/airpods-motion-recentered.json" 2>/dev/null)
   [ "$got" = "true,true" ] \

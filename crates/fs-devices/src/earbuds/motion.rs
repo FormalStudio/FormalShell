@@ -159,6 +159,54 @@ fn head_frame(reference: Quat, bud: Bud) -> Quat {
     }
 }
 
+/// Yaw has no absolute heading to hold to: the wearer turns their chair and
+/// the gyro drifts. Once the head has held a heading for [`HOLD_MS`], the
+/// reference eases round about the vertical to meet it, a [`TAU_S`] time
+/// constant, so the reading settles back to straight ahead. Pitch and roll
+/// are measured against gravity and stay put.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AutoRecenter {
+    /// Where the current hold started.
+    anchor: Option<Quat>,
+    held_ms: u64,
+}
+
+/// Any turn wider than this from the hold's start ends the hold.
+const HOLD_DEGREES: f32 = 5.0;
+const HOLD_MS: u64 = 2000;
+const TAU_S: f32 = 0.75;
+/// The daemon's stream period, `Motion::INTERVAL_US`.
+const PERIOD_MS: u64 = 40;
+
+impl AutoRecenter {
+    /// `reference`, eased toward `sample`'s heading once the head has held it.
+    pub fn follow(&mut self, reference: Quat, sample: &Sample) -> Quat {
+        let now = sample.orientation;
+        let anchor = *self.anchor.get_or_insert(now);
+        if angle_degrees(anchor, now) > HOLD_DEGREES {
+            self.anchor = Some(now);
+            self.held_ms = 0;
+            return reference;
+        }
+        self.held_ms += PERIOD_MS;
+        if self.held_ms < HOLD_MS {
+            return reference;
+        }
+        let turn = now.then(reference.conjugate());
+        let heading = 2.0 * turn.z.atan2(turn.w);
+        let heading = (heading + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        let step = heading * (1.0 - (-(PERIOD_MS as f32 / 1000.0) / TAU_S).exp());
+        let h = step / 2.0;
+        Quat { w: h.cos(), x: 0.0, y: 0.0, z: h.sin() }.then(reference)
+    }
+}
+
+/// The angle of the rotation taking `a` to `b`.
+fn angle_degrees(a: Quat, b: Quat) -> f32 {
+    let dot = (a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z).abs().min(1.0);
+    (2.0 * dot.acos()).to_degrees()
+}
+
 /// Acceleration in thousandths of g, as the buds report it. Not a fraction of
 /// g: convert through [`MilliG::as_g`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -384,6 +432,44 @@ mod tests {
         near(e.roll, 0.0);
         let e = nod.then(right).relative_to(right, Bud::Left).euler_degrees();
         near(e.pitch, -15.0);
+    }
+
+    fn held(orientation: Quat) -> Sample {
+        Sample { orientation, gravity: Gravity::default(), gyro: Gyro::default(), bud: Bud::Left, at_ms: 0 }
+    }
+
+    /// A head that turns 40 and nods 10, then holds: yaw reads the turn
+    /// for the hold's first 2s, then settles to straight ahead with the
+    /// nod kept.
+    #[test]
+    fn auto_recenter_follows_a_held_heading() {
+        let worn = about_z(70.0).then(about_x(90.0));
+        let nod = about(worn.rotate([0.0, 0.0, 1.0]), 10.0);
+        let pose = about_z(40.0).then(nod).then(worn);
+        let mut auto = AutoRecenter::default();
+        let mut reference = worn;
+        for _ in 0..45 {
+            reference = auto.follow(reference, &held(pose));
+        }
+        near(pose.relative_to(reference, Bud::Left).euler_degrees().yaw, 40.0);
+        for _ in 0..100 {
+            reference = auto.follow(reference, &held(pose));
+        }
+        let e = pose.relative_to(reference, Bud::Left).euler_degrees();
+        assert!(e.yaw.abs() < 0.5, "{e:?}");
+        assert!((e.pitch - 10.0).abs() < 0.5, "{e:?}");
+    }
+
+    /// A head still moving never holds, so nothing eases.
+    #[test]
+    fn auto_recenter_waits_out_movement() {
+        let mut auto = AutoRecenter::default();
+        let mut reference = Quat::IDENTITY;
+        for i in 0..200 {
+            let yaw = if i % 20 < 10 { 30.0 } else { -30.0 };
+            reference = auto.follow(reference, &held(about_z(yaw)));
+        }
+        assert_eq!(reference, Quat::IDENTITY);
     }
 
     #[test]
