@@ -9,16 +9,13 @@
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex};
 
-use fs_chrome::plugins::{Kind, Plugin, Width};
+use fs_chrome::plugins::{Kind, PLUGIN_PREFIX, Plugin, Width};
 use fs_theme::tokens::Space;
 
 use super::{Effect, Panel, View};
 use crate::services::plugins::{self, Row, RowKind, Run};
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Variant, w};
-
-/// What a plugin surface answers to on the `panel` target.
-pub const PREFIX: &str = "plugin:";
 
 /// Panel names are `&'static str` end to end, so a plugin's is leaked once
 /// and reused: one short string per plugin id ever seen.
@@ -36,7 +33,7 @@ pub fn intern(name: &str) -> &'static str {
 /// The panel or overlay plugin a `panel` name asks for, when the scan found
 /// one under that id.
 pub fn find<'a>(store: &'a Store, name: &str) -> Option<&'a Plugin> {
-    let id = name.strip_prefix(PREFIX)?;
+    let id = name.strip_prefix(PLUGIN_PREFIX)?;
     store.plugins.resolved.by_id(id).filter(|p| matches!(p.kind, Kind::Panel | Kind::Overlay))
 }
 
@@ -109,7 +106,7 @@ pub struct PluginPanel {
 
 impl PluginPanel {
     pub fn new(key: &'static str) -> Self {
-        Self { key, id: key.strip_prefix(PREFIX).unwrap_or(key).to_owned() }
+        Self { key, id: key.strip_prefix(PLUGIN_PREFIX).unwrap_or(key).to_owned() }
     }
 }
 

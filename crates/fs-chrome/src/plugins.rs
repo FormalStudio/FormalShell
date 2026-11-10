@@ -42,7 +42,8 @@ use fs_types::Region;
 
 pub const API_VERSION: i64 = 1;
 
-/// Must stay byte-identical to the `plugin:` prefix `bar::layout` writes.
+/// What a plugin's id is named by in `bar.layout`, the panel registry and
+/// the launcher's routes.
 pub const PLUGIN_PREFIX: &str = "plugin:";
 
 static ID_PATTERN: LazyLock<Regex> =

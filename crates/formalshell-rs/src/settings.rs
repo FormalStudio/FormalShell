@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 
 use fs_chrome::hot_corners::corners::{self, Corner};
+use fs_menu::actions::Run;
 use fs_system::power::model::Thresholds;
 use fs_types::Edge;
 use serde_json::Value;
@@ -230,6 +231,20 @@ const fn corner(key: &'static str, corner: Corner) -> Word {
     Word::new(key, corners::default_action(corner))
 }
 
+/// `hotCorners`, a corner's text that names no built-in read the way the
+/// launcher reads an action: an `@ipc:` call checked against what answers
+/// it, or a command line. A bare word is neither and stays a typo rather
+/// than becoming a command: "lok" would otherwise spawn a shell that fails
+/// silently, on a surface the pointer reaches by accident. A single binary
+/// gets in as an absolute path or with its arguments.
+pub fn hot_corners(settings: &impl Doc) -> corners::Config<Run> {
+    corners::resolve(lookup(settings.doc(), "hotCorners"), |text| match Run::parse(text) {
+        Run::Ipc(call) => crate::ipc::check(&call, false).map(Run::Ipc),
+        Run::Shell(line) if line.contains(char::is_whitespace) || line.contains('/') => Ok(Run::Shell(line)),
+        _ => Err(format!("unknown action {}", Value::String(text.to_owned()))),
+    })
+}
+
 // Windows
 
 pub const SWITCHER: Flag = Flag::new("switcher.enabled", true);
@@ -450,6 +465,26 @@ mod tests {
         assert_eq!(avatar_path(&json!({}), "/home/k"), "/home/k/.face");
         assert_eq!(avatar_path(&json!({"avatar": {"path": ""}}), "/home/k"), "/home/k/.face");
         assert_eq!(avatar_path(&json!({"avatar": {"path": "/p.png"}}), "/home/k"), "/p.png");
+    }
+
+    #[test]
+    fn a_hot_corner_naming_nothing_is_refused_with_its_reason() {
+        use fs_menu::actions::IpcCall;
+        let config = hot_corners(&json!({"hotCorners": {
+            "topLeft": "@ipc:nope.verb",
+            "topRight": "lok",
+            "bottomLeft": "@ipc:notifications.showHistory",
+            "bottomRight": "foot -e htop",
+        }}));
+        assert_eq!(config.warnings, [
+            "hotCorners.topLeft: no IPC target \"nope\", leaving the corner inert",
+            "hotCorners.topRight: unknown action \"lok\", leaving the corner inert",
+        ]);
+        assert_eq!(config.corners.top_left, corners::Action::None);
+        assert_eq!(config.corners.top_right, corners::Action::None);
+        let launcher = |run: Run| corners::Action::Launcher { text: run.to_string(), run };
+        assert_eq!(config.corners.bottom_left, launcher(Run::Ipc(IpcCall::new("notifications", "showHistory"))));
+        assert_eq!(config.corners.bottom_right, launcher(Run::Shell("foot -e htop".into())));
     }
 
     #[test]

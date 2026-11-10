@@ -75,9 +75,15 @@ impl Learning {
     }
 }
 
-/// What the Escape bind runs.
+/// What the Escape bind runs: the client installed beside this binary, as
+/// the compositor's own PATH may not hold it.
 fn dismiss_argv() -> Vec<String> {
-    [crate::services::menu::ipc_client(), "call".into(), "headset".into(), "dismiss".into()].into()
+    let client = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("formalshell-ipc")))
+        .filter(|p| p.exists())
+        .map_or_else(|| "formalshell-ipc".to_owned(), |p| p.to_string_lossy().into_owned());
+    [client, "call".into(), "headset".into(), "dismiss".into()].into()
 }
 
 #[derive(Default)]

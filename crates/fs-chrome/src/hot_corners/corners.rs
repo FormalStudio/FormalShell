@@ -1,12 +1,9 @@
 //! Resolver for `hotCorners` (settings.json). Takes the raw object in, returns
 //! the enabled flag, trigger size, dwell delay, per-corner actions and
-//! warnings out. Bad input is never fatal: an unrecognised action name or a
-//! non-numeric size is dropped with one warning string, since a typo in
-//! settings.json must never take the whole shell down with it.
+//! warnings out. Bad input is never fatal: an action the caller's parser
+//! refuses or a non-numeric size is dropped with one warning string, since a
+//! typo in settings.json must never take the whole shell down with it.
 
-use std::sync::LazyLock;
-
-use regex::Regex;
 use serde_json::Value;
 
 use fs_js as js;
@@ -38,32 +35,32 @@ impl Corner {
     }
 }
 
-/// What a corner does. The first three are the surface's own; anything else is
-/// a launcher action string, handed verbatim to the same resolver the launcher
-/// uses.
+/// What a corner does. The first four are the surface's own; anything else
+/// is a launcher action, kept as its text and as what the caller's parser
+/// made of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Action {
+pub enum Action<C> {
     None,
     Screensaver,
     Lock,
     /// The shell's workspace overview, toggled, the same command as
     /// `workspaces overview toggle`.
     Overview,
-    Launcher(String),
+    Launcher { text: String, run: C },
 }
 
-impl Action {
+impl<C> Action<C> {
     pub fn as_str(&self) -> &str {
         match self {
             Action::None => "none",
             Action::Screensaver => "screensaver",
             Action::Lock => "lock",
             Action::Overview => "overview",
-            Action::Launcher(s) => s,
+            Action::Launcher { text, .. } => text,
         }
     }
 
-    fn builtin(name: &str) -> Option<Action> {
+    fn builtin(name: &str) -> Option<Action<C>> {
         match name {
             "none" => Some(Action::None),
             "screensaver" => Some(Action::Screensaver),
@@ -72,29 +69,6 @@ impl Action {
             _ => None,
         }
     }
-}
-
-static IPC_ACTION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^@ipc:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(:[^\n\r\u{2028}\u{2029}]+)?$")
-        .expect("static pattern")
-});
-
-/// A launcher action string is either the in-process form
-/// (`@ipc:<target>.<fn>` with an optional `:<arg>`) or a command line the
-/// compositor spawns.
-///
-/// A bare word is neither, and stays a typo rather than becoming a command:
-/// "lok" would otherwise spawn a shell that fails silently, on a surface the
-/// pointer reaches by accident. A single binary gets in as an absolute path or
-/// with its arguments.
-pub fn is_launcher_action(action: &str) -> bool {
-    if action.is_empty() {
-        return false;
-    }
-    if action.starts_with("@ipc:") {
-        return IPC_ACTION.is_match(action);
-    }
-    action.chars().any(js::is_space) || action.contains('/')
 }
 
 /// The trigger square, in pixels. Small on purpose and still not hard to hit:
@@ -111,15 +85,15 @@ pub const DEFAULT_DELAY_MS: i64 = 400;
 pub const MAX_DELAY_MS: i64 = 10000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Corners {
-    pub top_left: Action,
-    pub top_right: Action,
-    pub bottom_left: Action,
-    pub bottom_right: Action,
+pub struct Corners<C> {
+    pub top_left: Action<C>,
+    pub top_right: Action<C>,
+    pub bottom_left: Action<C>,
+    pub bottom_right: Action<C>,
 }
 
-impl Corners {
-    pub fn get(&self, corner: Corner) -> &Action {
+impl<C> Corners<C> {
+    pub fn get(&self, corner: Corner) -> &Action<C> {
         match corner {
             Corner::TopLeft => &self.top_left,
             Corner::TopRight => &self.top_right,
@@ -128,7 +102,7 @@ impl Corners {
         }
     }
 
-    fn set(&mut self, corner: Corner, action: Action) {
+    fn set(&mut self, corner: Corner, action: Action<C>) {
         match corner {
             Corner::TopLeft => self.top_left = action,
             Corner::TopRight => self.top_right = action,
@@ -155,11 +129,11 @@ pub const fn default_action(corner: Corner) -> &'static str {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Config {
+pub struct Config<C> {
     pub enabled: bool,
     pub size: i64,
     pub delay_ms: i64,
-    pub corners: Corners,
+    pub corners: Corners<C>,
     pub warnings: Vec<String>,
 }
 
@@ -185,7 +159,12 @@ fn clamped_number(
     (js::round(n) as i64).clamp(min, max)
 }
 
-pub fn resolve(hot_corners: Option<&Value>) -> Config {
+/// `launcher` reads a corner's text that names none of the built-ins, or
+/// says why it refuses it.
+pub fn resolve<C>(
+    hot_corners: Option<&Value>,
+    launcher: impl Fn(&str) -> Result<C, String>,
+) -> Config<C> {
     let mut warnings = Vec::new();
     let empty = serde_json::Map::new();
     let raw = hot_corners.and_then(Value::as_object).unwrap_or(&empty);
@@ -200,19 +179,27 @@ pub fn resolve(hot_corners: Option<&Value>) -> Config {
         let name = corner.name();
         let action = match raw.get(name).filter(|v| !v.is_null()) {
             None => Action::builtin(default_action(corner)).unwrap_or(Action::None),
-            Some(value) => match value.as_str().and_then(|s| {
-                Action::builtin(s)
-                    .or_else(|| is_launcher_action(s).then(|| Action::Launcher(s.into())))
-            }) {
-                Some(action) => action,
-                None => {
-                    warnings.push(format!(
-                        "hotCorners.{name}: unknown action {}, leaving the corner inert",
-                        js::stringify(value)
-                    ));
-                    Action::None
+            Some(value) => {
+                let parsed = match value.as_str() {
+                    Some(text) => match Action::builtin(text) {
+                        Some(action) => Ok(action),
+                        None => launcher(text).map(|run| Action::Launcher {
+                            text: text.to_owned(),
+                            run,
+                        }),
+                    },
+                    None => Err(format!("unknown action {}", js::stringify(value))),
+                };
+                match parsed {
+                    Ok(action) => action,
+                    Err(reason) => {
+                        warnings.push(format!(
+                            "hotCorners.{name}: {reason}, leaving the corner inert"
+                        ));
+                        Action::None
+                    }
                 }
-            },
+            }
         };
         corners.set(corner, action);
     }
@@ -261,17 +248,17 @@ pub fn edges(corner: Corner) -> Edges {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CornerWindow {
+pub struct CornerWindow<C> {
     pub screen: String,
     pub corner: Corner,
-    pub action: Action,
+    pub action: Action<C>,
 }
 
 /// One entry per window the surface actually has to create, so a corner left
 /// at "none" (or the whole feature switched off) costs no layer surface at
 /// all rather than a mapped but inert one holding an input region over live
 /// pixels.
-pub fn windows(config: &Config, screens: &[String]) -> Vec<CornerWindow> {
+pub fn windows<C: Clone>(config: &Config<C>, screens: &[String]) -> Vec<CornerWindow<C>> {
     let mut out = Vec::new();
     if !config.enabled {
         return out;
@@ -279,7 +266,7 @@ pub fn windows(config: &Config, screens: &[String]) -> Vec<CornerWindow> {
     for screen in screens {
         for corner in Corner::ALL {
             let action = config.corners.get(corner);
-            if *action == Action::None {
+            if matches!(action, Action::None) {
                 continue;
             }
             out.push(CornerWindow {
@@ -312,8 +299,18 @@ mod tests {
 
     use super::*;
 
-    fn run(v: Value) -> Config {
-        resolve(Some(&v))
+    /// Takes a line with a space or a slash in it, as settings.json's own
+    /// parser does for a command.
+    fn launcher(text: &str) -> Result<String, String> {
+        if text.contains(' ') || text.contains('/') {
+            Ok(text.to_owned())
+        } else {
+            Err(format!("unknown action {text:?}"))
+        }
+    }
+
+    fn run(v: Value) -> Config<String> {
+        resolve(Some(&v), launcher)
     }
 
     fn screens(names: &[&str]) -> Vec<String> {
@@ -322,7 +319,7 @@ mod tests {
 
     #[test]
     fn defaults_when_key_is_absent() {
-        let c = resolve(None);
+        let c = resolve(None, launcher);
         assert!(c.enabled);
         assert_eq!(c.size, 4);
         assert_eq!(c.delay_ms, 400);
@@ -349,54 +346,28 @@ mod tests {
         assert_eq!(c.corners.bottom_left, Action::Screensaver);
     }
 
-    // The launcher action strings: the same two forms the launcher's own
-    // action runner resolves, kept verbatim so the surface hands it the
-    // string it was configured with.
+    // Text that names no built-in is the parser's: kept with what it made
+    // of it, or dropped with its reason.
     #[test]
-    fn an_ipc_action_string_is_kept_verbatim() {
-        let c = run(json!({ "topLeft": "@ipc:notifications.showHistory" }));
-        assert_eq!(
-            c.corners.top_left.as_str(),
-            "@ipc:notifications.showHistory"
-        );
-        assert_eq!(c.warnings.len(), 0);
-        assert!(is_launcher_action("@ipc:notifications.showHistory"));
-        assert!(is_launcher_action("@ipc:clipboard.copy:3"));
-    }
-
-    #[test]
-    fn a_command_line_is_kept_verbatim() {
+    fn a_launcher_action_keeps_its_text() {
         let c = run(json!({ "topRight": "hyprctl dispatch workspace 1" }));
         assert_eq!(c.corners.top_right.as_str(), "hyprctl dispatch workspace 1");
         assert_eq!(c.warnings.len(), 0);
-        assert!(is_launcher_action("/usr/bin/hyprlock"));
-    }
-
-    #[test]
-    fn a_custom_action_reaches_the_window_list() {
-        let c = run(json!({ "bottomLeft": "@ipc:theme.toggleMode" }));
         let wins = windows(&c, &screens(&["HDMI-1"]));
-        assert_eq!(wins.len(), 3);
-        assert_eq!(wins[1].action.as_str(), "@ipc:theme.toggleMode");
+        assert_eq!(wins.len(), 4);
+        assert_eq!(wins[1].action.as_str(), "hyprctl dispatch workspace 1");
     }
 
-    // The built-ins are the surface's own, never the launcher's: routing
-    // "lock" through the resolver would spawn a shell command called lock.
+    // The built-ins are the surface's own and never reach the parser:
+    // routing "lock" through it would spawn a shell command called lock.
     #[test]
-    fn the_built_in_names_are_not_launcher_actions() {
-        assert!(!is_launcher_action("lock"));
-        assert!(!is_launcher_action("screensaver"));
-        assert!(!is_launcher_action("overview"));
-        assert!(!is_launcher_action("none"));
-    }
-
-    // A malformed one is a typo like any other, so it takes the same path.
-    #[test]
-    fn a_malformed_ipc_string_is_refused() {
-        assert!(!is_launcher_action("@ipc:showHistory"));
-        let c = run(json!({ "topLeft": "@ipc:showHistory" }));
-        assert_eq!(c.corners.top_left, Action::None);
-        assert_eq!(c.warnings.len(), 1);
+    fn the_built_in_names_never_reach_the_parser() {
+        let v = json!({ "topLeft": "lock", "topRight": "overview" });
+        let c = resolve(Some(&v), |_| -> Result<(), String> {
+            panic!("parsed a built-in")
+        });
+        assert_eq!(c.corners.top_left, Action::Lock);
+        assert_eq!(c.corners.top_right, Action::Overview);
     }
 
     #[test]
@@ -408,7 +379,6 @@ mod tests {
             c.warnings[0],
             "hotCorners.bottomLeft: unknown action \"explode\", leaving the corner inert"
         );
-        assert!(!is_launcher_action("explode"));
     }
 
     #[test]
@@ -455,7 +425,7 @@ mod tests {
 
     #[test]
     fn windows_covers_every_screen_and_skips_none() {
-        let c = resolve(None);
+        let c = resolve(None, launcher);
         let wins = windows(&c, &screens(&["HDMI-1", "DP-1"]));
         assert_eq!(wins.len(), 6);
         assert_eq!(wins[0].screen, "HDMI-1");

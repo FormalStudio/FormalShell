@@ -73,7 +73,7 @@ fn known_mapping() {
     assert_eq!(rows[0].icon, "\u{1F44D}");
     assert_eq!(rows[0].label, "Thumbs up");
     assert_eq!(rows[0].kind, fs_menu::node::Kind::Action);
-    assert_eq!(rows[0].action.as_deref(), Some("wl-copy -- '\u{1F44D}'"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("wl-copy -- \u{1F44D}"));
     // paste_after marks the row for the post-close paste hook, the same field
     // and config key a clipboard-history row uses.
     assert!(rows[0].paste_after);
@@ -87,7 +87,7 @@ fn paste_off() {
     let rows = REAL.rows("thumbs up", false, &[], None);
     assert!(!rows[0].paste_after);
     assert_eq!(rows[0].verb.as_deref(), Some("Copy"));
-    assert_eq!(rows[0].action.as_deref(), Some("wl-copy -- '\u{1F44D}'"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("wl-copy -- \u{1F44D}"));
 }
 
 #[test]

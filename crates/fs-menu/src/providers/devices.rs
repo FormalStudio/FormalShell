@@ -6,6 +6,7 @@ use std::collections::HashSet;
 
 use fs_devices::bluetooth::{Device, activity_text, battery_text, buckets};
 
+use crate::actions::IpcCall;
 use crate::node::{ActionEntry, Kind, Node};
 
 /// Row ids are dotted tree paths, so a key that can carry a dot (an SSID, a
@@ -14,9 +15,9 @@ pub fn id_part(s: &str) -> String {
     fs_js::encode_uri_component(s).replace('.', "%2E")
 }
 
-fn key_row(id: String, label: String, action: &str, verb: &str) -> Node {
+fn key_row(id: String, label: String, action: IpcCall, verb: &str) -> Node {
     Node {
-        action: Some(action.to_string()),
+        action: Some(action.into()),
         verb: Some(verb.to_string()),
         keep_open: Some(true),
         ..Node::new(id, label, Kind::Action)
@@ -66,7 +67,7 @@ pub fn wifi_rows(st: &WifiState) -> Vec<Node> {
         return vec![Node::note("wifi.unavailable", "No Wi-Fi device")];
     }
     if !st.enabled {
-        return vec![key_row("wifi.off".into(), "Turn Wi-Fi on".into(), "@ipc:wifi.enable", "Turn on")];
+        return vec![key_row("wifi.off".into(), "Turn Wi-Fi on".into(), IpcCall::new("wifi", "enable"), "Turn on")];
     }
     let mut seen: HashSet<&str> = HashSet::new();
     let named: Vec<WifiNetwork> =
@@ -119,19 +120,19 @@ fn wifi_row(st: &WifiState, n: WifiNetwork) -> Node {
     let mut row = Node {
         desc: Some(desc.to_string()),
         verb: Some(if n.connected { "Disconnect" } else { "Connect" }.to_string()),
-        action: Some(format!("@ipc:wifi.activate:{}", n.name)),
+        action: Some(IpcCall::new("wifi", "activate").arg(&n.name).into()),
         checked: Some(format!("@state:wifi.ssid={}", n.name)),
         keep_open: Some(true),
         local_only: !n.known,
         section: Some(if n.known { "Saved" } else { "Nearby" }.to_string()),
-        actions: vec![ActionEntry::new("panel", "Open network panel", "@ipc:panel.open:network")],
+        actions: vec![ActionEntry::new("panel", "Open network panel", IpcCall::new("panel", "open").arg("network"))],
         ..Node::new(format!("{WIFI_NET_PREFIX}{}", id_part(&n.name)), n.name.clone(), Kind::Action)
     };
     if n.known {
-        row.alternate = Some(format!("@ipc:wifi.forget:{}", n.name));
+        row.alternate = Some(IpcCall::new("wifi", "forget").arg(&n.name).into());
         row.alternate_label = Some("Forget".to_string());
         if n.secured && !n.enterprise {
-            let show = ActionEntry { keep_open: Some(true), ..ActionEntry::new("show-password", "Show password", format!("@ipc:wifi.reveal:{}", n.name)) };
+            let show = ActionEntry { keep_open: Some(true), ..ActionEntry::new("show-password", "Show password", IpcCall::new("wifi", "reveal").arg(&n.name)) };
             row.actions.insert(0, show);
         }
     }
@@ -173,7 +174,7 @@ pub fn bluetooth_rows(st: &BluetoothState) -> Vec<Node> {
         return vec![Node::note("bluetooth.unavailable", "No Bluetooth adapter")];
     }
     if !st.enabled {
-        return vec![key_row("bluetooth.off".into(), "Turn Bluetooth on".into(), "@ipc:bluetooth.power:on", "Turn on")];
+        return vec![key_row("bluetooth.off".into(), "Turn Bluetooth on".into(), IpcCall::new("bluetooth", "power").arg("on"), "Turn on")];
     }
     let b = buckets(&st.devices, false);
     let devices: Vec<&Device> = b.connected.into_iter().chain(b.known).collect();
@@ -188,12 +189,12 @@ pub fn bluetooth_rows(st: &BluetoothState) -> Vec<Node> {
                 activity => activity.to_string(),
             }),
             verb: Some(if d.connected { "Disconnect" } else { "Connect" }.to_string()),
-            action: Some(format!("@ipc:bluetooth.toggle:{}", d.address)),
+            action: Some(IpcCall::new("bluetooth", "toggle").arg(d.address.to_string()).into()),
             checked: Some(format!("@state:bluetooth.connected={}", d.address)),
             keep_open: Some(true),
             actions: vec![
-                ActionEntry { keep_open: Some(true), ..ActionEntry::new("forget", "Forget", format!("@ipc:bluetooth.forget:{}", d.address)).destructive() },
-                ActionEntry::new("panel", "Open Bluetooth panel", "@ipc:panel.open:bluetooth"),
+                ActionEntry { keep_open: Some(true), ..ActionEntry::new("forget", "Forget", IpcCall::new("bluetooth", "forget").arg(d.address.to_string())).destructive() },
+                ActionEntry::new("panel", "Open Bluetooth panel", IpcCall::new("panel", "open").arg("bluetooth")),
             ],
             ..Node::new(format!("bluetooth.dev.{}", id_part(&d.address.to_string())), d.name.clone(), Kind::Action)
         })
@@ -219,11 +220,11 @@ pub fn audio_rows(devices: &[AudioDevice]) -> Vec<Node> {
             let verb = if d.is_sink { "sink" } else { "source" };
             Node {
                 section: Some(if d.is_sink { "Output" } else { "Input" }.to_string()),
-                action: Some(format!("@ipc:audio.{verb}:{}", d.name)),
+                action: Some(IpcCall::new("audio", verb).arg(&d.name).into()),
                 verb: Some("Use".to_string()),
                 checked: Some(format!("@state:audio.{verb}={}", d.name)),
                 keep_open: Some(true),
-                actions: vec![ActionEntry::new("panel", "Open audio panel", "@ipc:panel.open:audio")],
+                actions: vec![ActionEntry::new("panel", "Open audio panel", IpcCall::new("panel", "open").arg("audio"))],
                 ..Node::new(
                     format!("audio.{}{}", if d.is_sink { "output." } else { "input." }, id_part(&d.name)),
                     d.label.clone(),
@@ -258,16 +259,16 @@ pub struct RadioState {
 pub fn radio_rows(st: &RadioState) -> Vec<Node> {
     let mut rows = Vec::new();
     if st.running {
-        rows.push(key_row("radio.stop".into(), "Stop".into(), "@ipc:radio.stop", "Stop"));
+        rows.push(key_row("radio.stop".into(), "Stop".into(), IpcCall::new("radio", "stop"), "Stop"));
     }
     for s in &st.favorites {
         rows.push(Node {
             desc: Some(s.country.clone()),
-            action: Some(format!("@ipc:radio.fav:{}", s.uuid)),
+            action: Some(IpcCall::new("radio", "fav").arg(&s.uuid).into()),
             verb: Some("Play".to_string()),
             checked: Some(radio_tick(&s.uuid)),
             keep_open: Some(true),
-            alternate: Some(format!("@ipc:radio.unfavorite:{}", s.uuid)),
+            alternate: Some(IpcCall::new("radio", "unfavorite").arg(&s.uuid).into()),
             alternate_label: Some("Remove favorite".to_string()),
             ..Node::new(format!("radio.fav.{}", id_part(&s.uuid)), s.name.clone(), Kind::Action)
         });
@@ -285,11 +286,11 @@ pub fn radio_result_rows(results: &[RadioStation], favorite_set: &HashSet<String
             let desc = [s.country.as_str(), s.codec.as_str()].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" ");
             Node {
                 desc: Some(desc),
-                action: Some(format!("@ipc:radio.play:{}", s.uuid)),
+                action: Some(IpcCall::new("radio", "play").arg(&s.uuid).into()),
                 verb: Some("Play".to_string()),
                 checked: Some(radio_tick(&s.uuid)),
                 local_only: true,
-                alternate: Some(format!("@ipc:radio.{}:{}", if fav { "unfavorite" } else { "favorite" }, s.uuid)),
+                alternate: Some(IpcCall::new("radio", if fav { "unfavorite" } else { "favorite" }).arg(&s.uuid).into()),
                 alternate_label: Some(if fav { "Remove favorite" } else { "Add favorite" }.to_string()),
                 ..Node::new(format!("radio.result.{}", id_part(&s.uuid)), s.name.clone(), Kind::Action)
             }

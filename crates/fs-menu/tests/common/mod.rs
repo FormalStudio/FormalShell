@@ -33,8 +33,8 @@ pub fn default_menu() -> Entries {
 pub fn real_tree() -> Tree {
     let mut tree = build_tree(&default_menu(), &Entries::new());
     let mut fns: HashMap<String, ProviderFn> = HashMap::new();
-    fns.insert("panels".into(), Box::new(|| panels_provider("formalshell-ipc")));
-    fns.insert("tray".into(), Box::new(|| tray_provider(&[] as &[TrayItem], "formalshell-ipc")));
+    fns.insert("panels".into(), Box::new(panels_provider));
+    fns.insert("tray".into(), Box::new(|| tray_provider(&[] as &[TrayItem])));
     apply_providers(&mut tree, &fns);
     tree
 }

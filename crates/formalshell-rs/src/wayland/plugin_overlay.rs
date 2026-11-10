@@ -63,7 +63,7 @@ impl App {
         if self.launcher.open {
             self.menu_close();
         }
-        let id = key.strip_prefix(plugin::PREFIX).unwrap_or(key).to_owned();
+        let id = key.strip_prefix(fs_chrome::plugins::PLUGIN_PREFIX).unwrap_or(key).to_owned();
         let names = ["plugin-overlay", "plugin-overlay-scrim-band", "plugin-overlay-scrim"];
         let modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Top, None, DEFORM_AMOUNT, false);
         let mut ui = Ui::new(Some(modal.win.card.top_node()));

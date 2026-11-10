@@ -5,6 +5,7 @@
 use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
+use fs_menu::actions::IpcCall;
 use fs_types::WindowId;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::seat::keyboard::KeyEvent;
@@ -21,6 +22,42 @@ use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
 use crate::surfaces::modal::{Modal, Part};
 use crate::text::{Family, TextStyle};
 use crate::ui::field::{self, Modifiers};
+
+/// Targets whose calls grab the screen.
+const SCREEN_READERS: [&str; 3] = ["screenshot", "capture", "record"];
+
+/// The `@ipc:` calls the App answers itself in [`App::run_call`], ahead of
+/// the IPC targets: `(target, function, arguments)`. `reminder.set` with no
+/// arguments is the launcher's input step; with two it is the target's.
+pub const SHELL_VERBS: &[(&str, &str, usize)] = &[
+    ("wifi", "enable", 0),
+    ("wifi", "activate", 1),
+    ("wifi", "forget", 1),
+    ("wifi", "reveal", 1),
+    ("bluetooth", "power", 1),
+    ("bluetooth", "toggle", 1),
+    ("bluetooth", "forget", 1),
+    ("audio", "sink", 1),
+    ("audio", "source", 1),
+    ("radio", "stop", 0),
+    ("radio", "fav", 1),
+    ("radio", "play", 1),
+    ("radio", "favorite", 1),
+    ("radio", "unfavorite", 1),
+    ("localsend", "send", 2),
+    ("nix", "run", 1),
+    ("clipssh", "image", 2),
+    ("clipssh", "send", 1),
+    ("app", "gpu", 1),
+    ("package", "install", 1),
+    ("package", "uninstall", 1),
+    ("power", "suspend", 0),
+    ("power", "reboot", 0),
+    ("power", "poweroff", 0),
+    ("theme", "toggleMode", 0),
+    ("lights", "colorInput", 0),
+    ("reminder", "set", 0),
+];
 
 /// The info slices the monitor view samples while it is the level.
 const INFO: &[Topic] = &[
@@ -346,108 +383,57 @@ impl App {
         match out {
             Out::None => {}
             Out::Close => self.hide_launcher(),
-            Out::Internal(name) => {
-                if !self.launcher.open {
-                    self.hide_launcher();
+            Out::Internal(call) => {
+                if self.launcher.open {
+                    return self.run_call(&call);
                 }
-                self.dispatch_internal(&name);
+                self.hide_launcher();
+                if SCREEN_READERS.contains(&call.target.as_str()) && self.launch.is_some() {
+                    self.launcher.after_unmap = Some(call);
+                } else {
+                    self.run_call(&call);
+                }
             }
         }
     }
 
-    /// An internal action, for the targets this shell serves.
-    fn dispatch_internal(&mut self, name: &str) {
-        if let Some((verb, value)) = name.split_once('.').map(|(_, rest)| rest.split_once(':').unwrap_or((rest, "")))
-            && let Some(group) = name.split('.').next()
-            && matches!(group, "wifi" | "bluetooth" | "audio" | "radio")
-        {
-            return self.device_action(group, verb, value);
+    /// A configured `@ipc:` call: the App's own verbs ([`SHELL_VERBS`]),
+    /// else the IPC target it names, answered in process. A launcher row
+    /// reaches this past its own verbs, a hot corner directly.
+    pub(super) fn run_call(&mut self, call: &IpcCall) {
+        use crate::services::{clipssh, packages, power};
+        if !crate::surfaces::launcher::answers(SHELL_VERBS, call) {
+            let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
+            return self.call_self(&call.target, &call.function, &args);
         }
-        if let Some((verb, value)) = name.strip_prefix("lights.").and_then(|r| r.split_once(':')) {
-            return self.call_self("lights", verb, &[value]);
-        }
-        if let Some(rest) = name.strip_prefix("ipad.") {
-            let mut parts = rest.split(':');
-            let verb = parts.next().unwrap_or_default();
-            let args: Vec<&str> = parts.collect();
-            return self.call_self("ipad", verb, &args);
-        }
-        if let Some((i, id)) = name.strip_prefix("localsend.send:").and_then(|r| r.split_once(':')) {
-            return self.localsend_entry(i, id);
-        }
-        if let Some(attr) = name.strip_prefix("nix.run:") {
-            return self.console_run_once(&format!("nix run nixpkgs#{attr}; read"));
-        }
-        if let Some((pid, signal)) = name.strip_prefix("monitor.kill:").and_then(|r| r.split_once(':')) {
-            return self.call_self("monitor", "kill", &[pid, signal]);
-        }
-        if let Some(rest) = name.strip_prefix("clipssh.image:") {
-            return self.clipssh_image(rest);
-        }
-        if let Some(id) = name.strip_prefix("app.gpu:") {
-            return self.call_self("monitor", "launch", &[id, ""]);
-        }
-        if let Some(panel) = name.strip_prefix("panel.open:") {
-            return self.call_self("panel", "open", &[panel]);
-        }
-        if let Some(id) = name.strip_prefix("clipboard.remove:") {
-            return crate::services::clipboard::command(crate::services::clipboard::Cmd::Remove(id.to_owned()));
-        }
-        if let Some(id) = name.strip_prefix("package.install:") {
-            return crate::surfaces::packages::install(&self.store, id);
-        }
-        if let Some(id) = name.strip_prefix("package.run:") {
-            crate::services::compositor::spawn(&["fspec", "run", "--detach", id].map(String::from));
-            return;
-        }
-        if let Some(id) = name.strip_prefix("package.uninstall:") {
-            return crate::services::packages::send(crate::services::packages::Cmd::Uninstall(id.to_owned()));
-        }
-        if let Some(alias) = name.strip_prefix("clipssh.send:") {
-            return crate::services::clipssh::command(crate::services::clipssh::Cmd::Send(alias.to_owned()));
-        }
-        if let Some(action) = name.strip_prefix("power.").and_then(crate::services::power::Action::parse) {
-            return crate::services::power::request(action);
-        }
-        if let Some(id) = name.strip_prefix("clipboard.copy:") {
-            return crate::services::clipboard::command(crate::services::clipboard::Cmd::Copy(id.to_owned()));
-        }
-        match name {
-            "theme.toggleMode" => {
+        let arg = call.at(0).to_owned();
+        match (call.target.as_str(), call.function.as_str()) {
+            (group @ ("wifi" | "bluetooth" | "audio" | "radio"), verb) => self.device_action(group, verb, &arg),
+            ("localsend", "send") => self.localsend_entry(&arg, call.at(1)),
+            ("nix", "run") => self.console_run_once(&format!("nix run nixpkgs#{arg}; read")),
+            ("clipssh", "image") => self.clipssh_image(&arg, call.at(1)),
+            ("clipssh", "send") => clipssh::command(clipssh::Cmd::Send(arg)),
+            ("app", "gpu") => self.call_self("monitor", "launch", &[&arg, ""]),
+            ("package", "install") => crate::surfaces::packages::install(&self.store, &arg),
+            ("package", "uninstall") => packages::send(packages::Cmd::Uninstall(arg)),
+            ("power", verb) => power::Action::parse(verb).into_iter().for_each(power::request),
+            ("theme", "toggleMode") => {
                 let key = crate::services::theme::mode_key(self.store.config.settings());
                 if let Ok(mode) = crate::services::theme::request_mode("toggle", &self.store.state.data.mode, key) {
                     crate::services::state::set(vec![crate::services::state::Field::Mode(mode)]);
                 }
             }
-            "caffeinate.toggle" => {
-                let on = !self.store.caffeinate.active;
-                self.set_caffeinated(on);
-            }
-            // The rest go through the same in-process handlers the IPC
-            // targets answer with.
-            "lock.lock" => self.call_self("lock", "lock", &[]),
-            "lock.session" => self.call_self("lock", "session", &[]),
-            "power.logout" => self.call_self("power", "logout", &[]),
-            "nightlight.toggle" => self.call_self("nightlight", "toggle", &[]),
-            "lights.toggle" => self.call_self("lights", "toggle", &[]),
-            "lights.colorInput" => self.menu_input_as("Hex color (ff8800)", LIGHTS_COLOR, false),
-            "hdr.toggle" => self.call_self("hdr", "toggle", &[]),
-            "overnight.toggle" => self.call_self("overnight", "toggle", &[]),
-            "notifications.toggleDnd" => self.call_self("notifications", "toggleDnd", &[]),
-            "notifications.showHistory" => self.call_self("notifications", "showHistory", &[]),
-            "reminder.show" => self.call_self("reminder", "show", &[]),
-            "reminder.clear" => self.call_self("reminder", "clear", &[]),
-            "reminder.set" => self.menu_input_as("Reminder (25m coffee)", REMINDER_SET, false),
-            other => eprintln!("Menu: no service for internal action: {}", other.split(':').next().unwrap_or(other)),
+            ("lights", "colorInput") => self.menu_input_as("Hex color (ff8800)", LIGHTS_COLOR, false),
+            ("reminder", "set") => self.menu_input_as("Reminder (25m coffee)", REMINDER_SET, false),
+            _ => eprintln!("Menu: {call} is in SHELL_VERBS with no arm"),
         }
     }
 
-    /// A clipboard image (`<entry id>:<path>`) over ssh rather than onto the
-    /// clipboard: straight there with an alias resolved, else copied and
-    /// the alias route asked.
-    fn clipssh_image(&mut self, rest: &str) {
+    /// A clipboard image (entry `id`, its file at `path`) over ssh rather
+    /// than onto the clipboard: straight there with an alias resolved, else
+    /// copied and the alias route asked.
+    fn clipssh_image(&mut self, id: &str, path: &str) {
         use crate::services::clipssh;
-        let Some((id, path)) = rest.split_once(':') else { return };
         let configured = crate::settings::CLIPSSH_ALIAS.get(&self.store.config);
         match clipssh::resolve_alias(configured, &self.store.clipssh.aliases) {
             Some(alias) => clipssh::command(clipssh::Cmd::SendImage(alias, path.to_owned())),
@@ -1075,6 +1061,9 @@ impl App {
             if std::mem::take(&mut self.launcher.paste) && !self.launcher.open {
                 self.paste_chord();
             }
+            if let Some(call) = self.launcher.after_unmap.take() {
+                self.run_call(&call);
+            }
             return;
         }
         if self.launch.is_none() {
@@ -1326,7 +1315,7 @@ impl App {
             .iter()
             .map(|i| fs_menu::providers::TrayItem { id: i.id.clone(), title: i.title.clone(), tooltip_title: i.tooltip.clone() })
             .collect();
-        let rows = fs_menu::providers::tray_provider(&items, index::SELF);
+        let rows = fs_menu::providers::tray_provider(&items);
         self.apply(Diff::Menu(index::Diff::Source("tray".into(), rows)));
     }
 

@@ -4,6 +4,8 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
 
+use crate::actions::Run;
+
 /// What a node is. `Other` carries an explicit `kind` the five inferred ones
 /// do not cover (a user entry may say anything; the shell itself uses `note`
 /// and `image`).
@@ -67,7 +69,7 @@ pub struct Entry {
     pub title: Option<String>,
     pub aliases: Option<Vec<String>>,
     pub kind: Option<Kind>,
-    pub action: Option<String>,
+    pub action: Option<Run>,
     pub target: Option<String>,
     pub provider: Option<String>,
     pub when: Option<String>,
@@ -83,7 +85,7 @@ pub struct Entry {
     pub desc: Option<String>,
     pub thumb_source: Option<String>,
     pub actions: Option<Vec<ActionEntry>>,
-    pub alternate: Option<String>,
+    pub alternate: Option<Run>,
     pub alternate_label: Option<String>,
 }
 
@@ -95,7 +97,7 @@ pub struct ActionEntry {
     pub id: String,
     pub label: Option<String>,
     pub icon: Option<String>,
-    pub action: Option<String>,
+    pub action: Option<Run>,
     pub confirm: Option<bool>,
     pub keep_open: Option<bool>,
     pub hidden: Option<bool>,
@@ -104,7 +106,7 @@ pub struct ActionEntry {
 }
 
 impl ActionEntry {
-    pub fn new(id: &str, label: &str, action: impl Into<String>) -> ActionEntry {
+    pub fn new(id: &str, label: &str, action: impl Into<Run>) -> ActionEntry {
         ActionEntry { id: id.into(), label: Some(label.into()), action: Some(action.into()), ..ActionEntry::default() }
     }
 
@@ -150,7 +152,7 @@ impl Entry {
         self
     }
 
-    pub fn with_action(mut self, action: impl Into<String>) -> Entry {
+    pub fn with_action(mut self, action: impl Into<Run>) -> Entry {
         self.action = Some(action.into());
         self
     }
@@ -236,7 +238,7 @@ pub struct Node {
     pub aliases: Vec<String>,
     pub kind: Kind,
     pub child_ids: Vec<String>,
-    pub action: Option<String>,
+    pub action: Option<Run>,
     pub target: Option<String>,
     pub provider: Option<String>,
     pub when: Option<String>,
@@ -264,7 +266,7 @@ pub struct Node {
     pub notify_body: Option<String>,
     pub meta: Option<String>,
     pub path: String,
-    pub alternate: Option<String>,
+    pub alternate: Option<Run>,
     pub alternate_label: Option<String>,
     pub local_only: bool,
     /// The desktop entry an app row launches or focuses.
@@ -283,7 +285,7 @@ impl Node {
         Node { dim: Some(true), ..Node::new(id, label, Kind::Note) }
     }
 
-    pub fn with_action(mut self, action: impl Into<String>) -> Node {
+    pub fn with_action(mut self, action: impl Into<Run>) -> Node {
         self.action = Some(action.into());
         self
     }

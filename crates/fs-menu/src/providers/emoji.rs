@@ -166,7 +166,7 @@ fn emoji_row(e: &EmojiEntry, paste: bool) -> Node {
     Node {
         icon: e.ch.clone(),
         verb: Some(if paste { "Paste" } else { "Copy" }.to_string()),
-        action: Some(format!("wl-copy -- '{}'", e.ch)),
+        action: Some(crate::actions::copy_run(&e.ch)),
         paste_after: paste,
         ..Node::new(emoji_usage_id(e), crate::model::title_case(&e.name), Kind::Action)
     }

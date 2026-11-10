@@ -54,7 +54,7 @@ fn wifi_no_device_is_one_note() {
 fn wifi_off_offers_to_turn_on() {
     let rows = wifi_rows(&WifiState { has_device: true, ..WifiState::default() });
     assert_eq!(rows[0].id, "wifi.off");
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:wifi.enable"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:wifi.enable"));
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn wifi_saved_out_of_range_sits_under_known_networks() {
     assert_eq!(known.child_ids, ["wifi.net.Airport", "wifi.net.Hostel"]);
     let hostel = rows.iter().find(|r| r.label == "Hostel").unwrap();
     assert_eq!(hostel.parent_id.as_deref(), Some("wifi.known"));
-    assert_eq!(hostel.alternate.as_deref(), Some("@ipc:wifi.forget:Hostel"));
+    assert_eq!(hostel.alternate.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:wifi.forget:Hostel"));
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn wifi_tick_condition_names_the_ssid() {
 fn wifi_forget_only_on_saved_rows() {
     let rows = wifi(vec![net("Near"), WifiNetwork { known: true, ..net("Saved") }]);
     let by_name = |n: &str| rows.iter().find(|r| r.label == n).unwrap();
-    assert_eq!(by_name("Saved").alternate.as_deref(), Some("@ipc:wifi.forget:Saved"));
+    assert_eq!(by_name("Saved").alternate.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:wifi.forget:Saved"));
     assert_eq!(by_name("Saved").alternate_label.as_deref(), Some("Forget"));
     assert_eq!(by_name("Near").alternate, None);
 }
@@ -191,7 +191,7 @@ fn bluetooth_no_adapter_is_one_note() {
 fn bluetooth_off_offers_to_turn_on() {
     let rows = bluetooth_rows(&BluetoothState { available: true, ..BluetoothState::default() });
     assert_eq!(rows[0].id, "bluetooth.off");
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:bluetooth.power:on"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:bluetooth.power:on"));
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn bluetooth_desc_prefers_activity_then_battery() {
 fn bluetooth_row_ids_action_and_tick() {
     let rows = bt(vec![dev("aa:bb:cc:dd:ee:01", "Buds")]);
     assert_eq!(rows[0].id, "bluetooth.dev.AA%3ABB%3ACC%3ADD%3AEE%3A01");
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:bluetooth.toggle:AA:BB:CC:DD:EE:01"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:bluetooth.toggle:AA:BB:CC:DD:EE:01"));
     assert_eq!(rows[0].checked.as_deref(), Some("@state:bluetooth.connected=AA:BB:CC:DD:EE:01"));
     assert_eq!(rows[0].keep_open, Some(true));
 }
@@ -280,11 +280,11 @@ fn audio_sections_actions_and_ticks() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].id, "audio.output.alsa_output%2Epci-0000_00_1f%2E3%2Eanalog-stereo");
     assert_eq!(rows[0].section.as_deref(), Some("Output"));
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:audio.sink:alsa_output.pci-0000_00_1f.3.analog-stereo"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:audio.sink:alsa_output.pci-0000_00_1f.3.analog-stereo"));
     assert_eq!(rows[0].checked.as_deref(), Some("@state:audio.sink=alsa_output.pci-0000_00_1f.3.analog-stereo"));
     assert_eq!(rows[1].id, "audio.input.alsa_input%2Eusb");
     assert_eq!(rows[1].section.as_deref(), Some("Input"));
-    assert_eq!(rows[1].action.as_deref(), Some("@ipc:audio.source:alsa_input.usb"));
+    assert_eq!(rows[1].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:audio.source:alsa_input.usb"));
     assert_eq!(rows[1].checked.as_deref(), Some("@state:audio.source=alsa_input.usb"));
     assert_eq!(rows[0].keep_open, Some(true));
     assert_eq!(rows[1].keep_open, Some(true));
@@ -305,10 +305,10 @@ fn radio_favorites_ticks_and_alternates() {
     assert_eq!(rows[0].id, "radio.fav.u-1");
     assert_eq!(rows[0].label, "Groove");
     assert_eq!(rows[0].desc.as_deref(), Some("France"));
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:radio.fav:u-1"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:radio.fav:u-1"));
     assert_eq!(rows[0].checked.as_deref(), Some("@state:radio.station=u-1"));
     assert_eq!(rows[0].keep_open, Some(true));
-    assert_eq!(rows[0].alternate.as_deref(), Some("@ipc:radio.unfavorite:u-1"));
+    assert_eq!(rows[0].alternate.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:radio.unfavorite:u-1"));
     assert_eq!(rows[0].alternate_label.as_deref(), Some("Remove favorite"));
     assert!(!rows[0].local_only);
 }
@@ -319,7 +319,7 @@ fn radio_stop_only_while_running() {
     let rows = radio_rows(&RadioState { running: true, favorites: vec![] });
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "radio.stop");
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:radio.stop"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:radio.stop"));
 }
 
 #[test]
@@ -330,11 +330,11 @@ fn radio_results_are_local_only_with_alternate_per_favorite_set() {
     let rows = radio_result_rows(&[a, b], &favs);
     assert!(rows[0].local_only);
     assert_eq!(rows[0].desc.as_deref(), Some("Spain MP3"));
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:radio.play:a"));
-    assert_eq!(rows[0].alternate.as_deref(), Some("@ipc:radio.unfavorite:a"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:radio.play:a"));
+    assert_eq!(rows[0].alternate.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:radio.unfavorite:a"));
     assert_eq!(rows[0].alternate_label.as_deref(), Some("Remove favorite"));
     assert_eq!(rows[1].desc.as_deref(), Some("AAC"));
-    assert_eq!(rows[1].alternate.as_deref(), Some("@ipc:radio.favorite:b"));
+    assert_eq!(rows[1].alternate.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:radio.favorite:b"));
     assert_eq!(rows[1].alternate_label.as_deref(), Some("Add favorite"));
     assert_ne!(rows[1].keep_open, Some(true));
 }

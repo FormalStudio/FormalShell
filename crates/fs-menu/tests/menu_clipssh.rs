@@ -56,7 +56,7 @@ fn rows_shape() {
     // that runs clipssh, or nothing can report how it went. No shell quoting is
     // involved because no shell string is built: the alias travels as the
     // argument it is.
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:clipssh.send:box"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:clipssh.send:box"));
     // The row fires no toast of its own; the service owns every word the user
     // sees, so a row-level toast would only double the "sending" one.
     assert_eq!(rows[0].notify_summary, None);
@@ -66,7 +66,7 @@ fn rows_shape() {
 #[test]
 fn rows_pass_an_awkward_alias_through_verbatim() {
     let rows = clipssh_rows(&[ClipsshAlias { name: "it's".into(), target: "u@h".into() }]);
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:clipssh.send:it's"));
+    assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:clipssh.send:it's"));
 }
 
 #[test]

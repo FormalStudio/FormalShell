@@ -43,7 +43,7 @@ fn text_entry_maps_to_preview_label_action_node() {
     // In-process, not a spawned IPC command: nothing puts that binary on a
     // session PATH, so the spawned form was a silent exit 127 everywhere but
     // the smoke VM.
-    assert_eq!(nodes[0].action.as_deref(), Some("@ipc:clipboard.copy:a"));
+    assert_eq!(nodes[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:clipboard.copy:a"));
     assert!(nodes[0].paste_after);
     assert_eq!(nodes[0].verb.as_deref(), Some("Paste"));
 }
@@ -102,7 +102,7 @@ fn image_entry_maps_to_image_label_desc_and_thumb() {
     assert_eq!(nodes[0].thumb_source, "/state/clipboard-images/abc.png");
     assert_eq!(nodes[0].full_text, "");
     assert_eq!(nodes[0].time, "09:05");
-    assert_eq!(nodes[0].action.as_deref(), Some("@ipc:clipboard.copy:b"));
+    assert_eq!(nodes[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:clipboard.copy:b"));
     assert!(nodes[0].paste_after);
 }
 
@@ -124,7 +124,7 @@ fn empty_items_maps_to_empty_list() {
 #[test]
 fn paste_disabled_drops_paste_marker_and_changes_verb() {
     let nodes = clipboard_provider(&[Entry::text("a", "hi")], ClipMode::Copy, false);
-    assert_eq!(nodes[0].action.as_deref(), Some("@ipc:clipboard.copy:a"));
+    assert_eq!(nodes[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:clipboard.copy:a"));
     assert!(!nodes[0].paste_after);
     assert_eq!(nodes[0].verb.as_deref(), Some("Copy"));
 }
@@ -137,7 +137,7 @@ fn share_rows_never_paste() {
     assert_eq!(nodes[0].id, "share.history.a");
     assert!(!nodes[0].paste_after);
     assert_eq!(nodes[0].verb.as_deref(), Some("Share"));
-    assert!(!nodes[0].action.as_deref().unwrap().contains("@ipc:"));
+    assert!(!nodes[0].action.as_ref().map(ToString::to_string).as_deref().unwrap().contains("@ipc:"));
 }
 
 // paste_argv: wtype's press/tap/release argv for a chord, releases in reverse

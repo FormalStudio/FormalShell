@@ -14,10 +14,12 @@ use crate::providers::{FILE_KIND, FOLDER_KIND, PACKAGE_KIND, clipboard_entry_id,
 /// What running an action does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Run {
-    /// A shell command, spawned through the compositor.
-    Command(String),
-    /// An in-process name, the part of an `@ipc:` action after the prefix.
-    Ipc(String),
+    /// One of the shell's own IPC calls, answered in process.
+    Ipc(IpcCall),
+    /// A program and its arguments, spawned through the compositor.
+    Spawn(Vec<String>),
+    /// A line of the user's own, spawned through the compositor as `sh -c`.
+    Shell(String),
     /// What → reaches: a level by node id, or a subject's own children by
     /// its subject id (an app's windows).
     Into(String),
@@ -53,11 +55,114 @@ impl TargetKind {
 }
 
 impl Run {
-    pub fn parse(action: &str) -> Run {
-        match action.strip_prefix("@ipc:") {
-            Some(name) => Run::Ipc(name.to_owned()),
-            None => Run::Command(action.to_owned()),
+    /// An action as menu.jsonc, settings.json and the default menu spell
+    /// it: `@ipc:<target>.<function>` with `:`-separated arguments, the
+    /// same call written out as `formalshell-ipc call <target> <function>
+    /// <args>` in plain words, or else a shell line.
+    pub fn parse(text: &str) -> Run {
+        if let Some(call) = text.strip_prefix("@ipc:") {
+            return Run::Ipc(IpcCall::parse(call));
         }
+        match self_call(text) {
+            Some(call) => Run::Ipc(call),
+            None => Run::Shell(text.to_owned()),
+        }
+    }
+}
+
+/// The action as it would be written: an `@ipc:` call, a shell line, a
+/// program's words.
+impl std::fmt::Display for Run {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Run::Ipc(call) => {
+                write!(f, "@ipc:{call}")?;
+                call.args.iter().try_for_each(|a| write!(f, ":{a}"))
+            }
+            Run::Spawn(argv) => f.write_str(&argv.join(" ")),
+            Run::Shell(line) => f.write_str(line),
+            Run::Into(id) => write!(f, "into {id}"),
+            Run::Target(kind) => write!(f, "target {}", kind.label()),
+            Run::Input(prompt) => write!(f, "input {prompt}"),
+            Run::Note => f.write_str("note"),
+        }
+    }
+}
+
+impl From<IpcCall> for Run {
+    fn from(call: IpcCall) -> Run {
+        Run::Ipc(call)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Run {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Run, D::Error> {
+        Ok(Run::parse(&String::deserialize(d)?))
+    }
+}
+
+/// `formalshell-ipc call` and its words, when none of them is something
+/// a shell would read differently from the word itself.
+fn self_call(text: &str) -> Option<IpcCall> {
+    let mut words = text.split_whitespace();
+    if words.next()? != "formalshell-ipc" || words.next()? != "call" {
+        return None;
+    }
+    let plain = |w: &str| !w.contains(|c: char| "'\"\\$`;&|<>(){}[]*?~#!".contains(c));
+    let words: Vec<&str> = words.collect();
+    if words.len() < 2 || !words.iter().all(|w| plain(w)) {
+        return None;
+    }
+    Some(IpcCall { target: words[0].to_owned(), function: words[1].to_owned(), args: words[2..].iter().map(|w| (*w).to_owned()).collect() })
+}
+
+/// One call to a target the shell serves, as `formalshell-ipc call
+/// <target> <function> <args>` sends it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct IpcCall {
+    pub target: String,
+    pub function: String,
+    pub args: Vec<String>,
+}
+
+impl IpcCall {
+    pub fn new(target: &str, function: &str) -> IpcCall {
+        IpcCall { target: target.to_owned(), function: function.to_owned(), args: Vec::new() }
+    }
+
+    pub fn arg(mut self, arg: impl Into<String>) -> IpcCall {
+        self.args.push(arg.into());
+        self
+    }
+
+    /// Argument `i`, "" past the last.
+    pub fn at(&self, i: usize) -> &str {
+        self.args.get(i).map_or("", String::as_str)
+    }
+
+    /// The part of an `@ipc:` action after the prefix: `<target>.<function>`
+    /// and its `:`-separated arguments.
+    pub fn parse(text: &str) -> IpcCall {
+        let mut parts = text.split(':');
+        let name = parts.next().unwrap_or_default();
+        let (target, function) = name.split_once('.').unwrap_or((name, ""));
+        IpcCall { target: target.to_owned(), function: function.to_owned(), args: parts.map(str::to_owned).collect() }
+    }
+
+    /// The arguments for a function taking `n`: a colon past the `n`th
+    /// argument belonged to the last one (an SSID, a path, a plugin's line).
+    pub fn fitted(mut self, n: usize) -> IpcCall {
+        if n > 0 && self.args.len() > n {
+            let tail = self.args.split_off(n - 1).join(":");
+            self.args.push(tail);
+        }
+        self
+    }
+}
+
+impl std::fmt::Display for IpcCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.target, self.function)
     }
 }
 
@@ -101,7 +206,7 @@ impl Action {
             self.icon = e.icon.clone();
         }
         if let Some(a) = &e.action {
-            self.run = Run::parse(a);
+            self.run = a.clone();
         }
         self.confirm = e.confirm.unwrap_or(self.confirm);
         self.keep_open = e.keep_open.unwrap_or(self.keep_open);
@@ -111,7 +216,7 @@ impl Action {
     }
 
     fn from_entry(e: &ActionEntry) -> Option<Action> {
-        let mut a = Action::new(&e.id, e.label.clone().unwrap_or_else(|| e.id.clone()), Run::parse(e.action.as_deref()?));
+        let mut a = Action::new(&e.id, e.label.clone().unwrap_or_else(|| e.id.clone()), e.action.clone()?);
         a.icon = e.icon.clone();
         a.confirm = e.confirm.unwrap_or(false);
         a.keep_open = e.keep_open.unwrap_or(false);
@@ -184,12 +289,21 @@ pub const EMOJI_SUBJECT: &str = "emoji:";
 const EMOJI_ROW: &str = "emoji.";
 
 /// A single-quoted shell word.
-pub fn shell_quote(s: &str) -> String {
+fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// `text` onto the clipboard.
+pub fn copy_run(text: &str) -> Run {
+    Run::Spawn(vec!["wl-copy".into(), "--".into(), text.into()])
+}
+
 fn copy(id: &str, label: &str, text: &str) -> Action {
-    Action::new(id, label, Run::Command(format!("wl-copy -- {}", shell_quote(text))))
+    Action::new(id, label, copy_run(text))
+}
+
+fn xdg_open(path: &str) -> Run {
+    Run::Spawn(vec!["xdg-open".into(), path.into()])
 }
 
 /// What a `file://` URI escapes in a path: everything but the unreserved
@@ -200,17 +314,17 @@ const URI_PATH: &percent_encoding::AsciiSet =
 /// The file manager's own window on `path` with it selected, over
 /// org.freedesktop.FileManager1; with no file manager on the bus, its
 /// folder through xdg-open.
-fn show_in_folder(path: &str) -> String {
+fn show_in_folder(path: &str) -> Run {
     let uri = format!("file://{}", percent_encoding::utf8_percent_encode(path, URI_PATH));
     let parent = match path.trim_end_matches('/').rsplit_once('/') {
         Some(("", _)) | None => "/",
         Some((p, _)) => p,
     };
-    format!(
+    Run::Shell(format!(
         "dbus-send --session --print-reply --dest=org.freedesktop.FileManager1 /org/freedesktop/FileManager1 org.freedesktop.FileManager1.ShowItems {} string: >/dev/null 2>&1 || xdg-open {}",
         shell_quote(&format!("array:string:{uri}")),
         shell_quote(parent)
-    )
+    ))
 }
 
 /// The kind's own actions, before the node's.
@@ -220,17 +334,17 @@ fn builtins(s: &Subject) -> Vec<Action> {
     match &n.kind {
         Kind::App => {
             let Some(e) = &n.entry else { return out };
-            out.push(Action::new("open", "Open", Run::Ipc(format!("app.open:{}", e.id))));
-            out.push(Action::new("new-window", "New window", Run::Ipc(format!("app.new:{}", e.id))));
+            out.push(Action::new("open", "Open", IpcCall::new("app", "open").arg(&e.id).into()));
+            out.push(Action::new("new-window", "New window", IpcCall::new("app", "new").arg(&e.id).into()));
             for (key, name) in &e.actions {
-                out.push(Action::new(&format!("desktop:{key}"), name.clone(), Run::Ipc(format!("app.action:{}:{key}", e.id))));
+                out.push(Action::new(&format!("desktop:{key}"), name.clone(), IpcCall::new("app", "action").arg(&e.id).arg(key).into()));
             }
             if s.windows > 0 {
                 let label = if s.windows == 1 { "Show its window".to_owned() } else { format!("Show its {} windows", s.windows) };
                 out.push(Action::new("windows", label, Run::Into(subject_id(n))));
             }
             if s.discrete_gpu {
-                out.push(Action::new("discrete-gpu", "Open on discrete GPU", Run::Ipc(format!("app.gpu:{}", e.id))));
+                out.push(Action::new("discrete-gpu", "Open on discrete GPU", IpcCall::new("app", "gpu").arg(&e.id).into()));
             }
             if s.windows > 0 {
                 out.push(Action::new("move-to-workspace", "Move to workspace\u{2026}", Run::Target(TargetKind::Workspace)));
@@ -241,77 +355,80 @@ fn builtins(s: &Subject) -> Vec<Action> {
         }
         Kind::Other(k) if k == WINDOW_KIND => {
             let id = &n.path;
-            out.push(Action::new("focus", "Focus", Run::Ipc(format!("window.focus:{id}"))));
-            let mut close = Action::new("close", "Close", Run::Ipc(format!("window.close:{id}")));
+            out.push(Action::new("focus", "Focus", IpcCall::new("window", "focus").arg(id).into()));
+            let mut close = Action::new("close", "Close", IpcCall::new("window", "close").arg(id).into());
             close.destructive = true;
             out.push(close);
             out.push(Action::new("move-to-workspace", "Move to workspace\u{2026}", Run::Target(TargetKind::Workspace)));
-            out.push(Action::new("float", "Toggle floating", Run::Ipc(format!("window.float:{id}"))));
-            out.push(Action::new("fullscreen", "Fullscreen", Run::Ipc(format!("window.fullscreen:{id}"))));
+            out.push(Action::new("float", "Toggle floating", IpcCall::new("window", "float").arg(id).into()));
+            out.push(Action::new("fullscreen", "Fullscreen", IpcCall::new("window", "fullscreen").arg(id).into()));
         }
         Kind::Submenu | Kind::Provider | Kind::Link => {
             let to = n.target.clone().filter(|_| n.kind == Kind::Link).unwrap_or_else(|| n.id.clone());
             out.push(Action::new("open", "Open", Run::Into(to)));
             let mut pin = if s.pinned {
-                Action::new("unpin-recent", "Unpin from Recent", Run::Ipc(format!("recent.unpin:{}", subject_id(n))))
+                Action::new("unpin-recent", "Unpin from Recent", IpcCall::new("recent", "unpin").arg(subject_id(n)).into())
             } else {
-                Action::new("pin-recent", "Pin to Recent", Run::Ipc(format!("recent.pin:{}", subject_id(n))))
+                Action::new("pin-recent", "Pin to Recent", IpcCall::new("recent", "pin").arg(subject_id(n)).into())
             };
             pin.keep_open = true;
             out.push(pin);
         }
         Kind::Other(k) if k == FILE_KIND => {
-            out.push(Action::new("open", "Open", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
+            out.push(Action::new("open", "Open", xdg_open(&n.path)));
             out.push(Action::new("open-with", "Open with\u{2026}", Run::Target(TargetKind::App)));
-            out.push(Action::new("show-in-folder", "Show in folder", Run::Command(show_in_folder(&n.path))));
+            out.push(Action::new("show-in-folder", "Show in folder", show_in_folder(&n.path)));
             out.push(copy("copy-path", "Copy path", &n.path));
             out.push(Action::new("send-to", "Send to\u{2026}", Run::Target(TargetKind::Peer)));
         }
         Kind::Other(k) if k == FOLDER_KIND => {
-            out.push(Action::new("open", "Open in the file manager", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
+            out.push(Action::new("open", "Open in the file manager", xdg_open(&n.path)));
             out.push(copy("copy-path", "Copy path", &n.path));
             out.push(Action::new("contents", "Open folder contents", Run::Into(subject_id(n))));
         }
         Kind::Other(k) if k == PACKAGE_KIND => {
-            if let Some(action) = n.action.as_deref() {
-                let mut install = Action::new("install", "Install", Run::parse(action));
+            if let Some(action) = &n.action {
+                let mut install = Action::new("install", "Install", action.clone());
                 install.keep_open = true;
                 out.push(install);
             }
-            if let Some(run) = n.alternate.as_deref() {
-                out.push(Action::new("run-once", "Run once", Run::parse(run)));
+            if let Some(run) = &n.alternate {
+                out.push(Action::new("run-once", "Run once", run.clone()));
             }
         }
         Kind::Image => {
             let label = if s.picker_select { "Choose" } else { "Set wallpaper" };
-            out.push(Action::new("set", label, Run::Ipc(format!("wallpaper.set:{}", n.path))));
+            out.push(Action::new("set", label, IpcCall::new("wallpaper", "set").arg(&n.path).into()));
             // The sky cell is drawn by the shell: no file to open or copy.
             if !n.path.starts_with('/') {
                 return out;
             }
             if s.single && !s.picker_select {
-                out.push(Action::new("light-only", "Use in light mode only", Run::Ipc(format!("wallpaper.setFor:light:{}", n.path))));
-                out.push(Action::new("dark-only", "Use in dark mode only", Run::Ipc(format!("wallpaper.setFor:dark:{}", n.path))));
+                out.push(Action::new("light-only", "Use in light mode only", IpcCall::new("wallpaper", "setFor").arg("light").arg(&n.path).into()));
+                out.push(Action::new("dark-only", "Use in dark mode only", IpcCall::new("wallpaper", "setFor").arg("dark").arg(&n.path).into()));
             }
-            out.push(Action::new("open-file", "Open file", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
+            out.push(Action::new("open-file", "Open file", xdg_open(&n.path)));
             out.push(copy("copy-path", "Copy path", &n.path));
         }
         Kind::Action => {
-            let Some(action) = n.action.as_deref() else { return out };
+            let Some(action) = &n.action else { return out };
             let label = match n.verb.as_deref().filter(|v| !v.is_empty()) {
                 Some(v) => v,
                 None if n.checked.is_some() => "Toggle",
                 None => "Run",
             };
-            let mut run = Action::new("run", label, Run::parse(action));
+            let mut run = Action::new("run", label, action.clone());
             run.confirm = n.confirm == Some(true);
             run.keep_open = n.keep_open == Some(true);
             run.paste_after = n.paste_after;
-            let plain_command = matches!(run.run, Run::Command(_)) && n.verb.is_none() && n.checked.is_none();
+            let line = match &run.run {
+                Run::Shell(line) if n.verb.is_none() && n.checked.is_none() => Some(line.clone()),
+                _ => None,
+            };
             let copy_only = n.paste_after.then(|| Action { id: "copy-only".into(), label: "Copy only".into(), paste_after: false, ..run.clone() });
             out.push(run);
-            if let Some(alt) = n.alternate.as_deref() {
-                let mut a = Action::new("alternate", n.alternate_label.clone().unwrap_or_else(|| "Alternate".into()), Run::parse(alt));
+            if let Some(alt) = &n.alternate {
+                let mut a = Action::new("alternate", n.alternate_label.clone().unwrap_or_else(|| "Alternate".into()), alt.clone());
                 a.keep_open = n.keep_open == Some(true);
                 out.push(a);
             }
@@ -319,8 +436,8 @@ fn builtins(s: &Subject) -> Vec<Action> {
             if clipboard_entry_id(n).is_some() {
                 out.push(Action::new("send-to", "Send to\u{2026}", Run::Target(TargetKind::Peer)));
             }
-            if plain_command {
-                out.push(copy("copy-command", "Copy command", action));
+            if let Some(line) = line {
+                out.push(copy("copy-command", "Copy command", &line));
             }
         }
         _ => {}
@@ -332,7 +449,7 @@ fn builtins(s: &Subject) -> Vec<Action> {
 /// it is: a configured one is settings.json's, so only a line saying so.
 fn abbreviation_actions(s: &Subject) -> Vec<Action> {
     let Some((q, source)) = s.abbrev else { return Vec::new() };
-    let ipc = |verb: &str| Run::Ipc(format!("abbrev.{verb}:{q}"));
+    let ipc = |verb: &str| Run::Ipc(IpcCall::new("abbrev", verb).arg(q));
     let keep = |mut a: Action| {
         a.keep_open = true;
         a
@@ -381,7 +498,7 @@ pub fn actions_for(s: &Subject) -> Vec<Action> {
 /// An app's last action, once fspec said this host's spec holds it.
 pub fn uninstall_action(s: &Subject) -> Option<Action> {
     let id = s.removable.filter(|_| s.node.kind == Kind::App)?;
-    let mut uninstall = Action::new("uninstall", format!("Uninstall {}", s.node.label), Run::Ipc(format!("package.uninstall:{id}")));
+    let mut uninstall = Action::new("uninstall", format!("Uninstall {}", s.node.label), IpcCall::new("package", "uninstall").arg(id).into());
     uninstall.confirm = true;
     uninstall.destructive = true;
     Some(uninstall)
@@ -614,6 +731,29 @@ mod tests {
         assert_eq!(labels(&hints(&c)), ["New window", "Back"]);
         assert_eq!(hints(&c)[0].keys, ["Shift", "Enter"]);
         assert_eq!(labels(&hints(&ActionCtx { confirming: true, ..c })), ["Back"]);
+    }
+
+    #[test]
+    fn an_action_is_parsed_once_into_a_call_or_a_line() {
+        let call = |t: &str, f: &str, args: &[&str]| Run::Ipc(IpcCall { target: t.into(), function: f.into(), args: args.iter().map(|a| (*a).into()).collect() });
+        assert_eq!(Run::parse("@ipc:theme.toggleMode"), call("theme", "toggleMode", &[]));
+        assert_eq!(Run::parse("@ipc:wifi.activate:Home:5G"), call("wifi", "activate", &["Home", "5G"]));
+        assert_eq!(Run::parse("formalshell-ipc call screenshot full default"), call("screenshot", "full", &["default"]));
+        assert_eq!(Run::parse("formalshell-ipc call panel open $X"), Run::Shell("formalshell-ipc call panel open $X".into()));
+        assert_eq!(Run::parse("formalshell-ipc call panel"), Run::Shell("formalshell-ipc call panel".into()));
+        assert_eq!(Run::parse("foot -e htop"), Run::Shell("foot -e htop".into()));
+        assert_eq!(Run::parse("@ipc:wifi.activate:Home:5G").to_string(), "@ipc:wifi.activate:Home:5G");
+    }
+
+    #[test]
+    fn a_fitted_call_keeps_its_colons_in_the_last_argument() {
+        let wifi = IpcCall::parse("wifi.activate:Home:5G");
+        assert_eq!(wifi.clone().fitted(1).args, ["Home:5G"]);
+        assert_eq!(wifi.clone().fitted(2).args, ["Home", "5G"]);
+        assert_eq!(wifi.clone().fitted(0).args, ["Home", "5G"]);
+        assert_eq!(wifi.at(1), "5G");
+        assert_eq!(wifi.at(2), "");
+        assert_eq!(IpcCall::parse("nodot"), IpcCall { target: "nodot".into(), ..IpcCall::default() });
     }
 
     #[test]

@@ -79,6 +79,6 @@ fn result_node_shape() {
     assert_eq!(node.label, "= 8");
     assert_eq!(node.kind, Kind::Action);
     assert_eq!(node.meta.as_deref(), Some("CALC"));
-    assert_eq!(node.action.as_deref(), Some("wl-copy -- 8"));
+    assert_eq!(node.action.as_ref().map(ToString::to_string).as_deref(), Some("wl-copy -- 8"));
     assert!(result_node("not math").is_none());
 }

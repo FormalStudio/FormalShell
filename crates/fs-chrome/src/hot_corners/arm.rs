@@ -62,10 +62,10 @@ pub const REARM_COOLDOWN_MS: i64 = 400;
 ///
 /// "overview" toggles: the corner that opened it closes it again, so its
 /// cooldown starts at the fire, as the launcher's does.
-pub fn reports_end(action: &Action, external_lock: bool) -> bool {
+pub fn reports_end<C>(action: &Action<C>, external_lock: bool) -> bool {
     match action {
         Action::Lock | Action::Screensaver => !external_lock,
-        Action::None | Action::Overview | Action::Launcher(_) => false,
+        Action::None | Action::Overview | Action::Launcher { .. } => false,
     }
 }
 
@@ -287,16 +287,16 @@ mod tests {
 
     #[test]
     fn which_actions_report_their_own_end() {
-        assert!(reports_end(&Action::Lock, false));
-        assert!(!reports_end(&Action::Lock, true));
-        assert!(reports_end(&Action::Screensaver, false));
-        assert!(!reports_end(&Action::Screensaver, true));
+        assert!(reports_end(&Action::<()>::Lock, false));
+        assert!(!reports_end(&Action::<()>::Lock, true));
+        assert!(reports_end(&Action::<()>::Screensaver, false));
+        assert!(!reports_end(&Action::<()>::Screensaver, true));
         assert!(!reports_end(
-            &Action::Launcher("@ipc:theme.toggleMode".into()),
+            &Action::Launcher { text: "@ipc:theme.toggleMode".into(), run: () },
             false
         ));
         assert!(!reports_end(
-            &Action::Launcher("hyprctl dispatch workspace 1".into()),
+            &Action::Launcher { text: "hyprctl dispatch workspace 1".into(), run: () },
             false
         ));
     }
@@ -305,11 +305,11 @@ mod tests {
     // password card leaves the corner covered, so only the unlock ends it.
     #[test]
     fn the_screensaver_corner_waits_for_the_unlock() {
-        let fired = on_fire(initial(), 1000, reports_end(&Action::Screensaver, false));
+        let fired = on_fire(initial(), 1000, reports_end(&Action::<()>::Screensaver, false));
         assert!(!is_armed(fired, 60_000));
         let unlocked = on_action_end(fired, 60_000, true);
         assert!(!is_armed(on_enter(unlocked, 60_050), 60_050));
-        let external = on_fire(initial(), 1000, reports_end(&Action::Screensaver, true));
+        let external = on_fire(initial(), 1000, reports_end(&Action::<()>::Screensaver, true));
         assert_eq!(external.ended_at_ms, 1000);
     }
 

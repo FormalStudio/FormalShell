@@ -297,10 +297,6 @@ pub fn alive_command(pid: u64) -> Vec<String> {
     vec!["sh".into(), "-c".into(), format!("test -d /proc/{pid}")]
 }
 
-fn shq(value: &str) -> String {
-    format!("'{}'", value.replace('\'', r"'\''"))
-}
-
 /// Re-runs the argv from the process's own working directory. `exec` so the
 /// wrapping shell is replaced rather than left sitting around as the parent,
 /// and `cd` only when a cwd was actually readable: /proc/PID/cwd is a symlink
@@ -310,9 +306,13 @@ fn shq(value: &str) -> String {
 /// This restores the command line, never the environment: a process launched
 /// with variables its parent set comes back without them.
 pub fn respawn_command(argv: &[String], cwd: &str) -> Vec<String> {
-    let line = argv.iter().map(|a| shq(a)).collect::<Vec<_>>().join(" ");
-    let script = if cwd.is_empty() { format!("exec {line}") } else { format!("cd {} && exec {line}", shq(cwd)) };
-    vec!["sh".into(), "-c".into(), script]
+    let mut out: Vec<String> = if cwd.is_empty() {
+        vec!["sh".into(), "-c".into(), r#"exec "$@""#.into(), "sh".into()]
+    } else {
+        vec!["sh".into(), "-c".into(), r#"cd "$1" && shift && exec "$@""#.into(), "sh".into(), cwd.into()]
+    };
+    out.extend_from_slice(argv);
+    out
 }
 
 pub fn cwd_command(pid: u64) -> Vec<String> {
@@ -613,17 +613,17 @@ mod tests {
     }
 
     #[test]
-    fn respawn_quotes_every_argument() {
+    fn respawn_passes_every_argument_whole() {
         let argv = ["sh", "-c", "echo 'hi'"].map(String::from);
         assert_eq!(
             respawn_command(&argv, "/home/x y"),
-            ["sh", "-c", r"cd '/home/x y' && exec 'sh' '-c' 'echo '\''hi'\'''"]
+            ["sh", "-c", r#"cd "$1" && shift && exec "$@""#, "sh", "/home/x y", "sh", "-c", "echo 'hi'"]
         );
     }
 
     #[test]
     fn respawn_without_a_readable_cwd_still_runs() {
-        assert_eq!(respawn_command(&["mpv".to_string()], ""), ["sh", "-c", "exec 'mpv'"]);
+        assert_eq!(respawn_command(&["mpv".to_string()], ""), ["sh", "-c", r#"exec "$@""#, "sh", "mpv"]);
     }
 
 }

@@ -4,11 +4,12 @@
 // link, `provider` -> submenu populated at tree-build time by providers.js
 // (see "apps" below), else a plain submenu.
 //
-// Internal actions: an `action` value prefixed `@ipc:` is dispatched
-// in-process instead of spawned via `sh -c`, and the launcher's activation
-// switches on the name after the prefix (e.g. "@ipc:theme.toggleMode"). Use
-// this for anything that must run in the shell's own process rather than as
-// a detached command.
+// Internal actions: an `action` value `@ipc:<target>.<function>[:<arg>...]`
+// is an IPC call run in the shell's own process (e.g.
+// "@ipc:panel.open:display"). Every call here and in menu.jsonc is checked
+// against the IPC targets when the menu loads; one nothing answers is
+// refused with its reason in the shell log and its row goes dim. Any other
+// `action` is a command line run through `sh -c`, outliving the shell.
 //
 // Grouping: `section` is the heading the launcher draws above a run of rows
 // that share it (model.js's sectionsFor), and rows are never reordered to

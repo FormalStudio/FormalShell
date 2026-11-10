@@ -1,12 +1,11 @@
 //! The self-targeted routes: the capture/system/notification/theme entries
 //! merged into the default tree, the panel and tray submenus, the GPU routes
-//! and the keyboard-lights subtree. Every action names the running shell's
-//! own path, which static jsonc cannot express; routing through real IPC
-//! means a menu row and a compositor keybind exercise one implementation.
+//! and the keyboard-lights subtree. Every action is an IPC call, so a menu
+//! row and a compositor keybind exercise one implementation.
 
 use fs_chrome::bar::panels::{Home, PanelId};
 
-use super::clipboard::shq;
+use crate::actions::{IpcCall, Run};
 use crate::node::{Entries, Entry, Kind, Node};
 
 /// One `menu.customPowerButtons` item.
@@ -29,7 +28,7 @@ pub fn custom_power_button_entries(buttons: &[CustomPowerButton]) -> Entries {
             Entry {
                 label: Some(btn.label.clone()),
                 icon: Some(btn.icon.clone().unwrap_or_default()),
-                action: Some(btn.command.clone()),
+                action: Some(Run::parse(&btn.command)),
                 confirm: Some(btn.confirm),
                 ..Entry::default()
             },
@@ -41,36 +40,35 @@ pub fn custom_power_button_entries(buttons: &[CustomPowerButton]) -> Entries {
 /// Root nodes merged into the default tree object like
 /// `custom_power_button_entries`. Each parent is declared here rather than
 /// left to `build_tree`'s ancestor synthesis so it carries a label and an
-/// icon of its own. "Video To GIF" takes no argument on purpose: `record gif`
-/// falls back to the recorder's last path.
+/// icon of its own. "Video To GIF" passes an empty path on purpose: `record
+/// gif` falls back to the recorder's last path.
 ///
 /// `notifications` is its own root, not nested under `system.notifications`:
 /// that id is already an activatable leaf, and an action node cannot also
 /// carry children the model would ever enter.
-pub fn capture_entries(ipc: &str) -> Entries {
-    let call = format!("{ipc} call ");
+pub fn capture_entries() -> Entries {
     let mut e = Entries::new();
     e.insert("capture".into(), Entry::labelled("Capture").with_icon("\u{F0E51}"));
-    e.insert("capture.text".into(), Entry::labelled("Copy Text From Screen").with_icon("\u{F113A}").with_action(format!("{call}capture text")));
-    e.insert("capture.color".into(), Entry::labelled("Pick Color").with_icon("\u{F020B}").with_action(format!("{call}capture color")));
-    e.insert("capture.record".into(), Entry::labelled("Record Screen").with_icon("\u{F0567}").with_action(format!("{call}record toggle screen none")));
-    e.insert("capture.stop".into(), Entry::labelled("Stop Recording").with_icon("\u{F04DB}").with_action(format!("{call}record stop")));
-    e.insert("capture.gif".into(), Entry::labelled("Video To GIF").with_icon("\u{F0D78}").with_action(format!("{call}record gif")));
-    e.insert("capture.screenshot".into(), Entry::labelled("Screenshot").with_icon("\u{F0100}").with_action(format!("{call}screenshot full")));
-    e.insert("capture.region".into(), Entry::labelled("Screenshot Region").with_icon("\u{F0489}").with_action(format!("{call}screenshot region")));
-    e.insert("system.console".into(), Entry::labelled("Console").with_icon("\u{F018D}").with_action(format!("{call}console toggle")));
-    e.insert("system.screensaver".into(), Entry::labelled("Screensaver").with_icon("\u{F0D90}").with_action(format!("{call}screensaver start")));
+    e.insert("capture.text".into(), Entry::labelled("Copy Text From Screen").with_icon("\u{F113A}").with_action(IpcCall::new("capture", "text")));
+    e.insert("capture.color".into(), Entry::labelled("Pick Color").with_icon("\u{F020B}").with_action(IpcCall::new("capture", "color")));
+    e.insert("capture.record".into(), Entry::labelled("Record Screen").with_icon("\u{F0567}").with_action(IpcCall::new("record", "toggle").arg("screen").arg("none")));
+    e.insert("capture.stop".into(), Entry::labelled("Stop Recording").with_icon("\u{F04DB}").with_action(IpcCall::new("record", "stop")));
+    e.insert("capture.gif".into(), Entry::labelled("Video To GIF").with_icon("\u{F0D78}").with_action(IpcCall::new("record", "gif").arg("")));
+    e.insert("capture.screenshot".into(), Entry::labelled("Screenshot").with_icon("\u{F0100}").with_action(IpcCall::new("screenshot", "full").arg("default")));
+    e.insert("capture.region".into(), Entry::labelled("Screenshot Region").with_icon("\u{F0489}").with_action(IpcCall::new("screenshot", "region").arg("default")));
+    e.insert("system.console".into(), Entry::labelled("Console").with_icon("\u{F018D}").with_action(IpcCall::new("console", "toggle")));
+    e.insert("system.screensaver".into(), Entry::labelled("Screensaver").with_icon("\u{F0D90}").with_action(IpcCall::new("screensaver", "start")));
     e.insert("system.plugins".into(), Entry::labelled("Plugins").with_icon("\u{F0431}"));
-    e.insert("system.plugins.list".into(), Entry::labelled("List Plugins").with_icon("\u{F0279}").with_action(format!("{call}plugins list")));
-    e.insert("system.plugins.reload".into(), Entry::labelled("Reload Plugins").with_icon("\u{F0453}").with_action(format!("{call}plugins reload")));
+    e.insert("system.plugins.list".into(), Entry::labelled("List Plugins").with_icon("\u{F0279}").with_action(IpcCall::new("plugins", "list")));
+    e.insert("system.plugins.reload".into(), Entry::labelled("Reload Plugins").with_icon("\u{F0453}").with_action(IpcCall::new("plugins", "reload")));
     e.insert("notifications".into(), Entry::labelled("Notifications").with_icon("\u{F009A}"));
-    e.insert("notifications.clear".into(), Entry::labelled("Clear All").with_icon("\u{F039F}").with_action(format!("{call}notifications clear")));
-    e.insert("notifications.markAllSeen".into(), Entry::labelled("Mark All Seen").with_icon("\u{F012D}").with_action(format!("{call}notifications markAllSeen")));
-    e.insert("notifications.dismissAll".into(), Entry::labelled("Dismiss Popups").with_icon("\u{F062A}").with_action(format!("{call}notifications dismissAll")));
+    e.insert("notifications.clear".into(), Entry::labelled("Clear All").with_icon("\u{F039F}").with_action(IpcCall::new("notifications", "clear")));
+    e.insert("notifications.markAllSeen".into(), Entry::labelled("Mark All Seen").with_icon("\u{F012D}").with_action(IpcCall::new("notifications", "markAllSeen")));
+    e.insert("notifications.dismissAll".into(), Entry::labelled("Dismiss Popups").with_icon("\u{F062A}").with_action(IpcCall::new("notifications", "dismissAll")));
     e.insert("theme".into(), Entry::labelled("Theme").with_icon("\u{F0301}"));
-    e.insert("theme.retheme".into(), Entry::labelled("Retheme").with_icon("\u{F0301}").with_action(format!("{call}theme retheme")));
-    e.insert("theme.mode-dark".into(), Entry::labelled("Dark Mode").with_icon("\u{F0594}").with_action(format!("{call}theme mode dark")));
-    e.insert("theme.mode-light".into(), Entry::labelled("Light Mode").with_icon("\u{F0599}").with_action(format!("{call}theme mode light")));
+    e.insert("theme.retheme".into(), Entry::labelled("Retheme").with_icon("\u{F0301}").with_action(IpcCall::new("theme", "retheme")));
+    e.insert("theme.mode-dark".into(), Entry::labelled("Dark Mode").with_icon("\u{F0594}").with_action(IpcCall::new("theme", "mode").arg("dark")));
+    e.insert("theme.mode-light".into(), Entry::labelled("Light Mode").with_icon("\u{F0599}").with_action(IpcCall::new("theme", "mode").arg("light")));
     e
 }
 
@@ -81,13 +79,13 @@ pub fn panel_ids() -> impl Iterator<Item = PanelId> {
     PanelId::ALL.into_iter().filter(|p| p.home() != Home::Launcher && *p != PanelId::TrayOverflow)
 }
 
-pub fn panels_provider(ipc: &str) -> Vec<Node> {
+pub fn panels_provider() -> Vec<Node> {
     panel_ids()
         .map(|p| {
             let d = p.desc();
             Node {
                 aliases: d.aliases.iter().map(|a| a.to_string()).collect(),
-                action: Some(format!("{ipc} call panel open {}", d.id)),
+                action: Some(IpcCall::new("panel", "open").arg(d.id).into()),
                 ..Node::new(format!("panels.{}", d.id), d.title, Kind::Action)
             }
         })
@@ -103,11 +101,9 @@ pub struct TrayItem {
 }
 
 /// System tray rows: `SystemTray.items` has no launcher path otherwise, only
-/// a bar-cell click. Mirrors the tray IPC target's `activate(id)` exactly.
-/// `shq` guards an id containing whitespace from splitting into extra argv
-/// tokens on the way through `sh -c`. An empty tray renders one dim row, never
-/// an empty level.
-pub fn tray_provider(items: &[TrayItem], ipc: &str) -> Vec<Node> {
+/// a bar-cell click. The tray IPC target's `activate(id)` exactly. An empty
+/// tray renders one dim row, never an empty level.
+pub fn tray_provider(items: &[TrayItem]) -> Vec<Node> {
     if items.is_empty() {
         return vec![Node::note("tray.empty", "No tray items")];
     }
@@ -120,7 +116,7 @@ pub fn tray_provider(items: &[TrayItem], ipc: &str) -> Vec<Node> {
                 .cloned()
                 .unwrap_or_default();
             Node {
-                action: Some(format!("{ipc} call tray activate {}", shq(&item.id))),
+                action: Some(IpcCall::new("tray", "activate").arg(&item.id).into()),
                 ..Node::new(format!("tray.{}", item.id), label, Kind::Action)
             }
         })
@@ -174,34 +170,6 @@ pub fn gpu_provider(cards: &[GpuCard]) -> Vec<Node> {
         .collect()
 }
 
-/// The offload launch Shift+Enter runs against the cursor's app row. `shq`
-/// guards a desktop id containing characters a bare interpolation would
-/// break (flatpak's reverse-DNS ids can carry a trailing instance suffix).
-pub fn gpu_launch_action(ipc: &str, desktop_id: &str, card: &str) -> String {
-    format!("{ipc} call monitor launch {} {}", shq(desktop_id), shq(card))
-}
-
-/// The "gpu.mode" fragment, gated on supergfxctl's own presence rather than
-/// on card count, so a machine without it has nothing at all rather than an
-/// empty placeholder. `supported` is the parsed `gfx` state's flag.
-pub fn gpu_mode_entry(ipc: &str, supported: bool) -> Entries {
-    let mut e = Entries::new();
-    if !supported {
-        return e;
-    }
-    let call = format!("{ipc} call ");
-    e.insert("gpu.mode".into(), Entry::labelled("GPU Mode").with_icon("\u{F04E1}"));
-    e.insert(
-        "gpu.mode.integrated".into(),
-        Entry::labelled("Integrated").with_icon("\u{F0322}").with_action(format!("{call}monitor mode integrated")),
-    );
-    e.insert(
-        "gpu.mode.hybrid".into(),
-        Entry::labelled("Hybrid").with_icon("\u{F00FB}").with_action(format!("{call}monitor mode hybrid")),
-    );
-    e
-}
-
 const LIGHT_COLORS: &[(&str, &str)] = &[
     ("ff0000", "Red"),
     ("ff4000", "Orange"),
@@ -233,7 +201,7 @@ pub fn lights_entries(available: bool, effects: &[LightEffect]) -> Entries {
     }
     fn choice(verb: &str, path: &str, value: &str, label: &str) -> Entry {
         Entry::labelled(label)
-            .with_action(format!("@ipc:lights.{verb}:{value}"))
+            .with_action(IpcCall::new("lights", verb).arg(value))
             .with_checked(format!("@state:lights.{path}={value}"))
             .keeping_open()
     }
@@ -244,7 +212,7 @@ pub fn lights_entries(available: bool, effects: &[LightEffect]) -> Entries {
     out.insert(
         "lights.power".into(),
         Entry::labelled("Lights On")
-            .with_action("@ipc:lights.toggle")
+            .with_action(IpcCall::new("lights", "toggle"))
             .with_checked("@state:lights.on")
             .keeping_open(),
     );
@@ -261,7 +229,7 @@ pub fn lights_entries(available: bool, effects: &[LightEffect]) -> Entries {
     for (hex, label) in LIGHT_COLORS {
         out.insert(format!("lights.color.{hex}"), choice("color", "colour", hex, label));
     }
-    out.insert("lights.color.hex".into(), Entry::labelled("Hex Color").with_action("@ipc:lights.colorInput"));
+    out.insert("lights.color.hex".into(), Entry::labelled("Hex Color").with_action(IpcCall::new("lights", "colorInput")));
     for (id, label) in [("low", "Low"), ("med", "Medium"), ("high", "High")] {
         out.insert(format!("lights.speed.{id}"), choice("speed", "speed", id, label));
     }
@@ -291,18 +259,18 @@ pub fn ipad_entries(available: bool) -> Entries {
     }
     let section = |e: Entry, s: &str| Entry { section: Some(s.to_owned()), ..e };
     out.insert("ipad".into(), Entry::labelled("iPad").with_aliases(&["tablet", "continuity", "padbridge", "second screen"]));
-    out.insert("ipad.switch".into(), Entry::labelled("Switch to iPad").with_action("@ipc:ipad.switch").with_checked("@state:ipad.active"));
-    out.insert("ipad.reconnect".into(), Entry::labelled("Reconnect").with_action("@ipc:ipad.reconnect").keeping_open());
+    out.insert("ipad.switch".into(), Entry::labelled("Switch to iPad").with_action(IpcCall::new("ipad", "switch")).with_checked("@state:ipad.active"));
+    out.insert("ipad.reconnect".into(), Entry::labelled("Reconnect").with_action(IpcCall::new("ipad", "reconnect")).keeping_open());
     for (edge, label) in [("left", "Left"), ("right", "Right"), ("top", "Above"), ("bottom", "Below")] {
         let row = Entry::labelled(label)
-            .with_action(format!("@ipc:ipad.position:{edge}"))
+            .with_action(IpcCall::new("ipad", "position").arg(edge))
             .with_checked(format!("@state:ipad.edge={edge}"))
             .keeping_open();
         out.insert(format!("ipad.edge-{edge}"), section(row, "Position"));
     }
     for (id, label, start, end) in IPAD_STRETCHES {
         let row = Entry::labelled(label)
-            .with_action(format!("@ipc:ipad.stretch:{start}:{end}"))
+            .with_action(IpcCall::new("ipad", "stretch").arg(start.to_string()).arg(end.to_string()))
             .with_checked(format!("@state:ipad.stretch={id}"))
             .keeping_open();
         out.insert(format!("ipad.stretch-{id}"), section(row, "Stretch"));

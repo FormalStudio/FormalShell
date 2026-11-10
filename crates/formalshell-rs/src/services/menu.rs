@@ -18,6 +18,7 @@ use std::time::{Duration, SystemTime};
 use fs_menu::frecency::Record;
 use fs_types::Bind;
 use fs_menu::model::{build_tree, entries_from_value, parse_jsonc};
+use fs_menu::actions::Run;
 use fs_menu::node::{DesktopEntry, Entries, Entry, Kind, Node, Tree};
 use fs_menu::providers::{self, CustomPowerButton, Listed, Peeked};
 use serde_json::Value;
@@ -34,11 +35,6 @@ const EMOJI: &str = include_str!("../../../fs-menu/data/emoji.json");
 fn conds_after() -> Duration {
     Duration::from_secs_f64(2.0 * fs_theme::tokens::motion_tokens(true).spatial / 1000.0)
 }
-
-/// What fs-menu's self-targeted fragments call the shell by, which
-/// [`ipc_command`] turns into the client installed beside this binary at the
-/// moment an action runs.
-pub const SELF: &str = "formalshell-ipc";
 
 /// The app cell's icon edge (`controlHeight * 2`), the size every app
 /// icon is decoded at.
@@ -102,11 +98,13 @@ pub enum Diff {
 impl State {
     pub fn apply(&mut self, diff: Diff) -> bool {
         match diff {
-            Diff::Base(base) => {
+            Diff::Base(mut base) => {
+                check_calls(base.nodes.values_mut());
                 self.base = base;
                 self.assemble();
             }
-            Diff::Source(name, rows) => {
+            Diff::Source(name, mut rows) => {
+                check_calls(rows.iter_mut());
                 if self.sources.get(&name) == Some(&rows) {
                     return false;
                 }
@@ -170,22 +168,43 @@ impl State {
     }
 }
 
-/// An action string as `sh -c` runs it: fs-menu's client prefix swapped for
-/// the one installed beside this binary.
-pub fn ipc_command(action: &str) -> String {
-    let prefix = format!("{SELF} call ");
-    match action.strip_prefix(&prefix) {
-        Some(rest) => format!("{} call {rest}", ipc_client()),
-        None => action.to_owned(),
+/// Every `@ipc:` call on `nodes` checked against what answers it
+/// (`ipc::check`): one that fits takes its function's arguments, one that
+/// does not is dropped, logged once with its reason, and a row left with
+/// no action of its own goes dim. Returns the refusals.
+fn check_calls<'a>(nodes: impl Iterator<Item = &'a mut Node>) -> Vec<String> {
+    static LOGGED: LazyLock<std::sync::Mutex<HashSet<String>>> = LazyLock::new(Default::default);
+    let mut refused = Vec::new();
+    let mut check = |id: &str, slot: &mut Option<Run>| {
+        let Some(Run::Ipc(call)) = slot.as_ref() else { return true };
+        match crate::ipc::check(call, true) {
+            Ok(fit) => {
+                *slot = Some(Run::Ipc(fit));
+                true
+            }
+            Err(reason) => {
+                refused.push(format!("{id}: refused {}: {reason}", Run::Ipc(call.clone())));
+                *slot = None;
+                false
+            }
+        }
+    };
+    for n in nodes {
+        if !check(&n.id, &mut n.action) {
+            n.dim = Some(true);
+        }
+        if !check(&n.id, &mut n.alternate) {
+            n.alternate_label = None;
+        }
+        for a in &mut n.actions {
+            check(&format!("{} {}", n.id, a.id), &mut a.action);
+        }
     }
-}
-
-pub fn ipc_client() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("formalshell-ipc")))
-        .filter(|p| p.exists())
-        .map_or_else(|| "formalshell-ipc".to_owned(), |p| p.to_string_lossy().into_owned())
+    let mut logged = LOGGED.lock().expect("refusals");
+    for line in refused.iter().filter(|line| logged.insert((*line).clone())) {
+        eprintln!("Menu: {line}");
+    }
+    refused
 }
 
 /// What the base tree is built from besides the files.
@@ -219,7 +238,6 @@ pub enum Ask {
     Conds(Vec<(String, String, bool)>),
     Binds,
     Emoji,
-    Spawn(String),
     /// An applications directory changed under the shell.
     Rescan,
     /// The scale the launcher opens at (the bar's output's) moved: the
@@ -348,9 +366,6 @@ async fn run(ctx: Ctx) {
                     ctx.publish(store::Diff::Menu(Diff::Emoji(Arc::new(index))));
                 }
             }
-            Ask::Spawn(command) => {
-                super::compositor::spawn(&proc::argv(&["sh", "-c", &command]));
-            }
             Ask::Files => {
                 if let Some(rows) = ctx.pool().run(files).await {
                     ctx.publish(store::Diff::Menu(Diff::Source(providers::FILES_ROUTE.into(), rows)));
@@ -398,8 +413,22 @@ async fn run(ctx: Ctx) {
 /// default-menu.jsonc merged with the self-targeted fragments and the
 /// custom power buttons, then the user's overlay over it.
 fn base(inputs: &BaseInputs) -> Tree {
+    let user = std::fs::read_to_string(user_menu_path())
+        .ok()
+        .and_then(|t| match parse_jsonc(&t) {
+            Ok(v) => entries_from_value(&v).ok(),
+            Err(e) => {
+                eprintln!("Menu: failed to parse menu.jsonc: {e}");
+                None
+            }
+        })
+        .unwrap_or_default();
+    base_over(inputs, &user)
+}
+
+fn base_over(inputs: &BaseInputs, user: &Entries) -> Tree {
     let mut merged: Entries = parse_jsonc(DEFAULT_MENU).ok().and_then(|v| entries_from_value(&v).ok()).unwrap_or_default();
-    for (k, v) in providers::capture_entries(SELF) {
+    for (k, v) in providers::capture_entries() {
         merged.insert(k, v);
     }
     if let Some(effects) = &inputs.lights {
@@ -423,19 +452,8 @@ fn base(inputs: &BaseInputs) -> Tree {
         let entry = Entry { provider: Some(route.clone()), ..Entry::labelled(name).with_icon("puzzle") };
         merged.insert(route.clone(), entry);
     }
-    let user = user_menu_path();
-    let user = std::fs::read_to_string(&user)
-        .ok()
-        .and_then(|t| match parse_jsonc(&t) {
-            Ok(v) => entries_from_value(&v).ok(),
-            Err(e) => {
-                eprintln!("Menu: failed to parse menu.jsonc: {e}");
-                None
-            }
-        })
-        .unwrap_or_default();
-    let mut tree = build_tree(&merged, &user);
-    let panels = providers::panels_provider(SELF);
+    let mut tree = build_tree(&merged, user);
+    let panels = providers::panels_provider();
     if tree.nodes.contains_key("panels") {
         providers::attach_children(&mut tree, "panels", panels);
     }
@@ -655,3 +673,128 @@ async fn watch_entries(tx: async_channel::Sender<Ask>) {
 
 #[cfg(not(target_os = "linux"))]
 async fn watch_entries(_tx: async_channel::Sender<Ask>) {}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use fs_devices::bluetooth::Device as BluetoothDevice;
+    use fs_menu::actions::{IpcCall, Subject, WINDOW_KIND, actions_for};
+    use fs_menu::clipboard::history::{Entry as ClipEntry, EntryKind};
+    use fs_menu::providers::*;
+    use serde_json::json;
+
+    use super::*;
+
+    fn inputs() -> BaseInputs {
+        BaseInputs {
+            buttons: json!([{"label": "Hibernate", "command": "systemctl hibernate"}, {"label": "Sleep", "command": "@ipc:power.suspend"}]),
+            lights: Some(vec![LightEffect { id: "static".into(), label: "Static".into() }]),
+            ipad: true,
+            share: Some(ShareInputs {
+                installed: true,
+                peers: vec!["phone".into()],
+                items: vec![ClipEntry { id: "c1".into(), kind: EntryKind::Text, text: Some("hi".into()), ..ClipEntry::default() }],
+                receive: ReceiveStatus { enabled: true, receiving: false, alias: "me".into(), dir: "/d".into() },
+            }),
+            plugin_modes: Vec::new(),
+        }
+    }
+
+    /// Every row a source can publish, with each verb its rows mint.
+    fn sources() -> Vec<Node> {
+        let net = |name: &str, known: bool, connected: bool| WifiNetwork { name: name.into(), secured: true, in_range: true, known, connected, signal: 0.5, ..WifiNetwork::default() };
+        let device = |address: &str, connected: bool| BluetoothDevice { address: address.parse().unwrap(), name: address.into(), paired: true, connected, ..BluetoothDevice::default() };
+        let station = |uuid: &str| RadioStation { uuid: uuid.into(), name: uuid.into(), ..RadioStation::default() };
+        let clip = vec![
+            ClipEntry { id: "t".into(), kind: EntryKind::Text, text: Some("a:b".into()), ..ClipEntry::default() },
+            ClipEntry { id: "i".into(), kind: EntryKind::Image, path: Some("/tmp/a.png".into()), ..ClipEntry::default() },
+        ];
+        let package = |id: &str, installed: bool| Package { id: id.into(), name: id.into(), source: "zypper".into(), installed, installable: true, run: true, ..Package::default() };
+        let mut rows = wifi_rows(&WifiState { has_device: true, enabled: true, networks: vec![net("Home:5G", true, true), net("Cafe", false, false)], ..WifiState::default() });
+        rows.extend(wifi_rows(&WifiState { has_device: true, ..WifiState::default() }));
+        rows.extend(bluetooth_rows(&BluetoothState { available: true, enabled: true, devices: vec![device("AA:BB:CC:DD:EE:01", true), device("AA:BB:CC:DD:EE:02", false)] }));
+        rows.extend(bluetooth_rows(&BluetoothState { available: true, ..BluetoothState::default() }));
+        rows.extend(audio_rows(&[AudioDevice { name: "sink".into(), label: "S".into(), is_sink: true }, AudioDevice { name: "src".into(), label: "M".into(), is_sink: false }]));
+        rows.extend(radio_rows(&RadioState { running: true, favorites: vec![station("u1")] }));
+        rows.extend(radio_result_rows(&[station("u1"), station("u2")], &HashSet::from(["u1".to_owned()])));
+        rows.extend(clipboard_provider(&clip, ClipMode::Copy, false));
+        rows.extend(clipboard_provider(&clip, ClipMode::Share, false));
+        rows.extend(clipssh_rows(&[ClipsshAlias { name: "box".into(), target: "k@box".into() }]));
+        rows.extend(package_rows(&[package("zypper:foot", true), package("flatpak:org.example.App", false)]));
+        rows.extend(tray_provider(&[TrayItem { id: "org.kde.Item:1".into(), title: "Item".into(), tooltip_title: String::new() }]));
+        rows.extend(apps_provider(&[DesktopEntry { id: "foot".into(), name: "Foot".into(), actions: vec![("new".into(), "New".into())], ..DesktopEntry::default() }], None, &[], None));
+        rows
+    }
+
+    #[test]
+    fn every_shipped_call_is_answered() {
+        let mut tree = base_over(&inputs(), &Entries::new());
+        let mut rows = sources();
+        let targets: HashSet<&str> = rows
+            .iter()
+            .flat_map(|n| [&n.action, &n.alternate].into_iter().chain(n.actions.iter().map(|a| &a.action)))
+            .filter_map(|run| match run {
+                Some(Run::Ipc(call)) => Some(call.target.as_str()),
+                _ => None,
+            })
+            .collect();
+        for t in ["wifi", "bluetooth", "audio", "radio", "clipboard", "clipssh", "package", "panel", "tray"] {
+            assert!(targets.contains(t), "no {t} call among {targets:?}");
+        }
+        let refused: Vec<String> = check_calls(tree.nodes.values_mut()).into_iter().chain(check_calls(rows.iter_mut())).collect();
+        assert_eq!(refused, Vec::<String>::new());
+        let tray = rows.iter().find(|n| n.id.starts_with("tray.")).unwrap();
+        assert_eq!(tray.action, Some(Run::Ipc(IpcCall::new("tray", "activate").arg("org.kde.Item:1"))), "a colon in the last argument stays in it");
+    }
+
+    #[test]
+    fn every_builtin_call_is_answered() {
+        let app = apps_provider(&[DesktopEntry { id: "foot".into(), name: "Foot".into(), actions: vec![("new".into(), "New".into())], ..DesktopEntry::default() }], None, &[], None).remove(0);
+        let window = Node { path: "0xabc".into(), ..Node::new("w", "Window", Kind::Other(WINDOW_KIND.into())) };
+        let image = Node { path: "/w/a.png".into(), ..Node::new("img", "a", Kind::Image) };
+        let submenu = Node::new("system", "System", Kind::Submenu);
+        let mut calls = Vec::new();
+        for node in [&app, &window, &image, &submenu] {
+            for (pinned, abbrev) in [(false, None), (true, Some(("fx", fs_menu::abbrev::Source::Learned)))] {
+                let s = Subject { discrete_gpu: true, pinned, abbrev, removable: Some("flatpak:x"), single: true, ..Subject::of(node) };
+                calls.extend(actions_for(&s).into_iter().filter_map(|a| match a.run {
+                    Run::Ipc(call) => Some(call),
+                    _ => None,
+                }));
+            }
+        }
+        assert!(calls.len() > 15);
+        for call in calls {
+            assert!(crate::ipc::check(&call, true).is_ok(), "{call}: {:?}", crate::ipc::check(&call, true));
+        }
+    }
+
+    #[test]
+    fn a_user_call_nothing_answers_is_refused_with_its_reason() {
+        let user = entries_from_value(&json!({
+            "mine": {"label": "Mine", "action": "@ipc:nope.verb"},
+            "short": {"label": "Short", "action": "@ipc:wallpaper.setFor:dark"},
+            "typed": {"label": "Typed", "action": "@ipc:debug.motionScale:fast"},
+            "alt": {"label": "Alt", "action": "@ipc:caffeinate.toggle", "alternate": "@ipc:caffeinate.nap", "alternateLabel": "Nap"},
+            "col": {"label": "Col", "action": "foot -e htop", "actions": [{"id": "x", "label": "X", "action": "@ipc:panel.shut:audio"}]},
+            "fine": {"label": "Fine", "action": "@ipc:panel.open:audio:extra"},
+        }))
+        .unwrap();
+        let mut tree = base_over(&BaseInputs::default(), &user);
+        let refused = check_calls(tree.nodes.values_mut());
+        let node = |id: &str| &tree.nodes[id];
+        assert_eq!(refused, [
+            "mine: refused @ipc:nope.verb: no IPC target \"nope\"",
+            "short: refused @ipc:wallpaper.setFor:dark: function setFor(mode: string, path: string): string takes 2 arguments, given 1",
+            "typed: refused @ipc:debug.motionScale:fast: debug.motionScale: percent \"fast\" is not int",
+            "alt: refused @ipc:caffeinate.nap: target caffeinate has no function \"nap\"",
+            "col x: refused @ipc:panel.shut:audio: target panel has no function \"shut\"",
+        ]);
+        assert_eq!((node("mine").action.clone(), node("mine").dim), (None, Some(true)));
+        assert_eq!((node("alt").alternate.clone(), node("alt").alternate_label.clone(), node("alt").dim), (None, None, None));
+        assert_eq!(node("col").actions[0].action, None);
+        assert_eq!(node("col").action, Some(Run::Shell("foot -e htop".into())));
+        assert_eq!(node("fine").action, Some(Run::Ipc(IpcCall::new("panel", "open").arg("audio:extra"))));
+    }
+}

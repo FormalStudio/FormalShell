@@ -41,7 +41,7 @@ fn kind_inference_for_all_four_kinds() {
         "d": { "label": "Submenu" }
     }));
     assert_eq!(tree.nodes["a"].kind, Kind::Action);
-    assert_eq!(tree.nodes["a"].action.as_deref(), Some("echo hi"));
+    assert_eq!(tree.nodes["a"].action.as_ref().map(ToString::to_string).as_deref(), Some("echo hi"));
     assert_eq!(tree.nodes["b"].kind, Kind::Link);
     assert_eq!(tree.nodes["b"].target.as_deref(), Some("a"));
     assert_eq!(tree.nodes["c"].kind, Kind::Provider);

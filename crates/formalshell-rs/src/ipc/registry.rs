@@ -142,6 +142,25 @@ impl<C> Registry<C> {
         self.targets.iter().find(|t| t.name == name)
     }
 
+    /// Why `args` would not reach `target.function`, in the words a log
+    /// line reads well in.
+    pub fn check(&self, target: &str, function: &str, args: &[String]) -> Result<(), String> {
+        let Some(t) = self.target(target) else { return Err(format!("no IPC target \"{target}\"")) };
+        let Some(f) = t.function(function) else { return Err(format!("target {target} has no function \"{function}\"")) };
+        if f.params.len() != args.len() {
+            return Err(format!("{} takes {} arguments, given {}", f.definition(), f.params.len(), args.len()));
+        }
+        match f.params.iter().zip(args).find(|((_, ty), arg)| ty.parse(arg).is_none()) {
+            Some(((name, ty), arg)) => Err(format!("{target}.{function}: {name} {arg:?} is not {}", ty.name())),
+            None => Ok(()),
+        }
+    }
+
+    /// How many arguments `target.function` takes, if it is one.
+    pub fn arity(&self, target: &str, function: &str) -> Option<usize> {
+        self.target(target)?.function(function).map(|f| f.params.len())
+    }
+
     /// The text the client prints on stdout.
     pub fn answer(&self, ctx: &mut C, request: &Request) -> String {
         match request {

@@ -2,6 +2,7 @@
 
 use super::clipboard::{captured_at_label, share_entry_command};
 use crate::clipboard::history::{Entry as ClipEntry, EntryKind};
+use crate::actions::{IpcCall, Run};
 use crate::node::{Entries, Entry, Kind};
 
 /// A LocalSend peer from the last scan.
@@ -74,7 +75,7 @@ pub fn share_peer_entries(
                 format!("{peer_id}.clipboard"),
                 Entry::labelled("Clipboard")
                     .with_icon("")
-                    .with_action(format!("@ipc:localsend.send:{i}:{}", text.id)),
+                    .with_action(IpcCall::new("localsend", "send").arg(i.to_string()).arg(&text.id)),
             );
         }
         for (j, entry) in image_entries.iter().enumerate() {
@@ -85,7 +86,7 @@ pub fn share_peer_entries(
                     thumb_source: Some(entry.path.clone().unwrap_or_default()),
                     ..Entry::labelled("Image")
                         .with_icon("")
-                        .with_action(format!("@ipc:localsend.send:{i}:{}", entry.id))
+                        .with_action(IpcCall::new("localsend", "send").arg(i.to_string()).arg(&entry.id))
                 },
             );
         }
@@ -125,14 +126,14 @@ fn share_receive_status(receive: Option<&ReceiveStatus>) -> Entry {
 /// unavailable-state rows.
 fn share_fallback_entries(clipboard_items: &[ClipEntry]) -> Entries {
     let mut out = Entries::new();
-    out.insert("share.receive".into(), Entry::labelled("Receive").with_action("localsend_app"));
+    out.insert("share.receive".into(), Entry::labelled("Receive").with_action(Run::Spawn(vec!["localsend_app".into()])));
     out.insert(
         "share.history".into(),
         Entry { provider: Some("shareHistory".to_string()), ..Entry::labelled("Pick From History") },
     );
     let send = match clipboard_items.first() {
         // nf-md-clipboard_text
-        Some(newest) => Entry::labelled("Send").with_icon("\u{F014D}").with_action(share_entry_command(newest)),
+        Some(newest) => Entry::labelled("Send").with_icon("\u{F014D}").with_action(Run::Shell(share_entry_command(newest))),
         None => note_entry("Nothing to share"),
     };
     out.insert("share.send".into(), send);

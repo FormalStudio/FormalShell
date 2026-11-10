@@ -23,7 +23,7 @@ mod headset;
 mod profiles;
 mod heads;
 mod hotcorners;
-mod launcher;
+pub(crate) mod launcher;
 pub mod lock;
 mod osd;
 mod plugin_overlay;
@@ -810,7 +810,7 @@ impl App {
             .filter(|p| p.is_open())
             .and_then(|p| match p.panel() {
                 Some(id) => Some(Name::Panel(id)),
-                None => p.id().starts_with(panel::plugin::PREFIX).then_some(Name::Plugin(p.id())),
+                None => p.id().starts_with(fs_chrome::plugins::PLUGIN_PREFIX).then_some(Name::Plugin(p.id())),
             })
             .or_else(|| self.launcher_panel().map(Name::Panel))
     }

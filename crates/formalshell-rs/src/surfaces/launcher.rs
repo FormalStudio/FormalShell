@@ -17,7 +17,7 @@
 use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
-use fs_menu::actions::{Action, Run, TargetKind};
+use fs_menu::actions::{Action, IpcCall, Run, TargetKind};
 use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir};
 use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
@@ -163,6 +163,9 @@ pub struct Model {
     pub dirty: bool,
     /// A `pasteAfter` row ran: the chord goes out once the window is gone.
     pub paste: bool,
+    /// A call that reads the screen, held until the window is gone so the
+    /// closing card is not in the picture.
+    pub after_unmap: Option<IpcCall>,
     /// Counts closes, so an answer asked for in one session can tell it
     /// arrived in another.
     pub sessions: u64,
@@ -483,6 +486,7 @@ impl Default for Model {
             cursor: 0,
             cursor_id: String::new(),
             paste: false,
+            after_unmap: None,
             sessions: 0,
             picker: Picker::default(),
             picker_sections: Vec::new(),
@@ -520,8 +524,33 @@ impl Default for Model {
 pub enum Out {
     None,
     Close,
-    /// An in-process `@ipc:` action the App dispatches.
-    Internal(String),
+    /// An `@ipc:` call the App answers in process.
+    Internal(IpcCall),
+}
+
+/// The `@ipc:` calls a row answers itself in [`Model::run`], before the
+/// App's own and the IPC targets: `(target, function, arguments)`.
+pub const ROW_VERBS: &[(&str, &str, usize)] = &[
+    ("abbrev", "forget", 1),
+    ("abbrev", "pin", 1),
+    ("recent", "pin", 1),
+    ("recent", "unpin", 1),
+    ("plugin", "send", 2),
+    ("window", "focus", 1),
+    ("window", "close", 1),
+    ("window", "float", 1),
+    ("window", "fullscreen", 1),
+    ("app", "open", 1),
+    ("app", "new", 1),
+    ("app", "action", 2),
+    ("wallpaper", "set", 1),
+    ("wallpaper", "setFor", 2),
+    ("monitor", "end", 1),
+];
+
+/// Whether `table` names `call` with as many arguments as it carries.
+pub fn answers(table: &[(&str, &str, usize)], call: &IpcCall) -> bool {
+    table.iter().any(|(t, f, n)| *t == call.target && *f == call.function && *n == call.args.len())
 }
 
 pub fn snapshot(store: &Store) -> Snapshot {
@@ -663,9 +692,9 @@ pub fn plugin_sources(store: &Store) -> Vec<(String, Vec<Node>)> {
         .collect()
 }
 
-/// The `@ipc:` action that writes `line` to plugin `id`'s stdin.
-fn plugin_send(id: &str, line: &str) -> String {
-    format!("plugin.send:{id}:{line}")
+/// The call that writes `line` to plugin `id`'s stdin.
+fn plugin_send(id: &str, line: &str) -> IpcCall {
+    IpcCall::new("plugin", "send").arg(id).arg(line)
 }
 
 /// A plugin mode's rows: each activates its row, then its own actions; a
@@ -681,7 +710,7 @@ fn plugin_rows(id: &str, route: &str, rows: &[plugins::Row]) -> Vec<Node> {
         }
         let toggle = r.kind == RowKind::Toggle;
         let activate = plugins::activate_event(&r.id, toggle.then_some(!r.checked));
-        let mut n = Node::new(format!("{route}.{}", r.id), r.text.clone(), NodeKind::Action).with_action(format!("@ipc:{}", plugin_send(id, &activate)));
+        let mut n = Node::new(format!("{route}.{}", r.id), r.text.clone(), NodeKind::Action).with_action(plugin_send(id, &activate));
         n.icon = r.icon.clone();
         n.desc = if toggle { Some(if r.checked { "On" } else { "Off" }.to_owned()) } else { Some(r.detail.clone()).filter(|d| !d.is_empty()) };
         n.verb = toggle.then(|| "Toggle".to_owned());
@@ -692,7 +721,7 @@ fn plugin_rows(id: &str, route: &str, rows: &[plugins::Row]) -> Vec<Node> {
             .iter()
             .map(|a| {
                 let label = if a.label.is_empty() { &a.id } else { &a.label };
-                let run = format!("@ipc:{}", plugin_send(id, &plugins::action_event(&r.id, &a.id)));
+                let run = plugin_send(id, &plugins::action_event(&r.id, &a.id));
                 ActionEntry { icon: Some(a.icon.clone()).filter(|i| !i.is_empty()), ..ActionEntry::new(&a.id, label, run) }
             })
             .collect();
@@ -1929,6 +1958,7 @@ impl Model {
     /// `open(route)`: a fresh session on `route`'s level, or a `:`-led
     /// prefill at the root, which a route's prefix turns into its mode.
     pub fn open(&mut self, store: &Store, route: Option<&str>) {
+        self.after_unmap = None;
         self.abandon_select();
         self.ask_fresh(store);
         plugins::launcher(true);
@@ -2138,7 +2168,7 @@ impl Model {
         if self.on_picker()
             && let Some(page) = self.picker.from.take()
         {
-            return Out::Internal(format!("panel.open:{page}"));
+            return Out::Internal(IpcCall::new("panel", "open").arg(page.as_str()));
         }
         let parent = store.menu.nodes().get(&level).and_then(|n| n.parent_id.clone());
         self.enter_level(store, parent);
@@ -2649,15 +2679,16 @@ impl Model {
                 return Out::None;
             }
             Run::Target(_) | Run::Note => return Out::None,
-            Run::Ipc(name) => {
-                let (verb, arg) = name.split_once(':').unwrap_or((name, ""));
-                match verb {
+            Run::Ipc(call) if !answers(ROW_VERBS, call) => Out::Internal(call.clone()),
+            Run::Ipc(call) => {
+                let arg = call.at(0);
+                match (call.target.as_str(), call.function.as_str()) {
                     // An abbreviation's own actions are no pick: picking
                     // would teach the pair straight back.
-                    "abbrev.forget" | "abbrev.pin" => {
+                    ("abbrev", verb @ ("forget" | "pin")) => {
                         let subject = fs_menu::actions::subject_id(node);
                         let book = index::abbreviation_book(store);
-                        let book = if verb == "abbrev.pin" {
+                        let book = if verb == "pin" {
                             fs_menu::abbrev::pin(&book, arg, &subject)
                         } else {
                             fs_menu::abbrev::forget(&book, arg, &subject)
@@ -2671,9 +2702,9 @@ impl Model {
                         return Out::Close;
                     }
                     // A pin is no pick either: it would count twice.
-                    "recent.pin" | "recent.unpin" => {
+                    ("recent", verb @ ("pin" | "unpin")) => {
                         let mut pinned: Vec<String> = store.state.data.recent_pinned.iter().filter(|id| *id != arg).cloned().collect();
-                        if verb == "recent.pin" {
+                        if verb == "pin" {
                             pinned.push(arg.to_owned());
                         }
                         state::set(vec![state::Field::RecentPinned(pinned)]);
@@ -2684,29 +2715,27 @@ impl Model {
                         self.close();
                         return Out::Close;
                     }
-                    "plugin.send" => {
-                        if let Some((id, line)) = arg.split_once(':') {
-                            plugins::send(id, line.to_owned());
-                        }
+                    ("plugin", "send") => {
+                        plugins::send(arg, call.at(1).to_owned());
                         Out::None
                     }
-                    "window.focus" => {
+                    ("window", "focus") => {
                         compositor::focus_window(&WindowId::new(arg));
                         Out::None
                     }
-                    "window.close" => {
+                    ("window", "close") => {
                         compositor::close_window(&WindowId::new(arg));
                         Out::None
                     }
-                    "window.float" => {
+                    ("window", "float") => {
                         compositor::send(compositor::Command::ToggleFloating(WindowId::new(arg)));
                         Out::None
                     }
-                    "window.fullscreen" => {
+                    ("window", "fullscreen") => {
                         compositor::send(compositor::Command::ToggleFullscreen(WindowId::new(arg)));
                         Out::None
                     }
-                    "app.open" => {
+                    ("app", "open") => {
                         let Some(entry) = node.entry.as_ref().filter(|e| e.id == arg) else { return Out::None };
                         let target = fs_menu::appmatch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
                         if let Some(target) = target {
@@ -2716,25 +2745,22 @@ impl Model {
                         }
                         Out::None
                     }
-                    "app.new" | "app.action" => {
-                        let (id, key) = match arg.split_once(':') {
-                            Some((id, action)) if verb == "app.action" => (id, index::action_key(id, action)),
-                            _ => (arg, arg.to_owned()),
-                        };
+                    ("app", verb @ ("new" | "action")) => {
+                        let key = if verb == "action" { index::action_key(arg, call.at(1)) } else { arg.to_owned() };
                         if let Some(argv) = index::launch_argv(&store.menu, &key) {
-                            crate::services::launch::spawn(store, id, &argv);
+                            crate::services::launch::spawn(store, arg, &argv);
                         }
                         Out::None
                     }
-                    "wallpaper.set" => {
+                    ("wallpaper", "set") => {
                         self.picked(store, node);
                         return if self.choose_image(store, arg) { Out::Close } else { Out::None };
                     }
-                    "wallpaper.setFor" => {
-                        let Some((half, path)) = arg.split_once(':').and_then(|(m, p)| Some((state::Half::parse(m)?, p))) else { return Out::None };
-                        return if self.choose_for(store, path, half) { Out::Close } else { Out::None };
+                    ("wallpaper", "setFor") => {
+                        let Some(half) = state::Half::parse(arg) else { return Out::None };
+                        return if self.choose_for(store, call.at(1), half) { Out::Close } else { Out::None };
                     }
-                    "monitor.end" => {
+                    ("monitor", "end") => {
                         let Ok(pid) = arg.parse::<u64>() else { return Out::None };
                         self.dirty = true;
                         if self.monitor_armed != Some(pid) {
@@ -2742,14 +2768,18 @@ impl Model {
                             return Out::None;
                         }
                         self.monitor_armed = None;
-                        Out::Internal(format!("monitor.kill:{pid}:TERM"))
+                        Out::Internal(IpcCall::new("monitor", "kill").arg(pid.to_string()).arg("TERM"))
                     }
-                    _ => Out::Internal(name.clone()),
+                    _ => Out::Internal(call.clone()),
                 }
             }
-            Run::Command(cmd) => {
-                if !cmd.is_empty() {
-                    index::ask(Ask::Spawn(index::ipc_command(cmd)));
+            Run::Spawn(argv) => {
+                compositor::spawn(argv);
+                Out::None
+            }
+            Run::Shell(line) => {
+                if !line.is_empty() {
+                    compositor::spawn(&["sh", "-c", line].map(String::from));
                 }
                 Out::None
             }
@@ -2767,7 +2797,7 @@ impl Model {
         }
         self.close();
         match out {
-            Out::Internal(name) => Out::Internal(name),
+            Out::Internal(call) => Out::Internal(call),
             _ => Out::Close,
         }
     }
@@ -4151,8 +4181,8 @@ fn monitor_rows(store: &Store, q: &str) -> Vec<Node> {
             desc: Some(r.cmd.clone()),
             meta: Some(format!("{}\u{1}{}\u{1}{}", r.pid, format::proc_pct(r.cpu_fraction), format::bytes(Some(r.mem_bytes)))),
             actions: vec![
-                ActionEntry { keep_open: Some(true), ..ActionEntry::new("end", "End", format!("@ipc:monitor.end:{}", r.pid)) },
-                ActionEntry { keep_open: Some(true), ..ActionEntry::new("kill", "Kill", format!("@ipc:monitor.kill:{}:KILL", r.pid)).destructive() },
+                ActionEntry { keep_open: Some(true), ..ActionEntry::new("end", "End", IpcCall::new("monitor", "end").arg(r.pid.to_string())) },
+                ActionEntry { keep_open: Some(true), ..ActionEntry::new("kill", "Kill", IpcCall::new("monitor", "kill").arg(r.pid.to_string()).arg("KILL")).destructive() },
             ],
             ..Node::new(format!("proc.{}", r.pid), r.name.clone(), NodeKind::Action)
         })

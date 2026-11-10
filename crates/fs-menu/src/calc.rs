@@ -215,18 +215,17 @@ pub fn format(n: f64) -> String {
 
 /// The ready-made row the launcher prepends to ranked results (and shows
 /// alone at the calc route) when the query parses. A plain action node, so
-/// Enter needs no new handling. The formatted result is digits, `.`, `-`, `e`
-/// and `+` only, so it is shell-safe unquoted; `--` keeps a leading minus
-/// from reading as a wl-copy option.
+/// Enter needs no new handling. `--` keeps a leading minus from reading as a
+/// wl-copy option.
 pub fn result_node(query: &str) -> Option<Node> {
     let value = evaluate(query)?;
     let text = format(value);
     Some(Node {
         parent_id: Some("calc".to_string()),
-        action: Some(std::format!("wl-copy -- {text}")),
+        action: Some(crate::actions::copy_run(&text)),
         meta: Some("CALC".to_string()),
         verb: Some("Copy".to_string()),
-        actions: vec![crate::node::ActionEntry { paste_after: Some(true), ..crate::node::ActionEntry::new("paste", "Paste", std::format!("wl-copy -- {text}")) }],
+        actions: vec![crate::node::ActionEntry { paste_after: Some(true), ..crate::node::ActionEntry::new("paste", "Paste", crate::actions::copy_run(&text)) }],
         ..Node::new("calc.result", std::format!("= {text}"), Kind::Action)
     })
 }

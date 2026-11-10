@@ -195,7 +195,7 @@ fn shipped_toggle_subtree_contract() {
         let node = tree.nodes.get(id).unwrap_or_else(|| panic!("{id}"));
         assert_eq!(node.parent_id.as_deref(), Some("toggles"));
         assert_eq!(node.kind, Kind::Action);
-        assert!(node.action.as_deref().unwrap().starts_with("@ipc:"));
+        assert!(node.action.as_ref().map(ToString::to_string).as_deref().unwrap().starts_with("@ipc:"));
         assert_eq!(node.keep_open, Some(true));
         let checked = node.checked.as_deref().unwrap();
         assert!(is_state_condition(checked));

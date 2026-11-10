@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::actions::IpcCall;
 use crate::node::{Kind, Node};
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -98,7 +99,7 @@ pub fn clipssh_rows(aliases: &[ClipsshAlias]) -> Vec<Node> {
         .iter()
         .map(|a| Node {
             desc: Some(a.target.clone()),
-            action: Some(format!("@ipc:clipssh.send:{}", a.name)),
+            action: Some(IpcCall::new("clipssh", "send").arg(&a.name).into()),
             ..Node::new(format!("clipssh.{}", a.name), a.name.clone(), Kind::Action)
         })
         .collect()

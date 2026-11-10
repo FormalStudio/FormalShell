@@ -4,6 +4,7 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 
 use crate::clipboard::emoji::is_emoji_only;
 use crate::clipboard::history::{Entry, EntryKind};
+use crate::actions::{IpcCall, Run};
 use crate::node::{ActionEntry, Kind, Node};
 
 /// The day heading a capture falls under: `Today`, `Yesterday`, then the
@@ -82,7 +83,7 @@ pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<N
                 // Shift+Enter's target: the image file this row stands for,
                 // "" on text rows and on share rows, whose Shift+Enter has
                 // nothing of its own to do.
-                alternate: (is_image && !share).then(|| format!("@ipc:clipssh.image:{}:{path}", entry.id)),
+                alternate: (is_image && !share).then(|| IpcCall::new("clipssh", "image").arg(&entry.id).arg(&path).into()),
                 alternate_label: (is_image && !share).then(|| "Send over SSH".to_string()),
                 clipssh_path: if is_image && !share { path } else { String::new() },
                 // Full untruncated text for the split-pane preview, "" for
@@ -96,18 +97,14 @@ pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<N
                 // implies: "Run" describes a clipboard row about as well as
                 // it describes an app row.
                 verb: Some(if share { "Share" } else if paste_after { "Paste" } else { "Copy" }.to_string()),
-                action: Some(if share {
-                    share_entry_command(entry)
-                } else {
-                    format!("@ipc:clipboard.copy:{}", entry.id)
-                }),
+                action: Some(if share { Run::Shell(share_entry_command(entry)) } else { IpcCall::new("clipboard", "copy").arg(&entry.id).into() }),
                 paste_after,
                 actions: if share {
                     Vec::new()
                 } else {
                     vec![ActionEntry {
                         keep_open: Some(true),
-                        ..ActionEntry::new("delete", "Delete from history", format!("@ipc:clipboard.remove:{}", entry.id)).destructive()
+                        ..ActionEntry::new("delete", "Delete from history", IpcCall::new("clipboard", "remove").arg(&entry.id)).destructive()
                     }]
                 },
                 ..Node::new(format!("{id_prefix}{}", entry.id), label, Kind::Action)
@@ -189,7 +186,7 @@ pub fn clipboard_no_match_row() -> Node {
 /// as `'\''` (close the quote, an escaped literal quote, reopen). Clipboard
 /// text can contain anything a shell would otherwise interpret, so this is the
 /// one place a captured entry's raw content reaches a spawned command.
-pub fn shq(value: &str) -> String {
+fn shq(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 

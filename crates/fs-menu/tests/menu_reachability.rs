@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use common::*;
 use fs_chrome::bar::panels::PanelId;
+use fs_menu::actions::{IpcCall, Run};
 use fs_menu::node::Kind;
 use fs_menu::providers::{
     ProviderFn, RadioState, RadioStation, TrayItem, apply_providers, capture_entries, panel_ids, panels_provider,
@@ -30,8 +31,8 @@ fn shipped_tree_covers_every_panel() {
     for name in names {
         let node = tree.nodes.get(&format!("panels.{name}")).unwrap_or_else(|| panic!("missing launcher route for panel '{name}'"));
         assert_eq!(node.kind, Kind::Action);
-        let action = node.action.as_deref().expect("action");
-        assert!(action.contains(&format!("call panel open {name}")), "panels.{name} does not open panel '{name}'");
+        let action = node.action.as_ref().map(ToString::to_string).expect("action");
+        assert_eq!(action, format!("@ipc:panel.open:{name}"), "panels.{name} does not open panel '{name}'");
     }
 }
 
@@ -64,7 +65,7 @@ fn launcher_pages_are_root_routes() {
 #[test]
 fn root_query_reaches_every_panel() {
     let tree = real_tree();
-    for row in panels_provider("formalshell-ipc") {
+    for row in panels_provider() {
         let ranked = search::rank(&tree.nodes, &row.label, &no_conds(), None);
         assert!(ids(&ranked).contains(&row.id.as_str()), "root query '{}' does not reach {}", row.label, row.id);
     }
@@ -72,21 +73,21 @@ fn root_query_reaches_every_panel() {
 
 #[test]
 fn panels_provider_action_shape() {
-    let rows = panels_provider("formalshell-ipc");
+    let rows = panels_provider();
     let names: Vec<&str> = panel_ids().map(PanelId::as_str).collect();
     assert_eq!(rows.len(), names.len());
     for (row, name) in rows.iter().zip(names) {
         assert_eq!(row.id, format!("panels.{name}"));
         assert_eq!(row.kind, Kind::Action);
-        assert_eq!(row.action.as_deref(), Some(format!("formalshell-ipc call panel open {name}").as_str()));
+        assert_eq!(row.action.as_ref().map(ToString::to_string).as_deref(), Some(format!("@ipc:panel.open:{name}").as_str()));
     }
 }
 
-// Tray: an item row calls tray activate <id> self-targeted the same way, and
+// Tray: an item row calls tray activate <id> the same way, and
 // an empty tray renders one dim note rather than nothing.
 #[test]
 fn tray_provider_empty_state() {
-    let rows = tray_provider(&[], "formalshell-ipc");
+    let rows = tray_provider(&[]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].kind, Kind::Note);
     assert_eq!(rows[0].dim, Some(true));
@@ -95,36 +96,33 @@ fn tray_provider_empty_state() {
 #[test]
 fn tray_provider_rows_activate_by_id() {
     let item = TrayItem { id: "spotify".into(), title: "Spotify".into(), tooltip_title: String::new() };
-    let rows = tray_provider(&[item], "formalshell-ipc");
+    let rows = tray_provider(&[item]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "tray.spotify");
     assert_eq!(rows[0].label, "Spotify");
-    // The id is shell-quoted: tray ids are opaque strings that can carry
-    // spaces and quotes, so the provider must never interpolate one bare.
-    assert_eq!(rows[0].action.as_deref(), Some("formalshell-ipc call tray activate 'spotify'"));
+    assert_eq!(rows[0].action, Some(Run::Ipc(IpcCall::new("tray", "activate").arg("spotify"))));
 }
 
 // The rest of the sweep (console, plain screenshots, screensaver, plugins,
-// notification bulk actions, retheme/explicit mode) all injected the same
-// self-targeted way capture_entries already injects "capture". One assertion
-// per IPC target/function actually referenced.
+// notification bulk actions, retheme/explicit mode) all injected the same way
+// capture_entries already injects "capture". One assertion per IPC
+// target/function actually referenced.
 #[test]
 fn capture_entries_covers_the_rest_of_the_sweep() {
-    let call = "formalshell-ipc call ";
-    let entries = capture_entries("formalshell-ipc");
-    let action = |id: &str| entries[id].action.clone().unwrap_or_default();
-    assert_eq!(action("capture.screenshot"), format!("{call}screenshot full"));
-    assert_eq!(action("capture.region"), format!("{call}screenshot region"));
-    assert_eq!(action("system.console"), format!("{call}console toggle"));
-    assert_eq!(action("system.screensaver"), format!("{call}screensaver start"));
-    assert_eq!(action("system.plugins.list"), format!("{call}plugins list"));
-    assert_eq!(action("system.plugins.reload"), format!("{call}plugins reload"));
-    assert_eq!(action("notifications.clear"), format!("{call}notifications clear"));
-    assert_eq!(action("notifications.markAllSeen"), format!("{call}notifications markAllSeen"));
-    assert_eq!(action("notifications.dismissAll"), format!("{call}notifications dismissAll"));
-    assert_eq!(action("theme.retheme"), format!("{call}theme retheme"));
-    assert_eq!(action("theme.mode-dark"), format!("{call}theme mode dark"));
-    assert_eq!(action("theme.mode-light"), format!("{call}theme mode light"));
+    let entries = capture_entries();
+    let action = |id: &str| entries[id].action.as_ref().map(ToString::to_string).unwrap_or_default();
+    assert_eq!(action("capture.screenshot"), "@ipc:screenshot.full:default");
+    assert_eq!(action("capture.region"), "@ipc:screenshot.region:default");
+    assert_eq!(action("system.console"), "@ipc:console.toggle");
+    assert_eq!(action("system.screensaver"), "@ipc:screensaver.start");
+    assert_eq!(action("system.plugins.list"), "@ipc:plugins.list");
+    assert_eq!(action("system.plugins.reload"), "@ipc:plugins.reload");
+    assert_eq!(action("notifications.clear"), "@ipc:notifications.clear");
+    assert_eq!(action("notifications.markAllSeen"), "@ipc:notifications.markAllSeen");
+    assert_eq!(action("notifications.dismissAll"), "@ipc:notifications.dismissAll");
+    assert_eq!(action("theme.retheme"), "@ipc:theme.retheme");
+    assert_eq!(action("theme.mode-dark"), "@ipc:theme.mode:dark");
+    assert_eq!(action("theme.mode-light"), "@ipc:theme.mode:light");
 }
 
 // In-process through logind's Lock, not a spawned `loginctl lock-session`:
@@ -134,7 +132,7 @@ fn capture_entries_covers_the_rest_of_the_sweep() {
 fn system_lock_asks_logind_in_process() {
     let node = &real_tree().nodes["system.lock"];
     assert_eq!(node.when, None);
-    assert_eq!(node.action.as_deref(), Some("@ipc:lock.session"));
+    assert_eq!(node.action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:lock.session"));
 }
 
 #[test]

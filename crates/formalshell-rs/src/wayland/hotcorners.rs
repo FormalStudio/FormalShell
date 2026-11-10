@@ -19,7 +19,8 @@ use std::time::Duration;
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
 use fs_chrome::hot_corners::arm::{self, ArmState};
-use fs_chrome::hot_corners::corners::{self, Action, Config, Corner};
+use fs_chrome::hot_corners::corners::{self, Corner};
+use fs_menu::actions::Run;
 use smithay_client_toolkit::reexports::client::protocol::wl_buffer::WlBuffer;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
@@ -32,6 +33,9 @@ use super::App;
 use super::lock::LockMsg;
 use crate::services::compositor;
 use crate::surface::Ignore;
+
+type Action = corners::Action<Run>;
+type Config = corners::Config<Run>;
 
 const NAMESPACE: &str = "formalshell:hotcorner";
 
@@ -85,7 +89,7 @@ impl App {
         if !self.store.config.loaded {
             return;
         }
-        let config = corners::resolve(self.store.config.get("hotCorners"));
+        let config = crate::settings::hot_corners(&self.store.config);
         if self.hot.config.as_ref().map(|c| &c.warnings) != Some(&config.warnings) {
             for w in &config.warnings {
                 eprintln!("HotCorners: {w}");
@@ -109,7 +113,7 @@ impl App {
         // is free and a corner cannot fire mid-game.
         let chrome = self.chrome();
         let all = corners::windows(&config, &names);
-        let outer = |w: &corners::CornerWindow| {
+        let outer = |w: &corners::CornerWindow<Run>| {
             let Some(screen) = outputs.iter().find(|(_, n, _)| *n == w.screen).and_then(|o| o.2) else { return true };
             let others: Vec<_> = outputs.iter().filter(|(_, n, _)| *n != w.screen).filter_map(|o| o.2).collect();
             corners::outer(w.corner, screen, &others)
@@ -245,7 +249,10 @@ impl App {
                 }
             }
             Action::Overview => self.overview_action(super::overview::Action::Toggle),
-            other => eprintln!("HotCorners: {} has no surface in this shell yet", other.as_str()),
+            Action::Launcher { run: Run::Ipc(call), .. } => self.run_call(call),
+            Action::Launcher { run: Run::Spawn(argv), .. } => compositor::spawn(argv),
+            Action::Launcher { run: Run::Shell(line), .. } => compositor::spawn(&["sh", "-c", line].map(String::from)),
+            Action::Launcher { .. } | Action::None => {}
         }
     }
 

@@ -65,7 +65,7 @@ fn fallback_newest_entry_maps_share_send_to_a_launch_action() {
     let out = share_peer_entries(false, &[], &[Entry::text("a", "newest"), Entry::text("b", "older")], None);
     assert_eq!(out["share.send"].label.as_deref(), Some("Send"));
     assert_eq!(
-        out["share.send"].action.as_deref(),
+        out["share.send"].action.as_ref().map(ToString::to_string).as_deref(),
         Some("tmp=$(mktemp --suffix=.txt) && printf '%s' 'newest' > \"$tmp\" && exec localsend_app \"$tmp\"")
     );
 }
@@ -73,7 +73,7 @@ fn fallback_newest_entry_maps_share_send_to_a_launch_action() {
 #[test]
 fn fallback_receive_launches_the_gui_and_history_stays_a_provider_node() {
     let out = share_peer_entries(false, &[], &[], None);
-    assert_eq!(out["share.receive"].action.as_deref(), Some("localsend_app"));
+    assert_eq!(out["share.receive"].action.as_ref().map(ToString::to_string).as_deref(), Some("localsend_app"));
     assert_eq!(out["share.history"].provider.as_deref(), Some("shareHistory"));
 }
 
@@ -103,13 +103,13 @@ fn installed_peer_gets_a_folder_with_clipboard_and_image_rows() {
 
     let clip = &out["share.send.0.clipboard"];
     assert_eq!(clip.label.as_deref(), Some("Clipboard"));
-    assert_eq!(clip.action.as_deref(), Some("@ipc:localsend.send:0:t1"));
+    assert_eq!(clip.action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:localsend.send:0:t1"));
 
     let img = &out["share.send.0.image.0"];
     assert_eq!(img.label.as_deref(), Some("Image"));
     assert_eq!(img.desc.as_deref(), Some("09:05"));
     assert_eq!(img.thumb_source.as_deref(), Some("/img/one.png"));
-    assert_eq!(img.action.as_deref(), Some("@ipc:localsend.send:0:i1"));
+    assert_eq!(img.action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:localsend.send:0:i1"));
 }
 
 #[test]
@@ -132,9 +132,9 @@ fn installed_peer_with_nothing_to_share_gets_a_dim_note() {
 fn installed_multiple_peers_each_get_their_own_index() {
     let out = share_peer_entries(true, &[peer("A"), peer("B")], &[Entry::text("t1", "hi")], None);
     assert_eq!(out["share.send.0"].label.as_deref(), Some("A"));
-    assert_eq!(out["share.send.0.clipboard"].action.as_deref(), Some("@ipc:localsend.send:0:t1"));
+    assert_eq!(out["share.send.0.clipboard"].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:localsend.send:0:t1"));
     assert_eq!(out["share.send.1"].label.as_deref(), Some("B"));
-    assert_eq!(out["share.send.1.clipboard"].action.as_deref(), Some("@ipc:localsend.send:1:t1"));
+    assert_eq!(out["share.send.1.clipboard"].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:localsend.send:1:t1"));
 }
 
 // --- receive status line -------------------------------------------------------
@@ -206,7 +206,7 @@ fn share_mode_reuses_copy_rows_with_a_distinct_id_namespace() {
     assert_eq!(nodes[0].label, "hello");
     assert_eq!(nodes[0].kind, Kind::Action);
     assert_eq!(
-        nodes[0].action.as_deref(),
+        nodes[0].action.as_ref().map(ToString::to_string).as_deref(),
         Some("tmp=$(mktemp --suffix=.txt) && printf '%s' 'hello' > \"$tmp\" && exec localsend_app \"$tmp\"")
     );
 }
@@ -220,14 +220,14 @@ fn share_mode_preserves_image_rows_shape() {
     assert_eq!(nodes[0].label, "Image");
     assert_eq!(nodes[0].desc.as_deref(), Some("09:05"));
     assert_eq!(nodes[0].thumb_source, "/img/one.png");
-    assert_eq!(nodes[0].action.as_deref(), Some("localsend_app '/img/one.png'"));
+    assert_eq!(nodes[0].action.as_ref().map(ToString::to_string).as_deref(), Some("localsend_app '/img/one.png'"));
 }
 
 #[test]
 fn default_copy_mode_is_unaffected_by_the_new_parameter() {
     let nodes = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Copy, true);
     assert_eq!(nodes[0].id, "clipboard.a");
-    assert_eq!(nodes[0].action.as_deref(), Some("@ipc:clipboard.copy:a"));
+    assert_eq!(nodes[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:clipboard.copy:a"));
 }
 
 // The presence-gate itself (default-menu.jsonc's "share" node): the same `when`
