@@ -2,7 +2,9 @@
 //! (`surfaces::modal`), the keyboard and pointer routed to it, and the
 //! `menu` verbs.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use calloop::timer::{TimeoutAction, Timer};
 
 use fs_chrome::bar::panels::PanelId;
 use fs_menu::actions::IpcCall;
@@ -30,12 +32,18 @@ use crate::ui::field::{self, Modifiers};
 
 /// A screen-reading call held for the compositor's answer to a sync sent
 /// after the launcher's surfaces went.
-pub struct AfterUnmap(IpcCall);
+pub struct AfterUnmap(u64);
+
+/// How long a held screen grab waits for the compositor's answer before it
+/// is dropped.
+const GRAB_WAIT: Duration = Duration::from_secs(1);
 
 impl Dispatch2<WlCallback, App> for AfterUnmap {
     fn event(&self, app: &mut App, _: &WlCallback, event: wl_callback::Event, _: &Connection, _: &QueueHandle<App>) {
-        if let wl_callback::Event::Done { .. } = event {
-            app.run_call(&self.0);
+        if let wl_callback::Event::Done { .. } = event
+            && let Some(call) = app.launcher.grab.take(self.0)
+        {
+            app.run_call(&call);
         }
     }
 }
@@ -100,7 +108,6 @@ impl App {
     /// used now and then opens on warm buffers, one left alone for long
     /// gives their memory back.
     fn release_kept_later(&mut self) {
-        use calloop::timer::{TimeoutAction, Timer};
         let Some(handle) = &self.handle else { return };
         self.kept_generation += 1;
         let generation = self.kept_generation;
@@ -1054,7 +1061,16 @@ impl App {
             // A screen grab waits until the compositor has taken the card
             // down: a sync sent after the teardown is answered once it has.
             if let Some(call) = self.launcher.after_unmap.take() {
-                self.display.sync(&self.qh, AfterUnmap(call));
+                let id = self.launcher.grab.hold(call);
+                self.display.sync(&self.qh, AfterUnmap(id));
+                if let Some(handle) = &self.handle {
+                    let _ = handle.insert_source(Timer::from_duration(GRAB_WAIT), move |_, _, app: &mut App| {
+                        if let Some(call) = app.launcher.grab.take(id) {
+                            eprintln!("Launcher: dropped {}.{}: the compositor did not answer the sync within {GRAB_WAIT:?}", call.target, call.function);
+                        }
+                        TimeoutAction::Drop
+                    });
+                }
             }
             return;
         }

@@ -127,6 +127,36 @@ struct ViewId {
     column: Option<(usize, bool)>,
 }
 
+/// A screen-reading call parked behind a `wl_display.sync`. Each hold gets
+/// an id, and only the callback or deadline carrying the current id gets
+/// the call back: a late answer, or one from a session since reopened,
+/// finds nothing.
+#[derive(Default)]
+pub struct Grab {
+    next: u64,
+    held: Option<(u64, IpcCall)>,
+}
+
+impl Grab {
+    pub fn hold(&mut self, call: IpcCall) -> u64 {
+        self.next += 1;
+        self.held = Some((self.next, call));
+        self.next
+    }
+
+    /// The call, when `id` is still the one held.
+    pub fn take(&mut self, id: u64) -> Option<IpcCall> {
+        match self.held {
+            Some((held, _)) if held == id => self.held.take().map(|(_, call)| call),
+            _ => None,
+        }
+    }
+
+    pub fn cancel(&mut self) {
+        self.held = None;
+    }
+}
+
 pub struct Model {
     resolved: Vec<(String, Option<String>, bool)>,
     pub open: bool,
@@ -168,6 +198,8 @@ pub struct Model {
     /// A call that reads the screen, held until the window is gone so the
     /// closing card is not in the picture.
     pub after_unmap: Option<IpcCall>,
+    /// The screen-reading call whose compositor sync is in flight.
+    pub grab: Grab,
     /// Counts closes, so an answer asked for in one session can tell it
     /// arrived in another.
     pub sessions: u64,
@@ -489,6 +521,7 @@ impl Default for Model {
             cursor_id: String::new(),
             paste: false,
             after_unmap: None,
+            grab: Grab::default(),
             sessions: 0,
             picker: Picker::default(),
             picker_sections: Vec::new(),
@@ -1950,6 +1983,7 @@ impl Model {
     /// prefill at the root, which a route's prefix turns into its mode.
     pub fn open(&mut self, store: &Store, route: Option<&str>) {
         self.after_unmap = None;
+        self.grab.cancel();
         self.abandon_select();
         self.ask_fresh(store);
         plugins::launcher(true);
@@ -4673,3 +4707,30 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
         .stop(format!("r:{}", row.id))
 }
 
+
+#[cfg(test)]
+mod grab_tests {
+    use super::*;
+
+    fn call(function: &str) -> IpcCall {
+        IpcCall::new("screenshot", function)
+    }
+
+    #[test]
+    fn a_stale_id_gets_nothing() {
+        let mut g = Grab::default();
+        let first = g.hold(call("full"));
+        let second = g.hold(call("region"));
+        assert_eq!(g.take(first), None);
+        assert_eq!(g.take(second), Some(call("region")));
+        assert_eq!(g.take(second), None);
+    }
+
+    #[test]
+    fn a_cancelled_hold_is_never_released() {
+        let mut g = Grab::default();
+        let id = g.hold(call("full"));
+        g.cancel();
+        assert_eq!(g.take(id), None);
+    }
+}
