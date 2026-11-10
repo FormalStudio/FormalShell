@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use calloop::timer::{TimeoutAction, Timer};
 
 use fs_chrome::bar::panels::PanelId;
-use fs_menu::actions::IpcCall;
+use fs_menu::actions::{IpcCall, SubjectId};
 use fs_menu::intent::Intent;
 use fs_menu::node::Provider;
 use fs_types::WindowId;
@@ -382,11 +382,17 @@ impl App {
         match out {
             Out::None => {}
             Out::Close => self.hide_launcher(),
-            Out::Intent(intent) => {
+            Out::Intent(intent, subject) => {
                 if !self.launcher.open {
                     self.hide_launcher();
                 }
-                self.run_intent(&intent);
+                self.run_intent(&intent, Some(&subject));
+            }
+            Out::Spawn(argv) => {
+                if !self.launcher.open {
+                    self.hide_launcher();
+                }
+                crate::services::compositor::spawn(&argv);
             }
             Out::Call(call) => {
                 if self.launcher.open {
@@ -408,14 +414,46 @@ impl App {
         self.call_self(&call.target, &call.function, &args);
     }
 
-    /// A launcher verb the App answers. A row's own ([`Intent::row_only`])
-    /// never gets here from a row; from anywhere else it is the IPC call
-    /// it reads as.
-    pub(super) fn run_intent(&mut self, intent: &Intent) {
+    /// A launcher verb, run for the launcher's row of `subject`, or with no
+    /// row for a hot corner, which never holds a row's own
+    /// ([`Intent::row_only`]).
+    pub(super) fn run_intent(&mut self, intent: &Intent, subject: Option<&SubjectId>) {
+        use crate::services::compositor::{self, Command};
         use crate::services::devices::{audio, bluetooth, network as net};
         use crate::services::radio::{self, Cmd};
-        use crate::services::{clipssh, packages, power};
+        use crate::services::{clipssh, launch, packages, plugins, power};
         match intent {
+            Intent::AbbrevForget(q) | Intent::AbbrevPin(q) => {
+                if let Some(subject) = subject {
+                    index::set_abbreviation(&self.store, q, &subject.to_string(), matches!(intent, Intent::AbbrevPin(_)));
+                }
+            }
+            Intent::RecentPin(id) | Intent::RecentUnpin(id) => index::set_recent_pinned(&self.store, id, matches!(intent, Intent::RecentPin(_))),
+            Intent::PluginSend(id, line) => plugins::send(id, line.clone()),
+            Intent::WindowFocus(id) => compositor::focus_window(&WindowId::new(id)),
+            Intent::WindowClose(id) => compositor::close_window(&WindowId::new(id)),
+            Intent::WindowFloat(id) => compositor::send(Command::ToggleFloating(WindowId::new(id))),
+            Intent::WindowFullscreen(id) => compositor::send(Command::ToggleFullscreen(WindowId::new(id))),
+            Intent::AppOpen(id) => launch::open(&self.store, id),
+            Intent::AppNew(id) => {
+                if let Some(argv) = index::launch_argv(&self.store.menu, id) {
+                    launch::spawn(&self.store, id, &argv);
+                }
+            }
+            Intent::AppAction(id, key) => {
+                if let Some(argv) = index::action_argv(&self.store.menu, id, key) {
+                    launch::spawn(&self.store, id, &argv);
+                }
+            }
+            Intent::WallpaperSet(path) => {
+                self.picker_choose(path);
+            }
+            Intent::WallpaperSetFor(half, path) => {
+                if let Some(half) = crate::services::state::Half::parse(half) {
+                    self.picker_choose_for(path, half);
+                }
+            }
+            Intent::EndProcess(pid) => self.call_self("monitor", "kill", &[&pid.to_string(), "TERM"]),
             Intent::WifiEnable => net::send(net::Cmd::Wifi(true)),
             Intent::WifiForget(ssid) => net::send(net::Cmd::Forget(ssid.clone())),
             Intent::WifiReveal(ssid) => {
@@ -477,7 +515,6 @@ impl App {
             }
             Intent::LightsColorInput => self.menu_input_as("Hex color (ff8800)", LIGHTS_COLOR, false),
             Intent::ReminderSet => self.menu_input_as("Reminder (25m coffee)", REMINDER_SET, false),
-            row => self.run_call(&row.call()),
         }
     }
 

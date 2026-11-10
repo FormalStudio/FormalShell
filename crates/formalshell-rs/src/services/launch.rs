@@ -124,6 +124,20 @@ fn entry(store: &Store, id: &str) -> Option<DesktopEntry> {
     store.menu.tree.nodes.values().find_map(|n| n.entry.as_ref().filter(|e| e.id == id)).cloned()
 }
 
+/// Desktop entry `id`'s next window focused, else the entry launched.
+pub fn open(store: &Store, id: &str) {
+    let Some(entry) = entry(store, id) else { return };
+    let snapshot = &store.compositor.snapshot;
+    match next_window(&match_windows(Some(&entry), &snapshot.windows), &snapshot.focused_window_id) {
+        Some(window) => compositor::focus_window(&window),
+        None => {
+            if let Some(argv) = super::menu::launch_argv(&store.menu, id) {
+                spawn(store, id, &argv);
+            }
+        }
+    }
+}
+
 /// Spawns `argv`, which starts desktop entry `id`, its launch shown until a
 /// new window of it maps. An id the launcher's tree does not hold has no
 /// window to wait on, so its spawn shows nothing.

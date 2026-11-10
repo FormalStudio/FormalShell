@@ -491,8 +491,11 @@ pub enum Out {
     Close,
     /// An `@ipc:` call the App answers in process.
     Call(IpcCall),
-    /// A verb of the launcher's the App answers.
-    Intent(Intent),
+    /// A verb of the launcher's the App answers, and the subject of the
+    /// row that ran it.
+    Intent(Intent, SubjectId),
+    /// A command line the App spawns.
+    Spawn(Vec<String>),
 }
 
 /// The row action a first press armed.
@@ -2426,98 +2429,39 @@ impl Model {
             }
             Run::Target(_) | Run::Note => return Out::None,
             Run::Ipc(call) => Out::Call(call.clone()),
-            Run::Intent(intent) => match intent {
-                // An abbreviation's own actions are no pick: picking would
-                // teach the pair straight back.
-                Intent::AbbrevForget(q) | Intent::AbbrevPin(q) => {
-                    let subject = fs_menu::actions::subject_id(node).to_string();
-                    index::set_abbreviation(store, q, &subject, matches!(intent, Intent::AbbrevPin(_)));
-                    self.dirty = true;
-                    if action.keep_open {
-                        return Out::None;
+            Run::Intent(intent) => {
+                let out = Out::Intent(intent.clone(), fs_menu::actions::subject_id(node));
+                match intent {
+                    // An abbreviation's own actions are no pick: picking
+                    // would teach the pair straight back. A pin is no pick
+                    // either: it would count twice.
+                    Intent::AbbrevForget(_) | Intent::AbbrevPin(_) | Intent::RecentPin(_) | Intent::RecentUnpin(_) => {
+                        self.dirty = true;
+                        if !action.keep_open {
+                            self.close();
+                        }
+                        return out;
                     }
-                    self.close();
-                    return Out::Close;
-                }
-                // A pin is no pick either: it would count twice.
-                Intent::RecentPin(id) | Intent::RecentUnpin(id) => {
-                    index::set_recent_pinned(store, id, matches!(intent, Intent::RecentPin(_)));
-                    self.dirty = true;
-                    if action.keep_open {
-                        return Out::None;
+                    // The picker closes the card itself once a tile takes
+                    // the picture.
+                    Intent::WallpaperSet(_) => {
+                        self.picked(store, node);
+                        return out;
                     }
-                    self.close();
-                    return Out::Close;
-                }
-                Intent::PluginSend(id, line) => {
-                    plugins::send(id, line.clone());
-                    Out::None
-                }
-                Intent::WindowFocus(id) => {
-                    compositor::focus_window(&WindowId::new(id));
-                    Out::None
-                }
-                Intent::WindowClose(id) => {
-                    compositor::close_window(&WindowId::new(id));
-                    Out::None
-                }
-                Intent::WindowFloat(id) => {
-                    compositor::send(compositor::Command::ToggleFloating(WindowId::new(id)));
-                    Out::None
-                }
-                Intent::WindowFullscreen(id) => {
-                    compositor::send(compositor::Command::ToggleFullscreen(WindowId::new(id)));
-                    Out::None
-                }
-                Intent::AppOpen(id) => {
-                    let Some(entry) = node.entry.as_ref().filter(|e| e.id == *id) else { return Out::None };
-                    let target = crate::services::launch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
-                    if let Some(target) = target {
-                        compositor::focus_window(&target);
-                    } else if let Some(argv) = index::launch_argv(&store.menu, id) {
-                        crate::services::launch::spawn(store, id, &argv);
+                    Intent::WallpaperSetFor(..) => return out,
+                    Intent::EndProcess(pid) => {
+                        self.dirty = true;
+                        if !self.monitor_armed.press(*pid) {
+                            return Out::None;
+                        }
+                        out
                     }
-                    Out::None
+                    _ => out,
                 }
-                Intent::AppNew(id) => {
-                    if let Some(argv) = index::launch_argv(&store.menu, id) {
-                        crate::services::launch::spawn(store, id, &argv);
-                    }
-                    Out::None
-                }
-                Intent::AppAction(id, key) => {
-                    if let Some(argv) = index::action_argv(&store.menu, id, key) {
-                        crate::services::launch::spawn(store, id, &argv);
-                    }
-                    Out::None
-                }
-                Intent::WallpaperSet(path) => {
-                    self.picked(store, node);
-                    return if self.choose_image(store, path) { Out::Close } else { Out::None };
-                }
-                Intent::WallpaperSetFor(half, path) => {
-                    let Some(half) = state::Half::parse(half) else { return Out::None };
-                    return if self.choose_for(store, path, half) { Out::Close } else { Out::None };
-                }
-                Intent::EndProcess(pid) => {
-                    self.dirty = true;
-                    if !self.monitor_armed.press(*pid) {
-                        return Out::None;
-                    }
-                    Out::Call(IpcCall::new("monitor", "kill").arg(pid.to_string()).arg("TERM"))
-                }
-                _ => Out::Intent(intent.clone()),
-            },
-            Run::Spawn(argv) => {
-                compositor::spawn(argv);
-                Out::None
             }
-            Run::Shell(line) => {
-                if !line.is_empty() {
-                    compositor::spawn(&["sh", "-c", line].map(String::from));
-                }
-                Out::None
-            }
+            Run::Spawn(argv) => Out::Spawn(argv.clone()),
+            Run::Shell(line) if line.is_empty() => Out::None,
+            Run::Shell(line) => Out::Spawn(["sh", "-c", line].map(String::from).to_vec()),
         };
         if action.paste_after {
             self.paste = true;
@@ -2528,7 +2472,7 @@ impl Model {
         }
         self.close();
         match out {
-            Out::Call(_) | Out::Intent(_) => out,
+            Out::Call(_) | Out::Intent(..) | Out::Spawn(_) => out,
             Out::None | Out::Close => Out::Close,
         }
     }

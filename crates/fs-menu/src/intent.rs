@@ -7,7 +7,7 @@ use crate::actions::IpcCall;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Intent {
-    // The row's own: the launcher answers these without the App.
+    // A row's own: they act on the row's subject or the launcher's view.
     /// Forget the abbreviation this query is for the row's subject.
     AbbrevForget(String),
     AbbrevPin(String),
@@ -173,8 +173,8 @@ impl Intent {
         }
     }
 
-    /// Answered by a launcher row alone: anywhere else (a hot corner) the
-    /// same words are an IPC call.
+    /// A launcher row's alone: anywhere else (a hot corner) the same words
+    /// are an IPC call.
     pub fn row_only(&self) -> bool {
         use Intent::*;
         matches!(
