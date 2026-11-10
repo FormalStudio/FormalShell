@@ -253,6 +253,12 @@ brightness_backstep() {
   awk -v dir="$1" '$1 ~ /^[0-9.]+$/ { if (seen && ((dir == "up" && $1 < last) || (dir == "down" && $1 > last))) { print last " then " $1; exit } last = $1; seen = 1 }'
 }
 
+# A burst's samples from its first step on: before it the OSD reads the
+# backlight, whichever output has focus.
+brightness_from_step() {
+  awk 'NR == 1 { first = $1 } $1 != first { on = 1 } on'
+}
+
 leg_brightness_assert() {
   local back last
   [ -s "$brightness_osd_samples" ] || fail "no osd state samples"
@@ -314,7 +320,7 @@ brightness_step_assert() {
   grep -qx 'HDMI-A-1 65' "$brightness_step_first" || fail "the OSD did not show 65 right after the first DDC step"
   grep -qx 'eDP-1 35' "$brightness_step_first" || fail "the OSD did not show 35 right after the first backlight step"
 
-  back=$(brightness_backstep down < "$brightness_step_ddc")
+  back=$(brightness_from_step < "$brightness_step_ddc" | brightness_backstep down)
   [ -z "$back" ] || fail "the OSD stepped back up during the DDC step burst: $back"
   last=$(tail -n1 "$brightness_step_ddc")
   [ "$last" = 30 ] || fail "the OSD ended the DDC step burst on $last, not 30"
@@ -326,7 +332,7 @@ brightness_step_assert() {
   echo "step burst: 8 DDC steps in $writes setvcp calls"
   [ "$writes" -lt 8 ] || fail "the DDC step burst was not coalesced: $writes setvcp calls for 8 steps"
 
-  back=$(brightness_backstep up < "$brightness_step_bl")
+  back=$(brightness_from_step < "$brightness_step_bl" | brightness_backstep up)
   [ -z "$back" ] || fail "the OSD stepped back during the backlight step burst: $back"
   last=$(tail -n1 "$brightness_step_bl")
   [ "$last" = 70 ] || fail "the OSD ended the backlight step burst on $last, not 70"
