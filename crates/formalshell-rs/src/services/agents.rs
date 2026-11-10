@@ -9,8 +9,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use fs_dbus::Backoff;
+use async_io::Timer;
 use fs_info::agents::{self, Badge};
+use fs_types::Backoff;
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 
@@ -164,7 +165,7 @@ async fn poll(host: String, argv: Vec<String>, tx: async_channel::Sender<Event>,
             if tx.send(Event::Line(host.clone(), String::new())).await.is_err() {
                 return;
             }
-            backoff.wait().await;
+            Timer::after(backoff.delay()).await;
         }
     };
     let stop = async {

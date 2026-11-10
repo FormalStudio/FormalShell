@@ -18,11 +18,10 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use async_io::Timer;
-use fs_dbus::Backoff;
 use fs_devices::iphone::{self, Arrival, Event, Verdict};
 pub use fs_devices::iphone::{Notification, phone_of};
 use fs_info::notifications::{self as model, AddOpts, Patch, Phone};
-use fs_types::{BtAddress, NotificationId};
+use fs_types::{Backoff, BtAddress, NotificationId};
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 use serde_json::{Value, json};
@@ -662,7 +661,7 @@ async fn run(ctx: Ctx) {
             ..State::default()
         };
         publish(&ctx, &session.state);
-        backoff.wait().await;
+        Timer::after(backoff.delay()).await;
     }
 }
 

@@ -6,7 +6,7 @@ use std::io::ErrorKind;
 use std::time::Duration;
 
 use async_io::Timer;
-use futures_lite::{AsyncReadExt, AsyncWriteExt, FutureExt};
+use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, FutureExt};
 
 pub const MISSING: i32 = 127;
 pub const TIMED_OUT: i32 = 124;
@@ -217,6 +217,152 @@ pub async fn capture_exit(argv: &[String], timeout: Duration) -> Done {
 /// What a child wrote before it exited is already in the pipe; this is
 /// only the readers' turn to take it.
 const DRAIN: Duration = Duration::from_millis(100);
+
+/// How a [`Supervised`] child's backoff goes back to its floor.
+#[derive(Clone, Copy, Debug)]
+pub enum Reset {
+    /// At every start.
+    OnStart,
+    /// After a run that lasted at least this long.
+    After(Duration),
+    /// Only when the caller calls [`Supervised::reset`] (a health signal).
+    Manual,
+}
+
+/// Which of a supervised child's pipes is read line by line.
+#[derive(Clone, Copy, Debug)]
+pub enum Read {
+    Stdout,
+    Stderr,
+}
+
+pub enum Event {
+    Line(String),
+    /// The child is gone and a retry is due after the backoff.
+    Exit(std::io::Result<std::process::ExitStatus>),
+    /// The backoff after an exit or a failed start is over.
+    Retry,
+}
+
+type Lines = futures_lite::io::Lines<futures_lite::io::BufReader<Box<dyn futures_lite::AsyncRead + Unpin>>>;
+
+/// A long-running child kept up while it is wanted: its lines read, and
+/// started again on a doubling backoff once it exits.
+pub struct Supervised {
+    backoff: fs_types::Backoff,
+    reset: Reset,
+    child: Option<(async_process::Child, Lines, std::time::Instant)>,
+    retry_at: Option<std::time::Instant>,
+}
+
+impl Supervised {
+    pub fn new(floor: Duration, ceiling: Duration, reset: Reset) -> Self {
+        Self { backoff: fs_types::Backoff::new(floor, ceiling), reset, child: None, retry_at: None }
+    }
+
+    pub fn running(&self) -> bool {
+        self.child.is_some()
+    }
+
+    /// Neither running nor waiting out a backoff.
+    pub fn idle(&self) -> bool {
+        self.child.is_none() && self.retry_at.is_none()
+    }
+
+    pub fn reset(&mut self) {
+        self.backoff.reset();
+    }
+
+    /// Spawns `cmd` with `read` piped and killed on drop, handing back its
+    /// stdin when `cmd` piped one. A start that fails waits out the backoff.
+    pub fn start(&mut self, mut cmd: async_process::Command, read: Read) -> std::io::Result<Option<async_process::ChildStdin>> {
+        if let Reset::OnStart = self.reset {
+            self.backoff.reset();
+        }
+        match read {
+            Read::Stdout => cmd.stdout(async_process::Stdio::piped()),
+            Read::Stderr => cmd.stderr(async_process::Stdio::piped()),
+        };
+        let spawned = cmd.kill_on_drop(true).spawn().and_then(|mut child| {
+            let pipe: Option<Box<dyn futures_lite::AsyncRead + Unpin>> = match read {
+                Read::Stdout => child.stdout.take().map(|p| Box::new(p) as _),
+                Read::Stderr => child.stderr.take().map(|p| Box::new(p) as _),
+            };
+            let pipe = pipe.ok_or_else(|| std::io::Error::other("no pipe"))?;
+            Ok((child, pipe))
+        });
+        match spawned {
+            Ok((mut child, pipe)) => {
+                let stdin = child.stdin.take();
+                self.child = Some((child, futures_lite::io::BufReader::new(pipe).lines(), std::time::Instant::now()));
+                Ok(stdin)
+            }
+            Err(err) => {
+                self.retry_at = Some(std::time::Instant::now() + self.backoff.delay());
+                Err(err)
+            }
+        }
+    }
+
+    /// Kills the child and drops any pending retry.
+    pub fn stop(&mut self) {
+        self.child = None;
+        self.retry_at = None;
+    }
+
+    /// Waits up to `grace` for the child to exit on its own (its stdin
+    /// closed), then kills it.
+    pub async fn stop_within(&mut self, grace: Duration) {
+        if let Some((child, ..)) = self.child.as_mut() {
+            let _ = child
+                .status()
+                .or(async {
+                    Timer::after(grace).await;
+                    Err(ErrorKind::TimedOut.into())
+                })
+                .await;
+        }
+        self.stop();
+    }
+
+    /// The next line, exit or retry; pending while idle.
+    pub async fn next(&mut self) -> Event {
+        let Some((child, lines, started)) = self.child.as_mut() else {
+            return match self.retry_at {
+                Some(at) => {
+                    Timer::at(at).await;
+                    self.retry_at = None;
+                    Event::Retry
+                }
+                None => std::future::pending().await,
+            };
+        };
+        if let Some(Ok(line)) = futures_lite::StreamExt::next(lines).await {
+            return Event::Line(line);
+        }
+        // A closed pipe comes before the exit; the exit is awaited here so
+        // the next start never races the old child.
+        let status = child.status().await;
+        if let Reset::After(stable) = self.reset
+            && started.elapsed() >= stable
+        {
+            self.backoff.reset();
+        }
+        self.child = None;
+        self.retry_at = Some(std::time::Instant::now() + self.backoff.delay());
+        Event::Exit(status)
+    }
+
+    /// The wait the next retry will take, for a log line.
+    pub fn retry_in(&self) -> Duration {
+        self.retry_at.map_or(Duration::ZERO, |at| at.saturating_duration_since(std::time::Instant::now()))
+    }
+}
+
+/// An exit's code, -1 for one a signal ended or that could not be read.
+pub fn exit_code(status: &std::io::Result<std::process::ExitStatus>) -> i32 {
+    status.as_ref().ok().and_then(|s| s.code()).unwrap_or(-1)
+}
 
 #[cfg(test)]
 mod tests {

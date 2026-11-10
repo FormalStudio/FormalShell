@@ -35,12 +35,12 @@ use std::time::{Duration, Instant};
 
 use async_io::Timer;
 use fs_chrome::plugins::{self, Kind, Plugin, Resolved};
-use futures_lite::io::BufReader;
-use futures_lite::{AsyncBufReadExt, AsyncWriteExt, FutureExt, StreamExt};
+use futures_lite::{AsyncWriteExt, FutureExt};
 use serde_json::{Value, json};
 
 use super::config;
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(1);
@@ -395,7 +395,7 @@ fn ended(status: std::io::Result<std::process::ExitStatus>) -> String {
 }
 
 enum Wake {
-    Line(Option<std::io::Result<String>>),
+    Child(proc::Event),
     Event(Option<String>),
 }
 
@@ -413,94 +413,94 @@ fn answered(pending: &mut VecDeque<String>, named: Option<String>) -> String {
     }
 }
 
-/// One run of the plugin: its stdout lines become what it shows, queued
-/// events go to its stdin. `last_query` is the newest `query` event, written
-/// first to a run that restarts with the mode still open. Answers why it
-/// ended, or nothing when the shell let go of it.
-async fn session(ctx: &Ctx, plugin: &Plugin, events: &async_channel::Receiver<String>, last_query: &mut Option<String>) -> Option<String> {
+fn entry(plugin: &Plugin) -> async_process::Command {
     let dir = PathBuf::from(&plugin.dir);
-    let child = crate::services::proc::command(dir.join(&plugin.entry))
-        .current_dir(&dir)
-        .stdin(async_process::Stdio::piped())
-        .stdout(async_process::Stdio::piped())
-        .stderr(async_process::Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn();
-    let mut child = match child {
-        Ok(child) => child,
-        Err(e) => return Some(format!("cannot start: {e}")),
-    };
-    let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else { return Some("no pipes".to_owned()) };
-    let mut lines = BufReader::new(stdout).lines();
-    if let Some(query) = last_query.as_deref() {
-        let _ = stdin.write_all(format!("{query}\n").as_bytes()).await;
-    }
+    let mut cmd = proc::command(dir.join(&plugin.entry));
+    cmd.current_dir(&dir).stdin(async_process::Stdio::piped()).stderr(async_process::Stdio::inherit());
+    cmd
+}
+
+/// The plugin while it is wanted: its stdout lines become what it shows,
+/// queued events go to its stdin, and a run that ends is started again on
+/// a backoff. `last_query` is the newest `query` event, written first to a
+/// run that restarts with the mode still open.
+async fn host(ctx: Ctx, plugin: Plugin, events: async_channel::Receiver<String>) {
+    let mut child = proc::Supervised::new(BASE_BACKOFF, MAX_BACKOFF, proc::Reset::After(STABLE));
+    let mut stdin: Option<async_process::ChildStdin> = None;
+    let mut last_query: Option<String> = None;
     let mut pending = VecDeque::new();
     loop {
-        let wake = async { Wake::Line(lines.next().await) }.or(async { Wake::Event(events.recv().await.ok()) }).await;
+        if child.idle() {
+            pending.clear();
+            match child.start(entry(&plugin), proc::Read::Stdout) {
+                Ok(pipe) => {
+                    stdin = pipe;
+                    if let (Some(pipe), Some(query)) = (stdin.as_mut(), last_query.as_deref()) {
+                        let _ = pipe.write_all(format!("{query}\n").as_bytes()).await;
+                    }
+                }
+                Err(e) => failed(&ctx, &plugin, &child, format!("cannot start: {e}")),
+            }
+        }
+        let wake = async { Wake::Child(child.next().await) }.or(async { Wake::Event(events.recv().await.ok()) }).await;
         match wake {
             // Let go of, what it prints is no longer for anything.
-            Wake::Line(Some(Ok(_))) if events.is_closed() => {}
-            Wake::Line(Some(Ok(line))) => match parse_line(&line) {
-                Some(Line::Display(display)) => publish(ctx, Diff::Run(plugin.id.clone(), Some(Run::Live(display)))),
+            Wake::Child(proc::Event::Line(_)) if events.is_closed() => {}
+            Wake::Child(proc::Event::Line(line)) => match parse_line(&line) {
+                Some(Line::Display(display)) => publish(&ctx, Diff::Run(plugin.id.clone(), Some(Run::Live(display)))),
                 Some(Line::Actions(named, actions)) => {
                     let subject = answered(&mut pending, named);
-                    publish(ctx, Diff::Answer(plugin.id.clone(), Answer { at: Instant::now(), subject, actions }));
+                    publish(&ctx, Diff::Answer(plugin.id.clone(), Answer { at: Instant::now(), subject, actions }));
                 }
                 None => eprintln!("plugin {}: skipped a line that is not a JSON object", plugin.id),
             },
-            Wake::Line(_) => return Some(ended(child.status().await)),
+            Wake::Child(proc::Event::Exit(status)) => {
+                stdin = None;
+                // One let go of that ended on its own is neither failed nor
+                // started again: what it showed went when it was let go of.
+                if events.is_closed() {
+                    return;
+                }
+                failed(&ctx, &plugin, &child, ended(status));
+            }
+            Wake::Child(proc::Event::Retry) => {
+                if events.is_closed() {
+                    return;
+                }
+                // Whatever was clicked while it was down is not for the next
+                // run, but a query typed meanwhile is the one it answers.
+                while let Ok(line) = events.try_recv() {
+                    if serde_json::from_str::<Value>(&line).is_ok_and(|e| e["event"] == "query") {
+                        last_query = Some(line);
+                    }
+                }
+            }
             Wake::Event(Some(line)) => {
                 let event: Value = serde_json::from_str(&line).unwrap_or_default();
                 match event["event"].as_str() {
-                    Some("query") => *last_query = Some(line.clone()),
+                    Some("query") => last_query = Some(line.clone()),
                     Some("actions") => pending.push_back(event["subject"]["id"].as_str().unwrap_or_default().to_owned()),
                     _ => {}
                 }
                 // A plugin that closed its stdin may still be printing.
-                let _ = stdin.write_all(format!("{line}\n").as_bytes()).await;
+                if let Some(pipe) = stdin.as_mut() {
+                    let _ = pipe.write_all(format!("{line}\n").as_bytes()).await;
+                }
             }
             Wake::Event(None) => {
                 // Let go of: the events written last still have to be read,
                 // so its stdin closes and it gets a moment to exit on that.
-                drop(stdin);
-                let _ = child.status().or(async {
-                    Timer::after(LET_GO).await;
-                    Err(std::io::ErrorKind::TimedOut.into())
-                })
-                .await;
-                return None;
+                drop(stdin.take());
+                child.stop_within(LET_GO).await;
+                return;
             }
         }
     }
 }
 
-async fn host(ctx: Ctx, plugin: Plugin, events: async_channel::Receiver<String>) {
-    let mut backoff = BASE_BACKOFF;
-    let mut last_query = None;
-    loop {
-        let started = Instant::now();
-        let Some(reason) = session(&ctx, &plugin, &events, &mut last_query).await else { return };
-        // One let go of that ended on its own is neither failed nor started
-        // again: what it showed went when it was let go of.
-        if events.is_closed() {
-            return;
-        }
-        eprintln!("plugin {}: {reason}, restarting in {}s", plugin.id, backoff.as_secs());
-        publish(&ctx, Diff::Run(plugin.id.clone(), Some(Run::Failed(reason))));
-        Timer::after(backoff).await;
-        if events.is_closed() {
-            return;
-        }
-        // Whatever was clicked while it was down is not for the next run,
-        // but a query typed meanwhile is the one the next run answers.
-        while let Ok(line) = events.try_recv() {
-            if serde_json::from_str::<Value>(&line).is_ok_and(|e| e["event"] == "query") {
-                last_query = Some(line);
-            }
-        }
-        backoff = if started.elapsed() >= STABLE { BASE_BACKOFF } else { (backoff * 2).min(MAX_BACKOFF) };
-    }
+fn failed(ctx: &Ctx, plugin: &Plugin, child: &proc::Supervised, reason: String) {
+    eprintln!("plugin {}: {reason}, restarting in {}s", plugin.id, child.retry_in().as_secs_f64().round() as u64);
+    publish(ctx, Diff::Run(plugin.id.clone(), Some(Run::Failed(reason))));
 }
 
 /// Plugins that run from the start: bar cells and services always, a panel

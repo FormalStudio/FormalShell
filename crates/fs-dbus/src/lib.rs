@@ -9,13 +9,11 @@
 //! ([`private`]), which keeps the wedge from reaching every other user of a
 //! shared one but does not prevent it.
 
-mod backoff;
 mod drain;
 mod owner;
 mod prop;
 mod watch;
 
-pub use backoff::Backoff;
 pub use drain::{drain_while, private};
 pub use owner::{NameOwner, Owner, OwnerWatch};
 pub use prop::{Props, plain, prop};

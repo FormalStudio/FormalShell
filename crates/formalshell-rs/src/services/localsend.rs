@@ -12,8 +12,7 @@ use std::time::Duration;
 use async_channel::{Receiver, Sender};
 use fs_devices::localsend::{self as model, Peer, RecvEvent};
 use fs_info::notifications::Urgency;
-use futures_lite::io::BufReader;
-use futures_lite::{AsyncBufReadExt, FutureExt};
+use futures_lite::FutureExt;
 use serde_json::{Value, json};
 
 use super::notifications::{self, Op};
@@ -110,10 +109,7 @@ enum Wake {
     Cmd(Cmd),
     Scanned(String),
     Sent(proc::Done),
-    Recv(Option<RecvEvent>),
-    /// The receiver of this generation exited; respawn after the backoff.
-    RecvGone(u64),
-    Retry,
+    Recv(proc::Event),
 }
 
 pub fn start(ctx: &Ctx) {
@@ -125,13 +121,15 @@ async fn run(ctx: Ctx) {
     let installed = proc::on_path("localsend-cli");
     let mut s = State { installed, ..State::default() };
     let (tx, rx) = async_channel::unbounded::<Wake>();
-    let mut recv: Option<async_process::Child> = None;
-    let mut backoff = BASE_BACKOFF;
+    // Back to the floor when the settings change, not when it starts.
+    let mut recv = proc::Supervised::new(BASE_BACKOFF, MAX_BACKOFF, proc::Reset::Manual);
     let mut config: Option<(bool, String, String)> = None;
-    let mut generation: u64 = 0;
     ctx.publish(store::Diff::Localsend(Diff(s.clone())));
     loop {
-        let wake = async { CHANNEL.1.recv().await.ok().map(Wake::Cmd) }.or(async { rx.recv().await.ok() }).await;
+        let wake = async { CHANNEL.1.recv().await.ok().map(Wake::Cmd) }
+            .or(async { rx.recv().await.ok() })
+            .or(async { Some(Wake::Recv(recv.next().await)) })
+            .await;
         let Some(wake) = wake else { return };
         match wake {
             Wake::Cmd(Cmd::Config { receive, alias, dir }) => {
@@ -143,56 +141,42 @@ async fn run(ctx: Ctx) {
                 }
                 config = Some(next);
                 (s.enabled, s.alias, s.dir) = (receive, alias, dir);
-                recv = None;
-                generation += 1;
+                recv.stop();
                 s.receiving = false;
                 if receive && s.installed {
-                    backoff = BASE_BACKOFF;
-                    recv = spawn_recv(&ctx, &s, generation, tx.clone());
-                    s.receiving = recv.is_some();
+                    recv.reset();
+                    s.receiving = recv.start(recv_command(&s), proc::Read::Stderr).is_ok();
                 }
             }
-            Wake::Retry => {
-                if s.enabled && s.installed && recv.is_none() {
-                    generation += 1;
-                    recv = spawn_recv(&ctx, &s, generation, tx.clone());
-                    s.receiving = recv.is_some();
+            Wake::Recv(proc::Event::Retry) => {
+                if s.enabled && s.installed && recv.idle() {
+                    s.receiving = recv.start(recv_command(&s), proc::Read::Stderr).is_ok();
                 }
             }
-            Wake::RecvGone(g) if g != generation => continue,
-            Wake::RecvGone(_) => {
-                recv = None;
-                s.receiving = false;
-                if s.enabled && s.installed {
-                    let (t, wait) = (tx.clone(), backoff);
-                    backoff = (backoff * 2).min(MAX_BACKOFF);
-                    ctx.spawn(async move {
-                        async_io::Timer::after(wait).await;
-                        let _ = t.send(Wake::Retry).await;
-                    });
+            Wake::Recv(proc::Event::Exit(_)) => s.receiving = false,
+            Wake::Recv(proc::Event::Line(line)) => match model::parse_recv_line(&line) {
+                Some(RecvEvent::Error { message }) => s.last_error = message,
+                Some(RecvEvent::Received { file, .. }) => {
+                    let path = std::path::Path::new(&s.dir).join(&file);
+                    if path.is_file() {
+                        let open = |key: &str, label: &str, target: &str| notifications::LocalAction {
+                            key: key.into(),
+                            label: label.into(),
+                            run: notifications::Local::Spawn(vec!["xdg-open".into(), target.into()]),
+                        };
+                        let actions = vec![open("open", "Open", &path.to_string_lossy()), open("reveal", "Show in Folder", &s.dir)];
+                        ctx.publish(store::Diff::Notifications(notifications::Diff::Op(Op::NotifyRunning {
+                            summary: "LOCALSEND RECEIVED".into(),
+                            body: file,
+                            urgency: Urgency::Normal,
+                            actions,
+                            image: String::new(),
+                        })));
+                    }
+                    continue;
                 }
-            }
-            Wake::Recv(Some(RecvEvent::Error { message })) => s.last_error = message,
-            Wake::Recv(Some(RecvEvent::Received { file, .. })) => {
-                let path = std::path::Path::new(&s.dir).join(&file);
-                if path.is_file() {
-                    let open = |key: &str, label: &str, target: &str| notifications::LocalAction {
-                        key: key.into(),
-                        label: label.into(),
-                        run: notifications::Local::Spawn(vec!["xdg-open".into(), target.into()]),
-                    };
-                    let actions = vec![open("open", "Open", &path.to_string_lossy()), open("reveal", "Show in Folder", &s.dir)];
-                    ctx.publish(store::Diff::Notifications(notifications::Diff::Op(Op::NotifyRunning {
-                        summary: "LOCALSEND RECEIVED".into(),
-                        body: file,
-                        urgency: Urgency::Normal,
-                        actions,
-                        image: String::new(),
-                    })));
-                }
-                continue;
-            }
-            Wake::Recv(_) => continue,
+                _ => continue,
+            },
             Wake::Cmd(Cmd::Scan { force }) => {
                 if !s.installed || s.scanning {
                     continue;
@@ -259,24 +243,8 @@ async fn run(ctx: Ctx) {
 }
 
 /// `localsend-cli recv`, its stderr read line by line.
-fn spawn_recv(ctx: &Ctx, s: &State, generation: u64, tx: Sender<Wake>) -> Option<async_process::Child> {
-    let mut child = crate::services::proc::command("localsend-cli")
-        .args(["recv", "-n", &s.alias, "-d", &s.dir])
-        .stdin(async_process::Stdio::null())
-        .stdout(async_process::Stdio::null())
-        .stderr(async_process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .ok()?;
-    let err = child.stderr.take()?;
-    ctx.spawn(async move {
-        let mut lines = BufReader::new(err).lines();
-        while let Some(Ok(line)) = futures_lite::StreamExt::next(&mut lines).await {
-            if tx.send(Wake::Recv(model::parse_recv_line(&line))).await.is_err() {
-                return;
-            }
-        }
-        let _ = tx.send(Wake::RecvGone(generation)).await;
-    });
-    Some(child)
+fn recv_command(s: &State) -> async_process::Command {
+    let mut cmd = proc::command("localsend-cli");
+    cmd.args(["recv", "-n", &s.alias, "-d", &s.dir]).stdin(async_process::Stdio::null()).stdout(async_process::Stdio::null());
+    cmd
 }

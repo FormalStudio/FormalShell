@@ -998,6 +998,7 @@ name = "fs-dbus"
 version = "0.2.0"
 dependencies = [
  "async-io",
+ "fs-types",
  "futures-lite",
  "zbus",
 ]

@@ -20,8 +20,9 @@ use std::cell::RefCell;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-use fs_dbus::Backoff;
+use async_io::Timer;
 use fs_kopuz::{Client, Event, Table, TrackInfo, client, timed};
+use fs_types::Backoff;
 use futures_lite::future;
 
 use crate::runtime::Ctx;
@@ -188,7 +189,7 @@ async fn follow(ctx: &Ctx) {
             backoff.reset();
         }
         publish(ctx, &State::default());
-        backoff.wait().await;
+        Timer::after(backoff.delay()).await;
     }
 }
 

@@ -12,8 +12,7 @@ use std::time::{Duration, Instant};
 
 use async_io::Timer;
 use fs_devices::iphone::{self, AmsEvent};
-use futures_lite::io::{AsyncBufReadExt, BufReader};
-use futures_lite::{FutureExt, StreamExt};
+use futures_lite::FutureExt;
 
 use super::config::{self, Settings};
 use crate::runtime::Ctx;
@@ -201,9 +200,7 @@ pub fn command(cmd: Command) -> bool {
 enum Ev {
     Settings(Option<Settings>),
     Gate,
-    Line(Option<String>),
-    Exit(i32),
-    Retry,
+    Child(proc::Event),
     Command(Option<Command>),
     Reply(Option<String>),
     ReadingWait,
@@ -257,17 +254,10 @@ fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
     }
 }
 
-fn listen() -> Option<(async_process::Child, futures_lite::io::Lines<BufReader<async_process::ChildStdout>>)> {
-    let mut child = crate::services::proc::command(AMS)
-        .arg("listen")
-        .stdin(async_process::Stdio::null())
-        .stdout(async_process::Stdio::piped())
-        .stderr(async_process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .ok()?;
-    let lines = BufReader::new(child.stdout.take()?).lines();
-    Some((child, lines))
+fn listen() -> async_process::Command {
+    let mut cmd = proc::command(AMS);
+    cmd.arg("listen").stdin(async_process::Stdio::null()).stderr(async_process::Stdio::null());
+    cmd
 }
 
 pub fn start(ctx: &Ctx) {
@@ -284,29 +274,22 @@ async fn run(ctx: Ctx) {
 
     let mut state = State::default();
     let mut settings = Settings::default();
-    let mut child = None;
-    let mut retry_at: Option<Instant> = None;
-    let mut backoff = BASE_BACKOFF;
+    // Back to the floor once the phone answers, so a bridge that keeps
+    // failing its subscribe waits longer each time.
+    let mut child = proc::Supervised::new(BASE_BACKOFF, MAX_BACKOFF, proc::Reset::Manual);
     let mut last = state.clone();
 
     loop {
         let wanted = IPHONE_ENABLE.get(&settings) && CONNECTED.lock().map(|c| *c).unwrap_or(false);
-        if wanted && child.is_none() && retry_at.is_none() {
-            backoff = BASE_BACKOFF;
-            child = listen();
-            if child.is_none() {
+        if wanted && child.idle() {
+            if child.start(listen(), proc::Read::Stdout).is_err() {
                 // The bridge is not installed (or would not start): the
                 // same answer a run that exited 127 gave.
                 state.installed = false;
                 state.available = false;
-                retry_at = Some(Instant::now() + backoff);
-                backoff = (backoff * 2).min(MAX_BACKOFF);
             }
         } else if !wanted {
-            retry_at = None;
-            if let Some((mut c, _)) = child.take() {
-                let _ = c.kill();
-            }
+            child.stop();
             state.sent = None;
             if state.available || !state.error.is_empty() || !state.title.is_empty() {
                 state.available = false;
@@ -319,15 +302,6 @@ async fn run(ctx: Ctx) {
             ctx.publish(store::Diff::Media(super::media::Diff::Ams(state.clone())));
         }
 
-        let timer = async {
-            match retry_at {
-                Some(at) => {
-                    Timer::at(at).await;
-                    Ev::Retry
-                }
-                None => std::future::pending().await,
-            }
-        };
         let reading_wait = state.reading_wait();
         let reading = async {
             match reading_wait {
@@ -346,51 +320,28 @@ async fn run(ctx: Ctx) {
             };
             let cmd = async { Ev::Command(cmd_rx.recv().await.ok()) };
             let reply = async { Ev::Reply(reply_rx.recv().await.ok()) };
-            let base = sets.or(gate).or(timer).or(reading).or(cmd).or(reply);
-            match child.as_mut() {
-                Some((c, lines)) => {
-                    let line = async { Ev::Line(lines.next().await.and_then(Result::ok)) };
-                    let exit = async {
-                        let status = c.status().await;
-                        Ev::Exit(status.ok().and_then(|s| s.code()).unwrap_or(-1))
-                    };
-                    base.or(line).or(exit).await
-                }
-                None => base.await,
-            }
-        };
-        // A closed stdout is ready on every poll and wins the select over the
-        // exit future, so the exit is awaited here instead.
-        let event = match (event, child.as_mut()) {
-            (Ev::Line(None), Some((c, _))) => Ev::Exit(c.status().await.ok().and_then(|s| s.code()).unwrap_or(-1)),
-            (Ev::Line(None), None) => Ev::Exit(-1),
-            (event, _) => event,
+            let run = async { Ev::Child(child.next().await) };
+            sets.or(gate).or(reading).or(cmd).or(reply).or(run).await
         };
         match event {
             Ev::Settings(Some(next)) => settings = next,
             Ev::Settings(None) => return,
             Ev::Gate => {}
-            Ev::Line(Some(line)) => {
+            Ev::Child(proc::Event::Line(line)) => {
                 state.installed = true;
                 if let Some(event) = iphone::parse_ams_line(&line) {
                     if matches!(event, AmsEvent::Status { available: true }) {
-                        backoff = BASE_BACKOFF;
+                        child.reset();
                     }
                     apply(&mut state, event);
                 }
             }
-            Ev::Exit(code) => {
-                child = None;
+            Ev::Child(proc::Event::Exit(status)) => {
                 state.sent = None;
-                state.installed = code != 127;
+                state.installed = proc::exit_code(&status) != proc::MISSING;
                 state.available = false;
-                if wanted {
-                    retry_at = Some(Instant::now() + backoff);
-                    backoff = (backoff * 2).min(MAX_BACKOFF);
-                }
             }
-            Ev::Line(None) => unreachable!("a closed stdout became an exit above"),
-            Ev::Retry => retry_at = None,
+            Ev::Child(proc::Event::Retry) => {}
             Ev::Command(Some(cmd)) => {
                 let reply_tx = reply_tx.clone();
                 ctx.spawn(async move {

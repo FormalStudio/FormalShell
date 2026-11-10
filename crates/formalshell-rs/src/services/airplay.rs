@@ -9,17 +9,16 @@
 //! read-only media source.
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use async_io::Timer;
 use fs_media::airplay::{self, Event};
-use futures_lite::io::{AsyncBufReadExt, BufReader};
-use futures_lite::{FutureExt, StreamExt};
+use futures_lite::FutureExt;
 use serde_json::{Value, json};
 
 use super::config::{self, Settings};
 use super::watch::Watch;
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::settings::{AIRPLAY_ENABLE, AIRPLAY_NAME};
 use crate::store;
 
@@ -90,9 +89,7 @@ fn watch(ctx: &Ctx, path: PathBuf, read: fn(&std::path::Path) -> File, tx: async
 
 enum Ev {
     Settings(Option<Settings>),
-    Line(Option<String>),
-    Exit,
-    Retry,
+    Child(proc::Event),
     File(Option<File>),
 }
 
@@ -114,7 +111,7 @@ async fn run(ctx: Ctx) {
     // Neither file's directory exists on its own; it is made before uxplay
     // runs and before the watches are placed in it.
     let dir_ready = std::fs::create_dir_all(&dir).is_ok();
-    let installed = crate::services::proc::on_path("uxplay");
+    let installed = proc::on_path("uxplay");
     let host = hostname();
 
     let (tx, files) = async_channel::unbounded::<File>();
@@ -136,9 +133,7 @@ async fn run(ctx: Ctx) {
 
     let mut state = State { installed, ..State::default() };
     let mut settings = Settings::default();
-    let mut child: Option<(async_process::Child, futures_lite::io::Lines<BufReader<async_process::ChildStdout>>)> = None;
-    let mut retry_at: Option<Instant> = None;
-    let mut backoff = BASE_BACKOFF;
+    let mut child = proc::Supervised::new(BASE_BACKOFF, MAX_BACKOFF, proc::Reset::OnStart);
     // The three files as last read, shown only while a client is connected:
     // UxPlay never clears `-md` and `-ca` on disconnect.
     let mut dacp_up = false;
@@ -151,17 +146,12 @@ async fn run(ctx: Ctx) {
         state.enabled = AIRPLAY_ENABLE.get(&settings);
         state.name = airplay::resolve_name(AIRPLAY_NAME.get(&settings), &host);
         let should_run = state.enabled && installed && dir_ready;
-        if should_run && child.is_none() && retry_at.is_none() {
-            backoff = BASE_BACKOFF;
-            child = spawn(&state.name, &meta, &cover, &dacp);
-            if child.is_none() {
-                retry_at = Some(Instant::now() + backoff);
-            }
-        } else if !should_run && let Some((mut c, _)) = child.take() {
-            let _ = c.kill();
-            retry_at = None;
+        if should_run && child.idle() {
+            let _ = child.start(uxplay(&state.name, &meta, &cover, &dacp), proc::Read::Stdout);
+        } else if !should_run {
+            child.stop();
         }
-        state.running = child.is_some();
+        state.running = child.running();
         state.active = state.running && dacp_up;
         if state.active {
             state.title = shown_meta.title.clone();
@@ -184,45 +174,16 @@ async fn run(ctx: Ctx) {
             ctx.publish(store::Diff::Media(super::media::Diff::Airplay(state.clone())));
         }
 
-        let timer = async {
-            match retry_at {
-                Some(at) => {
-                    Timer::at(at).await;
-                    Ev::Retry
-                }
-                None => std::future::pending().await,
-            }
-        };
         let event = {
             let sets = async { Ev::Settings(config::moved(&settings_rx, &keys(&settings), keys).await) };
             let file = async { Ev::File(files.recv().await.ok()) };
-            let base = sets.or(file).or(timer);
-            match child.as_mut() {
-                Some((c, lines)) => {
-                    let line = async { Ev::Line(lines.next().await.and_then(Result::ok)) };
-                    let exit = async {
-                        let _ = c.status().await;
-                        Ev::Exit
-                    };
-                    base.or(line).or(exit).await
-                }
-                None => base.await,
-            }
-        };
-        // A closed stdout is ready on every poll and wins the select over the
-        // exit future, so the exit is awaited here instead.
-        let event = match (event, child.as_mut()) {
-            (Ev::Line(None), Some((c, _))) => {
-                let _ = c.status().await;
-                Ev::Exit
-            }
-            (Ev::Line(None), None) => Ev::Exit,
-            (event, _) => event,
+            let run = async { Ev::Child(child.next().await) };
+            sets.or(file).or(run).await
         };
         match event {
             Ev::Settings(Some(next)) => settings = next,
             Ev::Settings(None) => return,
-            Ev::Line(Some(line)) => match airplay::parse_line(&line) {
+            Ev::Child(proc::Event::Line(line)) => match airplay::parse_line(&line) {
                 Some(Event::Connected { name, .. }) => {
                     state.client = name;
                     state.last_error.clear();
@@ -231,16 +192,8 @@ async fn run(ctx: Ctx) {
                 Some(Event::Error { message }) => state.last_error = message,
                 None => {}
             },
-            Ev::Line(None) => unreachable!("a closed stdout became an exit above"),
-            Ev::Exit => {
-                child = None;
-                dacp_up = false;
-                if should_run {
-                    retry_at = Some(Instant::now() + backoff);
-                    backoff = (backoff * 2).min(MAX_BACKOFF);
-                }
-            }
-            Ev::Retry => retry_at = None,
+            Ev::Child(proc::Event::Exit(_)) => dacp_up = false,
+            Ev::Child(proc::Event::Retry) => {}
             Ev::File(Some(File::Dacp(up))) => dacp_up = up,
             Ev::File(Some(File::Meta(m))) => shown_meta = m,
             Ev::File(Some(File::Cover(real))) => cover_real = real,
@@ -249,25 +202,15 @@ async fn run(ctx: Ctx) {
     }
 }
 
-fn spawn(
-    name: &str,
-    meta: &std::path::Path,
-    cover: &std::path::Path,
-    dacp: &std::path::Path,
-) -> Option<(async_process::Child, futures_lite::io::Lines<BufReader<async_process::ChildStdout>>)> {
-    let mut child = crate::services::proc::command("uxplay")
-        .args(["-p", "-n", name, "-nh", "-md"])
+fn uxplay(name: &str, meta: &std::path::Path, cover: &std::path::Path, dacp: &std::path::Path) -> async_process::Command {
+    let mut cmd = proc::command("uxplay");
+    cmd.args(["-p", "-n", name, "-nh", "-md"])
         .arg(meta)
         .arg("-ca")
         .arg(cover)
         .arg("-dacp")
         .arg(dacp)
         .stdin(async_process::Stdio::null())
-        .stdout(async_process::Stdio::piped())
-        .stderr(async_process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .ok()?;
-    let lines = BufReader::new(child.stdout.take()?).lines();
-    Some((child, lines))
+        .stderr(async_process::Stdio::null());
+    cmd
 }

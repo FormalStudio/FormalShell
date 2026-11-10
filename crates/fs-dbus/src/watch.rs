@@ -5,13 +5,14 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_io::Timer;
+use fs_types::Backoff;
 use futures_lite::{Stream, future, stream};
 use zbus::fdo::DBusProxy;
 use zbus::names::BusName;
 use zbus::proxy::CacheProperties;
 use zbus::{Connection, MatchRule, Message, MessageStream};
 
-use crate::{Backoff, Owner, OwnerWatch};
+use crate::{Owner, OwnerWatch};
 
 /// Retrying a read that failed with the daemon up, or a subscription that
 /// failed.
@@ -127,7 +128,7 @@ impl<W: Watched> Watcher<W> {
                     Ok(inputs) => self.inputs = Some(inputs),
                     Err(zbus::Error::InputOutput(_)) => return None,
                     Err(_) => {
-                        self.retry.wait().await;
+                        Timer::after(self.retry.delay()).await;
                         continue;
                     }
                 }
@@ -163,7 +164,7 @@ impl<W: Watched> Watcher<W> {
             // The connection is gone; subscribing again says so.
             Err(zbus::Error::InputOutput(_)) => *inputs = None,
             Err(_) if subscribed.drain_while(backlog, owned(conn, W::SERVICE)).await => {
-                subscribed.drain_while(backlog, retry.wait()).await;
+                subscribed.drain_while(backlog, Timer::after(retry.delay())).await;
             }
             Err(_) => {
                 *state = None;

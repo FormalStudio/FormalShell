@@ -24,7 +24,7 @@ use async_io::{Async, Timer};
 use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, StreamExt, io::BufReader};
 use fs_system::display::outputs::{find_output, Output};
 use fs_system::keyboard::{self as layouts, Layout};
-use fs_types::{Bind, WindowId};
+use fs_types::{Backoff, Bind, WindowId};
 
 use self::outputs::RuleOverrides;
 use super::{Command, Diff, OutputsState, Snapshot};
@@ -97,7 +97,8 @@ pub async fn run(ctx: Ctx, rx: async_channel::Receiver<Command>) {
 /// The event stream, reconnected for as long as the shell runs: a Hyprland
 /// that restarts its socket comes back to a full re-read.
 async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
-    let mut wait = RETRY_FIRST;
+    let mut retry = Backoff::new(RETRY_FIRST, RETRY_MAX);
+    let mut failing = false;
     let mut connected_once = false;
     loop {
         let stream = match socket_dir() {
@@ -107,11 +108,11 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
         let stream = match stream {
             Ok(stream) => stream,
             Err(err) => {
-                if wait == RETRY_FIRST {
+                if !failing {
                     eprintln!("hyprland: no event socket: {err}");
                 }
-                Timer::after(wait).await;
-                wait = (wait * 2).min(RETRY_MAX);
+                failing = true;
+                Timer::after(retry.delay()).await;
                 continue;
             }
         };
@@ -119,7 +120,8 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
             eprintln!("hyprland: event socket reconnected");
         }
         connected_once = true;
-        wait = RETRY_FIRST;
+        failing = false;
+        retry.reset();
         let _ = dirty.try_send(());
         refresh_outputs(&ctx, &shared).await;
         refresh_keyboard(&ctx, &shared).await;
