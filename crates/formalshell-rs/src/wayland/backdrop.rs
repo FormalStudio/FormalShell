@@ -14,7 +14,7 @@ use smithay_client_toolkit::shm::Shm;
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 
 use crate::render::scaled;
-use crate::scene::IRect;
+use fs_types::IRect;
 use crate::services::wallpaper::Picture;
 use crate::shards::{Look, Painted, Raster};
 use crate::surface::{Dispatcher, Format, Ignore, Pixels, Scaler};

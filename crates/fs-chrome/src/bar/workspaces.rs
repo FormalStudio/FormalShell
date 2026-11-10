@@ -477,7 +477,7 @@ mod tests {
             .join(",")
     }
 
-    fn rwin(id: &str, workspace_id: &str, at: Option<(i64, i64)>, flags: Flags) -> Window {
+    fn rwin(id: &str, workspace_id: &str, at: Option<(i32, i32)>, flags: Flags) -> Window {
         Window {
             id: WindowId::new(id),
             workspace_id: WorkspaceId::new(workspace_id),

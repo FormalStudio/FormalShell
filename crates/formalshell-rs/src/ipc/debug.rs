@@ -52,14 +52,14 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
         Some((x, width)) => json!({"edge": edge.as_str(), "x": x, "width": width, "reach": reach, "screen": screen}),
         None => serde_json::Value::Null,
     };
-    let line: Vec<serde_json::Value> = live!(app).bar.line_rects().iter().map(|r| r.to_json()).collect();
+    let line: Vec<serde_json::Value> = live!(app).bar.line_rects().iter().map(|r| json!(r)).collect();
     let modals: Vec<serde_json::Value> = app
         .modals()
         .map(|m| {
             let scrims: Vec<serde_json::Value> =
                 m.scrims().map(|(name, alpha, fade)| json!({"name": name, "alpha": alpha, "fade": fade})).collect();
-            let content = m.layer.as_ref().map(|l| l.place(&m.win.card, true).to_json());
-            json!({"namespace": m.namespace, "open": m.open, "scrims": scrims, "card": m.win.card.live_rect().to_json(), "content": content, "popover": m.win.card.popover()})
+            let content = m.layer.as_ref().map(|l| json!(l.place(&m.win.card, true)));
+            json!({"namespace": m.namespace, "open": m.open, "scrims": scrims, "card": m.win.card.live_rect(), "content": content, "popover": m.win.card.popover()})
         })
         .collect();
     // Every toast the model holds, tier by tier, for a leg reading what one

@@ -935,7 +935,7 @@ impl Owner for Toasts {
     }
 
     fn report(&self, app: &App, dump: &mut Map<String, Value>) {
-        let cards = app.toast_cards().into_iter().map(|(key, r)| json!({"key": key, "rect": r.to_json()})).collect();
+        let cards = app.toast_cards().into_iter().map(|(key, r)| json!({"key": key, "rect": r})).collect();
         dump.insert("toastCards".into(), cards);
     }
 

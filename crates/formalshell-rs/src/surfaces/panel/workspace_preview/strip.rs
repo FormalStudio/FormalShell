@@ -5,7 +5,7 @@
 use fs_theme::style::Role;
 use vello_cpu::kurbo::Rect;
 
-use crate::scene::IRect;
+use fs_types::IRect;
 use crate::ui::el::Pic;
 use crate::ui::{Cx, Hit, HitWhat, On, Stop, Widget, boxes, irect, thumb};
 

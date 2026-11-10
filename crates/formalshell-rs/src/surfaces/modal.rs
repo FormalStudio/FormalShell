@@ -9,7 +9,7 @@
 
 use std::time::{Duration, Instant};
 
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::compositor::{CompositorState, Region};
@@ -22,7 +22,7 @@ use smithay_client_toolkit::shm::Shm;
 use vello_cpu::kurbo::Rect;
 
 use crate::chrome::Chrome;
-use crate::scene::{IRect, NodeId, Paint, Scene};
+use crate::scene::{NodeId, Paint, Scene};
 use crate::surface::{Backend, Ignore, PixelSurface, Pixels, Sub, Surface};
 use crate::surfaces::card::{Card, CardSpec, Sizing};
 use crate::surfaces::card_window::{CardWindow, Crop, Quads};

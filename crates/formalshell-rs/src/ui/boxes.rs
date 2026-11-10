@@ -7,10 +7,10 @@ use std::time::Instant;
 
 use fs_theme::color::Rgba;
 use fs_theme::style::BoxStyle;
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 use vello_cpu::kurbo::{Affine, Rect, RoundedRect, Shape};
 
-use crate::scene::{Cast, Fit, IRect, LitLine, Outline, Paint, Scene, Snap};
+use crate::scene::{Cast, Fit, LitLine, Outline, Paint, Scene, Snap};
 use crate::paint::Painter;
 use crate::paint::rim::Rim;
 

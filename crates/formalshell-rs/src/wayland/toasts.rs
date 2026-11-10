@@ -168,7 +168,7 @@ impl App {
             t.surface.present_clear((t.scene.size.w, t.scene.size.h), moved || lifted, &self.pixels, &self.shm, &qh);
         } else {
             if moved || lifted {
-                t.scene.touch(crate::scene::IRect::new(0, 0, 1, 1));
+                t.scene.touch(fs_types::IRect::new(0, 0, 1, 1));
             }
             t.surface.present(&mut t.scene, animating, &qh);
         }
@@ -193,7 +193,7 @@ impl App {
         }
     }
 
-    fn clear_of(&self, r: crate::scene::IRect, insets: &mut Insets, spec: PositionSpec) {
+    fn clear_of(&self, r: fs_types::IRect, insets: &mut Insets, spec: PositionSpec) {
         let theme = &self.store.theme.theme;
         let (out_w, out_h) = self.output_size();
         let (pad, width) = (theme.space.screen_padding, surfaces::toasts::card_width(theme));
@@ -220,7 +220,7 @@ impl App {
         }
     }
 
-    pub fn toast_cards(&self) -> Vec<(String, crate::scene::IRect)> {
+    pub fn toast_cards(&self) -> Vec<(String, fs_types::IRect)> {
         self.toasts.as_ref().map(|t| t.cards()).unwrap_or_default()
     }
 

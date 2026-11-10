@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
-use fs_types::{Edge, NotificationId};
+use fs_types::{Edge, IRect, NotificationId};
 use fs_info::clock::format_qt;
 use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
@@ -28,7 +28,7 @@ use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;
 
-use crate::scene::{Bitmap, IRect, NodeId, Scene};
+use crate::scene::{Bitmap, NodeId, Scene};
 use crate::services::compositor::Command;
 use crate::services::activity::Verb as ActivityVerb;
 use crate::services::{motion_art, packages};

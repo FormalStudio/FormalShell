@@ -13,7 +13,8 @@ use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 
 use crate::motion::{Animated, Kind};
-use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
+use crate::scene::{Bitmap, NodeId, Paint, Scene};
+use fs_types::IRect;
 use crate::services::tray::MenuNode;
 use crate::paint::{Kit, Painter};
 

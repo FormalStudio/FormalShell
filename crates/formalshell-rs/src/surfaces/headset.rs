@@ -18,10 +18,10 @@ use fs_theme::color::Rgba;
 use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
-use fs_types::Percent;
+use fs_types::{IRect, Percent};
 use vello_cpu::kurbo::{Affine, Rect};
 
-use crate::scene::{IRect, Paint, Scene};
+use crate::scene::{Paint, Scene};
 use crate::services::devices::headsets::Identity;
 use crate::paint::{Kit, Painter};
 use crate::ui::el::{Ring, Size};

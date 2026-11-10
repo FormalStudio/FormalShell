@@ -24,14 +24,14 @@ use fs_menu::intent::Intent;
 use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
 use fs_menu::toggles::{self, Snapshot};
 use crate::ui::confirm::Armed;
-use fs_types::{Edge, WindowId};
+use fs_types::{Edge, IRect, WindowId};
 use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;
 
 use crate::motion::{Animated, Kind as Clock};
-use crate::scene::{IRect, NodeId};
+use crate::scene::NodeId;
 use crate::scroll::{Touchpad, Travel};
 use crate::services::menu::{self as index, Ask};
 use crate::services::{clipboard, compositor, plugins, state};

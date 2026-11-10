@@ -12,7 +12,8 @@ use vello_cpu::kurbo::{Affine, BezPath, Cap, Join, Point, Rect, RoundedRect, Sha
 use vello_cpu::peniko::{BlendMode, Compose, Fill, Gradient, ImageSampler, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
-use crate::scene::{Bitmap, Brush, Drawn, Fade, Fit, IRect, LitLine, Outline, Paint, Scene, Snap, VOp};
+use crate::scene::{Bitmap, Brush, Drawn, Fade, Fit, LitLine, Outline, Paint, Scene, Snap, VOp};
+use fs_types::IRect;
 use crate::paint::shoulders::{self, Walls};
 use crate::text::{ColorGlyph, Coverage, ShapedText};
 use fs_theme::color::Rgba;
@@ -1189,7 +1190,8 @@ fn color(c: Rgba) -> AlphaColor<Srgb> {
 #[cfg(test)]
 mod tests {
     use super::{Renderer, coverage_lift, fits, one_to_one};
-    use crate::scene::{IRect, Paint, Scene};
+    use crate::scene::{Paint, Scene};
+    use fs_types::IRect;
     use fs_theme::color::Rgba;
     use vello_cpu::kurbo::{Affine, Rect};
 

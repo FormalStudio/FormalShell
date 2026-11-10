@@ -6,7 +6,7 @@
 
 use vello_cpu::kurbo::{Affine, Rect};
 
-use crate::scene::IRect;
+use fs_types::IRect;
 use crate::text;
 use crate::ui::el::Font;
 use crate::ui::{Cx, Ink, Type, Weight, Widget, elided, icon, irect, paint as paint_el, resolve, shape, w};

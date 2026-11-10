@@ -7,13 +7,13 @@ use std::time::{Duration, Instant};
 
 use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
 use fs_chrome::bar::panels::PanelId;
-use fs_types::{Edge, Region};
+use fs_types::{Edge, IRect, Region};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 
 use crate::motion::{Animated, Kind};
 use crate::paint::{Ink, Kit, Look, Painter};
-use crate::scene::{IRect, NodeId, Scene};
+use crate::scene::{NodeId, Scene};
 use crate::surfaces::bar::cell::{Cell, Env, FreeLabel, Frame, Limits, Measured, Part, View};
 use crate::surfaces::bar::cells::{self, chevron::Chevron};
 

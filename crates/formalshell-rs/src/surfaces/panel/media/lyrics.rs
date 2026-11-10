@@ -24,7 +24,7 @@ use vello_cpu::kurbo::{Affine, Rect};
 use numbers::{RowBand, TextRow};
 
 use crate::motion::Kind as Clock;
-use crate::scene::IRect;
+use fs_types::IRect;
 use crate::text::{self, ShapedText, TextStyle};
 use crate::ui::{Cx, Hit, HitWhat, State, Stop, Widget, boxes, irect, w};
 

@@ -393,7 +393,6 @@ impl Theme {
 mod tests {
     use super::*;
     use crate::style::{Cast, geometry};
-    use fs_types::Edge;
     use serde_json::json;
 
     /// tst_box's sentinel palette: distinct values per role, since the zinc
@@ -501,29 +500,10 @@ mod tests {
     }
 
     #[test]
-    fn a_ring_layer_draws_a_band_outside_the_box() {
-        let ring = geometry::ring(100.0, 40.0, 8.0, 2.0);
-        assert_eq!(ring.x, -2.0);
-        assert_eq!(ring.width, 104.0);
-        assert_eq!(ring.radius, 10.0);
+    fn the_cursor_draws_a_border_and_no_ring() {
         let cursor = theme().box_style(Role::Cursor, None);
         assert!(cursor.rings.is_empty());
         assert_eq!(cursor.border.unwrap().color, hex("#00ccff").with_alpha(0.5));
-    }
-
-    #[test]
-    fn a_hairline_draws_one_line_along_its_own_edge() {
-        // A 100x40 box, radius 8, a 1px border: the layer inside the border
-        // is 98x38 with an inner corner of 7.
-        let inner = geometry::inner_radius(8.0, 1.0, 100.0, 40.0);
-        assert_eq!(inner, 7.0);
-        let (band, stroke) = geometry::hairline(Edge::Right, 1.0, 98.0, 38.0, inner);
-        assert_eq!(band.width, 8.0 - 1.0);
-        assert_eq!(band.height, 38.0);
-        assert_eq!(band.x, 98.0 - band.width);
-        assert_eq!(stroke.radius, 8.0 - 1.0);
-        assert_eq!(stroke.x, -band.x);
-        assert_eq!(stroke.width, 98.0);
     }
 
     #[test]
@@ -535,7 +515,6 @@ mod tests {
     #[test]
     fn a_face_draws_a_gradient_only_when_the_table_sets_one() {
         assert_eq!(theme().box_style(Role::Card, None).face, None);
-        assert_eq!(geometry::inner_radius(8.0, 1.0, 100.0, 40.0), 8.0 - 1.0);
     }
 
     #[test]
@@ -550,14 +529,6 @@ mod tests {
         ];
         let pad = geometry::cast_pad(&casts);
         assert_eq!(100.0 + pad * 2.0, 100.0 + (4.0 + 3.0) * 2.0);
-        let (first, spread) = geometry::cast(100.0, 40.0, 8.0, &casts[0]);
-        assert_eq!(first.width, 100.0);
-        assert_eq!(first.radius, 8.0);
-        assert_eq!(spread, 0.0);
-        let (second, spread) = geometry::cast(100.0, 40.0, 8.0, &casts[1]);
-        assert_eq!(spread, 0.0);
-        assert_eq!(second.width, 100.0 - 6.0);
-        assert_eq!(second.radius, 8.0 - 3.0);
     }
 
     #[test]

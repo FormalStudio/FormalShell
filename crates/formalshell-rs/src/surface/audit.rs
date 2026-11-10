@@ -13,7 +13,8 @@ use serde_json::json;
 
 use super::Format;
 use crate::render::Renderer;
-use crate::scene::{IRect, Scene};
+use crate::scene::Scene;
+use fs_types::IRect;
 
 static ON: AtomicBool = AtomicBool::new(false);
 static SEEN: Mutex<BTreeMap<&'static str, Seen>> = Mutex::new(BTreeMap::new());
@@ -46,7 +47,7 @@ pub fn stop() {
 
 pub fn report() -> serde_json::Value {
     let seen = SEEN.lock().unwrap();
-    let rect = |r: &IRect| r.to_json();
+    let rect = |r: &IRect| json!(r);
     let surfaces: serde_json::Map<String, serde_json::Value> = seen
         .iter()
         .map(|(name, s)| {

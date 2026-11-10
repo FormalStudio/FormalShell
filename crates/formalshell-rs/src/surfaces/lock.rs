@@ -14,7 +14,8 @@ use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 
-use crate::scene::{Bitmap, IRect, NodeId, Scene};
+use crate::scene::{Bitmap, NodeId, Scene};
+use fs_types::IRect;
 use crate::services::power::Action;
 use crate::services::wallpaper::{self, DepthCut, Picture};
 use crate::paint::{Kit, Painter};
@@ -296,14 +297,14 @@ pub fn draw(view: &mut View, s: &Shared, theme: &Theme, kit: &mut Kit, now: Inst
     view.ui.ring = view.ui.cursor.is_some();
     let drawn = view.draw(&card, &backdrop_of(s, (w, h)), s.enter, theme, kit, now);
     let (ink_name, luma, sampled) = ink(s, theme, drawn.card, (w, h));
-    let card_json = drawn.card.to_json();
+    let card_json = json!(drawn.card);
     let report = json!({
         "clockInk": ink_name,
         "clockLuma": fs_js::json_number(luma),
         "clockSampled": sampled,
         "clockRect": card_json,
         "depth": drawn.depth.is_some(),
-        "depthRect": drawn.depth.map(|r| r.to_json()),
+        "depthRect": drawn.depth,
         "mediaCard": s.media.is_some().then(|| card_json.clone()),
         "nowPlaying": s.media.is_some(),
         "transportCursor": ring.map_or(-1, |i| i as i32),

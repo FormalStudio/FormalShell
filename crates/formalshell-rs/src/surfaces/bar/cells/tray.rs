@@ -9,7 +9,8 @@ use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
 
-use crate::scene::{Bitmap, IRect, Paint};
+use crate::scene::{Bitmap, Paint};
+use fs_types::IRect;
 use crate::services::tray::Item;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Summary, TrayClick, View};

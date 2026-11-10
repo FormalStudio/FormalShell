@@ -11,10 +11,10 @@ pub use kit::{Kit, Look, face};
 
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 use vello_cpu::kurbo::Affine;
 
-use crate::scene::{Bitmap, Fade, IRect, NodeId, Paint, Scene};
+use crate::scene::{Bitmap, Fade, NodeId, Paint, Scene};
 use crate::text::{self, ShapedText};
 
 /// From a top line's coordinates (`u` along it, `v` away from the output's

@@ -17,7 +17,8 @@ use vello_cpu::kurbo::Rect;
 
 use fs_theme::tokens::WEIGHTS;
 
-use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
+use crate::scene::{Bitmap, NodeId, Paint, Scene};
+use fs_types::IRect;
 use crate::services::power;
 use crate::paint::{Kit, Painter};
 use crate::text::{ShapedText, TextStyle};

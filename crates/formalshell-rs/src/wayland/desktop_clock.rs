@@ -18,7 +18,8 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 
 use super::App;
 use crate::paint::{Kit, Painter};
-use crate::scene::{IRect, NodeId, Scene};
+use crate::scene::{NodeId, Scene};
+use fs_types::IRect;
 use crate::services::wallpaper::{DepthCut, Picture};
 use crate::settings;
 use crate::store::Store;

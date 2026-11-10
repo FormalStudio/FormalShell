@@ -15,7 +15,8 @@ use zeroize::Zeroizing;
 
 use super::App;
 use super::lock::{LockMsg, buffer, field};
-use crate::scene::{Bitmap, IRect, NodeId};
+use crate::scene::{Bitmap, NodeId};
+use fs_types::IRect;
 use crate::services::clipboard;
 use crate::services::polkit::{self, Cmd, Event};
 use crate::paint::Painter;

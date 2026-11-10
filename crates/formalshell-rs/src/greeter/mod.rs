@@ -60,7 +60,8 @@ use crate::ui::field::{self, Field};
 use zeroize::Zeroizing;
 
 use crate::render::Renderer;
-use crate::scene::{Bitmap, IRect, Scene};
+use crate::scene::{Bitmap, Scene};
+use fs_types::IRect;
 use crate::services::{config, cover, power, theme, wallpaper};
 use crate::settings;
 use crate::surface::{Backend, Surface};

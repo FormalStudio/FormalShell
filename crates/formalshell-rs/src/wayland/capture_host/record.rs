@@ -473,8 +473,8 @@ fn webcam_settle_poll(app: &mut App, g: u64) {
             return;
         }
         if let (Some(rect), true) = (rect, r.webcam_placed)
-            && rect.width as f64 == t.width
-            && rect.height as f64 == t.height
+            && f64::from(rect.w) == t.width
+            && f64::from(rect.h) == t.height
         {
             r.webcam_settle = None;
             let device = r.webcam_audio_device.clone();

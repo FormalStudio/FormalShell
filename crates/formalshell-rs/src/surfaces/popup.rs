@@ -9,7 +9,8 @@ use std::time::Instant;
 use fs_theme::theme::Theme;
 use vello_cpu::kurbo::Rect;
 
-use crate::scene::{IRect, NodeId};
+use crate::scene::NodeId;
+use fs_types::IRect;
 use crate::surface::Surface;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::card::Card;

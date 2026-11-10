@@ -23,13 +23,13 @@ use fs_chrome::bar::workspaces::{self, SlotOpts};
 use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
-use fs_types::{WindowId, WorkspaceId};
+use fs_types::{IRect, WindowId, WorkspaceId};
 use serde_json::{Value, json};
 
 use vello_cpu::kurbo::Affine;
 
 use crate::motion::{Animated, Kind as Clock};
-use crate::scene::{Bitmap, IRect, NodeId, Scene};
+use crate::scene::{Bitmap, NodeId, Scene};
 use crate::services::compositor::Command;
 use crate::services::appicon;
 use crate::store::Store;
@@ -186,7 +186,7 @@ impl Map {
             .windows
             .iter()
             .filter(|w| !w.is_floating && c.workspaces.iter().any(|ws| ws.id == w.workspace_id && ws.columns))
-            .filter_map(|w| Some((w.id.clone(), w.rect.as_ref()?.x)))
+            .filter_map(|w| Some((w.id.clone(), i64::from(w.rect.as_ref()?.x))))
             .collect();
         let size = icon_size().round() as u32;
         let queries: Vec<appicon::Query> = slots

@@ -19,11 +19,11 @@
 
 use std::time::Instant;
 
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, Deform, Kind};
-use crate::scene::{Cast, Fade, Fit, IRect, Joined, LitLine, NodeId, Outline, Paint, Scene, Snap};
+use crate::scene::{Cast, Fade, Fit, Joined, LitLine, NodeId, Outline, Paint, Scene, Snap};
 use crate::paint::rim::{Lit, Rim};
 use crate::paint::shoulders::{self, Walls};
 use fs_theme::color::Rgba;

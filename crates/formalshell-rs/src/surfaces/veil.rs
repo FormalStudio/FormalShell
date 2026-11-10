@@ -20,7 +20,8 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shm::Shm;
 
-use crate::scene::{IRect, NodeId, Scene};
+use crate::scene::{NodeId, Scene};
+use fs_types::IRect;
 use crate::surfaces::dissolve::Dissolve;
 use crate::surface::{Backend, Dispatcher, Pixels, PixelSurface, Surface};
 use crate::paint::Painter;

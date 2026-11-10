@@ -15,7 +15,7 @@
 use std::time::Instant;
 
 use fs_chrome::bar::panels::{PanelId, Width};
-use fs_types::{Edge, Insets};
+use fs_types::{Edge, IRect, Insets};
 use fs_info::notifications::PositionSpec;
 use fs_theme::color::Rgba;
 use fs_theme::style::Role;
@@ -27,7 +27,7 @@ use super::quick::Origin;
 use super::{Edit, Effect, Out, Panel, View, Walk};
 use crate::motion::{Animated, Kind as Clock};
 use crate::runtime::Runtime;
-use crate::scene::{IRect, NodeId, Paint};
+use crate::scene::{NodeId, Paint};
 use crate::scroll::{Touchpad, Travel};
 use crate::services::wants::Holding;
 use crate::store::Store;
@@ -371,7 +371,7 @@ impl Host {
     /// `debug dump`'s `panel` block.
     pub fn report(&self) -> serde_json::Value {
         use serde_json::json;
-        let rect = |r: &IRect| r.to_json();
+        let rect = |r: &IRect| serde_json::json!(r);
         let (viewport, content_h, scroll, row) = self.viewport();
         let cursor = row.map(|(key, r)| json!({"key": key, "rect": rect(&r)}));
         json!({
@@ -1084,7 +1084,7 @@ mod tests {
 
     #[test]
     fn spatial_arrows_land_on_the_nearest_box_in_their_direction() {
-        use crate::scene::IRect;
+        use fs_types::IRect;
         let stop = |x, y, w, h| crate::ui::Stop { key: String::new(), rect: IRect::new(x, y, w, h), radius: 0.0 };
         // Two buttons at the right end of a short row, then a grid of two
         // 178 wide tiles, the second row's first tile split by its arrow.

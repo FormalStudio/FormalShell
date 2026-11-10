@@ -330,7 +330,7 @@ mod tests {
     use super::*;
     use fs_types::{IRect, Workspace};
 
-    fn win(id: &str, title: &str, rect: Option<(i64, i64, i64, i64)>) -> Window {
+    fn win(id: &str, title: &str, rect: Option<(i32, i32, i32, i32)>) -> Window {
         Window {
             id: id.into(),
             title: title.into(),

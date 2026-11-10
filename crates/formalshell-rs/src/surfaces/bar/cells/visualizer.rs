@@ -10,11 +10,10 @@
 
 use std::time::Instant;
 
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 use fs_media::visualizer::model::{self, CELL_BAR_COUNT};
 use fs_theme::tokens::WEIGHTS;
 
-use crate::scene::IRect;
 use crate::services::proc::Avail;
 use crate::services::visualizer;
 use crate::services::wants::{Source, Want};

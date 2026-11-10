@@ -47,7 +47,8 @@ use fs_theme::theme::Theme;
 use vello_cpu::kurbo::Rect;
 
 use crate::motion::{Animated, Kind as Clock};
-use crate::scene::{IRect, NodeId, Scene};
+use crate::scene::{NodeId, Scene};
+use fs_types::IRect;
 use crate::paint::Kit;
 
 pub use el::{El, Ink, Size, Type, Variant, Weight};

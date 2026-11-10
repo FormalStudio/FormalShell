@@ -13,14 +13,14 @@ use std::any::Any;
 use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
-use fs_types::{Edge, Region, WindowId, WorkspaceId};
+use fs_types::{Edge, IRect, Region, WindowId, WorkspaceId};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 use fs_theme::tokens::WEIGHTS;
 use vello_cpu::kurbo::Affine;
 
 use crate::paint::{Ink, Kit, Look, Painter, Tone};
-use crate::scene::{Fade, IRect, Scene};
+use crate::scene::{Fade, Scene};
 use crate::store::{Store, Topic};
 use crate::text::{self, Family, ShapedText, TextStyle};
 use crate::ui::el::Ring;

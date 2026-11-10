@@ -15,7 +15,8 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 use vello_cpu::kurbo::Rect;
 
-use crate::scene::{IRect, NodeId, Paint, Scene};
+use crate::scene::{NodeId, Paint, Scene};
+use fs_types::IRect;
 use crate::surface::{Sub, Surface};
 use crate::surfaces::card::Card;
 use crate::trace;

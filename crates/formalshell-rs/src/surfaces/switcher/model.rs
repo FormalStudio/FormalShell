@@ -39,7 +39,7 @@ pub fn advance(index: usize, count: usize, step: i32) -> usize {
 /// rect), held between `min` and `max`.
 pub fn thumb_width(rect: Option<&IRect>, height: f64, min: f64, max: f64) -> f64 {
     let ratio = match rect {
-        Some(r) if r.width > 0 && r.height > 0 => r.width as f64 / r.height as f64,
+        Some(r) if !r.is_empty() => f64::from(r.w) / f64::from(r.h),
         _ => 16.0 / 9.0,
     };
     (height * ratio).round().min(max).max(min)

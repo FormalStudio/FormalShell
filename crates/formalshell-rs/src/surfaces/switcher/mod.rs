@@ -17,11 +17,11 @@ use fs_theme::color::Rgba;
 use fs_theme::style::{Line, Role};
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
-use fs_types::{Window, WindowId, WorkspaceId};
+use fs_types::{IRect, Window, WindowId, WorkspaceId};
 use serde_json::{Value, json};
 
 use crate::motion::{Animated, Curve};
-use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
+use crate::scene::{Bitmap, NodeId, Paint, Scene};
 use crate::paint::{Kit, Painter};
 use crate::text::TextStyle;
 use crate::ui::boxes;
@@ -449,7 +449,7 @@ impl Switcher {
 
     /// `switcher state`'s `cells`, in output pixels.
     pub fn cells_json(&self) -> Value {
-        let r = |r: &IRect| r.to_json();
+        let r = |r: &IRect| json!(r);
         Value::Array(self.cells.iter().map(|c| json!({"cell": r(&c.cell), "thumb": r(&c.thumb), "icon": r(&c.icon)})).collect())
     }
 }

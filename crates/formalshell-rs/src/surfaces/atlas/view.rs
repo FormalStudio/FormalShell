@@ -15,7 +15,8 @@ use vello_cpu::kurbo::{Affine, Rect};
 
 use super::globe::Ink as GlobeInk;
 use super::{Atlas, BINDINGS, PREFERRED};
-use crate::scene::{IRect, NodeId, Paint};
+use crate::scene::{NodeId, Paint};
+use fs_types::IRect;
 use crate::services::radio;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::modal::Modal;

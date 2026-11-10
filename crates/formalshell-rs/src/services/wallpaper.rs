@@ -36,8 +36,8 @@ pub struct Picture {
 impl Picture {
     /// The mean Rec. 601 luma (0..255) under `rect`, every `step`th pixel
     /// each way; none where `rect` misses the picture.
-    pub fn mean_luma(&self, rect: crate::scene::IRect, step: usize) -> Option<f64> {
-        let r = rect.intersect(&crate::scene::IRect::new(0, 0, self.width as i32, self.height as i32));
+    pub fn mean_luma(&self, rect: fs_types::IRect, step: usize) -> Option<f64> {
+        let r = rect.intersect(&fs_types::IRect::new(0, 0, self.width as i32, self.height as i32));
         if r.is_empty() {
             return None;
         }

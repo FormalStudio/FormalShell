@@ -9,7 +9,8 @@ use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 
 use super::boxes;
-use crate::scene::{Bitmap, IRect, Paint};
+use crate::scene::{Bitmap, Paint};
+use fs_types::IRect;
 use crate::paint::{Kit, Painter};
 use crate::text::TextStyle;
 

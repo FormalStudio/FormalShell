@@ -34,7 +34,8 @@ use smithay_client_toolkit::shm::Shm;
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 
 use crate::render::{Renderer, scaled};
-use crate::scene::{IRect, Scene};
+use crate::scene::Scene;
+use fs_types::IRect;
 use crate::trace;
 
 pub mod audit;

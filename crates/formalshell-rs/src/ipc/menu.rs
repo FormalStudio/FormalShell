@@ -91,7 +91,7 @@ fn refresh(app: &mut App, _: &[Value]) -> Reply {
 fn status(app: &mut App, _: &[Value]) -> Reply {
     app.resolve_launcher();
     let mut v = app.launcher.status(&app.store);
-    let rect = |r: crate::scene::IRect| r.to_json();
+    let rect = |r: fs_types::IRect| serde_json::json!(r);
     let shown = app.launcher_shown();
     if let Some(r) = shown.and_then(|w| w.body_rect) {
         v["body"] = rect(r);
@@ -113,14 +113,23 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
     }
     if let Some(w) = shown {
         v["cardBox"] = rect(w.card_box());
-        v["rowBoxes"] = w.row_boxes().into_iter().map(|(i, r)| serde_json::json!({"index": i, "x": r.x, "y": r.y, "width": r.w, "height": r.h})).collect();
+        v["rowBoxes"] = w.row_boxes().into_iter().map(|(i, r)| keyed("index", i.into(), r)).collect();
     }
     v["footHints"] = shown
         .map_or_else(Vec::new, |w| w.foot_hints())
         .into_iter()
-        .map(|(on, r)| serde_json::json!({"on": on, "x": r.x, "y": r.y, "width": r.w, "height": r.h}))
+        .map(|(on, r)| keyed("on", on.into(), r))
         .collect();
     Ok(v)
+}
+
+/// `r`'s wire form led by one more key.
+fn keyed(key: &str, value: serde_json::Value, r: fs_types::IRect) -> serde_json::Value {
+    let mut out = serde_json::Map::from_iter([(key.to_owned(), value)]);
+    if let serde_json::Value::Object(rect) = serde_json::json!(r) {
+        out.extend(rect);
+    }
+    serde_json::Value::Object(out)
 }
 
 fn abbreviations(app: &mut App, _: &[Value]) -> Reply {

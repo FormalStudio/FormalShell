@@ -13,7 +13,7 @@ use vello_cpu::color::{AlphaColor, Srgb};
 use vello_cpu::kurbo::{Affine, BezPath, Ellipse, Shape, Stroke};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
-use crate::scene::IRect;
+use fs_types::IRect;
 
 /// The sculpture's colours and the mark's word, resolved once per theme
 /// and wallpaper.

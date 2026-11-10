@@ -556,20 +556,8 @@ pub fn metric(style: &Value, role: Role, key: &str) -> f64 {
     entry(style, role, None).and_then(|e| num(e.get(key))).filter(|n| n.is_finite()).unwrap_or(0.0)
 }
 
-/// What a renderer draws a resolved box as, for a box of
-/// `width` by `height`: the geometry every renderer of a box shares.
 pub mod geometry {
     use super::Cast;
-    use fs_types::Edge;
-
-    #[derive(Clone, Copy, Debug, PartialEq)]
-    pub struct Rect {
-        pub x: f64,
-        pub y: f64,
-        pub width: f64,
-        pub height: f64,
-        pub radius: f64,
-    }
 
     /// The room the cast layer reaches past the box on every side.
     pub fn cast_pad<C>(casts: &[Cast<C>]) -> f64 {
@@ -577,47 +565,6 @@ pub mod geometry {
             .iter()
             .map(|c| (c.blur + c.spread.max(0.0) + c.x.abs().max(c.y.abs())).ceil())
             .fold(0.0, f64::max)
-    }
-
-    /// The corner inside a border, held to what the box can fit.
-    pub fn inner_radius(radius: f64, border_width: f64, width: f64, height: f64) -> f64 {
-        (radius - border_width).min((width - border_width * 2.0) / 2.0).min((height - border_width * 2.0) / 2.0).max(0.0)
-    }
-
-    /// A ring is a filled rounded rectangle outset by its spread and drawn
-    /// under the fill, which is what CSS paints for a spread with no blur.
-    pub fn ring(width: f64, height: f64, radius: f64, spread: f64) -> Rect {
-        Rect { x: -spread, y: -spread, width: width + spread * 2.0, height: height + spread * 2.0, radius: radius + spread }
-    }
-
-    /// One hairline: a clipped band along its edge, as deep as the inner
-    /// corner, holding the inner outline stroked at the line's thickness so
-    /// the line follows both arcs. Both rects are relative to the layer
-    /// inside the border; the second is the stroke, relative to the band.
-    pub fn hairline(edge: Edge, thickness: f64, layer_w: f64, layer_h: f64, inner_radius: f64) -> (Rect, Rect) {
-        let sideways = matches!(edge, Edge::Left | Edge::Right);
-        let depth = thickness.max(inner_radius);
-        let width = if sideways { depth } else { layer_w };
-        let height = if sideways { layer_h } else { depth };
-        let x = if edge == Edge::Right { layer_w - width } else { 0.0 };
-        let y = if edge == Edge::Bottom { layer_h - height } else { 0.0 };
-        let band = Rect { x, y, width, height, radius: 0.0 };
-        let stroke = Rect { x: -x, y: -y, width: layer_w, height: layer_h, radius: inner_radius };
-        (band, stroke)
-    }
-
-    /// One cast's rect relative to the box and the spread it is drawn with:
-    /// a negative spread shrinks the rect and its radius instead.
-    pub fn cast<C>(width: f64, height: f64, radius: f64, cast: &Cast<C>) -> (Rect, f64) {
-        let shrink = (-cast.spread).max(0.0);
-        let rect = Rect {
-            x: shrink,
-            y: shrink,
-            width: width - shrink * 2.0,
-            height: height - shrink * 2.0,
-            radius: (radius - shrink).max(0.0),
-        };
-        (rect, cast.spread.max(0.0))
     }
 }
 

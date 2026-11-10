@@ -889,7 +889,7 @@ impl App {
         }
         match &window {
             Some(id) => {
-                let from = self.store.compositor.window(id).and_then(|w| w.rect.as_ref()).map_or((0.0, 0.0), |r| (r.width as f64, r.height as f64));
+                let from = self.store.compositor.window(id).and_then(|w| w.rect.as_ref()).map_or((0.0, 0.0), |r| (f64::from(r.w), f64::from(r.h)));
                 let fitted = crate::surfaces::launcher::fit_inside(from, size.0);
                 self.capture_set(Capture::Launcher, &[(id.clone(), fitted)], false, size.1);
             }
@@ -947,7 +947,7 @@ impl App {
         let showing = self.mirror_showing();
         let current = if showing { self.launcher.mirror_current.as_str() } else { "" };
         let streaming = showing && mi.streaming.as_deref() == Some(current) && !current.is_empty();
-        let rect = |r: crate::scene::IRect| r.to_json();
+        let rect = |r: fs_types::IRect| serde_json::json!(r);
         let feed = self.launch.win.as_ref().filter(|_| showing).and_then(|w| w.shown.feed);
         serde_json::json!({
             "showing": showing,

@@ -11,7 +11,8 @@ use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use vello_cpu::kurbo::{self, Affine, BezPath, Rect, Shape as _};
 
-use crate::scene::{IRect, Paint, Scene};
+use crate::scene::{Paint, Scene};
+use fs_types::IRect;
 use crate::services::visualizer;
 use crate::text::TextStyle;
 use crate::ui::{Cx, State, Widget, irect};

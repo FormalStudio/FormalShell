@@ -32,7 +32,7 @@ mod stack;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use fs_types::{Insets, NotificationId};
+use fs_types::{IRect, Insets, NotificationId};
 use fs_info::notifications::{self as model, Group, PositionSpec, Urgency};
 use self::stack::StackParams;
 use fs_theme::color::Rgba;
@@ -44,7 +44,7 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, Kind};
-use crate::scene::{Bitmap, IRect, NodeId, Scene};
+use crate::scene::{Bitmap, NodeId, Scene};
 use crate::scroll::{self, Travel, Velocity};
 use crate::runtime::now_ms;
 use crate::store::Store;

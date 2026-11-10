@@ -264,7 +264,7 @@ impl App {
                 "home": {"x": r(home.0), "y": r(home.1)},
                 "thumbs": thumbs,
             },
-            "rect": frame.to_json(),
+            "rect": frame,
         })
     }
 }

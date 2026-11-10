@@ -104,10 +104,10 @@ impl App {
             .filter(|w| !snap.parked.contains(&w.id))
             .filter_map(|w| {
                 let r = w.rect?;
-                let (x, y) = (r.x as f64 - origin.0, r.y as f64 - origin.1);
+                let (x, y) = (f64::from(r.x) - origin.0, f64::from(r.y) - origin.1);
                 let focused = w.id == snap.focused_window_id;
                 Some(Glint {
-                    rect: (x, y, x + r.width as f64, y + r.height as f64),
+                    rect: (x, y, x + f64::from(r.w), y + f64::from(r.h)),
                     rgb: if focused { border } else { [1.0, 1.0, 1.0] },
                     strength: if focused { 1.0 } else { UNFOCUSED },
                 })

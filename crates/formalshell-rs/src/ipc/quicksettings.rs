@@ -32,7 +32,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
     let state: Option<Json> = app.panel_status(ID);
     let host = app.panel.as_ref().filter(|h| h.is_open() && h.panel() == Some(ID));
     let boxes = host.map(|h| h.quick_boxes()).unwrap_or_default();
-    let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| r.to_json());
+    let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| json!(r));
     let parsed = state.clone().unwrap_or(Json::Null);
     let shown = parsed["shown"].as_str();
     let mut rows: Vec<Json> = quick::tiles_with(&app.store, shown)
@@ -97,7 +97,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
     let out = json!({
         "open": host.is_some(),
         "from": host.map(|h| h.from.label()),
-        "card": host.map_or(Json::Null, |h| h.win.card.rest_rect().to_json()),
+        "card": host.map_or(Json::Null, |h| json!(h.win.card.rest_rect())),
         "cursor": host.and_then(|h| h.viewport().3.map(|(k, _)| k.to_owned())),
         "rows": rows,
         "menu": menu,

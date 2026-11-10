@@ -6,14 +6,14 @@
 
 use std::time::{Duration, Instant};
 
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 use fs_theme::palette::ColorRole;
 use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 
 use crate::motion::{Animated, Kind as Clock};
-use crate::scene::{IRect, NodeId, Scene};
+use crate::scene::{NodeId, Scene};
 use crate::surface::Surface;
 use crate::paint::{Kit, Painter};
 use crate::text::{ShapedText, TextStyle};

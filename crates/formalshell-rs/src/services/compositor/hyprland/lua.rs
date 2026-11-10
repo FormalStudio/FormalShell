@@ -135,8 +135,8 @@ pub fn zen(id: &WindowId, rect: IRect) -> String {
          hl.dispatch(hl.dsp.window.move({{ window = {window}, x = {}, y = {} }})) \
          hl.dispatch(hl.dsp.focus({{ window = {window} }})) \
          end",
-        rect.width.max(1),
-        rect.height.max(1),
+        rect.w.max(1),
+        rect.h.max(1),
         rect.x,
         rect.y,
     )
@@ -152,8 +152,8 @@ pub fn unzen(id: &WindowId, floating: Option<IRect>) -> String {
         Some(r) => format!(
             "{back} hl.dispatch(hl.dsp.window.resize({{ window = {window}, x = {}, y = {} }})) \
              hl.dispatch(hl.dsp.window.move({{ window = {window}, x = {}, y = {} }}))",
-            r.width.max(1),
-            r.height.max(1),
+            r.w.max(1),
+            r.h.max(1),
             r.x,
             r.y,
         ),

@@ -37,12 +37,12 @@ pub fn geometry(screen: (f64, f64, f64, f64), bar: Insets, share: f64, margin: f
     let gap = margin.round().max(0.0);
     let (top, bottom, left, right) = (bar.top.max(0.0), bar.bottom.max(0.0), bar.left.max(0.0), bar.right.max(0.0));
     let usable = sh - top - bottom - gap;
-    Some(IRect {
-        x: (sx + left + gap).round() as i64,
-        y: (sy + top + gap).round() as i64,
-        width: (sw - left - right - gap * 2.0).round().max(1.0) as i64,
-        height: ((usable * clamp_share(share)).round() - gap).max(1.0) as i64,
-    })
+    Some(IRect::new(
+        (sx + left + gap).round() as i32,
+        (sy + top + gap).round() as i32,
+        (sw - left - right - gap * 2.0).round().max(1.0) as i32,
+        ((usable * clamp_share(share)).round() - gap).max(1.0) as i32,
+    ))
 }
 
 struct Placing {
@@ -248,14 +248,14 @@ impl App {
             let t = p.target;
             compositor::send(Command::PlaceFloatingWindow {
                 id: p.id.clone(),
-                x: t.x as f64,
-                y: t.y as f64,
-                width: t.width as f64,
-                height: t.height as f64,
+                x: f64::from(t.x),
+                y: f64::from(t.y),
+                width: f64::from(t.w),
+                height: f64::from(t.h),
             });
             return true;
         }
-        let sized = rect.is_some_and(|r| r.width == p.target.width && r.height == p.target.height);
+        let sized = rect.is_some_and(|r| r.w == p.target.w && r.h == p.target.h);
         let unverifiable = rect.is_none() && attempts - p.placed_at >= 3;
         if p.placed && (sized || unverifiable || attempts >= 20) {
             if !sized && !unverifiable {
@@ -280,15 +280,15 @@ mod tests {
     fn drops_from_under_the_bar_over_its_share() {
         let bar = Insets { top: 40.0, ..Insets::default() };
         let r = geometry((0.0, 0.0, 1920.0, 1080.0), bar, 0.5, 10.0).unwrap();
-        assert_eq!(r, IRect { x: 10, y: 50, width: 1900, height: 505 });
+        assert_eq!(r, IRect::new(10, 50, 1900, 505));
     }
 
     #[test]
     fn share_is_clamped_and_a_bad_screen_places_nothing() {
         let r = geometry((100.0, 0.0, 1000.0, 1000.0), Insets::default(), 5.0, 0.0).unwrap();
-        assert_eq!(r, IRect { x: 100, y: 0, width: 1000, height: 1000 });
+        assert_eq!(r, IRect::new(100, 0, 1000, 1000));
         let r = geometry((0.0, 0.0, 1000.0, 1000.0), Insets::default(), 0.01, 0.0).unwrap();
-        assert_eq!(r.height, 200);
+        assert_eq!(r.h, 200);
         assert!(geometry((0.0, 0.0, 0.0, 1000.0), Insets::default(), 0.5, 0.0).is_none());
     }
 }

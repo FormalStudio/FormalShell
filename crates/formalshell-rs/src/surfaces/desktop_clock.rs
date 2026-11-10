@@ -12,7 +12,8 @@ use fs_theme::color::Rgba;
 use fs_theme::palette::ColorRole;
 
 use crate::paint::{Kit, Painter};
-use crate::scene::{Bitmap, IRect};
+use crate::scene::Bitmap;
+use fs_types::IRect;
 use crate::services::wallpaper::{DepthCut, Picture};
 use crate::settings;
 use crate::store::Store;

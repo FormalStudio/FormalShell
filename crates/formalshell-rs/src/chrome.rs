@@ -3,9 +3,8 @@
 //! and the outputs a fullscreen window has taken. Made off the live bar on
 //! each read, so a compositor event and the read after it agree.
 
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 
-use crate::scene::IRect;
 use crate::surfaces::bar::Bar;
 use crate::surfaces::card::Ends;
 use crate::surfaces::panel::host::Place;

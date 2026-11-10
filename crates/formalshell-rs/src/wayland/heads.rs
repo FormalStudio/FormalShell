@@ -18,7 +18,7 @@
 use fs_theme::palette::ColorRole;
 use std::time::Instant;
 
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
@@ -28,7 +28,6 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 use super::App;
 use super::backdrop::{Backdrop, Shards};
 use crate::store::Topic;
-use crate::scene::IRect;
 use crate::surface::{PixelSurface, Surface};
 use crate::surfaces::bar::Bar;
 
@@ -598,7 +597,7 @@ impl App {
             .iter()
             .filter(|win| !win.is_floating && active.contains(&win.workspace_id.as_str()))
             .filter_map(|win| win.rect)
-            .map(|r| (r.x as f64, r.y as f64, r.width as f64, r.height as f64))
+            .map(|r| (f64::from(r.x), f64::from(r.y), f64::from(r.w), f64::from(r.h)))
             .collect();
         fs_chrome::shards::covered((f64::from(x), f64::from(y), f64::from(w), f64::from(h)), &rects)
     }

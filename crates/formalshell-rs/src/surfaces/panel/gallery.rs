@@ -7,11 +7,11 @@
 use fs_theme::palette::ColorRole;
 use fs_theme::style::Role;
 use fs_theme::color::Rgba;
-use fs_types::{Edge, Percent};
+use fs_types::{Edge, IRect, Percent};
 use vello_cpu::kurbo::{Affine, Rect};
 
 use super::{Effect, Panel, View};
-use crate::scene::{IRect, Paint, Scene};
+use crate::scene::{Paint, Scene};
 use crate::store::Topic;
 use crate::ui::el::{CellState, Opt, Ring};
 use crate::ui::{Cx, El, Event, Ink, Size, Type, Variant, Weight, What, Widget, irect, w};

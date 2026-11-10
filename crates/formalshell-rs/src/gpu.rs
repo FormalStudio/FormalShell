@@ -34,7 +34,7 @@ use vello_cpu::peniko::{BlendMode, Fill, Gradient, ImageSampler};
 use vello_cpu::Pixmap;
 
 use crate::render::Raster;
-use crate::scene::IRect;
+use fs_types::IRect;
 
 /// The square every frame's damage is drawn in, a piece at a time: the
 /// renderer's depth target is made once at this size and every render

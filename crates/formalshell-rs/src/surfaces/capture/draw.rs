@@ -12,7 +12,8 @@ use vello_cpu::kurbo::Rect;
 
 use super::picker::{Cands, Picker, TOOLS};
 use crate::motion::{Animated, Kind as Clock};
-use crate::scene::{IRect, NodeId, Paint, Scene};
+use crate::scene::{NodeId, Paint, Scene};
+use fs_types::IRect;
 use crate::paint::{Kit, Painter};
 use crate::ui::el::CellState;
 use crate::ui::{El, Ink, Ui, w};

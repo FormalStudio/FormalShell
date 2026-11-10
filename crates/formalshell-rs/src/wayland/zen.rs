@@ -34,15 +34,15 @@ struct Zen {
 /// The zen window's rect on an output's logical box: 60% of its width but
 /// never under 1100 where the output has the room, and its height less a
 /// band above and below.
-fn centred(x: i64, y: i64, w: i64, h: i64, margin: f64) -> IRect {
-    let (wf, hf) = (w as f64, h as f64);
+fn centred(x: i32, y: i32, w: i32, h: i32, margin: f64) -> IRect {
+    let (wf, hf) = (f64::from(w), f64::from(h));
     let width = (wf * 0.6).max((wf - 2.0 * margin).min(1100.0));
     let height = hf - 2.0 * (hf * 0.06).max(margin);
     IRect::new(
-        x + ((wf - width) / 2.0).round() as i64,
-        y + ((hf - height) / 2.0).round() as i64,
-        width.round() as i64,
-        height.round() as i64,
+        x + ((wf - width) / 2.0).round() as i32,
+        y + ((hf - height) / 2.0).round() as i32,
+        width.round() as i32,
+        height.round() as i32,
     )
 }
 
@@ -132,13 +132,13 @@ impl App {
     }
 
     /// The focused output's logical box, or the first one's.
-    fn zen_output(&self) -> Option<(i64, i64, i64, i64)> {
+    fn zen_output(&self) -> Option<(i32, i32, i32, i32)> {
         let focused = &self.store.compositor.snapshot.focused_output_name;
         let infos: Vec<_> = self.outputs.outputs().filter_map(|o| self.outputs.info(&o)).collect();
         let info = infos.iter().find(|i| i.name.as_deref() == Some(focused.as_str())).or(infos.first())?;
         let (x, y) = info.logical_position.unwrap_or((0, 0));
         let (w, h) = info.logical_size?;
-        Some((x.into(), y.into(), w.into(), h.into()))
+        Some((x, y, w, h))
     }
 }
 
@@ -150,16 +150,16 @@ mod tests {
     fn centred_on_the_output() {
         for (x, y, w, h) in [(0, 0, 2560, 1440), (1920, 0, 1536, 864), (-1280, 200, 1280, 720)] {
             let r = centred(x, y, w, h, 12.0);
-            assert!((2 * r.x + r.width - (2 * x + w)).abs() <= 1, "{r:?} off centre horizontally on {w}x{h}");
-            assert!((2 * r.y + r.height - (2 * y + h)).abs() <= 1, "{r:?} off centre vertically on {w}x{h}");
-            assert!(r.x > x && r.y > y && r.x + r.width < x + w && r.y + r.height < y + h, "{r:?} touches an edge of {w}x{h}");
-            assert!(r.width * 2 > w, "{r:?} is a sliver of {w}x{h}");
+            assert!((2 * r.x + r.w - (2 * x + w)).abs() <= 1, "{r:?} off centre horizontally on {w}x{h}");
+            assert!((2 * r.y + r.h - (2 * y + h)).abs() <= 1, "{r:?} off centre vertically on {w}x{h}");
+            assert!(r.x > x && r.y > y && r.right() < x + w && r.bottom() < y + h, "{r:?} touches an edge of {w}x{h}");
+            assert!(r.w * 2 > w, "{r:?} is a sliver of {w}x{h}");
         }
     }
 
     #[test]
     fn next_column_by_x() {
-        let w = |id: &str, x: i64, floating: bool| Window {
+        let w = |id: &str, x: i32, floating: bool| Window {
             id: id.into(),
             workspace_id: "1".into(),
             is_floating: floating,

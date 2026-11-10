@@ -42,22 +42,27 @@ pub fn address_id(raw: &str) -> Option<WindowId> {
     u64::from_str_radix(hex, 16).ok().filter(|n| *n != 0).map(|n| WindowId::new(format!("{n:x}")))
 }
 
-fn pair(v: Option<&Value>) -> Option<(i64, i64)> {
+/// A coordinate or size in pixels, which fits an `i32`.
+fn pixels(v: Option<&Value>) -> Option<i32> {
+    int(v).and_then(|n| i32::try_from(n).ok())
+}
+
+fn pair(v: Option<&Value>) -> Option<(i32, i32)> {
     let items = v?.as_array()?;
-    Some((int(items.first())?, int(items.get(1))?))
+    Some((pixels(items.first())?, pixels(items.get(1))?))
 }
 
 /// A monitor's box in the layout's logical pixels, the space a client's
 /// `at` and `size` are in: `width` and `height` are the mode's pixels, so
 /// they swap under a 90 or 270 degree transform and divide by the scale.
 fn logical_rect(m: &Value) -> Option<IRect> {
-    let (mut w, mut h) = (int(m.get("width"))?, int(m.get("height"))?);
+    let (mut w, mut h) = (pixels(m.get("width"))?, pixels(m.get("height"))?);
     if int(m.get("transform")).unwrap_or(0) % 2 == 1 {
         (w, h) = (h, w);
     }
     let scale = m.get("scale").and_then(Value::as_f64).filter(|s| s.is_finite() && *s > 0.0).unwrap_or(1.0);
-    let (width, height) = ((w as f64 / scale).round() as i64, (h as f64 / scale).round() as i64);
-    (width > 0 && height > 0).then(|| IRect::new(int(m.get("x")).unwrap_or(0), int(m.get("y")).unwrap_or(0), width, height))
+    let (width, height) = ((f64::from(w) / scale).round() as i32, (f64::from(h) / scale).round() as i32);
+    (width > 0 && height > 0).then(|| IRect::new(pixels(m.get("x")).unwrap_or(0), pixels(m.get("y")).unwrap_or(0), width, height))
 }
 
 /// `fullscreen` is a mode mask (1 maximized, 2 fullscreen) on current
@@ -72,7 +77,7 @@ fn is_fullscreen(c: &Value) -> bool {
 /// Within a pixel either way, since a fractional scale rounds the
 /// monitor's logical size one way and the client's another.
 fn fills(window: &IRect, monitor: &IRect) -> bool {
-    [(window.x, monitor.x), (window.y, monitor.y), (window.width, monitor.width), (window.height, monitor.height)]
+    [(window.x, monitor.x), (window.y, monitor.y), (window.w, monitor.w), (window.h, monitor.h)]
         .iter()
         .all(|(a, b)| (a - b).abs() <= 1)
 }

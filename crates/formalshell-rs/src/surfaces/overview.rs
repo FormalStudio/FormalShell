@@ -20,12 +20,12 @@ use fs_theme::color::Rgba;
 use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
-use fs_types::{Rect, Window, WindowId, WorkspaceId};
+use fs_types::{IRect, Rect, Window, WindowId, WorkspaceId};
 use vello_cpu::kurbo::{self, Affine};
 use serde_json::{Value, json};
 
 use crate::motion::{Animated, Curve};
-use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
+use crate::scene::{Bitmap, NodeId, Paint, Scene};
 use crate::services::compositor::Snapshot;
 use crate::paint::{Kit, Painter};
 
@@ -104,9 +104,9 @@ pub fn rows(snapshot: &Snapshot, output: &str, origin: (f64, f64)) -> Vec<Row> {
 
 fn win_of(w: &Window, origin: (f64, f64)) -> Option<Win> {
     let r = w.rect?;
-    (r.width > 0 && r.height > 0).then(|| Win {
+    (!r.is_empty()).then(|| Win {
         id: w.id.clone(),
-        rect: Rect::new(r.x as f64 - origin.0, r.y as f64 - origin.1, r.width as f64, r.height as f64),
+        rect: Rect::new(f64::from(r.x) - origin.0, f64::from(r.y) - origin.1, f64::from(r.w), f64::from(r.h)),
         floating: w.is_floating,
     })
 }
@@ -785,11 +785,11 @@ fn bbox(t: Affine, r: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fs_types::{IRect, Workspace};
+    use fs_types::Workspace;
 
     fn snapshot() -> Snapshot {
         let ws = |id: &str, idx: i64| Workspace { id: id.into(), idx, output: "DP-1".into(), ..Default::default() };
-        let win = |id: &str, ws: &str, x: i64| Window {
+        let win = |id: &str, ws: &str, x: i32| Window {
             id: id.into(),
             workspace_id: ws.into(),
             rect: Some(IRect::new(x, 10, 800, 1000)),

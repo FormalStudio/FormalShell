@@ -10,12 +10,11 @@ use std::time::Instant;
 use fs_chrome::bar::workspaces::{self, Slot, SlotOpts};
 use fs_theme::color::Rgba;
 use fs_theme::tokens::WEIGHTS;
-use fs_types::{WindowId, WorkspaceId};
+use fs_types::{IRect, WindowId, WorkspaceId};
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Affine;
 
 use crate::motion::{Animated, Kind, PULSE_MS, breathe};
-use crate::scene::IRect;
 use crate::services::appicon::{self, Icon};
 use crate::services::agents;
 use crate::settings;
@@ -329,7 +328,7 @@ impl Workspaces {
     /// state and every chip's settled length, in the bar window's own
     /// coordinates.
     pub fn status(&self) -> Value {
-        let rect = |r: IRect| r.to_json();
+        let rect = |r: IRect| json!(r);
         let slots: Vec<Value> = self
             .slots
             .iter()

@@ -14,7 +14,8 @@ use vello_cpu::kurbo::{Affine, Arc, BezPath, Circle, Rect, Shape};
 use super::el::{CellState, Font, Kind, Ring, Size, Type, Variant, Weight};
 use super::{Cx, El, Hit, HitWhat, Ink, Stop, boxes, irect};
 use crate::motion::{Kind as Clock, PULSE_MS};
-use crate::scene::{IRect, Paint, Scene};
+use crate::scene::{Paint, Scene};
+use fs_types::IRect;
 use crate::text::{self, Family, ShapedText, TextStyle};
 
 fn px(cx: &Cx, t: Type) -> f32 {

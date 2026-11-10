@@ -8,7 +8,7 @@ use fs_theme::tokens::WEIGHTS;
 use parley::GenericFamily;
 
 use crate::paint::Painter;
-use crate::scene::IRect;
+use fs_types::IRect;
 use crate::text::{Family, ShapedText, Text, TextStyle};
 
 /// What the theme hands every cell: tokens, inks and the `cell` role's

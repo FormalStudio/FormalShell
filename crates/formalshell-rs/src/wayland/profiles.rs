@@ -14,14 +14,13 @@ use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
 use fs_theme::palette::ColorRole;
-use fs_types::Edge;
+use fs_types::{Edge, IRect};
 use fs_upower::Profile;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::seat::pointer::PointerEventKind;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Target};
-use crate::scene::IRect;
 use crate::services::devices;
 use crate::surfaces::card::{Card, CardSpec, Sizing};
 use crate::surfaces::popup::Popup;

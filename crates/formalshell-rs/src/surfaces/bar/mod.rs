@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use fs_chrome::bar::layout::{self, Builtin, Entry, Label, Rails, Resolved};
 use fs_chrome::bar::panels::{self, PanelId};
 use fs_chrome::frame::{self, Gaps};
-use fs_types::{Edge, Insets, Region};
+use fs_types::{Edge, IRect, Insets, Region};
 use fs_theme::palette::ColorRole;
 use fs_theme::barpaint;
 use fs_theme::color::Rgba;
@@ -32,7 +32,7 @@ use crate::settings::Layout;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::{Arc, BezPath, Point, Rect, RoundedRect, Shape, SvgArc, Vec2};
 
-use crate::scene::{IRect, NodeId, Paint, Scene};
+use crate::scene::{NodeId, Paint, Scene};
 use crate::store::{Store, Topic};
 use crate::surfaces::card::Join;
 use crate::surfaces::sidebar::Sidebar;

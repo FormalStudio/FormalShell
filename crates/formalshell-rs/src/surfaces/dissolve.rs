@@ -19,7 +19,8 @@ use vello_cpu::kurbo::{BezPath, Rect, Shape};
 use vello_cpu::{PixelMetadata, Pixmap};
 
 use crate::render::Renderer;
-use crate::scene::{Bitmap, IRect, Paint, Scene, VOp};
+use crate::scene::{Bitmap, Paint, Scene, VOp};
+use fs_types::IRect;
 
 /// The largest cell, `2^MAX_K` device pixels, which the flips are cut on.
 const MAX_K: u32 = 5;
