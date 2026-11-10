@@ -544,6 +544,25 @@ impl Bar {
         Some(self.slot_anchor(i))
     }
 
+    /// The regions carrying a chevron, in the strip's order.
+    pub fn chevron_regions(&self) -> Vec<Region> {
+        Region::ALL.into_iter().filter(|r| self.has_chevron(*r)).collect()
+    }
+
+    /// `bar chevron status`: each region's chevron, the cells it collapses
+    /// and whether its card is the one open (`open`), then the regions
+    /// carrying one.
+    pub fn chevron_status(&self, open: Option<Region>) -> Value {
+        let mut regions = serde_json::Map::new();
+        for r in Region::ALL {
+            let chevron = self.has_chevron(r);
+            let collapses: Vec<String> = if chevron { self.overflow_entries(r).iter().map(|e| e.name()).collect() } else { Vec::new() };
+            regions.insert(r.as_str().into(), json!({"chevron": chevron, "collapses": collapses, "open": open == Some(r)}));
+        }
+        let names: Vec<&str> = self.chevron_regions().iter().map(|r| r.as_str()).collect();
+        json!({"regions": regions, "chevronRegions": names})
+    }
+
     pub fn has_chevron(&self, region: Region) -> bool {
         if self.sidebar().is_some() {
             return region == Region::Right;

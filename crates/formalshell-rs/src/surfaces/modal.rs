@@ -286,9 +286,13 @@ impl Modal {
         }
     }
 
-    /// The scrim's surfaces as (name, pixel alpha, fade), for `debug dump`.
-    pub fn scrims(&self) -> impl Iterator<Item = (&'static str, f64, f64)> + '_ {
-        self.band.iter().chain(std::iter::once(&self.dim)).map(|s| (s.name, s.alpha, s.fade()))
+    /// Its entry in `debug dump`'s `modals`: the scrim's surfaces with
+    /// their pixel alpha and fade, the card, and the content's place.
+    pub fn report(&self) -> serde_json::Value {
+        let scrims: Vec<serde_json::Value> =
+            self.band.iter().chain(std::iter::once(&self.dim)).map(|s| serde_json::json!({"name": s.name, "alpha": s.alpha, "fade": s.fade()})).collect();
+        let content = self.layer.as_ref().map(|l| serde_json::json!(l.place(&self.win.card, true)));
+        serde_json::json!({"namespace": self.namespace, "open": self.open, "scrims": scrims, "card": self.win.card.live_rect(), "content": content, "popover": self.win.card.popover()})
     }
 }
 

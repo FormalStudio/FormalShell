@@ -225,8 +225,18 @@ impl App {
     }
 
     /// The windows `owner` holds a capture session on.
-    pub fn capture_sessions(&self, owner: Owner) -> Vec<&WindowId> {
+    fn capture_sessions(&self, owner: Owner) -> Vec<&WindowId> {
         self.thumbnails.thumbs.iter().filter(|t| t.owner == owner && t.session.is_some()).map(|t| &t.id).collect()
+    }
+
+    /// `debug dump`'s `captures`: the windows each card holds a session on.
+    pub(super) fn captures_report(&self) -> serde_json::Value {
+        serde_json::json!({
+            "switcher": self.capture_sessions(Owner::Switcher),
+            "spaces": self.capture_sessions(Owner::Preview),
+            "launcher": self.capture_sessions(Owner::Launcher),
+            "overview": self.capture_sessions(Owner::Overview),
+        })
     }
 
     /// A source and a session for a thumbnail whose window has a handle

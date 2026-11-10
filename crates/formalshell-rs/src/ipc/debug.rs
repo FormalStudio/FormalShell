@@ -34,47 +34,19 @@ pub fn target() -> Target<App> {
 }
 
 /// Only what this shell holds, keyed as the full dump: the compositor
-/// block, the settings, the bar, its join, the frame and the chrome
-/// numbers, then each window owner's own blocks. Every other key waits for
-/// the service behind it.
+/// block, the settings, the theme table and the chrome numbers, then each
+/// window owner's own blocks. Every other key waits for the service behind
+/// it.
 fn dump(app: &mut App, _: &[Value]) -> Reply {
     let h = &app.store.compositor;
     let c = &h.snapshot;
-    let edge = live!(app).bar.edge();
-    let thickness = live!(app).bar.thickness();
-    let frame = live!(app).bar.frame_thickness() as i32;
-    let framed = live!(app).bar.framed();
-    let inset = |e: Edge| if e == edge { thickness } else if framed { frame } else { 0 };
+    let chrome = app.chrome();
+    let inset = |e: Edge| chrome.inset(e) as i32;
     let theme = &app.store.theme.theme;
-    let reach = fs_js::json_number(theme.card_radius());
-    let screen = app.bar_output_name();
-    let join = match app.debug_join() {
-        Some((x, width)) => json!({"edge": edge.as_str(), "x": x, "width": width, "reach": reach, "screen": screen}),
-        None => serde_json::Value::Null,
-    };
-    let line: Vec<serde_json::Value> = live!(app).bar.line_rects().iter().map(|r| json!(r)).collect();
-    let modals: Vec<serde_json::Value> = app
-        .modals()
-        .map(|m| {
-            let scrims: Vec<serde_json::Value> =
-                m.scrims().map(|(name, alpha, fade)| json!({"name": name, "alpha": alpha, "fade": fade})).collect();
-            let content = m.layer.as_ref().map(|l| json!(l.place(&m.win.card, true)));
-            json!({"namespace": m.namespace, "open": m.open, "scrims": scrims, "card": m.win.card.live_rect(), "content": content, "popover": m.win.card.popover()})
-        })
-        .collect();
-    // Every toast the model holds, tier by tier, for a leg reading what one
-    // said rather than only how many there were.
-    let m = &app.store.notifications.model;
-    let toasts: Vec<serde_json::Value> = [("popup", &m.popups), ("pending", &m.pending), ("past", &m.past)]
-        .into_iter()
-        .flat_map(|(tier, list)| {
-            list.iter().map(move |e| {
-                let actions: Vec<&str> = e.actions.iter().map(|a| a.label.as_str()).collect();
-                json!({"tier": tier, "summary": e.summary, "body": e.body, "urgency": u8::from(e.urgency), "actions": actions, "arrivedAt": e.arrived_at})
-            })
-        })
-        .collect();
-    let phone = &app.store.iphone;
+    let mut phone = app.store.iphone.status(&app.store.media.ams);
+    if let Some(recent) = phone.as_object_mut().and_then(|p| p.remove("recent")) {
+        phone["recentCount"] = json!(recent.as_array().map_or(0, Vec::len));
+    }
     let mut dump = json!({
         "compositor": "hyprland",
         "available": c.available,
@@ -87,36 +59,15 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
         "floatingOutputs": c.floating_outputs,
         "configLoaded": app.store.config.settings(),
         "agents": {"stateByWindow": app.store.agents.by_window, "stateByHost": app.store.agents.by_host},
-        "iphone": {
-            "installed": phone.installed,
-            "available": phone.observer,
-            "connected": phone.connected,
-            "deviceName": phone.device_name,
-            "batteryAvailable": phone.battery.is_some(),
-            "battery": phone.battery.unwrap_or(0.0),
-            "unread": phone.unread,
-            "inFocus": phone.in_focus,
-            "recentCount": phone.recent.len(),
-        },
-        "bar": [{"screen": screen, "edge": edge.as_str(), "line": line, "paint": live!(app).bar.paint_state(&app.store)}],
-        "join": join,
-        "modals": modals,
-        "toasts": toasts,
+        "iphone": phone,
         "activity": app.store.activity.to_json(),
-        "frame": live!(app).bar.frame_state(),
-        "captures": {
-            "switcher": app.capture_sessions(crate::wayland::capture::Owner::Switcher),
-            "spaces": app.capture_sessions(crate::wayland::capture::Owner::Preview),
-            "launcher": app.capture_sessions(crate::wayland::capture::Owner::Launcher),
-            "overview": app.capture_sessions(crate::wayland::capture::Owner::Overview),
-        },
         "depth": app.store.depth.status(),
         "render": render(),
         "theme": {
             "radii": {"sm": fs_js::json_number(theme.radii.sm), "md": fs_js::json_number(theme.radii.md), "lg": fs_js::json_number(theme.radii.lg), "xl": fs_js::json_number(theme.radii.xl)},
-            "radiusXl": reach,
+            "radiusXl": fs_js::json_number(theme.card_radius()),
             "borderWidth": fs_js::json_number(theme.border_width),
-            "barPosition": edge.as_str(),
+            "barPosition": chrome.edge.as_str(),
             "layout": crate::settings::layout(&app.store.config).as_str(),
             "barStyle": theme.bar_style.as_str(),
             "blur": app.store.theme.blur,

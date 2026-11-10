@@ -156,6 +156,16 @@ pub(super) const DEVICES: &[Topic] = &[
     Topic::Logind,
 ];
 
+/// Every owner's blocks of `debug dump`, and the two that span owners:
+/// the modal cards on screen and the windows each card captures.
+pub(super) fn report(app: &App, dump: &mut Map<String, Value>) {
+    dump.insert("modals".into(), app.modals().map(surfaces::modal::Modal::report).collect());
+    dump.insert("captures".into(), app.captures_report());
+    for o in LIFECYCLE {
+        o.report(app, dump);
+    }
+}
+
 /// The owner of `surface`. A surface has one owner, so the walk's order
 /// decides nothing here.
 pub(super) fn of(app: &App, surface: &WlSurface) -> Option<&'static dyn Owner> {
@@ -416,7 +426,17 @@ impl Owner for Bar {
         live!(app).bar.wake(&app.kit, now)
     }
 
+    /// The strip and its line, `debug join`'s join, the frame ring and the
+    /// sidebar's clock.
     fn report(&self, app: &App, dump: &mut Map<String, Value>) {
+        let bar = &live!(app).bar;
+        let (edge, screen) = (bar.edge().as_str(), app.bar_output_name());
+        let line: Vec<Value> = bar.line_rects().iter().map(|r| json!(r)).collect();
+        let reach = fs_js::json_number(app.store.theme.theme.card_radius());
+        let join = app.debug_join().map(|(x, width)| json!({"edge": edge, "x": x, "width": width, "reach": reach, "screen": screen}));
+        dump.insert("bar".into(), json!([{"screen": screen, "edge": edge, "line": line, "paint": bar.paint_state(&app.store)}]));
+        dump.insert("join".into(), join.unwrap_or(Value::Null));
+        dump.insert("frame".into(), bar.frame_state());
         dump.insert("sidebarClock".into(), app.sidebar_clock_state());
     }
 
@@ -1084,8 +1104,10 @@ impl Owner for Toasts {
         app.toasts_dirty = true;
     }
 
+    /// What every toast said, and where each card on the stack sits.
     fn report(&self, app: &App, dump: &mut Map<String, Value>) {
         let cards = app.toast_cards().into_iter().map(|(key, r)| json!({"key": key, "rect": r})).collect();
+        dump.insert("toasts".into(), app.store.notifications.tiers());
         dump.insert("toastCards".into(), cards);
     }
 

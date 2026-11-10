@@ -1529,9 +1529,7 @@ impl App {
 
     /// Every window owner's blocks of `debug dump`.
     pub fn report(&self, dump: &mut serde_json::Map<String, serde_json::Value>) {
-        for o in owner::LIFECYCLE {
-            o.report(self, dump);
-        }
+        owner::report(self, dump);
     }
 
     pub fn report_exit(&self) {

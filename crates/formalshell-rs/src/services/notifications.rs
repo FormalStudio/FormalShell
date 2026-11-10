@@ -267,6 +267,23 @@ impl State {
         true
     }
 
+    /// Every entry the model holds, tier by tier, for `debug dump`'s
+    /// `toasts`: a leg reads what one said rather than only how many there
+    /// were.
+    pub fn tiers(&self) -> Value {
+        let m = &self.model;
+        let entries: Vec<Value> = [("popup", &m.popups), ("pending", &m.pending), ("past", &m.past)]
+            .into_iter()
+            .flat_map(|(tier, list)| {
+                list.iter().map(move |e| {
+                    let actions: Vec<&str> = e.actions.iter().map(|a| a.label.as_str()).collect();
+                    json!({"tier": tier, "summary": e.summary, "body": e.body, "urgency": u8::from(e.urgency), "actions": actions, "arrivedAt": e.arrived_at})
+                })
+            })
+            .collect();
+        Value::Array(entries)
+    }
+
     pub fn find(&self, id: NotificationId) -> Option<&model::Entry> {
         self.all().find(|e| e.id == id)
     }
