@@ -25,7 +25,7 @@ use std::rc::Rc;
 use fs_chrome::bar::workspaces::{PreviewLayout, preview_layout};
 use fs_types::{Rect, Window, WindowId, WorkspaceId};
 
-use super::{Effect, Panel, View};
+use super::{Effect, Out, Panel, View};
 use strip::{Strip, Tile};
 use crate::scene::Bitmap;
 use crate::services::compositor;
@@ -83,7 +83,7 @@ impl WorkspacePreview {
     fn focus(&self, id: &str, fx: &mut Effect) {
         if !id.is_empty() {
             compositor::focus_window(&WindowId::new(id));
-            fx.close = true;
+            fx.push(Out::Close);
         }
     }
 }

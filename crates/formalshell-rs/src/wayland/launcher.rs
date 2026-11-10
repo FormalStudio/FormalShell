@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::bar::panels::{Home, PanelId};
+use fs_chrome::bar::panels::PanelId;
 use fs_types::WindowId;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::seat::keyboard::KeyEvent;
@@ -193,52 +193,13 @@ impl App {
 
     /// What a key or click in the held panel asked for. `Back` with nothing
     /// asked of it climbs out of the route, as Backspace does in a mode.
-    fn launcher_panel_out(&mut self, out: crate::surfaces::panel::host::Out, back: bool) {
-        use crate::surfaces::panel::{self, host::Out as P};
+    fn launcher_panel_outs(&mut self, outs: Vec<crate::surfaces::panel::Out>, back: bool) {
         self.launcher.dirty = true;
-        match out {
-            P::None if back => {
-                let out = self.launcher.pop(&self.store);
-                self.launcher_out(out);
-            }
-            P::None => {}
-            P::Close => self.menu_close(),
-            P::Panel(id, _) if id.home() == Home::Launcher => self.menu_panel(id),
-            P::Panel(id, then) => {
-                self.menu_close();
-                self.set_panel(id, true, None);
-                if let Some(stop) = then {
-                    self.panel_activate(id, &stop);
-                }
-            }
-            P::Back(..) => {}
-            P::Summon(panel::ATLAS) => {
-                self.menu_close();
-                self.atlas_show();
-            }
-            P::Summon(route) => {
-                let from = self.launcher_panel();
-                self.launcher.close();
-                self.menu_open(Some(route));
-                if route == crate::surfaces::launcher::PICKER_ROUTE {
-                    self.launcher.picker.from = from;
-                }
-            }
-            P::Call(target, function) => {
-                self.menu_close();
-                self.call_self(target, function, &[]);
-            }
-            P::Menu(..) => {}
-            P::Ipc(calls, close) => {
-                if close {
-                    self.menu_close();
-                }
-                self.run_ipc(&calls);
-            }
-            P::Act(action) => {
-                self.menu_close();
-                self.act(action, live!(self).bar.length() as f64);
-            }
+        if back && outs.is_empty() {
+            let out = self.launcher.pop(&self.store);
+            self.launcher_out(out);
+        } else {
+            self.panel_outs(super::Holder::Launcher, outs);
         }
         self.launcher_resolve = true;
     }
@@ -275,7 +236,7 @@ impl App {
         let Some(p) = self.launcher.panel.as_mut() else { return };
         let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
         let driven = drive(p.module.as_mut(), &mut p.cursor, w.shown.stops(), key, &mut fx);
-        let out = fx.out();
+        let outs = fx.outs();
         match driven {
             Driven::Escape => return self.launcher_up(),
             Driven::Walked => {
@@ -285,7 +246,7 @@ impl App {
             }
             Driven::Done => {}
         }
-        self.launcher_panel_out(out, back);
+        self.launcher_panel_outs(outs, back);
     }
 
     pub fn menu_toggle(&mut self) {
@@ -1276,14 +1237,14 @@ impl App {
                 let pressed = w.pressed.take();
                 let Some(on) = on(w).filter(|o| pressed.as_ref() == Some(&(o.clone(), button))) else { return true };
                 if self.launcher.on_panel()
-                    && let Some(e) = w.shown.panel_event(x, y)
+                    && let Some(e) = w.shown.panel_event(x, y, crate::input::button(button))
                 {
                     if let Some(p) = self.launcher.panel.as_mut() {
                         let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
                         p.module.event(&e, &mut fx);
                         p.cursor.take(p.module.as_mut(), w.shown.stops());
-                        let out = fx.out();
-                        self.launcher_panel_out(out, false);
+                        let outs = fx.outs();
+                        self.launcher_panel_outs(outs, false);
                     }
                     return true;
                 }

@@ -19,7 +19,7 @@ use fs_system::power::model::{battery_icon, charge_threshold_active};
 use fs_upower::Profile;
 use serde_json::{Value as Json, json};
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Out, Panel, View, Walk};
 use crate::motion::{Animated, Kind as Clock};
 use crate::services::devices::bluetooth::{ActionKind as BtAction, Cmd as BtCmd};
 use crate::services::devices::{self, audio, bluetooth as bt, network as net};
@@ -1053,12 +1053,9 @@ impl Panel for QuickSettings {
         }
     }
 
-    fn spatial(&self) -> bool {
-        true
-    }
-
-    fn steps_at(&self, stop: &str) -> bool {
-        matches!(stop, "volume" | "microphone" | "brightness") || stop.starts_with("m:")
+    fn nav(&self, stop: Option<&str>) -> Nav {
+        let steps = stop.is_some_and(|stop| matches!(stop, "volume" | "microphone" | "brightness") || stop.starts_with("m:"));
+        Nav { walk: Walk::Spatial, steps }
     }
 
     fn tab(&mut self, stop: Option<&str>, direction: i32) -> Option<String> {
@@ -1140,15 +1137,15 @@ impl QuickSettings {
             return false;
         }
         match tap(entry) {
-            Tap::Panel(p) => fx.panel = Some(p),
+            Tap::Panel(p) => fx.push(Out::Panel(p, None)),
             Tap::Ipc(argv) => {
-                fx.close = true;
+                fx.push(Out::Close);
                 fx.ipc(argv);
             }
             Tap::Cell => match cell.click(Button::Left, (0.0, 0.0), &env) {
                 CellAction::None => {}
-                CellAction::Panel(p) => fx.panel = Some(p),
-                action => fx.act = Some(action),
+                CellAction::Panel(p) => fx.push(Out::Panel(p, None)),
+                action => fx.push(Out::Act(action)),
             },
         }
         true
@@ -1164,8 +1161,8 @@ impl QuickSettings {
         if id == "m:settings" {
             let shown = self.menu.get_mut().want.clone();
             match shown.and_then(|m| menu(fx.store, &m, None)).and_then(|m| m.settings).map(|(_, h)| h) {
-                Some(Hand::Panel(p)) => fx.panel = Some(p),
-                Some(Hand::Route(r)) => fx.summon = Some(r),
+                Some(Hand::Panel(p)) => fx.push(Out::Panel(p, None)),
+                Some(Hand::Route(r)) => fx.push(Out::Summon(r)),
                 None => {}
             }
             return;
@@ -1179,13 +1176,16 @@ impl QuickSettings {
         let open = self.menu.get_mut().want.clone();
         let Some(tile) = tiles_with(fx.store, open.as_deref()).into_iter().find(|t| t.id == id && t.available()) else { return };
         match tile.id {
-            "battery" => fx.panel = Some(PanelId::Power),
+            "battery" => fx.push(Out::Panel(PanelId::Power, None)),
             "screenshot" => {
-                fx.close = true;
+                fx.push(Out::Close);
                 fx.ipc(&["screenshot", "pick", "smart", "default"]);
             }
-            "settings" => fx.panel = Some(PanelId::Settings),
-            "lock" => fx.call = Some(("lock", "lock")),
+            "settings" => fx.push(Out::Panel(PanelId::Settings, None)),
+            "lock" => {
+                fx.push(Out::Close);
+                fx.ipc(&["lock", "lock"]);
+            }
             "power" | BACKGROUND => self.toggle_menu(tile.id, fx.store),
             "volume" | "microphone" => mute(tile.id),
             "wired" => {
@@ -1276,7 +1276,7 @@ impl QuickSettings {
             return;
         }
         m.armed = None;
-        fx.close = true;
+        fx.push(Out::Close);
         match action {
             Some(a) => power::request(a),
             None => fx.ipc(&["power", "logout"]),
@@ -1342,8 +1342,7 @@ fn wifi_row(ssid: String, fx: &mut Effect) {
     }
     let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
     if retype || (row.secured && !row.known) {
-        fx.panel = Some(PanelId::Network);
-        fx.then = Some(format!("wifi:{ssid}"));
+        fx.push(Out::Panel(PanelId::Network, Some(format!("wifi:{ssid}"))));
         return;
     }
     net::send(net::Cmd::Connect(ssid, net::Secret::Saved));
@@ -1357,13 +1356,13 @@ fn background_row(what: &str, fx: &mut Effect) {
     match (task.what.as_str(), task.stop) {
         ("recording", Some(_)) => fx.ipc(&["record", "stop"]),
         ("reminders", Some(_)) => fx.ipc(&["reminder", "clear"]),
-        ("airplay", _) => fx.panel = Some(PanelId::Media),
+        ("airplay", _) => fx.push(Out::Panel(PanelId::Media, None)),
         (what, stop) => {
             if let Some(source) = what.strip_prefix("activity:") {
                 if stop.is_some() {
                     fx.ipc(&["activity", "dismiss", source]);
                 } else {
-                    fx.panel = Some(PanelId::Activity);
+                    fx.push(Out::Panel(PanelId::Activity, None));
                 }
             }
         }

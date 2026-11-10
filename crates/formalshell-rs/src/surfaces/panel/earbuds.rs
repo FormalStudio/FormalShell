@@ -28,7 +28,7 @@ use fs_devices::earbuds::motion::{EulerDegrees, Quat};
 use fs_devices::earbuds::{self as model, BatteryId, Bpm, Control, ControlKind, Device, HeartRate, HeartSample, Motion, Value};
 use fs_types::Percent;
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Panel, View};
 use head::Head;
 use heart::Heart;
 use crate::services::devices::earbuds;
@@ -635,8 +635,8 @@ impl Panel for Earbuds {
         }
     }
 
-    fn steps(&self) -> bool {
-        true
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav::STEPS
     }
 }
 

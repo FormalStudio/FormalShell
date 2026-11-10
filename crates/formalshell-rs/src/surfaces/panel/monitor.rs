@@ -9,7 +9,7 @@
 use fs_system::display::priority;
 use fs_system::monitor::format::pct;
 
-use super::{Effect, Panel, View};
+use super::{Effect, Out, Panel, View};
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, w};
@@ -89,13 +89,13 @@ impl Panel for Monitor {
 
     fn event(&mut self, ev: &crate::ui::Event, fx: &mut Effect) {
         if ev.on == "open" {
-            fx.summon = Some("monitor");
+            fx.push(Out::Summon("monitor"));
         }
     }
 
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
         if stop == "open" {
-            fx.summon = Some("monitor");
+            fx.push(Out::Summon("monitor"));
         }
     }
 }

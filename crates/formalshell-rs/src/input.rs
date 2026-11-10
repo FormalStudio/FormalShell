@@ -3,7 +3,7 @@
 
 use smithay_client_toolkit::seat::keyboard::{Keysym, Modifiers};
 
-use crate::surfaces::bar::cell::Button;
+use crate::ui::Button;
 use crate::surfaces::launcher::keys::Key as LauncherKey;
 use crate::surfaces::panel::host::Key as PanelKey;
 use crate::ui::field::{self, Modifiers as Mods};

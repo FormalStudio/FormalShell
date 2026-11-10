@@ -25,12 +25,7 @@ use crate::store::{Store, Topic};
 use crate::text::{self, Family, ShapedText, TextStyle};
 use crate::ui::el::Ring;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Button {
-    Left,
-    Right,
-    Middle,
-}
+pub use crate::ui::Button;
 
 /// What an input on a cell asks the shell to do.
 #[derive(Clone, Debug, PartialEq)]

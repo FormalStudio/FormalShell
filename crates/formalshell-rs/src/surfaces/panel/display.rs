@@ -15,7 +15,7 @@
 
 use fs_system::display::outputs::{self, Output};
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Panel, View};
 use crate::services::display::{self, Brightness};
 use crate::services::compositor::{self, Command};
 use crate::services::wants::Source;
@@ -256,7 +256,7 @@ impl Panel for Display {
         }
     }
 
-    fn steps(&self) -> bool {
-        true
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav::STEPS
     }
 }

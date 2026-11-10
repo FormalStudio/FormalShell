@@ -25,7 +25,7 @@ use fs_info::calendar::{agenda, grid, ics, progress};
 use fs_info::clock;
 use serde_json::json;
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Panel, View, Walk};
 use crate::services::info::kick;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
@@ -103,8 +103,8 @@ impl Panel for Calendar {
         vec![Source::Calendar]
     }
 
-    fn columns(&self) -> usize {
-        grid::COLUMNS
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav { walk: Walk::Grid(grid::COLUMNS), steps: false }
     }
 
     fn start(&mut self, _: &mut Effect) {

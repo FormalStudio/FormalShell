@@ -345,7 +345,7 @@ impl App {
                 if pressed.is_none() || pressed != on {
                     return true;
                 }
-                let what = hit.as_ref().and_then(|h| crate::ui::Ui::event(h, x)).map(|e| e.what);
+                let what = hit.as_ref().and_then(|h| crate::ui::Ui::event(h, x, crate::ui::Button::Left)).map(|e| e.what);
                 self.atlas_action(on.as_deref().unwrap_or(""), what);
             }
             PointerEventKind::Axis { vertical, .. } => {

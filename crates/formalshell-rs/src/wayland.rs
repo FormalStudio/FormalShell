@@ -83,7 +83,7 @@ use crate::surfaces::bar::cells::tray as tray_cell;
 use crate::surfaces::card::{Card, CardSpec, Join, Scrim, Sizing};
 use crate::surfaces::card_window::CardWindow;
 use crate::surfaces::modal::Modal;
-use crate::surfaces::panel::{self, Name, host::{Host, Opener, Out, Place}, quick};
+use crate::surfaces::panel::{self, Name, Out, host::{Host, Opener, Place}, quick};
 use crate::surfaces::tooltip;
 use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
 
@@ -179,6 +179,15 @@ impl Role {
     fn popover(self) -> bool {
         matches!(self, Role::Headset | Role::Profiles)
     }
+}
+
+/// What holds a panel's card, for the effects it pushes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Holder {
+    /// The panel host's own card.
+    Host,
+    /// The launcher's card (Settings, its pages, Information).
+    Launcher,
 }
 
 /// Whose surface an input event landed on.
@@ -1757,9 +1766,8 @@ impl App {
                     return;
                 }
                 if o == Target::Panel {
-                    let out = self.panel.as_mut().map_or(Out::None, |h| h.release(x, y, button, &self.store, self.runtime.as_ref()));
-                    self.panel_out(out);
-                    self.panel_dirty = true;
+                    let outs = self.panel.as_mut().map_or(Vec::new(), |h| h.release(x, y, button, &self.store, self.runtime.as_ref()));
+                    self.panel_outs(Holder::Host, outs);
                     return;
                 }
                 if o == Target::Bar
@@ -1870,23 +1878,61 @@ impl App {
         }
     }
 
-    /// What an input to the open panel asked of the shell outside it.
-    fn panel_out(&mut self, out: Out) {
+    /// What a panel asked of the shell outside it, in the order it asked.
+    /// `holder` is whatever holds the card, and closes it its own way.
+    pub(crate) fn panel_outs(&mut self, holder: Holder, outs: Vec<Out>) {
+        for out in outs {
+            self.panel_out(holder, out);
+        }
+        self.panel_dirty = true;
+    }
+
+    /// The holder's card closed: the panel host's, or the launcher with it.
+    fn holder_close(&mut self, holder: Holder) {
+        match holder {
+            Holder::Host => self.close_panels(),
+            Holder::Launcher => self.menu_close(),
+        }
+    }
+
+    fn panel_out(&mut self, holder: Holder, out: Out) {
         match out {
-            Out::None => {}
-            Out::Close => self.close_panels(),
+            Out::Close => self.holder_close(holder),
             Out::Summon(panel::ATLAS) => self.atlas_show(),
             Out::Summon(route) => {
-                self.close_panels();
+                // The launcher keeps its window for the route it goes to.
+                let from = match holder {
+                    Holder::Host => {
+                        self.close_panels();
+                        None
+                    }
+                    Holder::Launcher => {
+                        let from = self.launcher_panel();
+                        self.launcher.close();
+                        from
+                    }
+                };
                 self.menu_open(Some(route));
+                if route == crate::surfaces::launcher::PICKER_ROUTE {
+                    self.launcher.picker.from = from;
+                }
             }
+            Out::Panel(id, _) if holder == Holder::Launcher && id.home() == Home::Launcher => self.menu_panel(id),
             Out::Panel(id, then) => {
                 // The card handing over is the one the new card goes back to.
-                let opener = self.panel.as_ref().filter(|h| h.is_open()).and_then(|h| {
-                    Some(Opener { id: h.panel()?, from: h.from, title: h.title(&self.store, &self.store.theme.theme) })
-                });
+                let opener = match holder {
+                    Holder::Host => self.panel.as_ref().filter(|h| h.is_open()).and_then(|h| {
+                        Some(Opener { id: h.panel()?, from: h.from, title: h.title(&self.store, &self.store.theme.theme) })
+                    }),
+                    Holder::Launcher => {
+                        self.menu_close();
+                        None
+                    }
+                };
                 self.set_panel(id, true, None);
-                if let Some(h) = self.panel.as_mut().filter(|h| h.is_open() && h.panel() == Some(id)) {
+                if holder == Holder::Host
+                    && let Some(h) = self.panel.as_mut().filter(|h| h.is_open() && h.panel() == Some(id))
+                {
                     h.back = opener;
                 }
                 if let Some(stop) = then {
@@ -1897,45 +1943,33 @@ impl App {
                 let anchor = self.opener_anchor(from);
                 self.set_panel_from(Name::Panel(id), true, anchor, from);
             }
-            Out::Call(target, function) => {
-                self.close_panels();
-                self.call_self(target, function, &[]);
-            }
             Out::Menu(key, anchor) => {
                 let _ = self.open_tray_menu(&key, anchor, true);
             }
-            Out::Ipc(calls, close) => {
-                if close {
-                    self.close_panels();
+            Out::Ipc(argv) => {
+                if let [target, function, args @ ..] = argv.as_slice() {
+                    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+                    self.call_self(target, function, &args);
                 }
-                self.run_ipc(&calls);
             }
             Out::Act(action) => {
-                let anchor = self.panel.as_ref().and_then(|h| h.place.anchor).unwrap_or(live!(self).bar.length() as f64);
-                self.close_panels();
+                let anchor = match holder {
+                    Holder::Host => self.panel.as_ref().and_then(|h| h.place.anchor),
+                    Holder::Launcher => None,
+                };
+                let anchor = anchor.unwrap_or(live!(self).bar.length() as f64);
+                self.holder_close(holder);
                 self.act(action, anchor);
             }
         }
-    }
-
-    /// IPC calls a panel asked for, run on the shell itself in order.
-    pub(crate) fn run_ipc(&mut self, calls: &[Vec<String>]) {
-        for argv in calls {
-            if let [target, function, args @ ..] = argv.as_slice() {
-                let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                self.call_self(target, function, &args);
-            }
-        }
-        self.panel_dirty = true;
     }
 
     /// Enter on `stop` in the open panel `id`, as the keyboard would;
     /// `false` when that panel is not up.
     pub fn panel_activate(&mut self, id: PanelId, stop: &str) -> bool {
         let Some(h) = self.panel.as_mut().filter(|p| p.is_open() && p.panel() == Some(id)) else { return false };
-        let out = h.activate(stop, &self.store, self.runtime.as_ref());
-        self.panel_dirty = true;
-        self.panel_out(out);
+        let outs = h.activate(stop, &self.store, self.runtime.as_ref());
+        self.panel_outs(Holder::Host, outs);
         true
     }
 

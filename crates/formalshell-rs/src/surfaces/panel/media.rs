@@ -27,7 +27,7 @@ use crate::ui::spectrum::styles;
 use fs_theme::icons;
 use fs_types::Fraction;
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Out, Panel, View};
 use crate::services::wants::Source;
 use crate::services::{kopuz, motion_art};
 use crate::services::media::{Active, SourceKind};
@@ -458,7 +458,7 @@ impl Panel for Media {
         }
         let a = fx.store.media.active();
         match (ev.on.as_str(), &ev.what) {
-            ("radio", _) => fx.summon = Some(super::ATLAS),
+            ("radio", _) => fx.push(Out::Summon(super::ATLAS)),
             ("raise", _) => fx.store.media.raise(),
             ("lyrics-follow", _) => set_follow(fx, true),
             ("lyrics-pane", What::Scroll(..)) => set_follow(fx, false),
@@ -501,7 +501,7 @@ impl Panel for Media {
         }
         match stop {
             "lyric-resync" => set_follow(fx, true),
-            "transport" if fx.store.media.active().is_none() => fx.summon = Some(super::ATLAS),
+            "transport" if fx.store.media.active().is_none() => fx.push(Out::Summon(super::ATLAS)),
             "source" => self.toggle_menu("source"),
             "output" => self.toggle_menu("output"),
             "transport" => {
@@ -546,8 +546,8 @@ impl Panel for Media {
         sections[next as usize].first().cloned()
     }
 
-    fn steps(&self) -> bool {
-        self.stepping.get()
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav { steps: self.stepping.get(), ..Nav::default() }
     }
 
     /// Reaching the lyrics parks the column back on the song: the cursor

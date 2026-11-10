@@ -64,9 +64,13 @@ pub enum What {
     /// A scroll over a viewport, in wheel notches along x and y, positive
     /// moving the view right and down.
     Scroll(f64, f64),
-    /// A right click on what a left click would have clicked.
+}
+
+/// The pointer button a click came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button {
+    Left,
     Right,
-    /// A middle click on the same.
     Middle,
 }
 
@@ -75,6 +79,8 @@ pub struct Event {
     /// The element's `on` action.
     pub on: String,
     pub what: What,
+    /// The button behind it; a key, a wheel or a drag reads as `Left`.
+    pub button: Button,
 }
 
 /// One interactive rect from the last draw, topmost last.
@@ -358,8 +364,8 @@ impl Ui {
         self.hits.iter().rev().find(|h| x >= h.rect.x && x < h.rect.right() && y >= h.rect.y && y < h.rect.bottom())
     }
 
-    /// The event a press released on `hit` at `x` fires.
-    pub fn event(hit: &Hit, x: f64) -> Option<Event> {
+    /// The event a press of `button` released on `hit` at `x` fires.
+    pub fn event(hit: &Hit, x: f64, button: Button) -> Option<Event> {
         let on = hit.on.clone()?;
         let what = match hit.what {
             HitWhat::Click => What::Click,
@@ -368,7 +374,7 @@ impl Ui {
             HitWhat::Pick(i) => What::Pick(i),
             HitWhat::Hover | HitWhat::Scroll => return None,
         };
-        Some(Event { on, what })
+        Some(Event { on, what, button })
     }
 
     /// The scroll region under a point, under whatever row sits on it.

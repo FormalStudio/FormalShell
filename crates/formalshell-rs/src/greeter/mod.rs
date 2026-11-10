@@ -909,7 +909,7 @@ impl PointerHandler for Greeter {
                 PointerEventKind::Press { button: crate::input::BTN_LEFT, .. } => ui.pressed = path,
                 PointerEventKind::Release { button: crate::input::BTN_LEFT, .. } => {
                     let pressed = ui.pressed.take();
-                    let event = ui.hit(x, y).filter(|_| pressed.is_some() && pressed == path).and_then(|h| Ui::event(h, x));
+                    let event = ui.hit(x, y).filter(|_| pressed.is_some() && pressed == path).and_then(|h| Ui::event(h, x, crate::ui::Button::Left));
                     if let Some(e) = event {
                         self.activate(&e.on, e.what);
                     }

@@ -10,7 +10,7 @@
 
 use fs_types::Window;
 
-use super::{Effect, Panel, View};
+use super::{Effect, Out, Panel, View};
 use crate::services::appicon::{self, Action, Entry};
 use crate::services::compositor;
 use crate::store::{Store, Topic};
@@ -139,16 +139,16 @@ impl Panel for AppMenu {
                 && let Some(a) = entry.actions.get(i)
             {
                 launch(fx.store, entry, a);
-                fx.close = true;
+                fx.push(Out::Close);
             }
         } else if let Some(i) = stop.strip_prefix("window:").and_then(|i| i.parse::<usize>().ok()) {
             if let Some(win) = sub.windows.get(i) {
                 compositor::focus_window(&win.id);
-                fx.close = true;
+                fx.push(Out::Close);
             }
         } else if stop == "close-window" {
             compositor::close_window(&sub.window.id);
-            fx.close = true;
+            fx.push(Out::Close);
         }
     }
 }

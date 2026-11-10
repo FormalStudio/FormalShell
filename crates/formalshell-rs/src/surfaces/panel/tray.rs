@@ -7,11 +7,11 @@
 
 use std::cell::{Cell, RefCell};
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Out, Panel, View, Walk};
 use crate::scene::Bitmap;
 use crate::services::tray::{self, Item};
 use crate::store::Topic;
-use crate::ui::{El, Event, What, w};
+use crate::ui::{Button, El, Event, What, w};
 
 /// Chips to a row before the card wraps.
 pub const COLUMNS: usize = 8;
@@ -52,20 +52,20 @@ impl Tray {
         v.tray.by_key(stop.strip_prefix("item:")?)
     }
 
-    fn click(item: &Item, what: &What, fx: &mut Effect) {
+    fn click(item: &Item, button: Button, fx: &mut Effect) {
         let key = item.key.clone();
-        match what {
-            What::Click if item.only_menu && item.has_menu => fx.menu = Some(item.key.clone()),
-            What::Right if item.has_menu => fx.menu = Some(item.key.clone()),
-            What::Click => {
+        match button {
+            Button::Left if item.only_menu && item.has_menu => fx.push(Out::Menu(key, None)),
+            Button::Right if item.has_menu => fx.push(Out::Menu(key, None)),
+            Button::Left => {
                 fx.service(move |ctx| tray::activate(ctx, key));
-                fx.close = true;
+                fx.push(Out::Close);
             }
-            What::Middle => {
+            Button::Middle => {
                 fx.service(move |ctx| tray::secondary_activate(ctx, key));
-                fx.close = true;
+                fx.push(Out::Close);
             }
-            _ => {}
+            Button::Right => {}
         }
     }
 }
@@ -119,19 +119,21 @@ impl Panel for Tray {
         w::column(s.panel_gap, rows)
     }
 
-    fn columns(&self) -> usize {
-        self.columns.get()
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav { walk: Walk::Grid(self.columns.get()), steps: false }
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
-        if let Some(item) = Self::item(fx.store, &ev.on).cloned() {
-            Self::click(&item, &ev.what, fx);
+        if ev.what == What::Click
+            && let Some(item) = Self::item(fx.store, &ev.on).cloned()
+        {
+            Self::click(&item, ev.button, fx);
         }
     }
 
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
         if let Some(item) = Self::item(fx.store, stop).cloned() {
-            Self::click(&item, &What::Click, fx);
+            Self::click(&item, Button::Left, fx);
         }
     }
 }

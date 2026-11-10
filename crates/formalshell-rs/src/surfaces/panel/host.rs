@@ -24,7 +24,7 @@ use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 use vello_cpu::kurbo::Rect;
 
 use super::quick::Origin;
-use super::{Edit, Effect, Panel, View};
+use super::{Edit, Effect, Out, Panel, View, Walk};
 use crate::motion::{Animated, Kind as Clock};
 use crate::runtime::Runtime;
 use crate::scene::{IRect, NodeId, Paint};
@@ -32,11 +32,10 @@ use crate::scroll::{Touchpad, Travel};
 use crate::services::wants::Holding;
 use crate::store::Store;
 use crate::surface::Surface;
-use crate::surfaces::bar::cell::Button;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::card::{Card, CardSpec, Ends, Sizing};
 use crate::surfaces::card_window::CardWindow;
-use crate::ui::{self, El, Event, Ui, What, w};
+use crate::ui::{self, Button, El, Event, Ui, What, w};
 
 /// Where a card hangs: the line it comes out of, its ends, and the cell
 /// it is centred on.
@@ -144,20 +143,24 @@ impl Cursor {
     /// An arrow: steps the value on a stop that carries one, else walks.
     /// True when the cursor landed on another stop.
     fn walk(&mut self, module: &mut dyn Panel, stops: &[ui::Stop], dx: i32, dy: i32, fx: &mut Effect) -> bool {
-        if self.active && dy == 0 && dx != 0 && self.key.as_deref().is_some_and(|k| module.steps_at(k)) {
-            if let Some(k) = self.key.clone() {
-                module.step(&k, dx.signum(), fx);
-            }
+        let nav = module.nav(self.key.as_deref());
+        if self.active
+            && dy == 0
+            && dx != 0
+            && nav.steps
+            && let Some(k) = self.key.clone()
+        {
+            module.step(&k, dx.signum(), fx);
             self.keyed = true;
             return false;
         }
         if stops.is_empty() {
             return false;
         }
-        let next = if module.spatial() && self.active && self.index < stops.len() {
-            nearest(stops, self.index, dx, dy)
-        } else {
-            step(self.index, stops.len(), self.active, dx, dy, module.columns())
+        let next = match nav.walk {
+            Walk::Spatial if self.active && self.index < stops.len() => nearest(stops, self.index, dx, dy),
+            Walk::Grid(columns) => step(self.index, stops.len(), self.active, dx, dy, columns),
+            Walk::Spatial | Walk::List => step(self.index, stops.len(), self.active, dx, dy, 1),
         };
         self.travels = self.active && next != self.index;
         self.index = next;
@@ -230,52 +233,6 @@ struct Handoff {
     travel: Animated,
     alpha: Animated,
     started: bool,
-}
-
-/// What an input asked of the shell outside the panel.
-#[derive(Debug, PartialEq)]
-pub enum Out {
-    None,
-    Close,
-    /// Close, then open the launcher on this route.
-    Summon(&'static str),
-    /// Open this panel in the open one's place, then press Enter on this
-    /// stop of its.
-    Panel(PanelId, Option<String>),
-    /// Back to the card that handed over to this one, opened again from
-    /// where it was.
-    Back(PanelId, Origin),
-    /// Close, then call this IPC target's function on the shell itself.
-    Call(&'static str, &'static str),
-    /// A tray item's menu off this card, centred on `anchor` along the line
-    /// (the item's own button) or at the line's end.
-    Menu(String, Option<f64>),
-    /// Run these IPC calls on the shell itself, closing the card first
-    /// when the flag is set.
-    Ipc(Vec<Vec<String>>, bool),
-    /// Close, then run a bar cell's own click.
-    Act(crate::surfaces::bar::cell::Action),
-}
-
-impl Effect<'_> {
-    pub fn out(&mut self) -> Out {
-        if let Some(id) = self.menu.take() {
-            return Out::Menu(id, None);
-        }
-        if let Some(action) = self.act.take() {
-            return Out::Act(action);
-        }
-        if !self.ipc.is_empty() {
-            return Out::Ipc(std::mem::take(&mut self.ipc), self.close);
-        }
-        match (self.summon, self.panel, self.call, self.close) {
-            (Some(route), ..) => Out::Summon(route),
-            (None, Some(name), ..) => Out::Panel(name, self.then.take()),
-            (None, None, Some((target, function)), _) => Out::Call(target, function),
-            (None, None, None, true) => Out::Close,
-            (None, None, None, false) => Out::None,
-        }
-    }
 }
 
 pub struct Host {
@@ -800,13 +757,13 @@ impl Host {
     }
 
     /// Enter on `stop` as though the cursor sat there, for an IPC verb.
-    pub fn activate(&mut self, stop: &str, store: &Store, runtime: Option<&Runtime>) -> Out {
+    pub fn activate(&mut self, stop: &str, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
         if !self.open {
-            return Out::None;
+            return Vec::new();
         }
         let mut fx = Effect::new(store, runtime);
         self.module.activate(stop, &mut fx);
-        fx.out()
+        fx.outs()
     }
 
     /// The header's buttons by their action, as last drawn.
@@ -827,22 +784,22 @@ impl Host {
     }
 
     /// The clipboard's text into the field holding the keyboard.
-    pub fn paste(&mut self, text: String, store: &Store, runtime: Option<&Runtime>) -> Out {
+    pub fn paste(&mut self, text: String, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
         if !self.open || !self.module.editing() {
-            return Out::None;
+            return Vec::new();
         }
         let mut fx = Effect::new(store, runtime);
         self.module.edit(Edit::Paste(text), &mut fx);
-        fx.out()
+        fx.outs()
     }
 
     /// One key.
-    pub fn key(&mut self, name: Key, store: &Store, runtime: Option<&Runtime>) -> Out {
+    pub fn key(&mut self, name: Key, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
         if !self.open {
-            return Out::None;
+            return Vec::new();
         }
         if let Some(back) = self.back.as_ref().filter(|_| name == Key::Back && !self.module.editing()) {
-            return Out::Back(back.id, back.from);
+            return vec![Out::Back(back.id, back.from)];
         }
         let mut fx = Effect::new(store, runtime);
         if self.module.editing() {
@@ -851,20 +808,20 @@ impl Host {
                 Key::Tab(_) => Edit::Tab,
                 Key::Activate => Edit::Submit,
                 Key::Edit(k, mods, t) => Edit::Key(k, mods, t),
-                Key::Back | Key::Text(_) | Key::Move(..) => return Out::None,
+                Key::Back | Key::Text(_) | Key::Move(..) => return Vec::new(),
             };
             self.module.edit(edit, &mut fx);
-            return fx.out();
+            return fx.outs();
         }
         match drive(self.module.as_mut(), &mut self.cursor, &self.body.stops, name, &mut fx) {
-            Driven::Escape => return Out::Close,
+            Driven::Escape => return vec![Out::Close],
             Driven::Walked => {
                 self.touch.settle();
                 self.follow(&store.theme.theme);
             }
             Driven::Done => {}
         }
-        fx.out()
+        fx.outs()
     }
 
     fn hit_at(&self, x: f64, y: f64) -> Option<(bool, ui::Hit)> {
@@ -882,7 +839,7 @@ impl Host {
             if let Some(on) = self.body.hits.iter().chain(self.head.hits.iter()).find(|h| h.path == path).and_then(|h| h.on.clone()) {
                 let f = ui::track_fraction(rect, inset, x);
                 let mut fx = Effect::new(store, runtime);
-                self.module.event(&Event { on, what: What::Fraction(f) }, &mut fx);
+                self.module.event(&Event { on, what: What::Fraction(f), button: Button::Left }, &mut fx);
             }
         }
         let hit = at.and_then(|(x, y)| self.hit_at(x, y));
@@ -936,51 +893,45 @@ impl Host {
             && let ui::HitWhat::Track(inset) = h.what
         {
             self.dragging = Some((h.path.clone(), h.rect, inset));
-            if let Some(e) = Ui::event(&h, x) {
+            if let Some(e) = Ui::event(&h, x, Button::Left) {
                 let mut fx = Effect::new(store, runtime);
                 self.module.event(&e, &mut fx);
             }
         }
     }
 
-    pub fn release(&mut self, x: f64, y: f64, button: Button, store: &Store, runtime: Option<&Runtime>) -> Out {
+    pub fn release(&mut self, x: f64, y: f64, button: Button, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
         let pressed = self.pressed.take();
         self.body.pressed = None;
         self.head.pressed = None;
         if self.dragging.take().is_some() {
-            return Out::None;
+            return Vec::new();
         }
         let hit = self.hit_at(x, y);
         let on_card = self.win.on_card(x, y);
         if !on_card && pressed.is_none() {
-            return Out::Close;
+            return vec![Out::Close];
         }
-        let Some((_, h)) = hit.filter(|(_, h)| Some(&h.path) == pressed.as_ref()) else { return Out::None };
-        let Some(mut e) = Ui::event(&h, x) else { return Out::None };
+        let Some((_, h)) = hit.filter(|(_, h)| Some(&h.path) == pressed.as_ref()) else { return Vec::new() };
+        let Some(e) = Ui::event(&h, x, button) else { return Vec::new() };
         if e.on == "close" {
-            return Out::Close;
+            return vec![Out::Close];
         }
         if let Some(back) = self.back.as_ref().filter(|_| e.on == "back") {
-            return Out::Back(back.id, back.from);
-        }
-        // Only the tray tells the buttons apart; every other panel takes any
-        // button as a click.
-        if e.what == What::Click && self.panel() == Some(PanelId::TrayOverflow) {
-            e.what = match button {
-                Button::Right => What::Right,
-                Button::Middle => What::Middle,
-                Button::Left => What::Click,
-            };
+            return vec![Out::Back(back.id, back.from)];
         }
         let mut fx = Effect::new(store, runtime);
         self.module.event(&e, &mut fx);
         self.cursor.take(self.module.as_mut(), &self.body.stops);
         let r = h.rect;
         let along = if self.place.edge.is_vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 };
-        match fx.out() {
-            Out::Menu(id, None) => Out::Menu(id, Some(along)),
-            out => out,
-        }
+        fx.outs()
+            .into_iter()
+            .map(|out| match out {
+                Out::Menu(id, None) => Out::Menu(id, Some(along)),
+                out => out,
+            })
+            .collect()
     }
 
     /// A scroll of `dx`, `dy` wheel notches: a scroll region under the
@@ -1004,7 +955,7 @@ impl Host {
         {
             self.body.scroll(&h.path, -dy * store.theme.theme.space.control_height);
             let mut fx = Effect::new(store, runtime);
-            self.module.event(&Event { on, what: What::Scroll(dx, dy) }, &mut fx);
+            self.module.event(&Event { on, what: What::Scroll(dx, dy), button: Button::Left }, &mut fx);
             return;
         }
         if dy == 0.0 {
@@ -1016,7 +967,7 @@ impl Host {
             && let Some(on) = h.on.clone()
         {
             let mut fx = Effect::new(store, runtime);
-            self.module.event(&Event { on, what: What::Wheel(if up { 1 } else { -1 }) }, &mut fx);
+            self.module.event(&Event { on, what: What::Wheel(if up { 1 } else { -1 }), button: Button::Left }, &mut fx);
             return;
         }
         let view = self.viewport.h as f64;

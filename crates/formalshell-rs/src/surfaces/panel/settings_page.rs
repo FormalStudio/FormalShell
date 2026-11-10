@@ -11,7 +11,7 @@
 
 use fs_chrome::bar::panels::PanelId;
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Out, Panel, View};
 use crate::services::overrides::{self, Control, Key, Page};
 use crate::store::Topic;
 use crate::ui::{El, Event, Ink, What, w};
@@ -50,10 +50,10 @@ fn links(page: &str) -> impl Iterator<Item = &'static (&'static str, &'static st
 /// A link row's stop taken: true when it was one.
 fn follow(stop: &str, fx: &mut Effect) -> bool {
     let Some(&(.., to)) = LINKS.iter().find(|l| l.3 == stop) else { return false };
-    if let Some(panel) = to.strip_prefix("page:") {
-        fx.panel = PanelId::parse(panel);
-    } else {
-        fx.summon = to.strip_prefix("route:");
+    if let Some(panel) = to.strip_prefix("page:").and_then(PanelId::parse) {
+        fx.push(Out::Panel(panel, None));
+    } else if let Some(route) = to.strip_prefix("route:") {
+        fx.push(Out::Summon(route));
     }
     true
 }
@@ -173,14 +173,14 @@ impl Panel for SettingsPage {
             return;
         }
         if let Some(key) = ev.on.strip_prefix("reset:").and_then(overrides::find) {
-            let _ = overrides::reset(fx.store, key.key);
+            wrote(overrides::reset(fx.store, key.key));
             return;
         }
         let Some(key) = key_of(&ev.on) else { return };
         match (&key.control, &ev.what) {
             (Control::Choice(values, _), What::Pick(i)) => {
                 if let Some((value, _)) = values.get(*i) {
-                    let _ = overrides::set(fx.store, key.key, (*value).into());
+                    wrote(overrides::set(fx.store, key.key, (*value).into()));
                 }
             }
             (Control::Switch(_), _) => flip(key, fx),
@@ -198,7 +198,7 @@ impl Panel for SettingsPage {
         }
         let Some(key) = key_of(stop) else { return };
         if stop.starts_with("reset:") {
-            let _ = overrides::reset(fx.store, key.key);
+            wrote(overrides::reset(fx.store, key.key));
             return;
         }
         match key.control {
@@ -214,31 +214,31 @@ impl Panel for SettingsPage {
                 Control::Switch(_) => {
                     let on = direction > 0;
                     if overrides::current(fx.store, key).as_bool() != Some(on) {
-                        let _ = overrides::set(fx.store, key.key, on.into());
+                        wrote(overrides::set(fx.store, key.key, on.into()));
                     }
                 }
             }
         }
     }
 
-    fn steps(&self) -> bool {
-        true
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav::STEPS
     }
 
     fn back(&mut self, fx: &mut Effect) {
-        fx.panel = Some(self.page.parent.unwrap_or(PanelId::Settings));
+        fx.push(Out::Panel(self.page.parent.unwrap_or(PanelId::Settings), None));
     }
 
     fn delete(&mut self, stop: &str, fx: &mut Effect) {
         if let Some(key) = key_of(stop) {
-            let _ = overrides::reset(fx.store, key.key);
+            wrote(overrides::reset(fx.store, key.key));
         }
     }
 }
 
 fn flip(key: &Key, fx: &Effect) {
     let on = overrides::current(fx.store, key).as_bool().unwrap_or(false);
-    let _ = overrides::set(fx.store, key.key, (!on).into());
+    wrote(overrides::set(fx.store, key.key, (!on).into()));
 }
 
 /// The next choice along: the arrows stop at either end, Enter wraps.
@@ -249,6 +249,14 @@ fn step(key: &Key, direction: i32, wrap: bool, fx: &Effect) {
     let at = values.iter().position(|(x, _)| shown.as_str() == Some(*x)).unwrap_or(0) as i32;
     let next = if wrap { (at + direction).rem_euclid(n) } else { (at + direction).clamp(0, n - 1) } as usize;
     if next as i32 != at {
-        let _ = overrides::set(fx.store, key.key, values[next].0.into());
+        wrote(overrides::set(fx.store, key.key, values[next].0.into()));
+    }
+}
+
+/// A write the overrides refuse (a key settings.json pins, a value out of
+/// range) is logged; the row keeps showing what holds.
+fn wrote(r: Result<(), String>) {
+    if let Err(e) = r {
+        eprintln!("settings: {e}");
     }
 }

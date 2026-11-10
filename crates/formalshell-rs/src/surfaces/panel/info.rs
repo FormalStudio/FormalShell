@@ -11,7 +11,7 @@
 use fs_theme::palette::ColorRole;
 use fs_info::about;
 
-use super::{Effect, Panel, View};
+use super::{Effect, Out, Panel, View};
 use crate::services::compositor;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
@@ -169,5 +169,5 @@ fn footer(v: &View) -> El {
 
 fn open_manual(fx: &mut Effect) {
     compositor::spawn(&["xdg-open".to_owned(), MANUAL.to_owned()]);
-    fx.close = true;
+    fx.push(Out::Close);
 }

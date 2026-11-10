@@ -6,7 +6,7 @@
 //! failed login "No auth", before the first answer "Loading", and an empty
 //! list a "None" row, never stale or invented rows.
 
-use super::{Effect, Panel, View};
+use super::{Effect, Out, Panel, View};
 use crate::services::compositor;
 use crate::services::info::github::{Poll, Row};
 use crate::services::info::kick;
@@ -18,7 +18,7 @@ pub struct Github;
 
 fn open(url: &str, fx: &mut Effect) {
     compositor::spawn(&["xdg-open".to_owned(), url.to_owned()]);
-    fx.close = true;
+    fx.push(Out::Close);
 }
 
 impl Panel for Github {

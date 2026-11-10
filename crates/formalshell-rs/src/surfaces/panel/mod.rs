@@ -13,7 +13,7 @@
 //! The cursor model: every element marked `.stop(key)` in
 //! the body is one stop, in reading order; the first navigation key only
 //! reveals the cursor, arrows walk the stops (or step the value on one
-//! when [`Panel::steps`] says so), Enter or Space calls
+//! when [`Panel::nav`] says so), Enter or Space calls
 //! [`Panel::activate`], `x` calls [`Panel::delete`], and any other
 //! printable key reaches [`Panel::key`].
 
@@ -53,6 +53,7 @@ use fs_theme::tokens::Space;
 use fs_types::Edge;
 
 use crate::runtime::Runtime;
+use quick::Origin;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event};
@@ -88,43 +89,54 @@ pub enum Edit {
     Cancel,
 }
 
-/// What a panel may do from an input.
 /// The `summon` that opens Radio Atlas rather than a launcher route.
 pub const ATLAS: &str = "@radio-atlas";
 
+/// What a panel asks of the shell outside it. A panel pushes as many as it
+/// needs; whatever holds the card runs them in order.
+#[derive(Debug, PartialEq)]
+pub enum Out {
+    /// Close the card.
+    Close,
+    /// Close, then open the launcher on this route ([`ATLAS`] for Radio
+    /// Atlas).
+    Summon(&'static str),
+    /// Open this panel in the open one's place, then press Enter on this
+    /// stop of its (a network's row, opening its passphrase step).
+    Panel(PanelId, Option<String>),
+    /// Back to the card that handed over to this one, opened again from
+    /// where it was.
+    Back(PanelId, Origin),
+    /// A tray item's menu off this card, by id, centred on `anchor` along
+    /// the line (the item's own button) or at the line's end.
+    Menu(String, Option<f64>),
+    /// One IPC call (target, function, arguments) the shell runs on itself
+    /// through `ipc::dispatch`, the card left open.
+    Ipc(Vec<String>),
+    /// Close, then run a bar cell's own click (an info tile whose cell
+    /// opens no panel).
+    Act(crate::surfaces::bar::cell::Action),
+}
+
+/// What a panel may do from an input.
 pub struct Effect<'a> {
     pub store: &'a Store,
     pub runtime: Option<&'a Runtime>,
-    /// Set to close the panel.
-    pub close: bool,
-    /// A launcher route to open as the panel closes.
-    pub summon: Option<&'static str>,
-    /// Another panel to open in this one's place.
-    pub panel: Option<PanelId>,
-    /// A stop of `panel`'s to press Enter on once it is open (a network's
-    /// row, opening its passphrase step).
-    pub then: Option<String>,
-    /// An IPC target and function the shell calls on itself as the panel
-    /// closes (`lock`, `lock`).
-    pub call: Option<(&'static str, &'static str)>,
-    /// A tray item whose menu opens off this card, by id.
-    pub menu: Option<String>,
-    /// IPC calls (target, function, arguments) the shell runs on itself
-    /// through `ipc::dispatch`, the card left open unless `close` is set.
-    pub ipc: Vec<Vec<String>>,
-    /// A bar cell's own click, run as the card closes (an info tile whose
-    /// cell opens no panel).
-    pub act: Option<crate::surfaces::bar::cell::Action>,
+    outs: Vec<Out>,
 }
 
 impl<'a> Effect<'a> {
     pub fn new(store: &'a Store, runtime: Option<&'a Runtime>) -> Self {
-        Self { store, runtime, close: false, summon: None, panel: None, then: None, call: None, menu: None, ipc: Vec::new(), act: None }
+        Self { store, runtime, outs: Vec::new() }
+    }
+
+    pub fn push(&mut self, out: Out) {
+        self.outs.push(out);
     }
 
     /// Queues one IPC call, `argv` as `formalshell-ipc call` takes it.
     pub fn ipc(&mut self, argv: &[&str]) {
-        self.ipc.push(argv.iter().map(|a| (*a).to_owned()).collect());
+        self.push(Out::Ipc(argv.iter().map(|a| (*a).to_owned()).collect()));
     }
 
     /// Runs `f` on the service thread.
@@ -133,6 +145,38 @@ impl<'a> Effect<'a> {
             rt.service(f);
         }
     }
+
+    /// What the panel asked for, in the order it asked.
+    pub fn outs(self) -> Vec<Out> {
+        self.outs
+    }
+}
+
+/// How the arrows move between a panel's stops.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Walk {
+    /// Reading order.
+    #[default]
+    List,
+    /// A grid this many wide (Calendar's month): Up and Down move a row.
+    Grid(usize),
+    /// The nearest stop on screen in the arrow's direction: a grid whose
+    /// rows hold different counts.
+    Spatial,
+}
+
+/// What the arrows do on a stop.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Nav {
+    pub walk: Walk,
+    /// Left and Right step the stop's value through [`Panel::step`]
+    /// rather than walking.
+    pub steps: bool,
+}
+
+impl Nav {
+    /// Reading order, Left and Right stepping every value.
+    pub const STEPS: Nav = Nav { walk: Walk::List, steps: true };
 }
 
 pub trait Panel {
@@ -217,7 +261,7 @@ pub trait Panel {
     fn event(&mut self, _ev: &Event, _fx: &mut Effect) {}
     /// Enter or Space on a stop.
     fn activate(&mut self, _stop: &str, _fx: &mut Effect) {}
-    /// Left or Right on a stop that carries a value, when `steps` is on.
+    /// Left or Right on a stop whose [`Nav`] steps.
     fn step(&mut self, _stop: &str, _direction: i32, _fx: &mut Effect) {}
     /// Tab or Shift+Tab (`direction` -1) from the stop under the cursor:
     /// the stop to land on when the panel walks sections,
@@ -235,23 +279,9 @@ pub trait Panel {
     fn delete(&mut self, _stop: &str, _fx: &mut Effect) {}
     /// A printable key no binding took.
     fn key(&mut self, _stop: Option<&str>, _text: &str, _fx: &mut Effect) {}
-    /// Left and Right step the value under the cursor rather than walking.
-    fn steps(&self) -> bool {
-        false
-    }
-    /// `steps` for the one stop under the cursor, for a panel where only
-    /// some stops carry a value.
-    fn steps_at(&self, _stop: &str) -> bool {
-        self.steps()
-    }
-    /// Above 1, the stops are a grid this many wide (Calendar's month).
-    fn columns(&self) -> usize {
-        1
-    }
-    /// Arrows walk to the nearest stop on screen in their direction rather
-    /// than by reading order: a grid whose rows hold different counts.
-    fn spatial(&self) -> bool {
-        false
+    /// What the arrows do on `stop`, the stop under the cursor if any.
+    fn nav(&self, _stop: Option<&str>) -> Nav {
+        Nav::default()
     }
     /// The body is moving its own height (an in-place menu opening): the
     /// card takes each frame's height outright rather than morphing after

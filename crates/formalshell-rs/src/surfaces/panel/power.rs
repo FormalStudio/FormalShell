@@ -19,7 +19,7 @@ use fs_theme::tokens::Space;
 use fs_types::Percent;
 use fs_upower::{DeviceState, Profile};
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Panel, View};
 use diagram::{Flow, FlowNode, FlowPort};
 use crate::services::devices;
 use crate::services::wants::Source;
@@ -246,8 +246,8 @@ impl Panel for Power {
         }
     }
 
-    fn steps(&self) -> bool {
-        true
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav::STEPS
     }
 }
 

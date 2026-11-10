@@ -10,7 +10,7 @@
 
 use fs_chrome::bar::panels::PanelId;
 
-use super::{Effect, Panel, View};
+use super::{Effect, Out, Panel, View};
 use crate::services::power;
 use crate::store::Topic;
 use crate::ui::{El, Event, Size, Type, Weight, What, w};
@@ -140,13 +140,14 @@ impl Settings {
         let armed = self.armed.take();
         if let Some(id) = on.strip_prefix("tile:") {
             if let Some(t) = TILES.iter().find(|t| t.0 == id) {
-                fx.panel = Some(t.3);
+                fx.push(Out::Panel(t.3, None));
             }
             return;
         }
         let Some(&(id, ..)) = on.strip_prefix("session:").and_then(|id| SESSION.iter().find(|b| b.0 == id)) else { return };
         if id == "lock" {
-            fx.call = Some(("lock", "lock"));
+            fx.push(Out::Close);
+            fx.ipc(&["lock", "lock"]);
             return;
         }
         if matches!(id, "reboot" | "poweroff") && armed != Some(id) {
@@ -155,7 +156,7 @@ impl Settings {
         }
         if let Some(action) = power::Action::parse(id) {
             power::request(action);
-            fx.close = true;
+            fx.push(Out::Close);
         }
     }
 }

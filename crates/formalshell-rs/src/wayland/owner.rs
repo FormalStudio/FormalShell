@@ -12,7 +12,7 @@ use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
 
-use super::{App, Target, heads, screensaver::SaverInput};
+use super::{App, Holder, Target, heads, screensaver::SaverInput};
 use crate::store::Topic;
 use crate::surfaces;
 use crate::surfaces::modal::Part;
@@ -414,18 +414,16 @@ impl Owner for Cards {
             return true;
         }
         let Some(h) = &mut app.panel else { return true };
-        let out = h.key(key, &app.store, app.runtime.as_ref());
-        app.panel_dirty = true;
-        app.panel_out(out);
+        let outs = h.key(key, &app.store, app.runtime.as_ref());
+        app.panel_outs(Holder::Host, outs);
         true
     }
 
     /// Into the open panel's field, while one is being edited.
     fn paste(&self, app: &mut App, text: &str) -> bool {
         let Some(h) = app.panel.as_mut().filter(|h| h.editing()) else { return false };
-        let out = h.paste(text.to_owned(), &app.store, app.runtime.as_ref());
-        app.panel_dirty = true;
-        app.panel_out(out);
+        let outs = h.paste(text.to_owned(), &app.store, app.runtime.as_ref());
+        app.panel_outs(Holder::Host, outs);
         true
     }
 

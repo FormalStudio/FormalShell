@@ -13,7 +13,7 @@
 use fs_audio::Visual;
 use fs_system::audio::{clamp_device, clamp_stream};
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Panel, View};
 use crate::services::devices::audio::{self, Cmd, Lists, Row, Target};
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
@@ -249,7 +249,7 @@ impl Panel for Audio {
         }
     }
 
-    fn steps(&self) -> bool {
-        true
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav::STEPS
     }
 }

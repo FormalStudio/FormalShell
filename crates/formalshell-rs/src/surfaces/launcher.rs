@@ -3669,10 +3669,11 @@ impl Shown {
         self.body.hit(x, y).or_else(|| self.preview.hit(x, y)).or_else(|| self.head.hit(x, y)).or_else(|| self.foot.hit(x, y)).cloned()
     }
 
-    /// What a click at an output point means to the held panel's body.
-    pub fn panel_event(&self, x: f64, y: f64) -> Option<crate::ui::Event> {
+    /// What a click of `button` at an output point means to the held
+    /// panel's body.
+    pub fn panel_event(&self, x: f64, y: f64, button: crate::ui::Button) -> Option<crate::ui::Event> {
         let (x, y) = self.local(x, y);
-        Ui::event(self.body.hit(x, y)?, x)
+        Ui::event(self.body.hit(x, y)?, x, button)
     }
 
     /// An output point in the surface's own pixels.

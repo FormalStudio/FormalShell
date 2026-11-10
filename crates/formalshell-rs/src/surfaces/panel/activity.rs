@@ -17,9 +17,12 @@ pub struct Activity {
     cursor: Option<String>,
 }
 
-/// An fspec row's open asks for this panel, which is already up.
+/// An fspec row's open asks for this panel, which is already up. A verb
+/// the row cannot take (a group that just ended) is logged.
 fn run(verb: Verb, source: &str, fx: &mut Effect) {
-    let _ = activity::act(fx.store, fx.runtime, verb, source);
+    if let Err(e) = activity::act(fx.store, fx.runtime, verb, source) {
+        eprintln!("activity: {e}");
+    }
 }
 
 impl Panel for Activity {

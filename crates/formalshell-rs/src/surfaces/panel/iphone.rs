@@ -12,7 +12,7 @@
 use std::cell::Cell;
 
 
-use super::{Effect, Panel, View};
+use super::{Effect, Nav, Panel, View};
 use crate::services::ams;
 use crate::services::iphone::{self as service, Cmd};
 use crate::store::{Store, Topic};
@@ -61,8 +61,8 @@ impl Panel for Iphone {
         service::command(Cmd::MarkRead);
     }
 
-    fn steps(&self) -> bool {
-        self.np_on.get()
+    fn nav(&self, _: Option<&str>) -> Nav {
+        Nav { steps: self.np_on.get(), ..Nav::default() }
     }
 
     fn body(&self, v: &View) -> El {
