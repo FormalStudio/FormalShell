@@ -1,11 +1,31 @@
-use fs_info::notifications::*;
+use std::sync::Mutex;
 
-fn notif(id: &str, urgency: u8) -> Notif {
+use fs_info::notifications::*;
+use fs_types::NotificationId;
+
+static NAMES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// A readable name for a server id, so the assertions keep reading as `a`, `b`.
+fn id(name: &str) -> NotificationId {
+    let mut names = NAMES.lock().unwrap();
+    let at = names.iter().position(|n| n == name).unwrap_or_else(|| {
+        names.push(name.to_owned());
+        names.len() - 1
+    });
+    NotificationId::Server(at as u32)
+}
+
+fn name(id: NotificationId) -> String {
+    let NotificationId::Server(at) = id else { panic!("{id}") };
+    NAMES.lock().unwrap()[at as usize].clone()
+}
+
+fn notif(name: &str, urgency: u8) -> Notif {
     Notif {
-        id: id.into(),
+        id: id(name),
         app_name: "TestApp".into(),
-        summary: format!("Summary {id}"),
-        body: format!("Body {id}"),
+        summary: format!("Summary {name}"),
+        body: format!("Body {name}"),
         urgency: Urgency::try_from(urgency).unwrap(),
         ..Notif::default()
     }
@@ -22,7 +42,7 @@ fn from_notify_send(mut n: Notif) -> Notif {
 }
 
 fn ids(entries: &[Entry]) -> String {
-    entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>().join(",")
+    entries.iter().map(|e| name(e.id)).collect::<Vec<_>>().join(",")
 }
 
 fn add_at(s: &mut State, n: Notif, now: i64) {
@@ -89,7 +109,7 @@ fn add_dnd_on_non_bypassing_routes_to_pending() {
     add_at(&mut s, notif("a", 1), 1000);
     assert_eq!(s.popups.len(), 0);
     assert_eq!(s.pending.len(), 1);
-    assert_eq!(s.pending[0].id, "a");
+    assert_eq!(s.pending[0].id, id("a"));
     assert_eq!(s.pending[0].seen_at, None);
 }
 
@@ -145,7 +165,7 @@ fn popup_cap_overflow_pushes_oldest_to_pending() {
     add_at(&mut s, notif("e", 1), 1004);
     assert_eq!(s.popups.len(), 4);
     assert_eq!(s.pending.len(), 1);
-    assert_eq!(s.pending[0].id, "a"); // oldest evicted
+    assert_eq!(s.pending[0].id, id("a")); // oldest evicted
     assert_eq!(ids(&s.popups), "b,c,d,e");
 }
 
@@ -197,9 +217,9 @@ fn expire_moves_timed_out_popups_to_pending_unseen() {
     add_timeout(&mut s, notif("b", 1), 1000, 5000); // expires 6000
     s.expire(2000);
     assert_eq!(s.popups.len(), 1);
-    assert_eq!(s.popups[0].id, "b");
+    assert_eq!(s.popups[0].id, id("b"));
     assert_eq!(s.pending.len(), 1);
-    assert_eq!(s.pending[0].id, "a");
+    assert_eq!(s.pending[0].id, id("a"));
     assert_eq!(s.pending[0].seen_at, None);
 }
 
@@ -229,14 +249,14 @@ fn expire_shrinks_a_group_member_by_member() {
     let groups = group_entries(&s.popups);
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].count, 2);
-    assert_eq!(groups[0].id, "c");
+    assert_eq!(groups[0].id, id("c"));
 }
 
 #[test]
 fn update_patches_popup_content_in_place_without_moving_tier() {
     let mut s = State::new();
     add_at(&mut s, notif("a", 1), 1000);
-    s.update("a", &patch_summary("Song B"), 5000);
+    s.update(id("a"), &patch_summary("Song B"), 5000);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.pending.len(), 0);
     assert_eq!(s.popups[0].summary, "Song B");
@@ -247,7 +267,7 @@ fn update_patches_popup_content_in_place_without_moving_tier() {
 fn update_refreshes_expiry_for_still_popped_up_entry() {
     let mut s = State::new();
     add_at(&mut s, notif("a", 1), 1000); // expires 7000
-    s.update("a", &patch_summary("Song B"), 6500); // past the original clock
+    s.update(id("a"), &patch_summary("Song B"), 6500); // past the original clock
     assert_eq!(s.popups[0].expires_at, Some(12500)); // 6500 + 6000ms default, not expired
 }
 
@@ -255,7 +275,7 @@ fn update_refreshes_expiry_for_still_popped_up_entry() {
 fn update_keeps_sticky_expiry_for_critical_popup() {
     let mut s = State::new();
     add_at(&mut s, from_notify_send(notif("a", 2)), 1000);
-    s.update("a", &patch_summary("Song B"), 5000);
+    s.update(id("a"), &patch_summary("Song B"), 5000);
     assert_eq!(s.popups[0].expires_at, Some(0));
 }
 
@@ -263,7 +283,7 @@ fn update_keeps_sticky_expiry_for_critical_popup() {
 fn update_patches_pending_entry_without_touching_expiry() {
     let mut s = dnd();
     add_at(&mut s, notif("a", 1), 1000);
-    s.update("a", &patch_summary("Song B"), 5000);
+    s.update(id("a"), &patch_summary("Song B"), 5000);
     assert_eq!(s.pending.len(), 1);
     assert_eq!(s.pending[0].summary, "Song B");
     assert_eq!(s.pending[0].expires_at, None);
@@ -274,7 +294,7 @@ fn update_unknown_id_is_noop() {
     let mut s = State::new();
     add_at(&mut s, notif("a", 1), 1000);
     let before = s.clone();
-    s.update("missing", &patch_summary("Song B"), 5000);
+    s.update(id("missing"), &patch_summary("Song B"), 5000);
     assert_eq!(s, before);
 }
 
@@ -282,10 +302,10 @@ fn update_unknown_id_is_noop() {
 fn dismiss_popup_moves_to_past_marked_seen() {
     let mut s = State::new();
     add_at(&mut s, notif("a", 1), 1000);
-    s.dismiss_popup("a", 5000);
+    s.dismiss_popup(id("a"), 5000);
     assert_eq!(s.popups.len(), 0);
     assert_eq!(s.past.len(), 1);
-    assert_eq!(s.past[0].id, "a");
+    assert_eq!(s.past[0].id, id("a"));
     assert_eq!(s.past[0].seen_at, Some(5000));
 }
 
@@ -305,9 +325,9 @@ fn mark_all_seen_drains_pending_to_past() {
 fn prune_past_drops_entries_older_than_15_minutes() {
     let mut s = State::new();
     add_at(&mut s, notif("a", 1), 0);
-    s.dismiss_popup("a", 1000); // seenAt 1000
+    s.dismiss_popup(id("a"), 1000); // seenAt 1000
     add_at(&mut s, notif("b", 1), 0);
-    s.dismiss_popup("b", 900_000); // seenAt exactly 15min after "now" below
+    s.dismiss_popup(id("b"), 900_000); // seenAt exactly 15min after "now" below
 
     let fifteen_min = 15 * 60 * 1000;
     let now = 1000 + fifteen_min + 1;
@@ -323,7 +343,7 @@ fn invoke_target_returns_most_recently_arrived_across_popups_and_pending() {
     add_at(&mut s, notif("old", 1), 1000); // pending (dnd on)
     s.set_dnd(false);
     add_at(&mut s, notif("newer", 1), 2000); // popups
-    assert_eq!(invoke_target(&s).unwrap().id, "newer");
+    assert_eq!(invoke_target(&s).unwrap().id, id("newer"));
 }
 
 #[test]
@@ -335,8 +355,8 @@ fn invoke_target_null_when_nothing_pending_or_popup() {
 fn dismiss_one_removes_from_any_tier() {
     let mut s = State::new();
     add_at(&mut s, notif("a", 1), 1000);
-    s.dismiss_popup("a", 2000); // now in past
-    s.dismiss_one("a");
+    s.dismiss_popup(id("a"), 2000); // now in past
+    s.dismiss_one(id("a"));
     assert_eq!(s.past.len(), 0);
 }
 
@@ -347,12 +367,12 @@ fn dismiss_many_drops_members_from_any_tier() {
     s.set_dnd(false);
     add_at(&mut s, notif("q", 1), 1001); // popup
     add_at(&mut s, notif("r", 1), 1002);
-    s.dismiss_popup("r", 2000); // past
+    s.dismiss_popup(id("r"), 2000); // past
     assert_eq!(s.pending.len(), 1);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.past.len(), 1);
 
-    s.dismiss_many(&["p", "q", "r"]);
+    s.dismiss_many(&[id("p"), id("q"), id("r")]);
     assert_eq!(s.popups.len(), 0);
     assert_eq!(s.pending.len(), 0);
     assert_eq!(s.past.len(), 0);
@@ -364,7 +384,7 @@ fn dismiss_many_unknown_ids_returns_identity() {
     let mut s = State::new();
     add_at(&mut s, notif("a", 1), 1000);
     let before = s.clone();
-    s.dismiss_many(&["nope"]);
+    s.dismiss_many(&[id("nope")]);
     assert_eq!(s, before);
 }
 
@@ -402,8 +422,8 @@ fn replace_by_id_never_creates_a_second_popup_entry() {
     // again, so the reducer must never grow a second entry for the same id.
     let mut s = State::new();
     add_at(&mut s, notif("a", 1), 1000);
-    s.update("a", &patch_summary("Song B"), 2000);
-    s.update("a", &patch_summary("Song C"), 3000);
+    s.update(id("a"), &patch_summary("Song B"), 2000);
+    s.update(id("a"), &patch_summary("Song C"), 3000);
     assert_eq!(s.popups.len(), 1);
     assert_eq!(s.popups[0].summary, "Song C");
 }
@@ -464,7 +484,7 @@ fn group_entries_representative_is_the_newest_member() {
     add_timeout(&mut s, first, 1000, 500);
     add_timeout(&mut s, second, 2000, 500);
     let g = &group_entries(&s.popups)[0];
-    assert_eq!(g.id, "b");
+    assert_eq!(g.id, id("b"));
     assert_eq!(g.body, "second");
     assert_eq!(g.arrived_at, 2000);
     assert_eq!(g.expires_at, Some(2500));
@@ -478,14 +498,14 @@ fn group_entries_member_ids_are_oldest_first() {
     add_at(&mut s, summary(notif("c", 1), "Ping"), 1002);
     let g = &group_entries(&s.popups)[0];
     assert_eq!(g.count, 3);
-    assert_eq!(g.member_ids.join(","), "a,b,c");
+    assert_eq!(g.member_ids.iter().map(|m| name(*m)).collect::<Vec<_>>().join(","), "a,b,c");
 
     // The center feeds `past` in newest-first order; the member ids and the
     // representative must not flip with it.
     let reversed: Vec<Entry> = s.popups.iter().rev().cloned().collect();
     let reversed = &group_entries(&reversed)[0];
-    assert_eq!(reversed.member_ids.join(","), "a,b,c");
-    assert_eq!(reversed.id, "c");
+    assert_eq!(reversed.member_ids.iter().map(|m| name(*m)).collect::<Vec<_>>().join(","), "a,b,c");
+    assert_eq!(reversed.id, id("c"));
 }
 
 #[test]
@@ -687,21 +707,21 @@ fn position_spec_falls_back_to_default_on_garbage() {
 
 // stack_order
 
-fn group(id: &str, arrived_at: i64, urgency: u8) -> Group {
+fn group(name: &str, arrived_at: i64, urgency: u8) -> Group {
     Group {
         entry: Entry {
-            id: id.into(),
+            id: id(name),
             arrived_at,
             urgency: Urgency::try_from(urgency).unwrap(),
             ..Entry::default()
         },
         count: 1,
-        member_ids: vec![id.into()],
+        member_ids: vec![id(name)],
     }
 }
 
 fn group_ids(groups: &[Group]) -> String {
-    groups.iter().map(|g| g.id.as_str()).collect::<Vec<_>>().join(",")
+    groups.iter().map(|g| name(g.id)).collect::<Vec<_>>().join(",")
 }
 
 #[test]
@@ -713,8 +733,8 @@ fn stack_order_newest_first_with_no_critical() {
 #[test]
 fn stack_order_critical_wins_front_over_newer_normal() {
     let order = stack_order(&[group("old-crit", 1000, 2), group("newer", 3000, 1)]);
-    assert_eq!(order[0].id, "old-crit");
-    assert_eq!(order[1].id, "newer");
+    assert_eq!(order[0].id, id("old-crit"));
+    assert_eq!(order[1].id, id("newer"));
 }
 
 #[test]
@@ -730,7 +750,7 @@ fn stack_order_two_criticals_newest_critical_wins_front() {
         group("normal", 1500, 1),
         group("crit-new", 2000, 2),
     ]);
-    assert_eq!(order[0].id, "crit-new");
+    assert_eq!(order[0].id, id("crit-new"));
     // The rest stays newest-first among what's left.
     assert_eq!(group_ids(&order[1..]), "normal,crit-old");
 }
@@ -744,7 +764,7 @@ fn stack_order_empty_is_empty() {
 fn stack_order_single_entry() {
     let order = stack_order(&[group("only", 1000, 2)]);
     assert_eq!(order.len(), 1);
-    assert_eq!(order[0].id, "only");
+    assert_eq!(order[0].id, id("only"));
 }
 
 #[test]
@@ -800,8 +820,8 @@ fn badge_counts_unseen_then_falls_back_to_history() {
     assert_eq!((s.unseen(), s.total(), s.badge()), (0, 0, 0));
     add_at(&mut s, notif("a", 1), 1000);
     add_at(&mut s, notif("b", 1), 1001);
-    s.dismiss_popup("a", 2000);
+    s.dismiss_popup(id("a"), 2000);
     assert_eq!((s.unseen(), s.total(), s.badge()), (1, 2, 1));
-    s.dismiss_popup("b", 2000);
+    s.dismiss_popup(id("b"), 2000);
     assert_eq!((s.unseen(), s.total(), s.badge()), (0, 2, 2));
 }

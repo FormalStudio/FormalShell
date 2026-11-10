@@ -20,6 +20,7 @@ use async_io::{Async, Timer};
 use fs_activity::launcher::{self, Entry};
 use fs_activity::{Activity, Notice, State as ItemState, fspec};
 use fs_dbus::{Owner, OwnerWatch};
+use fs_types::NotificationId;
 use futures_lite::{AsyncReadExt, StreamExt};
 use serde_json::json;
 use zbus::message::Type;
@@ -106,7 +107,7 @@ pub enum Input {
     Launcher { app: String, title: String, entry: Entry },
     LauncherGone(String),
     Notice(Notice),
-    NoticeClosed(u32),
+    NoticeClosed(NotificationId),
     /// The shell spawned desktop entry `app` (`services/launch.rs`).
     Launch { app: String, title: String },
     /// A window of `app` mapped.
@@ -128,19 +129,11 @@ pub fn send(input: Input) {
 }
 
 /// A notification arrived or was replaced (`services/notifications.rs`).
-pub fn notification(n: &fs_notifd::Notification) {
-    let app = if n.desktop_entry.is_empty() { n.app_name.clone() } else { n.desktop_entry.clone() };
-    send(Input::Notice(Notice {
-        id: n.id,
-        app,
-        title: n.summary.clone(),
-        body: n.body.clone(),
-        value: n.value.map(|v| v.to_fraction()),
-        urgent: n.urgency == fs_notifd::Urgency::Critical,
-    }));
+pub fn notification(notice: Notice) {
+    send(Input::Notice(notice));
 }
 
-pub fn notification_closed(id: u32) {
+pub fn notification_closed(id: NotificationId) {
     send(Input::NoticeClosed(id));
 }
 

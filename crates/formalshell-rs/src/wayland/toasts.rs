@@ -233,7 +233,7 @@ impl App {
         // An expanded stack holds every toast in it, as a hovered card does.
         let expanded = t.expanded(&self.store);
         if expanded != was {
-            let ids: Vec<String> = t.members().into_iter().collect();
+            let ids: Vec<_> = t.members().into_iter().collect();
             self.store.notifications.set_hovered(&ids, expanded);
         }
     }
@@ -269,11 +269,11 @@ impl App {
             Act::None | Act::Activity(..) => return,
             Act::Dismiss(ids) => n.dismiss_popup_group(&ids),
             Act::Action(id, key) => {
-                n.invoke_action(&id, &key);
-                n.dismiss_popup(&id);
+                n.invoke_action(id, &key);
+                n.dismiss_popup(id);
             }
             Act::Body(ids) => {
-                if let Some(id) = ids.last() {
+                if let Some(&id) = ids.last() {
                     if n.find(id).is_some_and(|e| e.actions.iter().any(|a| a.key == "default")) {
                         n.invoke_action(id, "default");
                     }

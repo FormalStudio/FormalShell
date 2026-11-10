@@ -16,6 +16,7 @@ use fs_info::reminders;
 use fs_system::appicon::{DesktopEntry, Window, by_class};
 use fs_js as js;
 use fs_notifd::{CloseReason, Event, Image, ImageData, Server};
+use fs_types::NotificationId;
 use serde_json::{Value, json};
 
 use super::icons;
@@ -54,7 +55,7 @@ pub struct Arrival {
 pub enum Diff {
     Arrived(Box<Arrival>),
     /// The sender closed it, or an action closed it on the server's side.
-    Closed(String),
+    Closed(NotificationId),
     /// The bus name could not be had: another daemon owns it.
     Unavailable(String),
     /// A change a surface without write access to the store asked for.
@@ -77,10 +78,10 @@ pub struct LocalAction {
 
 pub enum Op {
     SetDnd(bool),
-    DismissGroup(Vec<String>),
+    DismissGroup(Vec<NotificationId>),
     /// The centre's "Clear all": pending and seen both go.
     ClearHistory,
-    Invoke(String, String),
+    Invoke(NotificationId, String),
     /// NotificationService.notify() for a service on its own thread.
     Notify(String, String, Urgency),
     /// The same with actions, each a command run when it is picked.
@@ -98,15 +99,15 @@ pub struct State {
     /// `notifications expand on`, the rig's stand-in for hovering the stack.
     pub stack_expanded: bool,
     /// Popup ids under the pointer: their countdown holds.
-    pub hovered: HashSet<String>,
+    pub hovered: HashSet<NotificationId>,
     /// Each entry's picture, keyed by its id; none means the bell.
-    pub icons: HashMap<String, icons::Raw>,
+    pub icons: HashMap<NotificationId, icons::Raw>,
     local_serial: u64,
     /// Actions picked on the shell's own entries, `(id, key)`, for the
     /// surface that posted them to act on.
-    pub local_invoked: Vec<(String, String)>,
+    pub local_invoked: Vec<(NotificationId, String)>,
     /// Commands behind shell-authored toasts' actions, by entry id.
-    local_commands: HashMap<String, Vec<LocalAction>>,
+    local_commands: HashMap<NotificationId, Vec<LocalAction>>,
     /// state.json's dnd as last seen, so a setDnd answered here before its
     /// write lands is not rolled back by the old value.
     dnd_seen: Option<bool>,
@@ -123,10 +124,10 @@ impl State {
             Diff::Arrived(a) => {
                 let Arrival { notif, timeout_ms, icon, replaced } = *a;
                 match icon {
-                    Some(raw) => self.icons.insert(notif.id.clone(), raw),
+                    Some(raw) => self.icons.insert(notif.id, raw),
                     None => self.icons.remove(&notif.id),
                 };
-                let known = self.find(&notif.id).is_some();
+                let known = self.find(notif.id).is_some();
                 if replaced && known {
                     let patch = Patch {
                         app_name: Some(notif.app_name.clone()),
@@ -139,17 +140,17 @@ impl State {
                         image: Some(notif.image.clone()),
                         phone: None,
                     };
-                    self.model.update(&notif.id, &patch, now);
+                    self.model.update(notif.id, &patch, now);
                 } else {
                     let opts = AddOpts { quiet: false, timeout_ms: Some(timeout_ms) };
                     self.model.add(&notif, now, &opts);
-                    self.phone.local_arrived(&mut self.model, &notif.id, now);
+                    self.phone.local_arrived(&mut self.model, notif.id, now);
                 }
                 self.after_change();
                 true
             }
             Diff::Closed(id) => {
-                self.model.dismiss_one(&id);
+                self.model.dismiss_one(id);
                 self.after_change();
                 true
             }
@@ -172,10 +173,10 @@ impl State {
                     Op::DismissGroup(ids) => self.dismiss_group(&ids),
                     Op::ClearHistory => {
                         self.clear_pending();
-                        let past: Vec<String> = self.model.past.iter().map(|e| e.id.clone()).collect();
+                        let past: Vec<NotificationId> = self.model.past.iter().map(|e| e.id).collect();
                         self.dismiss_group(&past);
                     }
-                    Op::Invoke(id, key) => self.invoke_action(&id, &key),
+                    Op::Invoke(id, key) => self.invoke_action(id, &key),
                     Op::Notify(summary, body, urgency) => self.notify(&summary, &body, urgency),
                     Op::NotifyRunning(summary, body, urgency, actions) => {
                         let shown = actions.iter().map(|a| Action { key: a.key.clone(), label: a.label.clone() }).collect();
@@ -189,7 +190,7 @@ impl State {
         }
     }
 
-    pub fn find(&self, id: &str) -> Option<&model::Entry> {
+    pub fn find(&self, id: NotificationId) -> Option<&model::Entry> {
         self.all().find(|e| e.id == id)
     }
 
@@ -198,7 +199,7 @@ impl State {
         m.popups.iter().chain(&m.pending).chain(&m.past)
     }
 
-    fn phone_dismissed(&self, id: &str) {
+    fn phone_dismissed(&self, id: NotificationId) {
         if let Some(e) = self.find(id) {
             iphone::card_closed(e);
         }
@@ -209,11 +210,11 @@ impl State {
         if self.icons.is_empty() {
             return;
         }
-        let live: HashSet<&str> = {
+        let live: HashSet<NotificationId> = {
             let m = &self.model;
-            m.popups.iter().chain(&m.pending).chain(&m.past).map(|e| e.id.as_str()).collect()
+            m.popups.iter().chain(&m.pending).chain(&m.past).map(|e| e.id).collect()
         };
-        self.icons.retain(|k, _| live.contains(k.as_str()));
+        self.icons.retain(|k, _| live.contains(k));
     }
 
     /// Mirrors state.json's dnd and reminders whenever the file moved.
@@ -241,11 +242,11 @@ impl State {
 
     /// The same with actions and an image; the id comes back so the
     /// caller can match an invoked action to its entry.
-    pub fn notify_with(&mut self, summary: &str, body: &str, urgency: Urgency, actions: Vec<Action>, image: String) -> String {
+    pub fn notify_with(&mut self, summary: &str, body: &str, urgency: Urgency, actions: Vec<Action>, image: String) -> NotificationId {
         self.local_serial += 1;
-        let id = format!("local-{}", self.local_serial);
+        let id = NotificationId::Local(self.local_serial);
         let notif = Notif {
-            id: id.clone(),
+            id,
             app_name: "formalshell".into(),
             summary: summary.into(),
             body: body.into(),
@@ -259,8 +260,8 @@ impl State {
         id
     }
 
-    pub fn dismiss_popup(&mut self, id: &str) {
-        self.hovered.remove(id);
+    pub fn dismiss_popup(&mut self, id: NotificationId) {
+        self.hovered.remove(&id);
         if self.model.popups.iter().any(|p| p.id == id) {
             self.phone_dismissed(id);
         }
@@ -268,20 +269,20 @@ impl State {
         close(id, CloseReason::Dismissed);
     }
 
-    pub fn dismiss_popup_group(&mut self, ids: &[String]) {
-        for id in ids {
+    pub fn dismiss_popup_group(&mut self, ids: &[NotificationId]) {
+        for &id in ids {
             self.dismiss_popup(id);
         }
     }
 
-    pub fn dismiss_one(&mut self, id: &str) {
+    pub fn dismiss_one(&mut self, id: NotificationId) {
         self.phone_dismissed(id);
         self.model.dismiss_one(id);
         self.after_change();
     }
 
-    pub fn dismiss_group(&mut self, ids: &[String]) {
-        for id in ids {
+    pub fn dismiss_group(&mut self, ids: &[NotificationId]) {
+        for &id in ids {
             self.dismiss_one(id);
         }
     }
@@ -300,34 +301,37 @@ impl State {
         self.model.mark_all_seen(now_ms());
     }
 
-    pub fn set_hovered(&mut self, ids: &[String], hovered: bool) {
+    pub fn set_hovered(&mut self, ids: &[NotificationId], hovered: bool) {
         for id in ids {
             if hovered {
-                self.hovered.insert(id.clone());
+                self.hovered.insert(*id);
             } else {
                 self.hovered.remove(id);
             }
         }
     }
 
-    pub fn invoke_action(&mut self, id: &str, key: &str) {
-        if id.starts_with("local-") {
-            if let Some(a) = self.local_commands.get(id).and_then(|acts| acts.iter().find(|a| a.key == key)) {
-                super::compositor::spawn(&a.argv);
-                return;
+    pub fn invoke_action(&mut self, id: NotificationId, key: &str) {
+        match id {
+            NotificationId::Local(_) => {
+                if let Some(a) = self.local_commands.get(&id).and_then(|acts| acts.iter().find(|a| a.key == key)) {
+                    super::compositor::spawn(&a.argv);
+                    return;
+                }
+                self.local_invoked.push((id, key.to_owned()));
             }
-            self.local_invoked.push((id.to_owned(), key.to_owned()));
-            return;
-        }
-        match self.find(id).and_then(iphone::phone_of) {
-            Some(phone) => iphone::card_invoke(phone, key == "positive"),
-            None => invoke(id, key),
+            NotificationId::Phone { .. } => {
+                if let Some(phone) = self.find(id).and_then(iphone::phone_of) {
+                    iphone::card_invoke(phone, key == "positive");
+                }
+            }
+            NotificationId::Server(id) => invoke(id, key),
         }
     }
 
     /// The front toast's whole group, the one its close button closes:
     /// `None` when nothing is popped up.
-    pub fn front_group(&self) -> Option<Vec<String>> {
+    pub fn front_group(&self) -> Option<Vec<NotificationId>> {
         let groups = model::group_entries(&self.model.popups);
         model::stack_order(&groups).into_iter().next().map(|g| g.member_ids)
     }
@@ -335,16 +339,12 @@ impl State {
     pub fn invoke_last(&mut self) {
         let Some(target) = model::invoke_target(&self.model).cloned() else { return };
         if target.actions.iter().any(|a| a.key == "default") {
-            if target.id.starts_with("local-") {
-                self.local_invoked.push((target.id.clone(), "default".into()));
-            } else {
-                invoke(&target.id, "default");
-            }
+            self.invoke_action(target.id, "default");
         }
         if self.model.popups.iter().any(|p| p.id == target.id) {
-            self.dismiss_popup(&target.id);
+            self.dismiss_popup(target.id);
         } else {
-            self.dismiss_one(&target.id);
+            self.dismiss_one(target.id);
         }
     }
 
@@ -368,10 +368,10 @@ impl State {
                 }
                 self.model.next_expiry = self.model.popups.iter().filter_map(|p| p.expires_at.filter(|t| *t != 0)).min();
             }
-            let before: Vec<String> = self.model.popups.iter().map(|p| p.id.clone()).collect();
+            let before: Vec<NotificationId> = self.model.popups.iter().map(|p| p.id).collect();
             if self.model.expire(now) {
-                for id in before.iter().filter(|id| !self.model.popups.iter().any(|p| &p.id == *id)) {
-                    self.hovered.remove(id);
+                for &id in before.iter().filter(|id| !self.model.popups.iter().any(|p| &p.id == *id)) {
+                    self.hovered.remove(&id);
                     close(id, CloseReason::Expired);
                 }
                 moved = true;
@@ -476,20 +476,36 @@ pub fn scale(largest: f64) {
     let _ = SCALE.0.try_send(largest);
 }
 
-/// Ids the server never issued (`local-…`, `iphone-…`) have nobody to tell.
-fn server_id(id: &str) -> Option<u32> {
-    id.parse().ok()
-}
-
-fn close(id: &str, reason: CloseReason) {
-    if let (Some(id), Some(tx)) = (server_id(id), CMD.get()) {
+fn close(id: NotificationId, reason: CloseReason) {
+    if let (NotificationId::Server(id), Some(tx)) = (id, CMD.get()) {
         let _ = tx.try_send(Cmd::Close(id, reason));
     }
 }
 
-fn invoke(id: &str, key: &str) {
-    if let (Some(id), Some(tx)) = (server_id(id), CMD.get()) {
+fn invoke(id: u32, key: &str) {
+    if let Some(tx) = CMD.get() {
         let _ = tx.try_send(Cmd::Invoke(id, key.to_owned()));
+    }
+}
+
+/// Every close the server confirms or the sender asks for ends the
+/// notification's activity item, through here.
+fn closed(id: u32) -> NotificationId {
+    let id = NotificationId::Server(id);
+    super::activity::notification_closed(id);
+    id
+}
+
+/// The notification as Activity reads it: a `value` hint is its progress.
+fn notice_of(n: &fs_notifd::Notification) -> fs_activity::Notice {
+    let app = if n.desktop_entry.is_empty() { n.app_name.clone() } else { n.desktop_entry.clone() };
+    fs_activity::Notice {
+        id: NotificationId::Server(n.id),
+        app,
+        title: n.summary.clone(),
+        body: n.body.clone(),
+        value: n.value.map(|v| v.to_fraction()),
+        urgent: n.urgency == fs_notifd::Urgency::Critical,
     }
 }
 
@@ -498,7 +514,7 @@ fn invoke(id: &str, key: &str) {
 fn image_of(n: &fs_notifd::Notification) -> (String, Option<Arc<ImageData>>) {
     match &n.image {
         None => (String::new(), None),
-        Some(Image::Data(d)) => (format!("image://notification/{}", n.id), Some(Arc::new(d.clone()))),
+        Some(Image::Data(d)) => (format!("image://notification/{}", NotificationId::Server(n.id)), Some(Arc::new(d.clone()))),
         Some(Image::Path(p)) if p.starts_with('/') => (format!("file://{p}"), None),
         Some(Image::Path(p)) => (format!("image://icon/{p}"), None),
     }
@@ -530,6 +546,9 @@ fn sender_icon(desktop_id: &str, app_name: &str) -> Option<String> {
 /// app icon, then nothing (the card's bell). A themed name no theme
 /// carries resolves to nothing rather than to a broken picture.
 fn resolve_icon(image: &str, app_icon: &str, desktop_entry: &str, app_name: &str, pixels: Option<&ImageData>, largest: f64) -> Option<icons::Raw> {
+    if let Some(d) = pixels {
+        return icons::from_rgba(d.width as i32, d.height as i32, &d.rgba);
+    }
     let source = fs_info::notification_icon::resolve(
         &fs_info::notification_icon::IconSource {
             image: image.into(),
@@ -540,10 +559,6 @@ fn resolve_icon(image: &str, app_icon: &str, desktop_entry: &str, app_name: &str
         |name| if icons::lookup(name, "", ICON_PICK).is_some() { format!("image://icon/{name}") } else { String::new() },
         sender_icon,
     );
-    if source.starts_with("image://notification/") {
-        let d = pixels?;
-        return icons::from_rgba(d.width as i32, d.height as i32, &d.rgba);
-    }
     if let Some(name) = source.strip_prefix("image://icon/") {
         return icons::named(name, "", icons::pick(ICON_PICK, largest));
     }
@@ -556,7 +571,7 @@ fn arrival(n: &fs_notifd::Notification, replaced: bool) -> Arrival {
     let (image, _) = image_of(n);
     Arrival {
         notif: Notif {
-            id: n.id.to_string(),
+            id: NotificationId::Server(n.id),
             app_name: n.app_name.clone(),
             app_icon: n.app_icon.clone(),
             desktop_entry: n.desktop_entry.clone(),
@@ -599,13 +614,12 @@ async fn run(ctx: Ctx) {
             match cmd {
                 Cmd::Close(id, reason) => {
                     if let Ok(true) = s.close(id, reason).await {
-                        super::activity::notification_closed(id);
+                        closed(id);
                     }
                 }
                 Cmd::Invoke(id, key) => {
                     if let Ok(true) = s.invoke_action(id, &key, None).await {
-                        super::activity::notification_closed(id);
-                        c.publish(store::Diff::Notifications(Diff::Closed(id.to_string())));
+                        c.publish(store::Diff::Notifications(Diff::Closed(closed(id))));
                     }
                 }
             }
@@ -617,12 +631,11 @@ async fn run(ctx: Ctx) {
             Event::Notified(n) => (n, false),
             Event::Replaced(n) => (n, true),
             Event::Closed { id } => {
-                super::activity::notification_closed(id);
-                ctx.publish(store::Diff::Notifications(Diff::Closed(id.to_string())));
+                ctx.publish(store::Diff::Notifications(Diff::Closed(closed(id))));
                 continue;
             }
         };
-        super::activity::notification(&n);
+        super::activity::notification(notice_of(&n));
         let mut a = arrival(&n, replaced);
         let (image, pixels) = image_of(&n);
         let (app_icon, entry, name) = (n.app_icon.clone(), n.desktop_entry.clone(), n.app_name.clone());
@@ -692,10 +705,10 @@ mod tests {
         }
     }
 
-    fn local(id: &str) -> Diff {
+    fn local(id: u32) -> Diff {
         Diff::Arrived(Box::new(Arrival {
             notif: Notif {
-                id: id.into(),
+                id: NotificationId::Server(id),
                 app_name: "Messages".into(),
                 summary: "Alex".into(),
                 body: "Still on for Friday?".into(),
@@ -718,14 +731,14 @@ mod tests {
         let mut s = mirrored();
         s.apply(Diff::Phone { record: sms(4012), quiet: false });
         assert_eq!(s.model.popups.len(), 1);
-        s.apply(local("9"));
-        assert_eq!(s.model.popups.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["9"]);
+        s.apply(local(9));
+        assert_eq!(s.model.popups.iter().map(|p| p.id).collect::<Vec<_>>(), [NotificationId::Server(9)]);
     }
 
     #[test]
     fn the_phone_copy_of_a_local_message_is_dropped() {
         let mut s = mirrored();
-        s.apply(local("9"));
+        s.apply(local(9));
         s.apply(Diff::Phone { record: sms(4012), quiet: false });
         assert_eq!(s.model.popups.len(), 1);
     }
@@ -753,7 +766,7 @@ mod tests {
     fn a_hovered_toast_holds() {
         let mut s = State::default();
         s.notify("a", "b", Urgency::Normal);
-        let id = s.model.popups[0].id.clone();
+        let id = s.model.popups[0].id;
         let at = s.model.next_expiry.unwrap();
         s.set_hovered(std::slice::from_ref(&id), true);
         s.tick(at);

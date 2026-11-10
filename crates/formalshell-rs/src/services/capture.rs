@@ -63,7 +63,7 @@ pub enum Event {
     /// A shot cut out of its freeze off the UI thread: the file, or why not.
     Cropped { generation: u64, result: Result<String, String> },
     /// A notification's picture, loaded off the UI thread.
-    Image { id: String, raw: Option<crate::services::icons::Raw> },
+    Image { id: fs_types::NotificationId, raw: Option<crate::services::icons::Raw> },
 }
 
 /// Events waiting for the UI thread to act on them, in arrival order.

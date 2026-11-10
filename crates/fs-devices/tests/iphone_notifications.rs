@@ -4,6 +4,7 @@
 
 use fs_devices::iphone::{DedupeRule, Event, Notification, dedupe_rules, default_dedupe, parse_event, superseded, to_notification};
 use fs_info::notifications as nm;
+use fs_types::NotificationId;
 
 const LINE_SMS: &str = r#"{"type": "notification", "id": 4012, "appId": "com.apple.MobileSMS", "appName": "Messages", "title": "Alex", "subtitle": "", "body": "Still on for Friday?", "deviceName": "Kyan's iPhone", "deviceHandle": "/org/bluez/hci0/dev_A1_B2_C3_D4_E5_F6", "positiveAction": null, "negativeAction": "Clear", "category": 4, "categoryCount": 2, "silent": false, "important": false, "preexisting": false, "session": 77, "ts": 1790000000.0}"#;
 const LINE_CALL: &str = r#"{"type": "notification", "id": 4013, "appId": "com.apple.mobilephone", "appName": "Phone", "title": "Mum", "subtitle": "", "body": "mobile", "deviceName": "Kyan's iPhone", "deviceHandle": "/org/bluez/hci0/dev_A1_B2_C3_D4_E5_F6", "positiveAction": "Answer", "negativeAction": "Decline", "category": 1, "categoryCount": 1, "silent": false, "important": true, "preexisting": false, "session": 77, "ts": 1790000001.0}"#;
@@ -26,7 +27,7 @@ fn phone() -> Notification {
 /// A local desktop client's notification, as the server layer hands `add`.
 fn local(id: &str, summary: &str, body: &str) -> nm::Notif {
     nm::Notif {
-        id: id.into(),
+        id: id.parse().unwrap(),
         app_name: "Messages".into(),
         summary: summary.into(),
         body: body.into(),
@@ -66,12 +67,12 @@ fn local_arrival_replaces_phone_card() {
     s = add(&s, &to_notification(&phone()), now);
     s = add(&s, &local("9", "Alex", "Still on for Friday?"), now + 3000);
     assert_eq!(s.popups.len(), 2);
-    let incoming = s.popups.iter().find(|p| p.id == "9").unwrap();
+    let incoming = s.popups.iter().find(|p| p.id == NotificationId::Server(9)).unwrap();
     let stale = superseded(&rules(), incoming, all_entries(&s), (now + 3000) as f64);
-    assert_eq!(stale, vec!["iphone-77-4012".to_string()]);
+    assert_eq!(stale, vec![NotificationId::Phone { session: 77, id: 4012 }]);
     s.dismiss_many(&stale);
     assert_eq!(s.popups.len(), 1);
-    assert_eq!(s.popups[0].id, "9");
+    assert_eq!(s.popups[0].id, NotificationId::Server(9));
     assert_eq!(s.pending.len() + s.past.len(), 0);
 }
 

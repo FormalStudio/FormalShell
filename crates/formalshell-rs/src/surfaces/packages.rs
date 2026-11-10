@@ -276,7 +276,7 @@ pub fn software_rows(theme: &fs_theme::theme::Theme, store: &Store) -> Vec<crate
 
 /// The app an Activity install row's Open launches, once it landed.
 pub fn landed_app<'a>(store: &'a Store, source: &str) -> Option<&'a str> {
-    let id = source.strip_prefix("fspec:install:")?;
+    let id = fs_activity::FspecSource::arg_of(source, "install")?;
     store.packages.started(id).filter(|s| s.verb == Verb::Install).and_then(|s| s.app.as_deref())
 }
 

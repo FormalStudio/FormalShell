@@ -22,7 +22,7 @@ use fs_dbus::Backoff;
 use fs_devices::iphone::{self, Arrival, Event, Verdict};
 pub use fs_devices::iphone::{Notification, phone_of};
 use fs_info::notifications::{self as model, AddOpts, Patch, Phone};
-use fs_types::BtAddress;
+use fs_types::{BtAddress, NotificationId};
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 use serde_json::Value;
@@ -164,7 +164,7 @@ impl Mirror {
         let notif = iphone::to_notification(record);
         if entries(m).any(|e| e.id == notif.id) {
             let patch = Patch { summary: Some(notif.summary), body: Some(notif.body), phone: notif.phone, ..Patch::default() };
-            m.update(&notif.id, &patch, now);
+            m.update(notif.id, &patch, now);
             return;
         }
         if !self.rules.is_empty() && iphone::dedupe(&self.rules, record, entries(m), now as f64).is_some() {
@@ -176,7 +176,7 @@ impl Mirror {
     /// A local arrival, `id`, just added: the local client wins, so a phone
     /// card already up for the same message goes, and the phone keeps its
     /// own copy.
-    pub fn local_arrived(&self, m: &mut model::State, id: &str, now: i64) {
+    pub fn local_arrived(&self, m: &mut model::State, id: NotificationId, now: i64) {
         let Some(entry) = entries(m).find(|e| e.id == id) else { return };
         let stale = iphone::superseded(&self.rules, entry, entries(m), now as f64);
         if !stale.is_empty() {
@@ -188,7 +188,7 @@ impl Mirror {
 /// The phone withdrew notification `id`: its cards go without telling it
 /// back. True when there was one.
 pub fn withdraw(m: &mut model::State, id: i64) -> bool {
-    let ids: Vec<String> = entries(m).filter(|e| iphone::phone_of(e).is_some_and(|p| p.id == id)).map(|e| e.id.clone()).collect();
+    let ids: Vec<NotificationId> = entries(m).filter(|e| iphone::phone_of(e).is_some_and(|p| p.id == id)).map(|e| e.id).collect();
     m.dismiss_many(&ids);
     !ids.is_empty()
 }

@@ -13,6 +13,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use fs_js as js;
+use fs_types::NotificationId;
 pub use fs_types::Urgency;
 
 /// Caps GROUPS on screen, not raw entries: five repeats of one notification
@@ -30,7 +31,7 @@ pub struct Action {
 /// What the server layer hands `add`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Notif {
-    pub id: String,
+    pub id: NotificationId,
     pub app_name: String,
     pub app_icon: String,
     pub desktop_entry: String,
@@ -68,7 +69,7 @@ pub struct Phone {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
-    pub id: String,
+    pub id: NotificationId,
     pub app_name: String,
     pub app_icon: String,
     /// The sender's `desktop-entry` hint, kept beside `app_icon` because the
@@ -106,7 +107,7 @@ pub struct State {
 pub struct Group {
     pub entry: Entry,
     pub count: usize,
-    pub member_ids: Vec<String>,
+    pub member_ids: Vec<NotificationId>,
 }
 
 impl Deref for Group {
@@ -156,7 +157,7 @@ pub fn bypasses_dnd(notif: &Notif) -> bool {
 
 fn make_entry(notif: &Notif, now: i64, expires_at: Option<i64>) -> Entry {
     Entry {
-        id: notif.id.clone(),
+        id: notif.id,
         app_name: notif.app_name.clone(),
         app_icon: notif.app_icon.clone(),
         desktop_entry: notif.desktop_entry.clone(),
@@ -244,7 +245,7 @@ pub fn group_entries(entries: &[Entry]) -> Vec<Group> {
             Group {
                 entry: entries[g.newest].clone(),
                 count: g.members.len(),
-                member_ids: g.members.iter().map(|&i| entries[i].id.clone()).collect(),
+                member_ids: g.members.iter().map(|&i| entries[i].id).collect(),
             }
         })
         .collect()
@@ -295,12 +296,12 @@ impl State {
         // both tiers, so a repeat never costs an unrelated toast its slot.
         let groups = group_entries(&self.popups);
         if groups.len() > MAX_POPUPS {
-            let evicted: HashSet<&str> = groups[..groups.len() - MAX_POPUPS]
+            let evicted: HashSet<NotificationId> = groups[..groups.len() - MAX_POPUPS]
                 .iter()
-                .flat_map(|g| g.member_ids.iter().map(String::as_str))
+                .flat_map(|g| g.member_ids.iter().copied())
                 .collect();
-            self.pending.extend(self.popups.iter().filter(|p| evicted.contains(p.id.as_str())).cloned());
-            self.popups.retain(|p| !evicted.contains(p.id.as_str()));
+            self.pending.extend(self.popups.iter().filter(|p| evicted.contains(&p.id)).cloned());
+            self.popups.retain(|p| !evicted.contains(&p.id));
         }
         self.next_expiry = recompute_next_expiry(&self.popups);
     }
@@ -311,7 +312,7 @@ impl State {
     /// `arrived_at`/`seen_at`. A still-popped-up entry gets `expires_at`
     /// recomputed from the patched urgency exactly like `add` does, so a later
     /// update isn't silently cut off by the original arrival's clock.
-    pub fn update(&mut self, id: &str, patch: &Patch, now: i64) {
+    pub fn update(&mut self, id: NotificationId, patch: &Patch, now: i64) {
         if let Some(entry) = self.popups.iter_mut().find(|p| p.id == id) {
             apply(entry, patch);
             entry.expires_at = Some(if entry.urgency == Urgency::Critical {
@@ -348,7 +349,7 @@ impl State {
     /// Only removes from the popups tier, marking the entry seen on its way to
     /// past: the toast surface's dismiss ("X" cell, or the click that
     /// acknowledges a popup still on screen).
-    pub fn dismiss_popup(&mut self, id: &str, now: i64) {
+    pub fn dismiss_popup(&mut self, id: NotificationId, now: i64) {
         let Some(idx) = self.popups.iter().position(|p| p.id == id) else {
             return;
         };
@@ -373,8 +374,8 @@ impl State {
         self.past.len() != before
     }
 
-    fn drop_ids(&mut self, wanted: &HashSet<&str>) {
-        let keep = |p: &Entry| !wanted.contains(p.id.as_str());
+    fn drop_ids(&mut self, wanted: &HashSet<NotificationId>) {
+        let keep = |p: &Entry| !wanted.contains(&p.id);
         let popups = self.popups.len();
         self.popups.retain(keep);
         self.pending.retain(keep);
@@ -387,14 +388,14 @@ impl State {
     /// General-purpose delete by id from whichever tier holds it (the history
     /// center's per-row dismiss, on pending or past rows). Unlike
     /// `dismiss_popup`, this drops the entry outright rather than promoting it.
-    pub fn dismiss_one(&mut self, id: &str) {
+    pub fn dismiss_one(&mut self, id: NotificationId) {
         self.drop_ids(&HashSet::from([id]));
     }
 
     /// `dismiss_one` for a whole group: the history center's per-row dismiss,
     /// where one row can stand for several notifications.
-    pub fn dismiss_many<S: AsRef<str>>(&mut self, ids: &[S]) {
-        self.drop_ids(&ids.iter().map(AsRef::as_ref).collect());
+    pub fn dismiss_many(&mut self, ids: &[NotificationId]) {
+        self.drop_ids(&ids.iter().copied().collect());
     }
 
     pub fn dismiss_all(&mut self) {

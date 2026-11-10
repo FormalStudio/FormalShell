@@ -20,7 +20,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use fs_info::notifications::{Action, Entry, Notif, Phone, Urgency};
 use fs_js::{self as js, SPACE};
-use fs_types::BtAddress;
+use fs_types::{BtAddress, NotificationId};
 
 /// ANCS's CategoryIDIncomingCall.
 const INCOMING_CALL: i64 = 1;
@@ -421,7 +421,7 @@ pub fn dedupe<'a>(
 /// The other direction: a local arrival against the centre's phone entries.
 /// Answers the ids of the phone entries it supersedes, which the caller
 /// removes.
-pub fn superseded<'a>(rules: &[DedupeRule], local_entry: &Entry, entries: impl IntoIterator<Item = &'a Entry>, now: f64) -> Vec<String> {
+pub fn superseded<'a>(rules: &[DedupeRule], local_entry: &Entry, entries: impl IntoIterator<Item = &'a Entry>, now: f64) -> Vec<NotificationId> {
     let local_keys = readings(&local_entry.summary, "", &local_entry.body);
     entries
         .into_iter()
@@ -431,7 +431,7 @@ pub fn superseded<'a>(rules: &[DedupeRule], local_entry: &Entry, entries: impl I
             (is_local_for(rule, local_entry)
                 && within(rule, entry, now)
                 && overlap(&local_keys, &readings(&phone.title, &phone.subtitle, &phone.body)))
-            .then(|| entry.id.clone())
+            .then_some(entry.id)
         })
         .collect()
 }
@@ -478,7 +478,7 @@ pub fn to_notification(entry: &Notification) -> Notif {
         actions.push(Action { key: "negative".into(), label: entry.negative_action.clone() });
     }
     Notif {
-        id: format!("iphone-{}-{}", entry.session, entry.id),
+        id: NotificationId::Phone { session: entry.session, id: entry.id },
         app_name: entry.app_name.clone(),
         summary: if !entry.title.is_empty() {
             entry.title.clone()
@@ -591,7 +591,7 @@ mod tests {
 
     fn local(id: &str, summary: &str, body: &str, arrived_at: f64) -> Entry {
         Entry {
-            id: id.into(),
+            id: id.parse().unwrap(),
             app_name: "Messages".into(),
             summary: summary.into(),
             body: body.into(),
@@ -891,7 +891,7 @@ mod tests {
         let now = 100000.0;
         let entries = [local("9", "Alex", "Still on for Friday?", now - 2000.0)];
         let hit = dedupe(&rules(), &phone(), &entries, now);
-        assert_eq!(hit.unwrap().id, "9");
+        assert_eq!(hit.unwrap().id, NotificationId::Server(9));
     }
 
     #[test]
@@ -955,7 +955,7 @@ mod tests {
         let incoming = local("9", "Alex", "Still on for Friday?", now + 3000.0);
         let all = [phone_entry(&phone(), now), incoming.clone()];
         let stale = superseded(&rules(), &incoming, &all, now + 3000.0);
-        assert_eq!(stale, ["iphone-77-4012"]);
+        assert_eq!(stale, [NotificationId::Phone { session: 77, id: 4012 }]);
     }
 
     #[test]
@@ -999,7 +999,7 @@ mod tests {
     #[test]
     fn to_notification_maps_a_message_and_a_call() {
         let m = to_notification(&Notification { subtitle: "Weekend".into(), ..phone() });
-        assert_eq!(m.id, "iphone-77-4012");
+        assert_eq!(m.id.to_string(), "iphone-77-4012");
         assert_eq!(m.source, "iphone");
         assert_eq!(m.summary, "Alex");
         assert_eq!(m.body, "Weekend\nStill on for Friday?");

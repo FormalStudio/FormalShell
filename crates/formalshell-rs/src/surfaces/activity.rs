@@ -3,11 +3,10 @@
 //! the live toast and the notification centre all build from [`row`] and
 //! [`folded`]. The sidebar's card is [`installs_card`], one line a group.
 //!
-//! A row's `on` actions are `open:<source>`, `dismiss:<source>`,
-//! `retry:<source>` and `open-app:<source>`; [`event`] turns one into
-//! [`act`], which the IPC verbs call too.
+//! A row's `on` actions are a [`Verb`] and the group's source
+//! (`open:<source>`); [`act`] runs one, which the IPC verbs call too.
 
-use fs_activity::{Group, Item, Origin, Retry, State};
+use fs_activity::{FspecSource, Group, Item, Origin, Retry, State};
 use fs_theme::theme::Theme;
 
 use crate::runtime::Runtime;
@@ -60,12 +59,12 @@ pub fn row(theme: &Theme, store: &Store, g: &Group, actions: bool) -> El {
     let mut parts = vec![w::ring(ring(lead)), words];
     if actions {
         if lead.state != State::Failed && crate::surfaces::packages::landed_app(store, g.source).is_some() {
-            parts.push(w::icon_button("square-arrow-out-up-right").tip("Open").on(format!("open-app:{}", g.source)));
+            parts.push(w::icon_button("square-arrow-out-up-right").tip("Open").on(Verb::OpenApp.on(g.source)));
         }
         if lead.state == State::Failed && Retry::of(lead).is_some() {
-            parts.push(w::icon_button("rotate-ccw").tip("Retry").on(format!("retry:{}", g.source)));
+            parts.push(w::icon_button("rotate-ccw").tip("Retry").on(Verb::Retry.on(g.source)));
         }
-        parts.push(w::icon_button("x").tip("Dismiss").on(format!("dismiss:{}", g.source)));
+        parts.push(w::icon_button("x").tip("Dismiss").on(Verb::Dismiss.on(g.source)));
     }
     w::row(s.sm, parts).fill()
 }
@@ -91,7 +90,7 @@ pub fn list(theme: &Theme, store: &Store, max: usize) -> Vec<El> {
     let mut rows: Vec<El> = groups
         .iter()
         .take(max)
-        .map(|g| w::cell(row(theme, store, g, true)).ghost().interactive().on(format!("open:{}", g.source)).stop(g.source.to_owned()))
+        .map(|g| w::cell(row(theme, store, g, true)).ghost().interactive().on(Verb::Open.on(g.source)).stop(g.source.to_owned()))
         .collect();
     if groups.len() > max {
         rows.push(w::caption(format!("+{}", groups.len() - max)).mono().ink(Ink::Dim));
@@ -132,7 +131,7 @@ pub fn installs_card(store: &Store) -> Option<El> {
                 .cell_state(|c| c.inset = Some((NAME_INSET, 0.0)))
                 .height(LINE)
                 .fill()
-                .on(format!("open:{}", g.source))
+                .on(Verb::Open.on(g.source))
                 .stop(g.source.to_owned());
             let tip = detail(lead);
             let fill = if tip.is_empty() { fill } else { fill.tip(tip) };
@@ -156,16 +155,25 @@ pub enum Verb {
 }
 
 impl Verb {
+    const ALL: [Verb; 4] = [Verb::Open, Verb::Dismiss, Verb::Retry, Verb::OpenApp];
+
+    fn word(self) -> &'static str {
+        match self {
+            Verb::Open => "open",
+            Verb::Dismiss => "dismiss",
+            Verb::Retry => "retry",
+            Verb::OpenApp => "open-app",
+        }
+    }
+
+    /// The `on` a widget carries for this verb on group `source`.
+    pub fn on(self, source: &str) -> String {
+        format!("{}:{source}", self.word())
+    }
+
     pub fn parse(on: &str) -> Option<(Verb, &str)> {
-        let (verb, source) = on.split_once(':')?;
-        let verb = match verb {
-            "open" => Verb::Open,
-            "dismiss" => Verb::Dismiss,
-            "retry" => Verb::Retry,
-            "open-app" => Verb::OpenApp,
-            _ => return None,
-        };
-        Some((verb, source))
+        let (word, source) = on.split_once(':')?;
+        Verb::ALL.into_iter().find(|v| v.word() == word).map(|verb| (verb, source))
     }
 }
 
@@ -181,10 +189,6 @@ fn notify(runtime: Option<&Runtime>, op: Op) {
     if let Some(rt) = runtime {
         rt.service(move |ctx| ctx.publish(store::Diff::Notifications(notifications::Diff::Op(op))));
     }
-}
-
-fn notification(item: &Item) -> Option<String> {
-    (item.origin == Origin::Notification).then(|| item.id.strip_prefix("notification:").unwrap_or(&item.id).to_owned())
 }
 
 /// The window of desktop entry `app`, else the entry launched.
@@ -222,7 +226,7 @@ pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -
     match verb {
         Verb::Open => {
             let lead = g.lead();
-            match (lead.origin, lead.app.as_deref(), notification(lead)) {
+            match (lead.origin, lead.app.as_deref(), lead.notification()) {
                 (Origin::Fspec, ..) => return Ok(Done::Panel),
                 (Origin::LauncherEntry | Origin::Launch, Some(app), _) => focus_app(store, app),
                 (Origin::Notification, _, Some(id)) => notify(runtime, Op::Invoke(id, "default".into())),
@@ -230,7 +234,7 @@ pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -
             }
         }
         Verb::Dismiss => {
-            let ids: Vec<String> = g.items.iter().filter_map(|i| notification(i)).collect();
+            let ids: Vec<_> = g.items.iter().filter_map(|i| i.notification()).collect();
             if !ids.is_empty() {
                 notify(runtime, Op::DismissGroup(ids));
             }
@@ -244,12 +248,12 @@ pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -
         Verb::Retry => {
             let Some(retry) = activity.retry(source) else { return Err(format!("'{source}' cannot be retried")) };
             // The packages service follows its own installs' operations.
-            if let Some(id) = source.strip_prefix("fspec:install:") {
-                crate::surfaces::packages::install(store, id);
-            } else if let Some(id) = source.strip_prefix("fspec:uninstall:") {
-                crate::services::packages::send(crate::services::packages::Cmd::Uninstall(id.to_owned()));
-            } else {
-                spawn(retry);
+            match FspecSource::parse(source) {
+                Some(FspecSource { kind: "install", arg: Some(id) }) => crate::surfaces::packages::install(store, id),
+                Some(FspecSource { kind: "uninstall", arg: Some(id) }) => {
+                    crate::services::packages::send(crate::services::packages::Cmd::Uninstall(id.to_owned()));
+                }
+                _ => spawn(retry),
             }
             service::send(Input::Dismiss(source.to_owned()));
         }
@@ -261,4 +265,21 @@ pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -
 pub fn history(theme: &Theme, store: &Store, max: usize) -> Vec<El> {
     let now = now_ms();
     store.activity.activity.history().take(max).map(|i| w::cell(folded(theme, i, now)).ghost().interactive().stop(i.id.clone())).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_verb_prints_and_parses_back() {
+        let source = "fspec:install:org.mozilla.firefox";
+        for (verb, word) in [(Verb::Open, "open"), (Verb::Dismiss, "dismiss"), (Verb::Retry, "retry"), (Verb::OpenApp, "open-app")] {
+            let on = format!("{word}:{source}");
+            assert_eq!(verb.on(source), on);
+            assert_eq!(Verb::parse(&on), Some((verb, source)));
+        }
+        assert_eq!(Verb::parse("close"), None);
+        assert_eq!(Verb::parse("action:k"), None);
+    }
 }

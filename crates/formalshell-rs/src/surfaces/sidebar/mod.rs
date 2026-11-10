@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
-use fs_types::Edge;
+use fs_types::{Edge, NotificationId};
 use fs_info::clock::format_qt;
 use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
@@ -219,7 +219,7 @@ pub struct Sidebar {
     /// The clock's face over the time card.
     face: Vec<NodeId>,
     /// Notification app icons fitted at `Geo::glyph`, by entry id.
-    icons: HashMap<String, Option<Bitmap>>,
+    icons: HashMap<NotificationId, Option<Bitmap>>,
     clock: ClockCard,
     /// Folded to the rail, as last drawn, and the rail clock's lines.
     collapsed: bool,
@@ -398,7 +398,7 @@ impl Sidebar {
         let n = &store.notifications;
         self.icons.retain(|id, _| n.icons.contains_key(id));
         for (id, raw) in &n.icons {
-            self.icons.entry(id.clone()).or_insert_with(|| raw.bitmap(g.glyph as u32, scale));
+            self.icons.entry(*id).or_insert_with(|| raw.bitmap(g.glyph as u32, scale));
         }
     }
 
@@ -741,7 +741,7 @@ impl ClockCard {
 
 /// Every card that has something to show, top to bottom, by name.
 #[allow(clippy::too_many_arguments)]
-fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>, icons: &HashMap<String, Option<Bitmap>>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
+fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>, icons: &HashMap<NotificationId, Option<Bitmap>>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
     let s = &theme.space;
     let inner = |h: f64| (h - s.md * 2.0).max(0.0);
     let battery = if store.power.battery.is_some() { g.battery_h } else { 0.0 };
@@ -767,7 +767,7 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
 
 /// The bell and how many are new (or how many there are), a rule, and the
 /// apps the latest came from, as many as fit `room`.
-fn notifications(theme: &Theme, store: &Store, g: &Geo, icons: &HashMap<String, Option<Bitmap>>, room: f64, kit: &mut Kit) -> El {
+fn notifications(theme: &Theme, store: &Store, g: &Geo, icons: &HashMap<NotificationId, Option<Bitmap>>, room: f64, kit: &mut Kit) -> El {
     let s = &theme.space;
     let m = &store.notifications.model;
     let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);

@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, VecDeque};
 use serde_json::{Value, json};
 
 use launcher::Entry;
-use fs_types::Fraction;
+use fs_types::{Fraction, NotificationId};
 use progress::Progress;
 
 /// How long a finished item stays before it folds into the history.
@@ -109,6 +109,14 @@ impl Item {
         }
     }
 
+    /// The notification a `Notification` item stands for.
+    pub fn notification(&self) -> Option<NotificationId> {
+        if self.origin != Origin::Notification {
+            return None;
+        }
+        self.id.strip_prefix(NOTIFICATION)?.parse().ok()
+    }
+
     fn due(&self, now: i64) -> bool {
         match (self.state, self.ended_ms) {
             (State::Running | State::Failed, _) | (_, None) => false,
@@ -154,7 +162,7 @@ pub struct Badge {
 
 /// A notification as Activity reads it.
 pub struct Notice {
-    pub id: u32,
+    pub id: NotificationId,
     /// The sender's desktop entry, else its app name.
     pub app: String,
     pub title: String,
@@ -163,8 +171,10 @@ pub struct Notice {
     pub urgent: bool,
 }
 
-pub fn notification_id(id: u32) -> String {
-    format!("notification:{id}")
+const NOTIFICATION: &str = "notification:";
+
+pub fn notification_id(id: NotificationId) -> String {
+    format!("{NOTIFICATION}{id}")
 }
 
 fn launcher_id(app: &str) -> String {
@@ -213,6 +223,30 @@ impl Group<'_> {
     }
 }
 
+/// An fspec group's source, `fspec:<kind>:<arg>`: the kind its stream line
+/// names and what that operation works on (a package, a spec dir, a search
+/// id). The one place the string is taken apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FspecSource<'a> {
+    pub kind: &'a str,
+    pub arg: Option<&'a str>,
+}
+
+impl<'a> FspecSource<'a> {
+    pub fn parse(source: &'a str) -> Option<Self> {
+        let rest = source.strip_prefix("fspec:")?;
+        Some(match rest.split_once(':') {
+            Some((kind, arg)) => FspecSource { kind, arg: Some(arg).filter(|a| !a.is_empty()) },
+            None => FspecSource { kind: rest, arg: None },
+        })
+    }
+
+    /// The argument of a `kind` source.
+    pub fn arg_of(source: &'a str, kind: &str) -> Option<&'a str> {
+        Self::parse(source).filter(|s| s.kind == kind).and_then(|s| s.arg)
+    }
+}
+
 /// How a failed fspec operation is run again: what its stream line names
 /// is all there is to go on, so only a `run` (its package), an `update`
 /// (its spec dir) and an `install` or `uninstall` (its search id) can be.
@@ -227,7 +261,7 @@ impl Retry {
         if item.origin != Origin::Fspec {
             return None;
         }
-        let arg = item.source.strip_prefix(&format!("fspec:{}:", item.kind)).filter(|a| !a.is_empty())?;
+        let arg = FspecSource::arg_of(&item.source, &item.kind)?;
         match item.kind.as_str() {
             "run" => Some(Retry { cwd: None, argv: vec!["fspec".into(), "run".into(), "--detach".into(), arg.into()] }),
             "update" => Some(Retry { cwd: Some(arg.into()), argv: vec!["fspec".into(), "update".into()] }),
@@ -520,7 +554,7 @@ impl Activity {
     }
 
     /// The sender closed notification `id`.
-    pub fn notification_closed(&mut self, id: u32, now: i64) -> bool {
+    pub fn notification_closed(&mut self, id: NotificationId, now: i64) -> bool {
         self.end(&notification_id(id), State::Done, None, now)
     }
 
@@ -578,7 +612,7 @@ mod tests {
     }
 
     fn notice(id: u32, value: Option<u8>) -> Notice {
-        Notice { id, app: "firefox".into(), title: "Downloading".into(), body: "a.iso".into(), value: value.map(|v| fs_types::Percent::whole(v).to_fraction()), urgent: false }
+        Notice { id: NotificationId::Server(id), app: "firefox".into(), title: "Downloading".into(), body: "a.iso".into(), value: value.map(|v| fs_types::Percent::whole(v).to_fraction()), urgent: false }
     }
 
     #[test]
@@ -732,8 +766,8 @@ mod tests {
         let item = a.get("notification:7").unwrap();
         assert_eq!((item.state, item.title.as_str(), item.ended_ms), (State::Done, "Downloaded", Some(300)));
         a.notification(notice(8, Some(5)), 400);
-        assert!(a.notification_closed(8, 500));
-        assert!(!a.notification_closed(9, 500));
+        assert!(a.notification_closed(NotificationId::Server(8), 500));
+        assert!(!a.notification_closed(NotificationId::Server(9), 500));
     }
 
     #[test]
@@ -741,7 +775,7 @@ mod tests {
         let mut a = Activity::default();
         for n in 0..(HISTORY as u32 + 5) {
             a.notification(notice(n, Some(1)), 0);
-            a.notification_closed(n, 0);
+            a.notification_closed(NotificationId::Server(n), 0);
         }
         a.fold(FOLD_MS);
         assert_eq!(a.history().count(), HISTORY);
@@ -794,5 +828,23 @@ mod tests {
         assert_eq!(item("install", "Installing Firefox").subject(), "Firefox");
         assert_eq!(item("uninstall", "Uninstalling Firefox").subject(), "Uninstalling Firefox");
         assert_eq!(item("apply", "Applying g815").subject(), "Applying g815");
+    }
+
+    #[test]
+    fn an_fspec_source_is_taken_apart_once() {
+        assert_eq!(FspecSource::parse("fspec:install:org.mozilla.firefox"), Some(FspecSource { kind: "install", arg: Some("org.mozilla.firefox") }));
+        assert_eq!(FspecSource::parse("fspec:update:/a:b"), Some(FspecSource { kind: "update", arg: Some("/a:b") }));
+        assert_eq!(FspecSource::parse("fspec:rebase"), Some(FspecSource { kind: "rebase", arg: None }));
+        assert_eq!(FspecSource::parse("fspec:run:"), Some(FspecSource { kind: "run", arg: None }));
+        assert_eq!(FspecSource::parse("app:firefox"), None);
+        assert_eq!(FspecSource::arg_of("fspec:uninstall:x", "install"), None);
+    }
+
+    #[test]
+    fn a_notification_item_names_its_notification() {
+        let mut a = Activity::default();
+        a.notification(notice(12, Some(40)), 100);
+        let item = a.get("notification:12").unwrap();
+        assert_eq!(item.notification(), Some(NotificationId::Server(12)));
     }
 }

@@ -103,7 +103,7 @@ fn find(v: &crate::store::Store, key: &str) -> Option<Group> {
 fn activate_row(fx: &Effect, key: &str) {
     let Some(g) = find(fx.store, key) else { return };
     if g.actions.iter().any(|a| a.key == "default") {
-        send(fx, Op::Invoke(g.id.clone(), "default".into()));
+        send(fx, Op::Invoke(g.id, "default".into()));
     }
 }
 
@@ -192,7 +192,7 @@ impl Panel for Center {
                 } else if let Some(rest) = on.strip_prefix("action:") {
                     if let Some((action, key)) = rest.split_once(':') {
                         if let Some(g) = find(fx.store, key) {
-                            send(fx, Op::Invoke(g.id.clone(), action.to_owned()));
+                            send(fx, Op::Invoke(g.id, action.to_owned()));
                         }
                     }
                 }

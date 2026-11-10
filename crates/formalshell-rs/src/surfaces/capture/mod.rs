@@ -60,7 +60,7 @@ pub struct Capture {
     pub rec: record::Rec,
     pub picker: Picker,
     /// The actions of the notifications this family posted, by entry id.
-    local: HashMap<String, Vec<(&'static str, Act)>>,
+    local: HashMap<fs_types::NotificationId, Vec<(&'static str, Act)>>,
 }
 
 impl Capture {
@@ -144,7 +144,7 @@ pub fn flush(app: &mut App) {
         let image = if post.image.is_empty() { String::new() } else { format!("file://{}", post.image) };
         let id = app.store.notifications.notify_with(&post.summary, &post.body, fs_info::notifications::Urgency::Normal, actions, image);
         if !post.actions.is_empty() {
-            app.capture.local.insert(id.clone(), post.actions.into_iter().map(|(k, _, a)| (k, a)).collect());
+            app.capture.local.insert(id, post.actions.into_iter().map(|(k, _, a)| (k, a)).collect());
         }
         if !post.image.is_empty()
             && let Some(rt) = &app.runtime
