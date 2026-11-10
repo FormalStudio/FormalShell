@@ -13,7 +13,6 @@ pub mod ams;
 pub mod appicon;
 pub mod barpaint;
 pub mod battery;
-pub mod brightness;
 pub mod bus;
 pub mod caffeinate;
 pub mod capture;
@@ -100,7 +99,6 @@ const SERVICES: &[fn(&Ctx)] = &[
     plugins::start,
     nightlight::start,
     lights::start,
-    brightness::start,
     devices::bluetooth::start,
     devices::network::start,
     devices::audio::start,

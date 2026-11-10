@@ -438,7 +438,7 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/display.rs", "crates/formalsh
 runs = ["--display", "--hdr", "--multi-output"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/brightness.rs"]
+paths = ["crates/formalshell-rs/src/services/display.rs"]
 runs = ["--brightness", "--osd"]
 
 [[rule]]

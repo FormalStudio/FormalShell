@@ -110,6 +110,8 @@ thread_local! {
     static BACKLIGHT: RefCell<String> = const { RefCell::new(String::new()) };
     static BUSES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     static PENDING: RefCell<HashMap<String, Pending>> = RefCell::new(HashMap::new());
+    /// A backlight read is out, and another was asked for while it was.
+    static READING: RefCell<(bool, bool)> = const { RefCell::new((false, false)) };
     /// A detection is out, and another was asked for while it was.
     static DETECTING: RefCell<(bool, bool)> = const { RefCell::new((false, false)) };
     /// Callers waiting for the detection loop to finish.
@@ -170,7 +172,7 @@ fn pending(id: &str) -> Option<i64> {
 }
 
 pub fn start(ctx: &Ctx) {
-    ctx.spawn(backlight(ctx.clone()));
+    refresh_backlight(ctx);
 }
 
 /// The hyprland service's every output read: a new set of connector names
@@ -246,16 +248,24 @@ fn read_cards() -> Vec<gpu::Card> {
     gpu::parse_cards(&text)
 }
 
-/// `brightnessctl -m -c backlight -l`; its first CSV row (`name,class,
-/// current,percent%,max`) is the backlight now.
+/// `brightnessctl -m`'s row: `name,class,current,percent%,max`.
+fn parse_backlight(line: &str) -> Option<(String, i64)> {
+    let fields: Vec<&str> = line.split(',').collect();
+    if fields.len() < 4 || fields[0].is_empty() {
+        return None;
+    }
+    let digits: String = fields[3].trim().chars().take_while(char::is_ascii_digit).collect();
+    Some((fields[0].to_owned(), digits.parse().unwrap_or(0)))
+}
+
+/// `brightnessctl -m -c backlight -l`; its first row is the backlight now.
 async fn backlight(ctx: Ctx) {
-    let argv: Vec<String> = ["brightnessctl", "-m", "-c", "backlight", "-l"].map(String::from).into();
+    let argv = proc::argv(&["brightnessctl", "-m", "-c", "backlight", "-l"]);
     let text = proc::capture(&argv, BRIGHTNESSCTL_TIMEOUT).await.stdout;
     let line = text.lines().next().unwrap_or("").trim();
-    let fields: Vec<&str> = line.split(',').collect();
-    let device = if fields.len() >= 4 && !fields[0].is_empty() {
-        BACKLIGHT.with_borrow_mut(|b| *b = fields[0].to_owned());
-        let percent = pending("backlight").unwrap_or_else(|| fields[3].trim_end_matches('%').parse().unwrap_or(0));
+    let device = if let Some((name, read)) = parse_backlight(line) {
+        BACKLIGHT.with_borrow_mut(|b| *b = name);
+        let percent = pending("backlight").unwrap_or(read);
         LEVELS.with_borrow_mut(|l| l.insert("backlight".into(), (percent, 100)));
         Some(Brightness { id: "backlight".into(), label: "INTERNAL".into(), percent, max: 100 })
     } else if line.is_empty() {
@@ -266,6 +276,34 @@ async fn backlight(ctx: Ctx) {
         return;
     };
     publish(&ctx, Diff::Backlight(device));
+}
+
+/// Reads the backlight again: a keybind's own `brightnessctl set` goes
+/// round this service. One read at a time, and one more after it if
+/// another call landed meanwhile: a held key fires this at its repeat rate,
+/// and reads racing each other could land oldest last and step the OSD
+/// backwards.
+pub fn refresh_backlight(ctx: &Ctx) {
+    let first = READING.with_borrow_mut(|(reading, again)| {
+        *again = *reading;
+        !std::mem::replace(reading, true)
+    });
+    if !first {
+        return;
+    }
+    let ctx = ctx.clone();
+    ctx.clone().spawn(async move {
+        loop {
+            backlight(ctx.clone()).await;
+            let again = READING.with_borrow_mut(|(reading, again)| {
+                *reading = std::mem::take(again);
+                *reading
+            });
+            if !again {
+                return;
+            }
+        }
+    });
 }
 
 /// `ddcutil detect --brief`: each `I2C bus: /dev/i2c-N` followed by its
@@ -448,7 +486,7 @@ async fn write(id: &str, pct: i64, max: i64) {
 /// While the panel is open: the outputs read now and every 5s, the
 /// backlight, the DDC monitors and the cards once.
 pub async fn run(ctx: Ctx) {
-    ctx.spawn(backlight(ctx.clone()));
+    refresh_backlight(&ctx);
     detect_soon(&ctx);
     if let Some(cards) = ctx.pool().run(read_cards).await {
         publish(&ctx, Diff::Cards(cards));
@@ -667,6 +705,13 @@ pub fn main_output(store: &Store) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_backlight_row_is_name_and_percent() {
+        assert_eq!(parse_backlight("intel_backlight,backlight,4800,43%,11000"), Some(("intel_backlight".into(), 43)));
+        assert_eq!(parse_backlight("a,b"), None);
+        assert_eq!(parse_backlight(",backlight,1,2%,3"), None);
+    }
 
     #[test]
     fn detect_pairs_bus_and_connector() {

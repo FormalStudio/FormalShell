@@ -4,7 +4,7 @@
 //! it), media text, close and state.
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
-use crate::services::brightness;
+use crate::services::display;
 use crate::surfaces::osd::Kind;
 use crate::wayland::App;
 
@@ -15,7 +15,7 @@ fn volume(app: &mut App, _: &[Value]) -> Reply {
 
 fn show_brightness(app: &mut App, _: &[Value]) -> Reply {
     if let Some(rt) = &app.runtime {
-        rt.service(brightness::refresh);
+        rt.service(display::refresh_backlight);
     }
     app.osd_brightness_read();
     app.osd_show(Kind::Brightness, "");

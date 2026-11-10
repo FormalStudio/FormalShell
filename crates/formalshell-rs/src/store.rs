@@ -6,7 +6,7 @@
 use crate::services::devices::{self, earbuds, network};
 use crate::services::info::{calendar, github, monitor, powerflow, procs, tailscale, update, usage, weather};
 use crate::services::{
-    activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, display,
+    activity, agents, appicon, barpaint, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, display,
     compositor, ipad, iphone, launch, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, radio, recording, screensaver, state, theme,
     tray, visualizer, wallpaper,
 };
@@ -130,7 +130,6 @@ slices! {
     notifications: notifications::State => Notifications(notifications::Diff);
     activity: activity::State => Activity(activity::Diff);
     menu: menu::State => Menu(menu::Diff);
-    brightness: brightness::State => Brightness(brightness::Diff);
     nightlight: nightlight::State => NightLight(nightlight::Diff);
     lights: lights::State => Lights(lights::Diff);
     screensaver: screensaver::State => Screensaver(screensaver::Diff);

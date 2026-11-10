@@ -107,7 +107,7 @@ impl App {
     fn osd_brightness(&self) -> f64 {
         match &self.osd.step {
             Some((_, pct, _)) => *pct as f64,
-            None => self.store.brightness.percent,
+            None => self.store.display.backlight.as_ref().map_or(0.0, |b| b.percent as f64),
         }
     }
 
