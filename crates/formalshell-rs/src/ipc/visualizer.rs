@@ -12,6 +12,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "visualizer",
+        reads_screen: false,
         functions: vec![
             Function { name: "style", params: &[("name", Type::String)], ret: Type::String, call: style },
             Function { name: "styles", params: &[], ret: Type::String, call: list },

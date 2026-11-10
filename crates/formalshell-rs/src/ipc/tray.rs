@@ -12,6 +12,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "tray",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "activate", params: &[("id", Type::String)], ret: Type::String, call: activate },

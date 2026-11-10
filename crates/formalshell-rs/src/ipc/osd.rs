@@ -39,6 +39,7 @@ fn state(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "osd",
+        reads_screen: false,
         functions: vec![
             Function { name: "volume", params: &[], ret: Type::String, call: volume },
             Function { name: "brightness", params: &[], ret: Type::String, call: show_brightness },

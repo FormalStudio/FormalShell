@@ -12,6 +12,7 @@ use crate::wayland::{App, live};
 pub fn target() -> Target<App> {
     Target {
         name: "bar",
+        reads_screen: false,
         functions: vec![
             Function { name: "chevron", params: &[("action", Type::String)], ret: Type::String, call: chevron },
             Function {

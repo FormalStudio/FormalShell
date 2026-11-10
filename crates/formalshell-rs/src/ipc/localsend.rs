@@ -35,6 +35,7 @@ fn send(app: &mut App, a: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "localsend",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "peers", params: &[], ret: Type::String, call: peers },

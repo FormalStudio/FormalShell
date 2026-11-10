@@ -13,6 +13,7 @@ use crate::wayland::{App, live};
 pub fn target() -> Target<App> {
     Target {
         name: "workspaces",
+        reads_screen: false,
         functions: vec![
             Function { name: "peek", params: &[("n", Type::Int)], ret: Type::String, call: peek },
             Function { name: "close", params: &[], ret: Type::String, call: close },

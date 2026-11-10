@@ -62,6 +62,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "bluetooth",
+        reads_screen: false,
         functions: vec![
             Function { name: "toggle", params: &[], ret: Type::String, call: toggle },
             Function { name: "power", params: &[("state", Type::String)], ret: Type::String, call: power },

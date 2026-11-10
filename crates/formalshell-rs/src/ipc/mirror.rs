@@ -45,6 +45,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "mirror",
+        reads_screen: false,
         functions: vec![
             Function { name: "toggle", params: &[], ret: Type::String, call: toggle },
             Function { name: "open", params: &[], ret: Type::String, call: open },

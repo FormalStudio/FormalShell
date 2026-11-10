@@ -28,6 +28,7 @@ fn clear(_: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "clipboard",
+        reads_screen: false,
         functions: vec![
             Function { name: "list", params: &[], ret: Type::String, call: list },
             Function { name: "copy", params: &[("id", Type::String)], ret: Type::String, call: copy },

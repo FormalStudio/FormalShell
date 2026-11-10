@@ -10,6 +10,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "overnight",
+        reads_screen: false,
         functions: vec![
             Function { name: "toggle", params: &[], ret: Type::String, call: toggle },
             Function { name: "enable", params: &[], ret: Type::String, call: enable },

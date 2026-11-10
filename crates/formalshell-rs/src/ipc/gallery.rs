@@ -26,6 +26,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "gallery",
+        reads_screen: false,
         functions: vec![
             Function { name: "open", params: &[], ret: Type::String, call: open },
             Function { name: "close", params: &[], ret: Type::String, call: close },

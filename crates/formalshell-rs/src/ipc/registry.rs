@@ -115,6 +115,9 @@ impl<C> Function<C> {
 
 pub struct Target<C> {
     pub name: &'static str,
+    /// Its calls grab the screen, so a launcher row running one waits
+    /// for the card to leave it.
+    pub reads_screen: bool,
     pub functions: Vec<Function<C>>,
 }
 
@@ -138,6 +141,10 @@ pub struct Registry<C> {
 }
 
 impl<C> Registry<C> {
+    pub fn reads_screen(&self, target: &str) -> bool {
+        self.target(target).is_some_and(|t| t.reads_screen)
+    }
+
     fn target(&self, name: &str) -> Option<&Target<C>> {
         self.targets.iter().find(|t| t.name == name)
     }

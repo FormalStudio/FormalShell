@@ -149,6 +149,11 @@ pub fn call(app: &mut App, call: &IpcCall) -> registry::Reply {
     registry().run(app, &call.target, &call.function, &call.args)
 }
 
+/// Whether `call`'s target grabs the screen.
+pub fn reads_screen(call: &IpcCall) -> bool {
+    registry().reads_screen(&call.target)
+}
+
 /// A configured `@ipc:` call checked against the targets. The call comes
 /// back with its arguments fitted to the function's, or the reason nothing
 /// would answer it: a launcher verb (`Intent`) given the wrong arguments

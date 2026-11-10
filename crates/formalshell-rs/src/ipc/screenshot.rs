@@ -46,6 +46,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "screenshot",
+        reads_screen: true,
         functions: vec![
             Function { name: "full", params: &[PROCESSING], ret: Type::String, call: full },
             Function { name: "region", params: &[PROCESSING], ret: Type::String, call: region },

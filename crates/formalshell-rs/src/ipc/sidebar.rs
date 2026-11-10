@@ -44,6 +44,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "sidebar",
+        reads_screen: false,
         functions: vec![
             Function { name: "collapse", params: &[], ret: Type::String, call: collapse },
             Function { name: "expand", params: &[], ret: Type::String, call: expand },

@@ -63,6 +63,7 @@ pub fn target() -> Target<App> {
     wants::pulse(Source::Monitor);
     Target {
         name: "monitor",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "processes", params: &[("query", Type::String)], ret: Type::String, call: processes },

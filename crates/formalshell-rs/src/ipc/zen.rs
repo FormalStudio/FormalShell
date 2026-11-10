@@ -28,6 +28,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "zen",
+        reads_screen: false,
         functions: vec![
             Function { name: "enter", params: &[], ret: Type::String, call: enter },
             Function { name: "exit", params: &[], ret: Type::String, call: exit },

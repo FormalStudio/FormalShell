@@ -40,6 +40,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "record",
+        reads_screen: true,
         functions: vec![
             Function { name: "start", params: &[SCOPE, AUDIO], ret: Type::String, call: start },
             Function { name: "startCapped", params: &[SCOPE, AUDIO, ("maxHeight", Type::String)], ret: Type::String, call: start_capped },

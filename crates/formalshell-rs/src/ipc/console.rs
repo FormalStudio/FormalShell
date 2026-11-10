@@ -26,6 +26,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "console",
+        reads_screen: false,
         functions: vec![
             Function { name: "toggle", params: &[], ret: Type::String, call: toggle },
             Function { name: "show", params: &[], ret: Type::String, call: show },

@@ -30,6 +30,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "lock",
+        reads_screen: false,
         functions: vec![
             Function { name: "lock", params: &[], ret: Type::String, call: lock },
             Function { name: "session", params: &[], ret: Type::String, call: session },

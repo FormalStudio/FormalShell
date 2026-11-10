@@ -8,6 +8,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "airplay",
+        reads_screen: false,
         functions: vec![Function {
             name: "status",
             params: &[],

@@ -63,6 +63,7 @@ fn launch(app: &mut App, args: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "activity",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "seen", params: &[], ret: Type::String, call: seen },

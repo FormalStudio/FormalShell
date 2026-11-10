@@ -8,6 +8,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "menu",
+        reads_screen: false,
         functions: vec![
             Function { name: "toggle", params: &[], ret: Type::String, call: toggle },
             Function { name: "summon", params: &[("route", Type::String)], ret: Type::String, call: summon },

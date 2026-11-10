@@ -12,6 +12,7 @@ use crate::wayland::{App, live};
 pub fn target() -> Target<App> {
     Target {
         name: "debug",
+        reads_screen: false,
         functions: vec![
             Function { name: "dump", params: &[], ret: Type::String, call: dump },
             Function {

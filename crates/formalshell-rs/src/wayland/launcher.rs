@@ -48,9 +48,6 @@ impl Dispatch2<WlCallback, App> for AfterUnmap {
     }
 }
 
-/// Targets whose calls grab the screen.
-const SCREEN_READERS: [&str; 3] = ["screenshot", "capture", "record"];
-
 /// The info slices the monitor view samples while it is the level.
 const INFO: &[Topic] = &[
     Topic::Weather,
@@ -473,7 +470,7 @@ impl App {
                     return self.run_call(&call);
                 }
                 self.hide_launcher();
-                if SCREEN_READERS.contains(&call.target.as_str()) && self.launch.win.is_some() {
+                if crate::ipc::reads_screen(&call) && self.launch.win.is_some() {
                     self.launcher.after_unmap = Some(call);
                 } else {
                     self.run_call(&call);

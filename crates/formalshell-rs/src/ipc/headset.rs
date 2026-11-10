@@ -9,5 +9,5 @@ fn dismiss(app: &mut App, _: &[Value]) -> Reply {
 }
 
 pub fn target() -> Target<App> {
-    Target { name: "headset", functions: vec![Function { name: "dismiss", params: &[], ret: Type::String, call: dismiss }] }
+    Target { name: "headset", reads_screen: false, functions: vec![Function { name: "dismiss", params: &[], ret: Type::String, call: dismiss }] }
 }

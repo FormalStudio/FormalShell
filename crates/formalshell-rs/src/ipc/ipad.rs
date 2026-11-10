@@ -12,6 +12,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "ipad",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: |app, _| Ok(app.store.ipad.status()) },
             Function { name: "switch", params: &[], ret: Type::String, call: |app, _| send(app, |_| Ok(Cmd::Switch)) },

@@ -69,6 +69,7 @@ fn shell() -> Vec<Target<Replay>> {
         .into_iter()
         .map(|t| Target {
             name: t.name,
+            reads_screen: t.reads_screen,
             functions: t.functions.into_iter().map(|fun| Function { name: fun.name, params: fun.params, ret: fun.ret, call: replay }).collect(),
         })
         .collect()
@@ -85,6 +86,7 @@ fn stub() -> Registry<Replay> {
 fn probe() -> Target<Replay> {
     Target {
         name: "probe",
+        reads_screen: false,
         functions: vec![
             f("s", &[STR], Type::String, |_, a| text(format!("[{}]", a[0].str()))),
             f("ss", &[STR, ("b", Type::String)], Type::String, |_, a| {

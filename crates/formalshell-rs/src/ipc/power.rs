@@ -11,5 +11,5 @@ fn logout(app: &mut App, _: &[Value]) -> Reply {
 }
 
 pub fn target() -> Target<App> {
-    Target { name: "power", functions: vec![Function { name: "logout", params: &[], ret: Type::String, call: logout }] }
+    Target { name: "power", reads_screen: false, functions: vec![Function { name: "logout", params: &[], ret: Type::String, call: logout }] }
 }

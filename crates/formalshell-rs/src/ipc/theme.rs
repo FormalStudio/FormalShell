@@ -7,6 +7,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "theme",
+        reads_screen: false,
         functions: vec![
             Function { name: "retheme", params: &[], ret: Type::String, call: retheme },
             Function { name: "mode", params: &[("m", Type::String)], ret: Type::String, call: mode },
@@ -18,6 +19,7 @@ pub fn target() -> Target<App> {
 pub fn wallpaper() -> Target<App> {
     Target {
         name: "wallpaper",
+        reads_screen: false,
         functions: vec![
             Function { name: "set", params: &[("path", Type::String)], ret: Type::String, call: wallpaper_set },
             Function { name: "pair", params: &[("light", Type::String), ("dark", Type::String)], ret: Type::String, call: wallpaper_pair },

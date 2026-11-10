@@ -12,6 +12,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "display",
+        reads_screen: false,
         functions: vec![
             Function { name: "scale", params: &[("output", Type::String), ("scale", Type::Real)], ret: Type::String, call: scale },
             Function { name: "mirror", params: &[("output", Type::String), ("source", Type::String)], ret: Type::String, call: mirror },
@@ -24,6 +25,7 @@ pub fn target() -> Target<App> {
 pub fn hdr() -> Target<App> {
     Target {
         name: "hdr",
+        reads_screen: false,
         functions: vec![
             Function { name: "toggle", params: &[], ret: Type::String, call: hdr_toggle },
             Function { name: "enable", params: &[], ret: Type::String, call: hdr_enable },

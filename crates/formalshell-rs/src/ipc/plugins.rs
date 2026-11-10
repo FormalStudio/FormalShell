@@ -23,6 +23,7 @@ fn reload(_: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "plugins",
+        reads_screen: false,
         functions: vec![
             Function { name: "list", params: &[], ret: Type::String, call: list },
             Function { name: "status", params: &[], ret: Type::String, call: status },

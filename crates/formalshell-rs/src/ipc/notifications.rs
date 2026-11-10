@@ -13,6 +13,7 @@ fn on_off(on: bool) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "notifications",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "dndState", params: &[], ret: Type::String, call: dnd_state },
@@ -100,6 +101,7 @@ fn expand(app: &mut App, args: &[Value]) -> Reply {
 pub fn reminder() -> Target<App> {
     Target {
         name: "reminder",
+        reads_screen: false,
         functions: vec![
             Function {
                 name: "set",

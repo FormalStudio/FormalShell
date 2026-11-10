@@ -38,6 +38,7 @@ fn frame_info(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "screensaver",
+        reads_screen: false,
         functions: vec![
             Function { name: "start", params: &[], ret: Type::String, call: start },
             Function { name: "stop", params: &[], ret: Type::String, call: stop },

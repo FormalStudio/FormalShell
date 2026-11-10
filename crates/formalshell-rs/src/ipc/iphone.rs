@@ -9,6 +9,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "iphone",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "pair", params: &[], ret: Type::String, call: pair },

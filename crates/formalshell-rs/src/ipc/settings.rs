@@ -11,6 +11,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "settings",
+        reads_screen: false,
         functions: vec![
             Function { name: "get", params: &[("key", Type::String)], ret: Type::String, call: get },
             Function { name: "set", params: &[("key", Type::String), ("value", Type::String)], ret: Type::String, call: set },

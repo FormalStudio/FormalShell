@@ -48,6 +48,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "picker",
+        reads_screen: false,
         functions: vec![
             Function { name: "summon", params: &[], ret: Type::String, call: summon },
             Function { name: "select", params: &[("directory", Type::String), ("token", Type::String)], ret: Type::String, call: select },

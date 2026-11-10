@@ -31,6 +31,7 @@ fn undo(_: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "packages",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "check", params: &[], ret: Type::String, call: check },

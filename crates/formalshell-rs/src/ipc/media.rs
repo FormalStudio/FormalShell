@@ -12,6 +12,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "media",
+        reads_screen: false,
         functions: vec![
             Function { name: "playPause", params: &[], ret: Type::String, call: play_pause },
             Function { name: "next", params: &[], ret: Type::String, call: next },

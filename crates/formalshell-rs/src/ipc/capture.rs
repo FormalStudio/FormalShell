@@ -37,6 +37,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "capture",
+        reads_screen: true,
         functions: vec![
             Function { name: "text", params: &[], ret: Type::String, call: grab_text },
             Function { name: "color", params: &[], ret: Type::String, call: color },

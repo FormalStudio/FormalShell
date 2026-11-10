@@ -41,6 +41,7 @@ fn state(app: &mut App, _: &[Value]) -> Reply {
 pub fn target() -> Target<App> {
     Target {
         name: "switcher",
+        reads_screen: false,
         functions: vec![
             Function { name: "next", params: &[], ret: Type::String, call: next },
             Function { name: "prev", params: &[], ret: Type::String, call: prev },

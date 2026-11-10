@@ -12,6 +12,7 @@ use crate::wayland::App;
 pub fn target() -> Target<App> {
     Target {
         name: "calendar",
+        reads_screen: false,
         functions: vec![
             Function { name: "select", params: &[("date", Type::String)], ret: Type::String, call: select },
             Function { name: "status", params: &[], ret: Type::String, call: status },

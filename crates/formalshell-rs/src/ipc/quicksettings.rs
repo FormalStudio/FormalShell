@@ -15,6 +15,7 @@ const ID: PanelId = PanelId::QuickSettings;
 pub fn target() -> Target<App> {
     Target {
         name: "quicksettings",
+        reads_screen: false,
         functions: vec![
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "activate", params: &[("id", Type::String)], ret: Type::String, call: activate },
