@@ -1345,13 +1345,6 @@ impl App {
         }
         match topic {
             Topic::Compositor => self.zen_changed(),
-            Topic::Menu | Topic::Activity => {
-                // An fspec change landing moves the launcher's rows, whichever
-                // of the two told of it.
-                if crate::services::packages::land(&mut self.store) {
-                    self.launcher_store_changed();
-                }
-            }
             Topic::Capture => capture_host::events(self),
             Topic::Clipboard => self.field_paste(),
             _ => {}

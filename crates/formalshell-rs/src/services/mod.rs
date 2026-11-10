@@ -180,6 +180,7 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
             None
         }
         Topic::Compositor | Topic::Launch => launch::windows_changed(store),
+        Topic::Menu | Topic::Activity => packages::land(store),
         Topic::Bluetooth
         | Topic::Network
         | Topic::Audio

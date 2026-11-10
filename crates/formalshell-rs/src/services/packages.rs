@@ -119,6 +119,9 @@ pub enum Diff {
     Changing(bool, Option<(Change, String)>),
     Info(String, Result<Info, String>),
     Shot(String, Option<String>),
+    /// fspec operations that changed what is installed and succeeded, and
+    /// the app each install the shell started brought, by its start's id.
+    Landed(Vec<String>, Vec<(String, String)>),
 }
 
 impl State {
@@ -219,6 +222,17 @@ impl State {
                 }
                 self.software.applying = applying;
                 self.software.failed = failed;
+            }
+            Diff::Landed(ops, apps) => {
+                if !ops.is_empty() {
+                    self.landed.extend(ops);
+                    self.owners.clear();
+                }
+                for (id, app) in apps {
+                    if let Some(s) = self.started.iter_mut().find(|s| s.id == id) {
+                        s.app = Some(app);
+                    }
+                }
             }
         }
         true
@@ -553,9 +567,8 @@ fn changes_apps(kind: &str) -> bool {
 /// whoever started it: the apps scanned again and every owner answer
 /// dropped. An install the launcher started also records a pick for the
 /// app it brought, once the scan has it, so the app heads `Recent` once.
-/// Run on the UI thread for every Activity and Menu change; true when the
-/// launcher's rows may read differently.
-pub fn land(store: &mut Store) -> bool {
+/// The reaction to every Activity and Menu change.
+pub fn land(store: &Store) -> Option<store::Diff> {
     let done: Vec<String> = store
         .activity
         .activity
@@ -566,23 +579,21 @@ pub fn land(store: &mut Store) -> bool {
         .map(|i| i.id.clone())
         .filter(|id| !store.packages.landed.contains(id))
         .collect();
-    let mut moved = false;
     if !done.is_empty() {
-        store.packages.landed.extend(done);
-        store.packages.owners.clear();
         send(Cmd::Forget);
         send(Cmd::Check);
         menu::ask(menu::Ask::Rescan);
-        moved = true;
     }
+    let landed = |op: &str| store.packages.landed.contains(op) || done.iter().any(|d| d == op);
     let now = desktop_ids(store);
     let labels: HashMap<String, String> =
         now.iter().filter_map(|id| store.menu.nodes().get(&format!("apps.{id}")).map(|n| (id.clone(), n.label.clone()))).collect();
     let mut claimed: HashSet<String> = store.packages.started.iter().filter_map(|s| s.app.clone()).collect();
     let mut picks = Vec::new();
-    for s in store.packages.started.iter_mut().filter(|s| s.verb == AppVerb::Install && s.app.is_none()) {
+    let mut apps = Vec::new();
+    for s in store.packages.started.iter().filter(|s| s.verb == AppVerb::Install && s.app.is_none()) {
         let Ok(Some(op)) = &s.op else { continue };
-        if !store.packages.landed.contains(&fs_activity::fspec::item_id(op)) {
+        if !landed(&fs_activity::fspec::item_id(op)) {
             continue;
         }
         let mut fresh: Vec<&String> = now
@@ -593,9 +604,8 @@ pub fn land(store: &mut Store) -> bool {
         fresh.sort();
         if let Some(app) = fresh.first() {
             claimed.insert((*app).clone());
-            s.app = Some((*app).clone());
+            apps.push((s.id.clone(), (*app).clone()));
             picks.push(fs_menu::actions::SubjectId::App((*app).clone()).to_string());
-            moved = true;
         }
     }
     if !picks.is_empty() {
@@ -606,7 +616,7 @@ pub fn land(store: &mut Store) -> bool {
         }
         state::set(vec![state::Field::Picks(held)]);
     }
-    moved
+    (!done.is_empty() || !apps.is_empty()).then(|| store::Diff::Packages(Diff::Landed(done, apps)))
 }
 
 /// Whether desktop entry `desktop` (shown as `label`) is the app package
