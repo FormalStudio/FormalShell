@@ -46,15 +46,12 @@ fn dnd_state(app: &mut App, _: &[Value]) -> Reply {
 }
 
 fn toggle_dnd(app: &mut App, _: &[Value]) -> Reply {
-    let on = !app.store.notifications.model.dnd;
-    app.store.notifications.set_dnd(on);
-    moved(app);
+    app.set_dnd(!app.store.notifications.model.dnd);
     on_off(app.store.notifications.model.dnd)
 }
 
 fn set_dnd(app: &mut App, args: &[Value]) -> Reply {
-    app.store.notifications.set_dnd(args[0].bool());
-    moved(app);
+    app.set_dnd(args[0].bool());
     on_off(app.store.notifications.model.dnd)
 }
 
@@ -153,8 +150,7 @@ fn reminder_show(app: &mut App, _: &[Value]) -> Reply {
 }
 
 fn reminder_clear(app: &mut App, _: &[Value]) -> Reply {
-    let n = app.store.notifications.clear_reminders();
-    moved(app);
+    let n = app.clear_reminders();
     text(format!("ok: cleared {n}"))
 }
 

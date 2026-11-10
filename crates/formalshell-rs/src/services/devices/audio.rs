@@ -173,7 +173,7 @@ fn snapshot(graph: &Graph, listed: bool) -> Audio {
 
 /// A node a write names: the default sink or source, or a row the lists
 /// or the routing published.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     Sink,
     Source,

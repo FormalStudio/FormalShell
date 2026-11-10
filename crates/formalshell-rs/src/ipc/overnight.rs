@@ -24,17 +24,7 @@ fn active(app: &App) -> bool {
 }
 
 fn on(app: &mut App, want: bool) {
-    if active(app) == want {
-        return;
-    }
-    let snap = app.store.state.data.overnight.clone().unwrap_or_default();
-    if let Some(rt) = &app.runtime {
-        if want {
-            rt.service(overnight::enable);
-        } else {
-            rt.service(move |ctx| overnight::disable(ctx, snap));
-        }
-    }
+    overnight::set(&app.store, app.runtime.as_ref(), want);
 }
 
 fn toggle(app: &mut App, _: &[Value]) -> Reply {

@@ -38,10 +38,7 @@ fn retheme(_: &mut App, _: &[Value]) -> Reply {
 /// "auto"` the write is a snooze the engine records once it lands, and a
 /// pinned key refuses one outright.
 fn mode(app: &mut App, args: &[Value]) -> Reply {
-    let key = theme::mode_key(app.store.config.settings());
-    let mode = theme::request_mode(args[0].str(), &app.store.state.data.mode, key)?;
-    state::set(vec![state::Field::Mode(mode.clone())]);
-    text(mode)
+    text(theme::set_mode(&app.store, args[0].str())?)
 }
 
 /// `mode` is the live mode, `modeKey` what settings.json asked for and

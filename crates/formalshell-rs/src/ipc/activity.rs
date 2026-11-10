@@ -26,7 +26,9 @@ fn verb(app: &mut App, verb: Verb, source: &str) -> Reply {
             if !app.shows(PanelId::Activity) {
                 app.set_panel(PanelId::Activity, true, None);
             }
-            let _ = app.panel_call(PanelId::Activity, "select", source);
+            if let Some(panel) = app.panel_mut::<crate::surfaces::panel::activity::Activity>(PanelId::Activity) {
+                panel.select(source);
+            }
             ok()
         }
         Ok(Done::Nothing) => ok(),

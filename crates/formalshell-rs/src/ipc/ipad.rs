@@ -23,8 +23,7 @@ pub fn target() -> Target<App> {
 }
 
 fn send(app: &App, cmd: impl FnOnce(&Ipad) -> Result<Cmd, String>) -> Reply {
-    let Some(i) = &app.store.ipad.bridge else { return Err("padbridge is not running".into()) };
-    ipad::command(cmd(i)?);
+    ipad::send(&app.store.ipad, cmd)?;
     ok()
 }
 

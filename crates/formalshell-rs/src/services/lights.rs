@@ -154,6 +154,27 @@ pub fn command(cmd: Cmd) {
     send(Msg::Cmd(cmd));
 }
 
+/// `cmd` sent when the keyboard has lights and `what` was `accepted`, else
+/// the refusal.
+pub fn checked(state: &State, accepted: bool, what: &str, cmd: impl FnOnce() -> Cmd) -> Result<(), String> {
+    if !state.available {
+        return Err("no keyboard lights (asusctl/asusd not found)".into());
+    }
+    if !accepted {
+        return Err(format!("refused '{what}'"));
+    }
+    command(cmd());
+    Ok(())
+}
+
+pub fn toggle(state: &State) -> Result<(), String> {
+    checked(state, true, "", || Cmd::Toggle)
+}
+
+pub fn effect(state: &State, id: &str) -> Result<(), String> {
+    checked(state, state.has_effect(id), id, || Cmd::Effect(id.to_owned()))
+}
+
 /// Every Aura zone's power states off, or back to what the boot unit sets.
 /// True when asusctl ran; false without it. The overnight service's door to
 /// the keyboard lights.

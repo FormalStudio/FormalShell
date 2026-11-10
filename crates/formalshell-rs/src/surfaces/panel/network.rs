@@ -333,12 +333,8 @@ impl Panel for Network {
         self.prompt.is_some()
     }
 
-    fn call(&mut self, verb: &str, _arg: &str) -> Option<Result<serde_json::Value, String>> {
-        match verb {
-            "knownOpen" => Some(Ok(self.known_open.into())),
-            "prompt" => Some(Ok(self.prompt.clone().into())),
-            _ => None,
-        }
+    fn status(&self) -> serde_json::Value {
+        serde_json::json!({ "knownOpen": self.known_open, "prompt": self.prompt })
     }
 
     fn edit(&mut self, e: Edit, fx: &mut Effect) {

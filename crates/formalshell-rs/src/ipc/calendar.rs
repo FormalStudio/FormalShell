@@ -4,7 +4,7 @@
 
 use fs_chrome::bar::panels::PanelId;
 
-use super::registry::{Function, Reply, Target, Type, Value, text};
+use super::registry::{Function, Json, Reply, Target, Type, Value};
 use crate::surfaces::panel::Panel;
 use crate::surfaces::panel::calendar::Calendar;
 use crate::wayland::App;
@@ -19,15 +19,15 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn ask(app: &mut App, verb: &str, arg: &str) -> Reply {
-    let reply = app.panel_call(PanelId::Calendar, verb, arg).or_else(|| Calendar::new(false).call(verb, arg));
-    reply.unwrap_or_else(|| text(""))
-}
-
 fn select(app: &mut App, args: &[Value]) -> Reply {
-    ask(app, "select", args[0].str())
+    let date = args[0].str();
+    match app.panel_mut::<Calendar>(PanelId::Calendar) {
+        Some(c) => c.select_iso(date)?,
+        None => Calendar::new(false).select_iso(date)?,
+    }
+    Ok(Json::Null)
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    ask(app, "status", "")
+    Ok(app.panel_status(PanelId::Calendar).unwrap_or_else(|| Calendar::new(false).status()))
 }

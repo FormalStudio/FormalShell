@@ -8,26 +8,19 @@ use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::lights::{self, Cmd};
 use crate::wayland::App;
 
-/// The command goes out only when it was
-/// accepted.
 fn answer(app: &App, accepted: bool, what: &str, cmd: impl FnOnce() -> Cmd) -> Reply {
-    if !app.store.lights.available {
-        return Err("no keyboard lights (asusctl/asusd not found)".into());
-    }
-    if !accepted {
-        return Err(format!("refused '{what}'"));
-    }
-    lights::command(cmd());
+    lights::checked(&app.store.lights, accepted, what, cmd)?;
     ok()
 }
 
 fn toggle(app: &mut App, _: &[Value]) -> Reply {
-    answer(app, true, "", || Cmd::Toggle)
+    lights::toggle(&app.store.lights)?;
+    ok()
 }
 
 fn effect(app: &mut App, a: &[Value]) -> Reply {
-    let id = a[0].str();
-    answer(app, app.store.lights.has_effect(id), id, || Cmd::Effect(id.to_owned()))
+    lights::effect(&app.store.lights, a[0].str())?;
+    ok()
 }
 
 fn color(app: &mut App, a: &[Value]) -> Reply {

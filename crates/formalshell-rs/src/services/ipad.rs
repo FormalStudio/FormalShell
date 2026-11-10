@@ -179,8 +179,15 @@ pub enum Cmd {
 static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
 
 /// A call for padbridge, already checked against the state the UI holds.
-pub fn command(cmd: Cmd) {
+fn command(cmd: Cmd) {
     let _ = CHANNEL.0.try_send(cmd);
+}
+
+/// The call `cmd` makes of the iPad padbridge knows, or why there is none.
+pub fn send(state: &State, cmd: impl FnOnce(&Ipad) -> Result<Cmd, String>) -> Result<(), String> {
+    let Some(i) = &state.bridge else { return Err("padbridge is not running".into()) };
+    command(cmd(i)?);
+    Ok(())
 }
 
 async fn read(conn: &Connection) -> Option<Ipad> {

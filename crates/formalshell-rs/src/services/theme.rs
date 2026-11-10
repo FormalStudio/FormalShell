@@ -299,6 +299,14 @@ pub fn request_mode(m: &str, current: &str, key: &str) -> Result<String, String>
     Ok(target.to_owned())
 }
 
+/// `m` written to state.json under [`request_mode`]'s rules: the mode
+/// written, or why not.
+pub fn set_mode(store: &store::Store, m: &str) -> Result<String, String> {
+    let mode = request_mode(m, &store.state.data.mode, mode_key(store.config.settings()))?;
+    state::set(vec![state::Field::Mode(mode.clone())]);
+    Ok(mode)
+}
+
 /// The schedule half of `theme status`, `None` under any key but "auto".
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScheduleStatus {

@@ -77,9 +77,11 @@ impl Calendar {
         self.cursor = Some(key(grid::index_of_date(&self.cells(), self.selected)));
     }
 
-    fn status(&self) -> serde_json::Value {
-        let view = NaiveDate::from_ymd_opt(self.year, self.month, 1).map(|d| d.format("%B %Y").to_string()).unwrap_or_default();
-        json!({ "open": self.open, "selected": grid::iso_date(&self.selected), "today": grid::iso_date(&today()), "view": view })
+    /// `calendar select`: the day `iso` names (YYYY-MM-DD) selected.
+    pub fn select_iso(&mut self, iso: &str) -> Result<(), String> {
+        let d = grid::parse_iso_date(iso).ok_or_else(|| format!("not a valid YYYY-MM-DD date: {iso}"))?;
+        self.select(d);
+        Ok(())
     }
 
     /// settings.json over state.json, then the fraction both give.
@@ -244,18 +246,9 @@ impl Panel for Calendar {
         }
     }
 
-    fn call(&mut self, verb: &str, arg: &str) -> Option<Result<serde_json::Value, String>> {
-        match verb {
-            "select" => Some(match grid::parse_iso_date(arg) {
-                Some(d) => {
-                    self.select(d);
-                    Ok(serde_json::Value::Null)
-                }
-                None => Err(format!("not a valid YYYY-MM-DD date: {arg}")),
-            }),
-            "status" => Some(Ok(self.status())),
-            _ => None,
-        }
+    fn status(&self) -> serde_json::Value {
+        let view = NaiveDate::from_ymd_opt(self.year, self.month, 1).map(|d| d.format("%B %Y").to_string()).unwrap_or_default();
+        json!({ "open": self.open, "selected": grid::iso_date(&self.selected), "today": grid::iso_date(&today()), "view": view })
     }
 }
 
@@ -266,9 +259,9 @@ mod tests {
     #[test]
     fn select_aligns_the_view_and_moves_the_cursor() {
         let mut c = Calendar::new(false);
-        assert_eq!(c.call("select", "2026-02-31"), Some(Err("not a valid YYYY-MM-DD date: 2026-02-31".into())));
-        assert_eq!(c.call("select", "2026-10-06"), Some(Ok(serde_json::Value::Null)));
-        let status = c.call("status", "").unwrap().unwrap();
+        assert_eq!(c.select_iso("2026-02-31"), Err("not a valid YYYY-MM-DD date: 2026-02-31".into()));
+        assert_eq!(c.select_iso("2026-10-06"), Ok(()));
+        let status = c.status();
         assert_eq!(status["selected"], "2026-10-06");
         assert_eq!(status["view"], "October 2026");
         assert_eq!(status["open"], false);

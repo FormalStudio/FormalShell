@@ -9,9 +9,10 @@ use fs_menu::node::{Kind as NodeKind, Node};
 use fs_menu::providers as p;
 
 use crate::services::menu::{self as index, Ask};
-use crate::services::packages::{self, Cmd, NO_FSPEC, Verb};
+use crate::services::packages::{self, Change, Cmd, NO_FSPEC, Verb};
 use crate::services::state;
 use crate::store::Store;
+use crate::surfaces::sidebar::Intent;
 use crate::ui::el::Ring;
 
 /// How many apps already here head the packages for the same words.
@@ -249,11 +250,11 @@ pub fn software_rows(theme: &fs_theme::theme::Theme, store: &Store) -> Vec<crate
         Some(Err(why)) => row("refresh-cw", vec![dim(why.clone())], None),
         // The checkout already fast-forwarded, so only the apply failed:
         // the row keeps its retry.
-        Some(Ok((0, _))) if retry => row("refresh-cw", vec![w::label("Failed").elide(), dim("Not applied".into())], Some(button("rotate-ccw", "Apply again", "software:apply"))),
+        Some(Ok((0, _))) if retry => row("refresh-cw", vec![w::label("Failed").elide(), dim("Not applied".into())], Some(button("rotate-ccw", "Apply again", &Intent::Software(Change::Apply).on()))),
         Some(Ok((0, _))) => row("refresh-cw", vec![dim("Up to date".into())], None),
         Some(Ok((n, upstream))) => {
             let label = if *n == 1 { "1 update".to_owned() } else { format!("{n} updates") };
-            let (caption, apply) = if sw.applying { ("Applying\u{2026}".to_owned(), None) } else { (upstream.clone(), Some(button("download", "Apply", "software:apply"))) };
+            let (caption, apply) = if sw.applying { ("Applying\u{2026}".to_owned(), None) } else { (upstream.clone(), Some(button("download", "Apply", &Intent::Software(Change::Apply).on()))) };
             row("refresh-cw", vec![w::label(label).elide(), dim(caption)], apply)
         }
     };
@@ -265,7 +266,7 @@ pub fn software_rows(theme: &fs_theme::theme::Theme, store: &Store) -> Vec<crate
             Verb::Uninstall => ("package-minus", "Removed"),
         };
         let undoing = store.activity.activity.live().iter().any(|i| i.origin == fs_activity::Origin::Fspec && i.kind == "undo" && i.state == Run::Running);
-        let undo = (!undoing).then(|| button("undo-2", "Undo", "software:undo"));
+        let undo = (!undoing).then(|| button("undo-2", "Undo", &Intent::Software(Change::Undo).on()));
         out.push(row(icon, vec![w::label(words), dim(app.to_owned())], undo));
     }
     if let Some((_, why)) = &sw.failed {

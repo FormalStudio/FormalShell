@@ -183,6 +183,17 @@ pub fn send(c: Cmd) {
     let _ = CMDS.0.try_send(c);
 }
 
+pub const NO_ADAPTER: &str = "no bluetooth adapter";
+
+/// The default adapter's radio flipped, refused with no adapter.
+pub fn toggle_power(state: &Bluetooth) -> Result<(), String> {
+    if state.powered.is_none() {
+        return Err(NO_ADAPTER.into());
+    }
+    send(Cmd::TogglePower);
+    Ok(())
+}
+
 pub fn player(path: &str, command: fs_bluez::PlayerCommand) {
     send(Cmd::Player(path.to_owned(), command));
 }

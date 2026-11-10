@@ -9,16 +9,11 @@
 use fs_types::BtAddress;
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
-use crate::services::devices::bluetooth;
+use crate::services::devices::bluetooth::{self, NO_ADAPTER};
 use crate::wayland::App;
 
-const NO_ADAPTER: &str = "no bluetooth adapter";
-
 fn toggle(app: &mut App, _: &[Value]) -> Reply {
-    if app.store.bluetooth.powered.is_none() {
-        return Err(NO_ADAPTER.into());
-    }
-    bluetooth::send(bluetooth::Cmd::TogglePower);
+    bluetooth::toggle_power(&app.store.bluetooth)?;
     ok()
 }
 

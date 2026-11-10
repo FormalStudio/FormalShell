@@ -798,12 +798,21 @@ impl App {
         self.bar_wl().map(|o| self.output_name(o)).unwrap_or_default()
     }
 
-    /// An IPC verb for the open panel `id`; `None` when it is not up or
-    /// answers none.
-    pub fn panel_call(&mut self, id: PanelId, verb: &str, arg: &str) -> Option<Result<serde_json::Value, String>> {
-        let reply = self.panel.as_mut().filter(|p| p.is_open() && p.panel() == Some(id))?.module.call(verb, arg);
+    /// The open panel `id`'s own [`panel::Panel::status`]; `None` when it
+    /// is not up.
+    pub fn panel_status(&mut self, id: PanelId) -> Option<serde_json::Value> {
+        let status = self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(id))?.module.status();
         self.panel_dirty = true;
-        reply
+        Some(status)
+    }
+
+    /// The open panel `id` as its module `T`, for a verb only that panel
+    /// takes (`calendar select`); `None` when it is not up.
+    pub fn panel_mut<T: panel::Panel>(&mut self, id: PanelId) -> Option<&mut T> {
+        let host = self.panel.as_mut().filter(|p| p.is_open() && p.panel() == Some(id))?;
+        self.panel_dirty = true;
+        let module: &mut dyn std::any::Any = &mut *host.module;
+        module.downcast_mut::<T>()
     }
 
     /// The open panel; the gallery, the centre and a peek are no panel's.
@@ -1006,7 +1015,7 @@ impl App {
     fn opener_anchor(&self, from: quick::Origin) -> Option<f64> {
         match from {
             quick::Origin::Chevron(region) => live!(self).bar.chevron_anchor(region),
-            quick::Origin::Sidebar => live!(self).bar.sidebar_anchor("overflow"),
+            quick::Origin::Sidebar => live!(self).bar.sidebar_anchor(crate::surfaces::sidebar::Intent::Overflow),
             quick::Origin::Ipc => None,
         }
     }
@@ -1955,6 +1964,7 @@ impl App {
                     self.call_self(target, function, &args);
                 }
             }
+            Out::Quick(run) => self.quick(run),
             Out::Act(action) => {
                 let anchor = match holder {
                     Holder::Host => self.panel.as_ref().and_then(|h| h.place.anchor),
@@ -1964,6 +1974,62 @@ impl App {
                 self.holder_close(holder);
                 self.act(action, anchor);
             }
+        }
+    }
+
+    /// A quick settings call, through the functions its IPC verb calls; a
+    /// refusal is logged.
+    fn quick(&mut self, run: quick::Run) {
+        use crate::services::{ipad, lights, nightlight};
+        use quick::Run;
+        let done = match &run {
+            Run::Screenshot => surfaces::capture::shot_pick(self, "smart", "default").map(drop),
+            Run::Lock => self.lock(),
+            Run::Logout => {
+                self.logout();
+                Ok(())
+            }
+            Run::Overview => {
+                self.overview_action(overview::Action::Open);
+                Ok(())
+            }
+            Run::Wifi(on) => {
+                devices::network::send(devices::network::Cmd::Wifi(*on));
+                Ok(())
+            }
+            Run::Bluetooth => devices::bluetooth::toggle_power(&self.store.bluetooth),
+            Run::NightLight => {
+                nightlight::toggle();
+                Ok(())
+            }
+            Run::DarkStyle => theme::set_mode(&self.store, "toggle").map(drop),
+            Run::Dnd => {
+                self.set_dnd(!self.store.notifications.model.dnd);
+                Ok(())
+            }
+            Run::Caffeinate => {
+                self.set_caffeinated(!self.store.caffeinate.active);
+                Ok(())
+            }
+            Run::Overnight => {
+                overnight::set(&self.store, self.runtime.as_ref(), self.store.state.data.overnight.is_none());
+                Ok(())
+            }
+            Run::Hdr => self.hdr.toggle(&self.store),
+            Run::Keyboard => lights::toggle(&self.store.lights),
+            Run::KeyboardEffect(id) => lights::effect(&self.store.lights, id),
+            Run::IpadSwitch => ipad::send(&self.store.ipad, |_| Ok(ipad::Cmd::Switch)),
+            Run::IpadReconnect => ipad::send(&self.store.ipad, |_| Ok(ipad::Cmd::Reconnect)),
+            Run::IpadEdge(edge) => ipad::send(&self.store.ipad, |i| Ok(ipad::Cmd::Position(*edge, i.stretch))),
+            Run::RecordStop => surfaces::capture::record::stop(self),
+            Run::ClearReminders => {
+                self.clear_reminders();
+                Ok(())
+            }
+            Run::Dismiss(source) => surfaces::activity::act(&self.store, self.runtime.as_ref(), surfaces::activity::Verb::Dismiss, source).map(drop),
+        };
+        if let Err(e) = done {
+            eprintln!("quick settings: {run:?}: {e}");
         }
     }
 

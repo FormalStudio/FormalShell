@@ -116,6 +116,8 @@ pub enum Out {
     /// Close, then run a bar cell's own click (an info tile whose cell
     /// opens no panel).
     Act(crate::surfaces::bar::cell::Action),
+    /// A quick settings control's call, the card left open.
+    Quick(quick::Run),
 }
 
 /// What a panel may do from an input.
@@ -185,7 +187,7 @@ impl Nav {
     pub const STEPS: Nav = Nav { walk: Walk::List, steps: true };
 }
 
-pub trait Panel {
+pub trait Panel: std::any::Any {
     fn title(&self, v: &View) -> String;
     /// The store slices whose change redraws this panel.
     fn reads(&self) -> &'static [Topic];
@@ -253,10 +255,10 @@ pub trait Panel {
     fn escape(&mut self) -> bool {
         false
     }
-    /// An IPC verb aimed at this panel (`calendar select`); `None` when the
-    /// panel answers none.
-    fn call(&mut self, _verb: &str, _arg: &str) -> Option<Result<serde_json::Value, String>> {
-        None
+    /// What the panel holds that its target's `status` reports
+    /// (`quicksettings status`, `network status`); null for none.
+    fn status(&self) -> serde_json::Value {
+        serde_json::Value::Null
     }
     /// A text field holds the keyboard: every key goes to [`Panel::edit`].
     fn editing(&self) -> bool {

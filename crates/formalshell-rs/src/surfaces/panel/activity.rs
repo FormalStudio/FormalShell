@@ -17,6 +17,13 @@ pub struct Activity {
     cursor: Option<String>,
 }
 
+impl Activity {
+    /// The cursor onto `source`'s row.
+    pub fn select(&mut self, source: &str) {
+        self.cursor = Some(source.to_owned());
+    }
+}
+
 /// An fspec row's open asks for this panel, which is already up. A verb
 /// the row cannot take (a group that just ended) is logged.
 fn run(verb: Verb, source: &str, fx: &mut Effect) {
@@ -32,13 +39,6 @@ impl Panel for Activity {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Activity]
-    }
-
-    fn call(&mut self, verb: &str, arg: &str) -> Option<Result<serde_json::Value, String>> {
-        (verb == "select").then(|| {
-            self.cursor = Some(arg.to_owned());
-            Ok(serde_json::Value::Null)
-        })
     }
 
     fn take_cursor(&mut self) -> Option<String> {

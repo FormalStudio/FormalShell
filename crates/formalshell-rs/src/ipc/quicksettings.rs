@@ -7,7 +7,7 @@ use fs_chrome::bar::panels::PanelId;
 use serde_json::{Value as Json, json};
 
 use super::registry::{Function, Reply, Target, Type, Value, ok, text};
-use crate::surfaces::panel::quick;
+use crate::surfaces::panel::quick::{self, QuickSettings};
 use crate::wayland::App;
 
 const ID: PanelId = PanelId::QuickSettings;
@@ -29,7 +29,7 @@ fn open(app: &App) -> bool {
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    let state: Option<Json> = app.panel_call(ID, "state", "").and_then(Result::ok);
+    let state: Option<Json> = app.panel_status(ID);
     let host = app.panel.as_ref().filter(|h| h.is_open() && h.panel() == Some(ID));
     let boxes = host.map(|h| h.quick_boxes()).unwrap_or_default();
     let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| r.to_json());
@@ -127,7 +127,7 @@ fn activate(app: &mut App, args: &[Value]) -> Reply {
 
 /// Whether `id` is an info tile the open card drew last.
 fn extra(app: &mut App, id: &str) -> bool {
-    let state: Json = app.panel_call(ID, "state", "").and_then(Result::ok).unwrap_or(Json::Null);
+    let state: Json = app.panel_status(ID).unwrap_or(Json::Null);
     state["extras"].as_array().is_some_and(|x| x.iter().any(|x| x["id"] == id))
 }
 
@@ -142,12 +142,22 @@ fn menu(app: &mut App, args: &[Value]) -> Reply {
     if quick::menu(&app.store, id, None).is_none() {
         return Err(format!("{id} has no menu"));
     }
-    app.panel_call(ID, "menu", id).unwrap_or_else(|| text(""))
+    match app.panel_mut::<QuickSettings>(ID) {
+        Some(q) => {
+            q.open_menu(id);
+            Ok(Json::Null)
+        }
+        None => text(""),
+    }
 }
 
 fn back(app: &mut App, _: &[Value]) -> Reply {
     if !open(app) {
         return Err("quick settings is not open".into());
     }
-    app.panel_call(ID, "back", "").unwrap_or_else(|| text(""))
+    match app.panel_mut::<QuickSettings>(ID).map(QuickSettings::close_menu) {
+        Some(true) => Ok(Json::Null),
+        Some(false) => Err("no menu is open".into()),
+        None => text(""),
+    }
 }

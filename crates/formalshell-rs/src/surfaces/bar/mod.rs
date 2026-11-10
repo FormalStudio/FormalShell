@@ -529,9 +529,9 @@ impl Bar {
         panels::panel_at(&self.resolved, n)
     }
 
-    /// Where the sidebar's control whose click is `on` sits along it.
-    pub fn sidebar_anchor(&self, on: &str) -> Option<f64> {
-        self.sidebar()?.anchor_of(on)
+    /// Where the sidebar's control carrying `intent` sits along it.
+    pub fn sidebar_anchor(&self, intent: crate::surfaces::sidebar::Intent) -> Option<f64> {
+        self.sidebar()?.anchor_of(intent)
     }
 
     /// Where `region`'s chevron sits along the strip.

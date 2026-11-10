@@ -69,6 +69,19 @@ impl App {
         self.tick_notifications();
     }
 
+    /// Do not disturb on or off.
+    pub fn set_dnd(&mut self, on: bool) {
+        self.store.notifications.set_dnd(on);
+        surfaces::changed(self, Topic::Notifications);
+    }
+
+    /// Every pending reminder dropped; how many there were.
+    pub fn clear_reminders(&mut self) -> usize {
+        let n = self.store.notifications.clear_reminders();
+        surfaces::changed(self, Topic::Notifications);
+        n
+    }
+
     /// Mapped for as long as the centre is shut, passive and empty when
     /// nothing is up: the centre suppresses the stack while it is open.
     /// Every layer unmap ends in a synthetic pointer motion to the window
@@ -260,7 +273,9 @@ impl App {
         if let Act::Activity(verb, source) = act {
             if let Ok(surfaces::activity::Done::Panel) = surfaces::activity::act(&self.store, self.runtime.as_ref(), verb, &source) {
                 self.set_panel(PanelId::Activity, true, None);
-                self.panel_call(PanelId::Activity, "select", &source);
+                if let Some(panel) = self.panel_mut::<crate::surfaces::panel::activity::Activity>(PanelId::Activity) {
+                    panel.select(&source);
+                }
             }
             return;
         }

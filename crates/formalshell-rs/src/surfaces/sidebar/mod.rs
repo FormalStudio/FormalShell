@@ -3,9 +3,10 @@
 //! body under `layout: sidebar`. The bar keeps its window, its edge, its
 //! zone and its joins; instead of cells it draws a column of cards through
 //! the ui kit, the status card pinned to its foot, or the rail while
-//! collapsed. An input that opens something lands as a cell [`Action`], so
-//! the bar's own routing opens what a cell would; folding the column and
-//! the Software card's buttons run here.
+//! collapsed. Each control carries an [`Intent`] (or an Activity row's or
+//! the minimap's own), and one that opens something lands as a cell
+//! [`Action`], so the bar's own routing opens what a cell would; folding
+//! the column and the Software card's buttons run here.
 //!
 //! The composition and its lengths are Pond's sidebar (`Theme.qml`,
 //! `Sidebar.qml`, `calendar/Clock.qml`); [`Geo`] carries them. What the
@@ -407,7 +408,8 @@ impl Sidebar {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn paint_face(&mut self, collapsed: bool, store: &Store, g: &Geo, raster: f64, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect) -> Option<NodeId> {
-        let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some(opens(PanelId::Calendar).as_str())).map(|h| h.rect);
+        let time = Intent::Panel(PanelId::Calendar).on();
+        let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some(time.as_str())).map(|h| h.rect);
         let mut nodes = std::mem::take(&mut self.face);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
         self.rail_lines.clear();
@@ -482,18 +484,19 @@ impl Sidebar {
 
     /// Where the control opening `id` sits, for an open with no click.
     pub fn panel_anchor(&self, id: PanelId) -> Option<f64> {
-        self.anchor_of(&opens(id))
+        self.anchor_of(Intent::Panel(id))
     }
 
     /// Where the notifications card sits.
     pub fn center_anchor(&self) -> Option<f64> {
-        self.anchor_of(&format!("panel:{}", center::ID))
+        self.anchor_of(Intent::Center)
     }
 
-    /// Where the control whose click is `on` sits.
-    pub fn anchor_of(&self, on: &str) -> Option<f64> {
+    /// Where the control carrying `intent` sits.
+    pub fn anchor_of(&self, intent: Intent) -> Option<f64> {
+        let on = intent.on();
         let n = self.top.hits.len() + self.foot.hits.len();
-        (0..n).find(|i| self.hit_at(*i).is_some_and(|h| h.on.as_deref() == Some(on))).map(|i| self.anchor(i))
+        (0..n).find(|i| self.hit_at(*i).is_some_and(|h| h.on.as_deref() == Some(on.as_str()))).map(|i| self.anchor(i))
     }
 
     /// A wheel over hit `i`: on the minimap it scrolls its rows.
@@ -554,39 +557,74 @@ impl Sidebar {
     }
 }
 
-/// The click key of a control opening `id`, which `sidebar status` lists
-/// among its hits.
-pub fn opens(id: PanelId) -> String {
-    format!("panel:{id}")
+/// What a control of the column's own does. Its `on` key, which `sidebar
+/// status` lists among its hits, is built and read here alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Intent {
+    Panel(PanelId),
+    /// The notification centre.
+    Center,
+    /// The Software card's Apply or Undo.
+    Software(packages::Change),
+    /// The column's chevron: the quick settings card the top bar's chevron
+    /// opens, the right region's cells it has no card for as info tiles.
+    Overflow,
+    /// Folded to the rail (true) or open again.
+    Collapse(bool),
 }
 
-/// What a click on `on` asks for, run here when it is the column's own.
-fn action(on: &str, map: &minimap::Map) -> Action {
-    let (verb, arg) = on.split_once(':').unwrap_or((on, ""));
-    match verb {
-        "panel" if arg == center::ID => Action::Center,
-        "panel" => PanelId::parse(arg).map_or(Action::None, Action::Panel),
-        // An Activity row: the panel holds its actions.
-        "open" => Action::Panel(PanelId::Activity),
-        "software" => {
-            let change = match arg {
-                "apply" => Some(packages::Change::Apply),
-                "undo" => Some(packages::Change::Undo),
-                _ => None,
-            };
-            if let Some(change) = change {
+impl Intent {
+    pub fn on(self) -> String {
+        match self {
+            Intent::Panel(id) => format!("panel:{id}"),
+            Intent::Center => format!("panel:{}", center::ID),
+            Intent::Software(packages::Change::Apply) => "software:apply".into(),
+            Intent::Software(packages::Change::Undo) => "software:undo".into(),
+            Intent::Overflow => "overflow".into(),
+            Intent::Collapse(true) => "collapse".into(),
+            Intent::Collapse(false) => "expand".into(),
+        }
+    }
+
+    fn parse(on: &str) -> Option<Intent> {
+        Some(match on.split_once(':').unwrap_or((on, "")) {
+            ("panel", id) if id == center::ID => Intent::Center,
+            ("panel", id) => Intent::Panel(PanelId::parse(id)?),
+            ("software", "apply") => Intent::Software(packages::Change::Apply),
+            ("software", "undo") => Intent::Software(packages::Change::Undo),
+            ("overflow", "") => Intent::Overflow,
+            ("collapse", "") => Intent::Collapse(true),
+            ("expand", "") => Intent::Collapse(false),
+            _ => return None,
+        })
+    }
+
+    /// Runs it: what the bar opens, or nothing once the column did it.
+    fn run(self) -> Action {
+        match self {
+            Intent::Panel(id) => Action::Panel(id),
+            Intent::Center => Action::Center,
+            Intent::Software(change) => {
                 packages::send(packages::Cmd::Change(change));
+                Action::None
             }
-            Action::None
+            Intent::Overflow => Action::Overflow(fs_types::Region::Right),
+            Intent::Collapse(collapsed) => {
+                set_collapsed(collapsed);
+                Action::None
+            }
         }
-        // The column's chevron: the quick settings card the top bar's
-        // chevron opens, the right region's cells it has no card for as
-        // info tiles.
-        "overflow" => Action::Overflow(fs_types::Region::Right),
-        "collapse" | "expand" => {
-            set_collapsed(verb == "collapse");
-            Action::None
-        }
+    }
+}
+
+/// What a click on `on` asks for: the column's own, an Activity row's (the
+/// panel holds its actions), or the minimap's.
+fn action(on: &str, map: &minimap::Map) -> Action {
+    if let Some(intent) = Intent::parse(on) {
+        return intent.run();
+    }
+    match activity::Verb::parse(on) {
+        Some((activity::Verb::Open, _)) => Action::Panel(PanelId::Activity),
         _ => map.action(on),
     }
 }
@@ -747,14 +785,14 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
     let battery = if store.power.battery.is_some() { g.battery_h } else { 0.0 };
     let mut out = vec![(
         "time",
-        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), opens(PanelId::Calendar)).fill(),
+        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), Intent::Panel(PanelId::Calendar).on()).fill(),
     )];
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
     if let Some(media) = media(store, g, cover) {
-        out.push(("media", w::action_card(media.height(inner(g.media_h)), opens(PanelId::Media)).fill()));
+        out.push(("media", w::action_card(media.height(inner(g.media_h)), Intent::Panel(PanelId::Media).on()).fill()));
     }
     let row = notifications(theme, store, g, icons, width - g.row_pad * 2.0, kit);
-    out.push(("notifications", w::action_card(row.height(inner(g.row_h)).pad_start(g.row_pad - s.md), format!("panel:{}", center::ID)).fill()));
+    out.push(("notifications", w::action_card(row.height(inner(g.row_h)).pad_start(g.row_pad - s.md), Intent::Center.on()).fill()));
     if let Some(card) = activity::installs_card(store) {
         out.push(("activity", card));
     }
@@ -831,14 +869,14 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
             .fill()
     };
     let mut row = vec![
-        button("wifi", "Network", &opens(PanelId::Network)),
-        button(chevron_glyph(edge), "Quick settings", "overflow"),
-        button("settings", "Settings", &opens(PanelId::Settings)),
+        button("wifi", "Network", &Intent::Panel(PanelId::Network).on()),
+        button(chevron_glyph(edge), "Quick settings", &Intent::Overflow.on()),
+        button("settings", "Settings", &Intent::Panel(PanelId::Settings).on()),
     ];
     if !store.tray.items.is_empty() {
-        row.push(button("ellipsis", "Tray", &opens(PanelId::TrayOverflow)));
+        row.push(button("ellipsis", "Tray", &Intent::Panel(PanelId::TrayOverflow).on()));
     }
-    row.push(button(fold_glyph(edge, false), "Collapse", "collapse"));
+    row.push(button(fold_glyph(edge, false), "Collapse", &Intent::Collapse(true).on()));
     w::card(w::row(0.0, row).fill()).fill()
 }
 
@@ -871,10 +909,10 @@ fn rail_foot(edge: Edge, g: &Geo) -> El {
             .fill()
     };
     let buttons = vec![
-        button("wifi", "Network", &opens(PanelId::Network)),
-        button(chevron_glyph(edge), "Quick settings", "overflow"),
-        button("settings", "Settings", &opens(PanelId::Settings)),
-        button(fold_glyph(edge, true), "Expand", "expand"),
+        button("wifi", "Network", &Intent::Panel(PanelId::Network).on()),
+        button(chevron_glyph(edge), "Quick settings", &Intent::Overflow.on()),
+        button("settings", "Settings", &Intent::Panel(PanelId::Settings).on()),
+        button(fold_glyph(edge, true), "Expand", &Intent::Collapse(false).on()),
     ];
     w::card(w::column(0.0, buttons).fill()).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()
 }
@@ -886,10 +924,10 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
     let r = &g.rail;
     let bare = |c: &mut crate::ui::el::CellState| c.inset = Some((0.0, 0.0));
     let square = |child: El| w::cell(w::column(0.0, vec![child.centred()]).fill()).ghost().cell_state(bare).height(r.square).fill();
-    let mut out = vec![("time", w::action_card(w::space(r.time_h), opens(PanelId::Calendar)).cell_state(bare).fill())];
+    let mut out = vec![("time", w::action_card(w::space(r.time_h), Intent::Panel(PanelId::Calendar).on()).cell_state(bare).fill())];
     out.push(("spaces", w::card(map.rail_view()).cell_state(bare).fill()));
     if store.media.active().is_some() {
-        out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), opens(PanelId::Media)).cell_state(bare).fill()));
+        out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), Intent::Panel(PanelId::Media).on()).cell_state(bare).fill()));
     }
     let m = &store.notifications.model;
     let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);
@@ -898,7 +936,7 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
         0 => bell,
         n => w::row(r.tight, vec![bell, w::caption(n.to_string()).mono().weight(Weight::Medium).ink(Ink::Muted)]),
     };
-    out.push(("notifications", w::action_card(square(bell), format!("panel:{}", center::ID)).cell_state(bare).fill()));
+    out.push(("notifications", w::action_card(square(bell), Intent::Center.on()).cell_state(bare).fill()));
     let groups = store.activity.activity.groups();
     if !groups.is_empty() {
         let rows = groups
@@ -911,12 +949,12 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
                     .cell_state(bare)
                     .interactive()
                     .tip(lead.subject().to_owned())
-                    .on(format!("open:{}", grp.source))
+                    .on(activity::Verb::Open.on(grp.source))
                     .height(r.button)
                     .fill()
             })
             .collect();
-        out.push(("activity", w::action_card(w::column(0.0, rows).fill(), opens(PanelId::Activity)).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
+        out.push(("activity", w::action_card(w::column(0.0, rows).fill(), Intent::Panel(PanelId::Activity).on()).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
     }
     out
 }
