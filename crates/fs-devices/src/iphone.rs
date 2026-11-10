@@ -18,7 +18,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use fs_info::notifications::{Action, Entry, Notif, Phone, Urgency};
 use fs_js::{self as js, SPACE};
-use fs_types::{BtAddress, NotificationId};
+use fs_types::{BtAddress, NotificationId, Percent};
 
 /// ANCS's CategoryIDIncomingCall.
 const INCOMING_CALL: i64 = 1;
@@ -89,8 +89,8 @@ pub struct Status {
     /// The bonded phone, none while the bridge reports no bond.
     pub address: Option<BtAddress>,
     pub device_name: String,
-    /// 0..100, -1 when unknown.
-    pub battery: f64,
+    /// None while the bridge reports it unknown.
+    pub battery: Option<Percent>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -173,7 +173,7 @@ pub fn parse_event(line: &str) -> Option<Event> {
                 paired: is_true(&raw, "paired"),
                 address: BtAddress::parse(&s(&raw, "address")),
                 device_name: s(&raw, "deviceName"),
-                battery: if battery.is_finite() && battery >= 0.0 { battery.min(100.0) } else { -1.0 },
+                battery: (battery.is_finite() && battery >= 0.0).then(|| Percent::from_percent(battery)),
             }))
         }
         "pairingCode" => Some(Event::PairingCode { code: s(&raw, "code") }),
@@ -666,8 +666,8 @@ mod tests {
         assert!(e.observer);
         assert!(e.connected);
         assert_eq!(e.device_name, "Kyan's iPhone");
-        assert_eq!(e.battery, 64.0);
-        assert_eq!(status(r#"{"type":"status","battery":-1}"#).battery, -1.0);
+        assert_eq!(e.battery, Some(Percent::whole(64)));
+        assert_eq!(status(r#"{"type":"status","battery":-1}"#).battery, None);
     }
 
     // packaging/iphone-bridge-bond.patch's status: a bond BlueZ holds while LE is down.

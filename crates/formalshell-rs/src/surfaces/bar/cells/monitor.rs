@@ -4,6 +4,8 @@
 //! cell is on a bar.
 
 use fs_chrome::bar::panels::PanelId;
+use fs_system::monitor::format::pct;
+use fs_types::Fraction;
 
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
@@ -12,9 +14,9 @@ use crate::paint::Look;
 
 pub struct Monitor {
     want: Want,
-    cpu: Option<f64>,
-    mem: Option<f64>,
-    gpu: Option<f64>,
+    cpu: Option<Fraction>,
+    mem: Option<Fraction>,
+    gpu: Option<Fraction>,
     label: bool,
 }
 
@@ -22,10 +24,6 @@ impl Default for Monitor {
     fn default() -> Self {
         Self { want: Want::new(Source::Monitor), cpu: None, mem: None, gpu: None, label: false }
     }
-}
-
-fn pct(fraction: Option<f64>) -> String {
-    fraction.filter(|f| f.is_finite()).map_or_else(|| "--".to_owned(), |f| format!("{}%", (f * 100.0 + 0.5).floor()))
 }
 
 /// The icon the strip warms ahead of the first frame.

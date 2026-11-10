@@ -76,7 +76,7 @@ pub(super) fn monitor_strip(store: &Store, theme: &Theme, h: &MonitorHistory) ->
         ("CPU", format::pct(m.cpu.aggregate), line(&h.cpu, None, 1.0)),
         ("Memory", format::pct(m.mem.as_ref().map(|x| x.used_fraction)), line(&h.mem, None, 1.0)),
         ("GPU", gpu_figure, line(&h.gpu, None, 1.0)),
-        ("Disk", format::pct(disk.map(|d| d.fraction)), w::column(0.0, vec![w::space((s.control_height - s.track_thickness).max(0.0)), w::track(disk.map_or(0.0, |d| d.fraction.clamp(0.0, 1.0)))])),
+        ("Disk", format::pct(disk.map(|d| d.fraction)), w::column(0.0, vec![w::space((s.control_height - s.track_thickness).max(0.0)), w::track(disk.map_or(0.0, |d| d.fraction.as_fraction()))])),
         ("Network", format::rate(rx), line(&h.rx, Some(&h.tx), net_ceiling)),
     ];
     let cells = tiles
@@ -131,9 +131,9 @@ impl Model {
         }
         let h = &mut self.monitor_history;
         h.sampled = m.sampled_ms;
-        push(&mut h.cpu, m.cpu.aggregate);
-        push(&mut h.mem, m.mem.as_ref().map(|x| x.used_fraction));
-        push(&mut h.gpu, m.gpu_busy());
+        push(&mut h.cpu, m.cpu.aggregate.map(fs_types::Fraction::as_fraction));
+        push(&mut h.mem, m.mem.as_ref().map(|x| x.used_fraction.as_fraction()));
+        push(&mut h.gpu, m.gpu_busy().map(fs_types::Fraction::as_fraction));
         push(&mut h.rx, m.net_available.then(|| m.net.iter().map(|n| n.rx_bytes_per_sec).sum()));
         push(&mut h.tx, m.net_available.then(|| m.net.iter().map(|n| n.tx_bytes_per_sec).sum()));
         self.dirty = true;

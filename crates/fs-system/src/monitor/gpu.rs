@@ -8,6 +8,7 @@
 //! with boot_vga=1.
 
 use fs_js as js;
+use fs_types::Fraction;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -164,7 +165,7 @@ pub fn parse_nvidia(nvidia_text: &str) -> Vec<NvidiaRow> {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Metrics {
     pub available: bool,
-    pub busy: Option<f64>,
+    pub busy: Option<Fraction>,
     pub temp_c: Option<f64>,
     pub vram_used: Option<f64>,
     pub vram_total: Option<f64>,
@@ -178,7 +179,6 @@ pub struct Metrics {
 impl Metrics {
     fn from_fields(mut m: Metrics) -> Metrics {
         for slot in [
-            &mut m.busy,
             &mut m.temp_c,
             &mut m.vram_used,
             &mut m.vram_total,
@@ -190,19 +190,8 @@ impl Metrics {
         ] {
             *slot = slot.filter(|v| v.is_finite());
         }
-        m.available = [
-            m.busy,
-            m.temp_c,
-            m.vram_used,
-            m.vram_total,
-            m.power_w,
-            m.fan_percent,
-            m.fan_rpm,
-            m.clock_mhz,
-            m.clock_max_mhz,
-        ]
-        .iter()
-        .any(Option::is_some);
+        let readings = [m.temp_c, m.vram_used, m.vram_total, m.power_w, m.fan_percent, m.fan_rpm, m.clock_mhz, m.clock_max_mhz];
+        m.available = m.busy.is_some() || readings.iter().any(Option::is_some);
         m
     }
 }
@@ -214,9 +203,13 @@ fn scaled(values: Option<&HashMap<String, f64>>, key: &str, divisor: f64) -> Opt
     values?.get(key).map(|v| v / divisor)
 }
 
+fn busy(fraction: Option<f64>) -> Option<Fraction> {
+    fraction.filter(|v| v.is_finite()).map(Fraction::from_fraction)
+}
+
 fn nvidia_metrics(row: &NvidiaRow) -> Metrics {
     Metrics::from_fields(Metrics {
-        busy: row.utilization,
+        busy: busy(row.utilization),
         temp_c: row.temperature,
         vram_used: row.mem_used.map(|v| v * 1024.0 * 1024.0),
         vram_total: row.mem_total.map(|v| v * 1024.0 * 1024.0),
@@ -228,7 +221,7 @@ fn nvidia_metrics(row: &NvidiaRow) -> Metrics {
 
 fn amd_metrics(values: Option<&HashMap<String, f64>>) -> Metrics {
     Metrics::from_fields(Metrics {
-        busy: scaled(values, "gpu_busy_percent", 100.0),
+        busy: busy(scaled(values, "gpu_busy_percent", 100.0)),
         temp_c: scaled(values, "temp1_input", 1000.0),
         vram_used: scaled(values, "mem_info_vram_used", 1.0),
         vram_total: scaled(values, "mem_info_vram_total", 1.0),
@@ -482,7 +475,7 @@ mod tests {
         assert_eq!(m[0].card.card, "card0");
         let metrics = &m[0].metrics;
         assert!(metrics.available);
-        assert_eq!(metrics.busy, Some(0.16));
+        assert_eq!(metrics.busy.map(Fraction::as_fraction), Some(0.16));
         assert_eq!(metrics.temp_c, Some(50.0));
         assert_eq!(metrics.power_w, Some(12.17));
         assert_eq!(metrics.fan_percent, None);
@@ -534,7 +527,7 @@ mod tests {
         assert_eq!(m[0].card.driver, "amdgpu");
         assert!(is_discrete(&m[0].card));
         assert!(m[0].metrics.available);
-        assert_eq!(m[0].metrics.busy, Some(0.37));
+        assert_eq!(m[0].metrics.busy.map(Fraction::as_fraction), Some(0.37));
         assert_eq!(m[0].metrics.vram_used, Some(4294967296.0));
         assert_eq!(m[0].metrics.vram_total, Some(17179869184.0));
         assert_eq!(m[0].metrics.temp_c, Some(58.0));

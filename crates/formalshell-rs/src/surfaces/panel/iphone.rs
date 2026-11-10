@@ -84,7 +84,7 @@ impl Panel for Iphone {
             parts.push(w::panel_error(s, error));
         }
         if connected && !pairing {
-            let pct = st.battery.map(|b| format!("{}%", (b * 100.0 + 0.5).floor()));
+            let pct = st.battery.map(|b| format!("{}%", b.rounded()));
             parts.push(w::hero(
                 s,
                 w::Hero {
@@ -93,7 +93,7 @@ impl Panel for Iphone {
                     meta: "Connected".into(),
                     readout: pct.unwrap_or_default(),
                     trailing: None,
-                    rail: st.battery,
+                    rail: st.battery.map(|b| b.as_fraction()),
                     rail_on: None,
                 },
             ));

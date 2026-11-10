@@ -111,10 +111,10 @@ fn parse_usage_extracts_five_hour_and_seven_day_rows() {
     .unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].label, "5-hour");
-    assert_eq!(rows[0].percent, 0.42);
+    assert_eq!(rows[0].used.as_fraction(), 0.42);
     assert_eq!(rows[0].resets_at, "2026-08-02T10:00:00Z");
     assert_eq!(rows[1].label, "Weekly");
-    assert_eq!(rows[1].percent, 0.1);
+    assert_eq!(rows[1].used.as_fraction(), 0.1);
 }
 
 #[test]
@@ -136,8 +136,8 @@ fn parse_usage_enumerates_dynamic_buckets_in_stable_order() {
     assert_eq!(rows[2].label, "Experimental window");
     assert_eq!(rows[3].label, "Weekly opus");
     assert_eq!(rows[4].label, "Weekly sonnet");
-    assert_eq!(rows[3].percent, 0.15);
-    assert_eq!(rows[4].percent, 0.08);
+    assert_eq!(rows[3].used.as_fraction(), 0.15);
+    assert_eq!(rows[4].used.as_fraction(), 0.08);
 }
 
 #[test]
@@ -170,8 +170,8 @@ fn parse_usage_treats_fraction_scale_when_nothing_is_percent() {
         &json!({ "five_hour": { "utilization": 0.37 }, "seven_day": { "utilization": 0.05 } }).to_string(),
     )
     .unwrap();
-    assert_eq!(rows[0].percent, 0.37);
-    assert_eq!(rows[1].percent, 0.05);
+    assert_eq!(rows[0].used.as_fraction(), 0.37);
+    assert_eq!(rows[1].used.as_fraction(), 0.05);
 }
 
 #[test]
@@ -316,10 +316,10 @@ fn parse_codex_rate_limits_extracts_primary_and_secondary() {
     assert_eq!(r.plan_type, "team");
     assert_eq!(r.rows.len(), 2);
     assert_eq!(r.rows[0].label, "5h window");
-    assert_eq!(r.rows[0].percent, 0.125);
+    assert_eq!(r.rows[0].used.as_fraction(), 0.125);
     assert_eq!(r.rows[0].resets_at, "2026-08-02T20:00:00.000Z");
     assert_eq!(r.rows[1].label, "Weekly");
-    assert_eq!(r.rows[1].percent, 0.4);
+    assert_eq!(r.rows[1].used.as_fraction(), 0.4);
 }
 
 #[test]

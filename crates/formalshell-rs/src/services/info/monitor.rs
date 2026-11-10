@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use fs_system::monitor::collect::split_sections;
 use fs_system::monitor::gpu::{self, GfxMode, GpuRecord};
 use fs_system::monitor::sysinfo::{self, CoreLoad, CpuRecord, Disk, Fan, Load, Mem, NetRate, NetRow, Temp, Uptime};
+use fs_types::Fraction;
 use futures_lite::future;
 use serde_json::{Value, json};
 
@@ -25,7 +26,7 @@ use crate::store;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Cpu {
     pub available: bool,
-    pub aggregate: Option<f64>,
+    pub aggregate: Option<Fraction>,
     pub cores: Vec<CoreLoad>,
 }
 
@@ -57,7 +58,7 @@ pub struct State {
 
 impl State {
     /// The busy fraction of the first card that reports one (the cell's G).
-    pub fn gpu_busy(&self) -> Option<f64> {
+    pub fn gpu_busy(&self) -> Option<Fraction> {
         self.cards.iter().find_map(|c| c.record.metrics.busy.filter(|_| c.record.metrics.available))
     }
 
@@ -69,14 +70,14 @@ impl State {
             "ageMs": self.sampled_ms.map(|t| now_ms.saturating_sub(t)),
             "cpu": {
                 "available": self.cpu.available,
-                "aggregate": num(self.cpu.aggregate),
-                "cores": self.cpu.cores.iter().map(|c| json!({"label": c.label, "fraction": c.fraction})).collect::<Vec<_>>(),
+                "aggregate": num(self.cpu.aggregate.map(Fraction::as_fraction)),
+                "cores": self.cpu.cores.iter().map(|c| json!({"label": c.label, "fraction": c.fraction.as_fraction()})).collect::<Vec<_>>(),
             },
             "mem": match &self.mem {
                 Some(m) => json!({
                     "available": true, "totalBytes": m.total_bytes, "availableBytes": m.available_bytes,
                     "freeBytes": m.free_bytes, "swapTotalBytes": m.swap_total_bytes,
-                    "swapFreeBytes": m.swap_free_bytes, "usedFraction": m.used_fraction,
+                    "swapFreeBytes": m.swap_free_bytes, "usedFraction": m.used_fraction.as_fraction(),
                 }),
                 None => json!({"available": false}),
             },
@@ -108,7 +109,7 @@ impl State {
             "disk": {
                 "available": !self.disk.is_empty(),
                 "rows": self.disk.iter().map(|d| json!({
-                    "source": d.source, "mount": d.mount, "size": d.size, "used": d.used, "fraction": d.fraction,
+                    "source": d.source, "mount": d.mount, "size": d.size, "used": d.used, "fraction": d.fraction.as_fraction(),
                 })).collect::<Vec<_>>(),
             },
         })
@@ -145,7 +146,7 @@ fn card_json(c: &Card) -> Value {
         "label": r.card.label,
         "outputs": r.card.outputs.iter().map(|o| json!({"name": o.name, "connected": o.connected})).collect::<Vec<_>>(),
         "metrics": {
-            "available": m.available, "busy": num(m.busy), "tempC": num(m.temp_c), "vramUsed": num(m.vram_used),
+            "available": m.available, "busy": num(m.busy.map(Fraction::as_fraction)), "tempC": num(m.temp_c), "vramUsed": num(m.vram_used),
             "vramTotal": num(m.vram_total), "powerW": num(m.power_w), "fanPercent": num(m.fan_percent),
             "fanRpm": num(m.fan_rpm), "clockMhz": num(m.clock_mhz), "clockMaxMhz": num(m.clock_max_mhz),
         },
@@ -396,8 +397,8 @@ mod tests {
         assert!(first.cpu.available && first.cpu.aggregate.is_none());
         let second = sample(&mut prev, &sections("cpu 200 0 200 1600 0 0 0 0"), at);
         let busy = second.cpu.aggregate.expect("a delta");
-        assert!((busy - 0.2).abs() < 1e-9, "{busy}");
-        assert!((second.mem.expect("mem").used_fraction - 0.75).abs() < 1e-9);
+        assert!((busy.as_fraction() - 0.2).abs() < 1e-9, "{busy:?}");
+        assert!((second.mem.expect("mem").used_fraction.as_fraction() - 0.75).abs() < 1e-9);
     }
 
     #[test]

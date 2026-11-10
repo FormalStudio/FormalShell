@@ -10,6 +10,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use fs_js as js;
+use fs_types::Fraction;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParseError {
@@ -96,8 +97,7 @@ pub fn credentials_expired(expires_at_ms: f64, now_ms: f64) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UsageRow {
     pub label: String,
-    /// 0..1.
-    pub percent: f64,
+    pub used: Fraction,
     /// ISO-8601, or "" when the window carries no reset time.
     pub resets_at: String,
 }
@@ -190,7 +190,7 @@ fn usage_row(label: &str, bucket: &Value, percent_scale: bool) -> Option<UsageRo
     }
     Some(UsageRow {
         label: label.to_owned(),
-        percent: if percent_scale { (n / 100.0).min(1.0) } else { n.min(1.0) },
+        used: Fraction::from_fraction(if percent_scale { n / 100.0 } else { n }),
         resets_at: string_or_empty(bucket.get("resets_at")),
     })
 }
@@ -351,5 +351,5 @@ fn codex_window_row(window: Option<&Value>) -> Option<UsageRow> {
         String::new()
     };
 
-    Some(UsageRow { label, percent: (used / 100.0).min(1.0), resets_at })
+    Some(UsageRow { label, used: Fraction::from_fraction(used / 100.0), resets_at })
 }

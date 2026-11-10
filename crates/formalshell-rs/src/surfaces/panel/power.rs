@@ -202,7 +202,7 @@ impl Panel for Power {
             .is_some_and(|b| charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, v.store.power.on_battery));
         let model = flow::build_flow(
             &sample.snapshot,
-            &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.iphone.battery.map(|b| b * 100.0), held },
+            &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.iphone.battery, held },
         );
         match &v.store.power.battery {
             Some(b) => parts.push(w::panel_text(s, battery_card(s, &card(v, b, held)))),

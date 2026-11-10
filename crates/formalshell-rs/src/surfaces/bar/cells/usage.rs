@@ -46,24 +46,26 @@ impl Cell for Usage {
             return View::hidden();
         }
         let worst = self.state.worst();
+        let percent = worst.map(|w| w.to_percent().rounded());
+        let tone = if worst.is_some_and(|w| w.as_fraction() >= 0.9) { Tone::Destructive } else { Tone::Rest };
         let status = self.state.status_label();
-        let mut parts = vec![Part::icon("gauge").dim(worst < 0.0)];
+        let mut parts = vec![Part::icon("gauge").dim(worst.is_none())];
         if self.label {
-            if worst >= 0.0 {
-                parts.push(Part::Label { text: format!("{}%", (worst * 100.0 + 0.5).floor()), weight: None });
+            if let Some(p) = percent {
+                parts.push(Part::Label { text: format!("{p}%"), weight: None });
             } else if !status.is_empty() {
                 parts.push(Part::Meta { text: status.to_uppercase() });
             }
         }
-        let reading = if worst >= 0.0 {
-            format!("{}%", (worst * 100.0 + 0.5).floor())
+        let reading = if let Some(p) = percent {
+            format!("{p}%")
         } else if !status.is_empty() {
             status.to_uppercase()
         } else {
             "UNAVAILABLE".to_owned()
         };
         View::new(parts, look.xs)
-            .tone(if worst >= 0.9 { Tone::Destructive } else { Tone::Rest })
+            .tone(tone)
             .panel(PanelId::Usage)
             .tooltip(format!("USAGE / {reading}"))
     }
@@ -73,15 +75,17 @@ impl Cell for Usage {
             return None;
         }
         let worst = self.state.worst();
+        let percent = worst.map(|w| w.to_percent().rounded());
+        let tone = if worst.is_some_and(|w| w.as_fraction() >= 0.9) { Tone::Destructive } else { Tone::Rest };
         let status = self.state.status_label();
-        let value = if worst >= 0.0 {
-            format!("{}%", (worst * 100.0 + 0.5).floor())
+        let value = if let Some(p) = percent {
+            format!("{p}%")
         } else if !status.is_empty() {
             status.to_owned()
         } else {
             "Unavailable".to_owned()
         };
-        Some(Summary::new("gauge", "Usage", value).tone(if worst >= 0.9 { Tone::Destructive } else { Tone::Rest }))
+        Some(Summary::new("gauge", "Usage", value).tone(tone))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

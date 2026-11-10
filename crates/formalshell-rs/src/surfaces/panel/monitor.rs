@@ -8,6 +8,7 @@
 
 use fs_system::display::priority;
 use fs_system::monitor::format::pct;
+use fs_types::Fraction;
 
 use super::{Effect, Out, Panel, View};
 use crate::services::wants::Source;
@@ -23,8 +24,8 @@ struct Metric {
     state: String,
 }
 
-fn fill(fraction: Option<f64>) -> Option<f64> {
-    fraction.filter(|f| f.is_finite()).map(|f| f.clamp(0.0, 1.0))
+fn fill(fraction: Option<Fraction>) -> Option<f64> {
+    fraction.map(Fraction::as_fraction)
 }
 
 fn metrics(v: &View) -> Vec<Metric> {

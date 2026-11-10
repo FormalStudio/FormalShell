@@ -21,7 +21,7 @@ use async_io::Timer;
 use fs_devices::iphone::{self, Arrival, Event, Verdict};
 pub use fs_devices::iphone::{Notification, phone_of};
 use fs_info::notifications::{self as model, AddOpts, Patch, Phone};
-use fs_types::{Backoff, BtAddress, NotificationId};
+use fs_types::{Backoff, BtAddress, NotificationId, Percent};
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 use serde_json::{Value, json};
@@ -48,8 +48,8 @@ pub struct State {
     pub observer: bool,
     pub connected: bool,
     pub device_name: String,
-    /// 0..1, only while connected and the bridge has read one.
-    pub battery: Option<f64>,
+    /// Only while connected and the bridge has read one.
+    pub battery: Option<Percent>,
     pub unread: u32,
     /// BlueZ holds a bond for the phone at `bond_address` whether or not it
     /// is connected.
@@ -90,7 +90,7 @@ impl State {
             "bondAddress": self.bond_address.map(|a| a.to_string()).unwrap_or_default(),
             "deviceName": self.device_name,
             "batteryAvailable": self.battery.is_some(),
-            "battery": self.battery.map_or(json!(0), fs_js::json_number),
+            "battery": self.battery.map_or(json!(0), |b| fs_js::json_number(b.as_fraction())),
             "unread": self.unread,
             "inFocus": self.in_focus,
             "pairingCode": self.pairing_code,
@@ -278,7 +278,7 @@ impl Session {
                 self.state.bond_address = s.address;
                 self.state.linked = s.linked;
                 self.state.device_name = s.device_name;
-                self.state.battery = (s.connected && s.battery >= 0.0).then_some(s.battery / 100.0);
+                self.state.battery = s.battery.filter(|_| s.connected);
                 if s.observer {
                     self.state.last_error.clear();
                 }
@@ -677,7 +677,7 @@ mod tests {
     fn battery_reads_only_while_connected() {
         let mut s = Session::default();
         s.event(status(true, 80.0));
-        assert_eq!(s.state.battery, Some(0.8));
+        assert_eq!(s.state.battery, Some(Percent::whole(80)));
         s.event(status(false, 80.0));
         assert_eq!(s.state.battery, None);
         s.event(status(true, -1.0));

@@ -18,6 +18,7 @@
 //! comparable with the monitor view's own CPU TOTAL row.
 
 use fs_js as js;
+use fs_types::Fraction;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -137,9 +138,9 @@ pub struct ProcRow {
     pub kernel: bool,
     pub state: String,
     pub threads: f64,
-    pub cpu_fraction: Option<f64>,
+    pub cpu_fraction: Option<Fraction>,
     pub mem_bytes: f64,
-    pub mem_fraction: Option<f64>,
+    pub mem_fraction: Option<Fraction>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -169,7 +170,7 @@ pub fn proc_delta(prev: Option<&[ProcRecord]>, next: &[ProcRecord], total_delta:
             let cpu_fraction = match was {
                 Some(was) if usable && was.started_at == rec.started_at => {
                     let busy = (rec.jiffies - was.jiffies).max(0.0);
-                    Some((busy / total_delta).min(1.0))
+                    Some(Fraction::from_fraction(busy / total_delta))
                 }
                 _ => None,
             };
@@ -185,7 +186,7 @@ pub fn proc_delta(prev: Option<&[ProcRecord]>, next: &[ProcRecord], total_delta:
                 threads: rec.threads,
                 cpu_fraction,
                 mem_bytes: bytes,
-                mem_fraction: mem_total.map(|t| (bytes / t).min(1.0)),
+                mem_fraction: mem_total.map(|t| Fraction::from_fraction(bytes / t)),
             }
         })
         .collect()
@@ -220,7 +221,7 @@ pub fn sort_rows(rows: &[ProcRow], mode: &str) -> Vec<ProcRow> {
     let mut out = rows.to_vec();
     out.sort_by(|a, b| {
         let d = match key {
-            "cpu" => b.cpu_fraction.unwrap_or(-1.0) - a.cpu_fraction.unwrap_or(-1.0),
+            "cpu" => b.cpu_fraction.map_or(-1.0, Fraction::as_fraction) - a.cpu_fraction.map_or(-1.0, Fraction::as_fraction),
             "mem" => b.mem_bytes - a.mem_bytes,
             "name" => {
                 // Strings compare by UTF-16 code unit.
@@ -405,7 +406,7 @@ mod tests {
     fn cpu_fraction_is_the_share_of_the_whole_machine() {
         let rows = rows();
         let row = row_for(&rows, BUSY_PID).unwrap();
-        assert!((row.cpu_fraction.unwrap() - BUSY_FRACTION).abs() < 0.0001);
+        assert!((row.cpu_fraction.unwrap().as_fraction() - BUSY_FRACTION).abs() < 0.0001);
     }
 
     #[test]
@@ -413,7 +414,7 @@ mod tests {
         let rows = rows();
         let row = row_for(&rows, 1000).unwrap();
         assert_eq!(row.name, "dbus-broker");
-        assert_eq!(row.cpu_fraction, Some(0.0));
+        assert_eq!(row.cpu_fraction, Some(Fraction::from_fraction(0.0)));
     }
 
     #[test]
@@ -436,7 +437,7 @@ mod tests {
         let rows = rows();
         let row = row_for(&rows, BUSY_PID).unwrap();
         assert_eq!(row.mem_bytes, 886.0 * 4096.0);
-        assert!((row.mem_fraction.unwrap() - (886.0 * 4096.0) / (8098064.0 * 1024.0)).abs() < 0.0001);
+        assert!((row.mem_fraction.unwrap().as_fraction() - (886.0 * 4096.0) / (8098064.0 * 1024.0)).abs() < 0.0001);
     }
 
     #[test]
@@ -507,7 +508,7 @@ mod tests {
             kernel: true,
             state: "S".into(),
             threads: 1.0,
-            cpu_fraction: cpu,
+            cpu_fraction: cpu.map(Fraction::from_fraction),
             mem_bytes: 0.0,
             mem_fraction: None,
         }

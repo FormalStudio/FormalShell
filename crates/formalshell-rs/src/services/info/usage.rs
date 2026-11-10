@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use async_io::Timer;
 use fs_info::usage::{self, RefreshState, UsageRow};
+use fs_types::Fraction;
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, AsyncWriteExt, FutureExt, StreamExt};
 use serde_json::json;
@@ -88,9 +89,9 @@ impl State {
         claude.into_iter().chain(codex).flatten()
     }
 
-    /// The highest window across providers, 0..1, or -1 with none.
-    pub fn worst(&self) -> f64 {
-        self.rows().map(|r| r.percent).fold(-1.0, f64::max)
+    /// The highest window across providers, none with no reading.
+    pub fn worst(&self) -> Option<Fraction> {
+        self.rows().map(|r| r.used).reduce(|a, b| if b > a { b } else { a })
     }
 
     /// The word a provider with no reading shows in the cell's place.

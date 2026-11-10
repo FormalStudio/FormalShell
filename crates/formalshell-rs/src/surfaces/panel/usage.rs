@@ -47,8 +47,8 @@ fn codex_hint(u: &State) -> &'static str {
 }
 
 fn peak(u: &State) -> Option<&UsageRow> {
-    claude_rows(u).iter().chain(codex_rows(u)).filter(|r| r.percent.is_finite()).fold(None, |best: Option<&UsageRow>, r| match best {
-        Some(b) if b.percent >= r.percent => Some(b),
+    claude_rows(u).iter().chain(codex_rows(u)).fold(None, |best: Option<&UsageRow>, r| match best {
+        Some(b) if b.used >= r.used => Some(b),
         _ => Some(r),
     })
 }
@@ -85,9 +85,9 @@ impl Panel for Usage {
                     glyph: "gauge".into(),
                     title: "Usage".into(),
                     meta: top.label.clone(),
-                    readout: format!("{}%", (top.percent * 100.0).round()),
+                    readout: format!("{}%", top.used.to_percent().rounded()),
                     trailing: None,
-                    rail: Some(top.percent),
+                    rail: Some(top.used.as_fraction()),
                     rail_on: None,
                 },
             ));
@@ -104,9 +104,9 @@ impl Panel for Usage {
                     if !r.resets_at.is_empty() {
                         values.push(w::caption(format_reset(now, &r.resets_at)).mono());
                     }
-                    let figure = w::panel_value(format!("{}%", (r.percent * 100.0).round()));
-                    values.push(if r.percent >= 0.9 { figure.ink(Ink::Destructive) } else { figure });
-                    w::panel_meter(s, None, &r.label, values, Some(w::track(r.percent))).stop(format!("row{}", first + i))
+                    let figure = w::panel_value(format!("{}%", r.used.to_percent().rounded()));
+                    values.push(if r.used.as_fraction() >= 0.9 { figure.ink(Ink::Destructive) } else { figure });
+                    w::panel_meter(s, None, &r.label, values, Some(w::track(r.used.as_fraction()))).stop(format!("row{}", first + i))
                 })
                 .collect()
         };

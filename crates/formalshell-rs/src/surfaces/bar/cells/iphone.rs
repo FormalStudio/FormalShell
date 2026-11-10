@@ -38,7 +38,7 @@ impl Cell for Iphone {
         if !s.installed {
             return View::hidden();
         }
-        let percent = s.battery.map(|b| (b * 100.0 + 0.5).floor());
+        let percent = s.battery.map(|b| b.rounded());
         let mut parts = vec![Part::icon("smartphone").dot(s.unread > 0)];
         if let (true, Some(p)) = (self.label, percent) {
             parts.push(Part::Label { text: format!("{p}%"), weight: None });
@@ -64,7 +64,7 @@ impl Cell for Iphone {
         let name = if s.device_name.is_empty() { "iPhone" } else { s.device_name.as_str() };
         let mut value = if s.connected { "Connected" } else { "Out of range" }.to_owned();
         if let Some(b) = s.battery {
-            value.push_str(&format!(", {}%", (b * 100.0 + 0.5).floor()));
+            value.push_str(&format!(", {}%", b.rounded()));
         }
         Some(Summary::new("smartphone", name, value))
     }

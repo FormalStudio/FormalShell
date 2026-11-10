@@ -3,25 +3,26 @@
 //! Fractions are 0..1, the repo-wide convention.
 
 use fs_js as js;
+use fs_types::Fraction;
 
 fn missing(value: Option<f64>) -> Option<f64> {
     value.filter(|v| v.is_finite())
 }
 
 /// Whole percent, for machine-wide figures.
-pub fn pct(fraction: Option<f64>) -> String {
-    match missing(fraction) {
+pub fn pct(fraction: Option<Fraction>) -> String {
+    match fraction {
         None => "--".into(),
-        Some(f) => format!("{}%", js::num_str(js::round(f * 100.0))),
+        Some(f) => format!("{}%", f.to_percent().rounded()),
     }
 }
 
 /// One decimal, for a process's share of the whole machine, where 0.4% and
 /// 4.0% are the difference between idle and busy on a many-thread box.
-pub fn proc_pct(fraction: Option<f64>) -> String {
-    match missing(fraction) {
+pub fn proc_pct(fraction: Option<Fraction>) -> String {
+    match fraction {
         None => "--".into(),
-        Some(f) => format!("{}%", js::to_fixed(f * 100.0, 1)),
+        Some(f) => format!("{}%", js::to_fixed(f.as_percent(), 1)),
     }
 }
 
@@ -54,7 +55,6 @@ mod tests {
     #[test]
     fn missing_readings_are_dashes_never_zeros() {
         assert_eq!(pct(None), "--");
-        assert_eq!(pct(Some(f64::NAN)), "--");
         assert_eq!(proc_pct(None), "--");
         assert_eq!(bytes(None), "--");
         assert_eq!(rate(None), "--");
@@ -62,10 +62,10 @@ mod tests {
 
     #[test]
     fn percentages() {
-        assert_eq!(pct(Some(0.514)), "51%");
-        assert_eq!(pct(Some(0.0)), "0%");
-        assert_eq!(proc_pct(Some(0.0041)), "0.4%");
-        assert_eq!(proc_pct(Some(0.165)), "16.5%");
+        assert_eq!(pct(Some(Fraction::from_fraction(0.514))), "51%");
+        assert_eq!(pct(Some(Fraction::from_fraction(0.0))), "0%");
+        assert_eq!(proc_pct(Some(Fraction::from_fraction(0.0041))), "0.4%");
+        assert_eq!(proc_pct(Some(Fraction::from_fraction(0.165))), "16.5%");
     }
 
     #[test]

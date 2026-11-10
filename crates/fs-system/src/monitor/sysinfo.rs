@@ -12,6 +12,7 @@
 //! measurement yet".
 
 use fs_js as js;
+use fs_types::Fraction;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -75,24 +76,24 @@ pub fn parse_stat(text: &str) -> Vec<CpuRecord> {
 
 /// A total delta of zero or less (no time elapsed, or a counter reset) has
 /// nothing to divide by, so it means "unusable" rather than "0% busy".
-fn busy_fraction(prev: &CpuRecord, next: &CpuRecord) -> Option<f64> {
+fn busy_fraction(prev: &CpuRecord, next: &CpuRecord) -> Option<Fraction> {
     let total_delta = next.total - prev.total;
     if !total_delta.is_finite() || total_delta <= 0.0 {
         return None;
     }
     let busy_delta = total_delta - (next.idle_all - prev.idle_all);
-    Some((busy_delta / total_delta).clamp(0.0, 1.0))
+    Some(Fraction::from_fraction(busy_delta / total_delta))
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreLoad {
     pub label: String,
-    pub fraction: f64,
+    pub fraction: Fraction,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CpuDelta {
-    pub aggregate: f64,
+    pub aggregate: Fraction,
     pub cores: Vec<CoreLoad>,
 }
 
@@ -132,7 +133,7 @@ pub struct Mem {
     pub free_bytes: f64,
     pub swap_total_bytes: f64,
     pub swap_free_bytes: f64,
-    pub used_fraction: f64,
+    pub used_fraction: Fraction,
 }
 
 static MEM_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\w+):\s+(\d+)\s*kB$").unwrap());
@@ -154,7 +155,7 @@ pub fn parse_mem(text: &str) -> Option<Mem> {
         free_bytes: get("MemFree") * 1024.0,
         swap_total_bytes: get("SwapTotal") * 1024.0,
         swap_free_bytes: get("SwapFree") * 1024.0,
-        used_fraction: if total > 0.0 { ((total - available) / total).clamp(0.0, 1.0) } else { 0.0 },
+        used_fraction: Fraction::from_fraction(if total > 0.0 { (total - available) / total } else { 0.0 }),
     })
 }
 
@@ -342,7 +343,7 @@ pub struct Disk {
     pub mount: String,
     pub size: f64,
     pub used: f64,
-    pub fraction: f64,
+    pub fraction: Fraction,
 }
 
 static DISK_LINE: LazyLock<Regex> =
@@ -369,7 +370,7 @@ pub fn parse_disk(text: &str) -> Vec<Disk> {
             mount: m[2].to_string(),
             size,
             used,
-            fraction: if size > 0.0 { (used / size).clamp(0.0, 1.0) } else { 0.0 },
+            fraction: Fraction::from_fraction(if size > 0.0 { used / size } else { 0.0 }),
         };
         match by_source.get(&row.source) {
             None => {
@@ -463,14 +464,12 @@ mod tests {
         let prev = parse_stat("cpu 100 0 100 700 0 0 0 0 0 0\ncpu0 50 0 50 350 0 0 0 0 0 0\ncpu1 50 0 50 350 0 0 0 0 0 0");
         let next = parse_stat("cpu 200 0 200 800 0 0 0 0 0 0\ncpu0 120 0 60 370 0 0 0 0 0 0\ncpu1 80 0 140 430 0 0 0 0 0 0");
         let delta = cpu_delta(Some(&prev), Some(&next)).unwrap();
-        close(delta.aggregate, 200.0 / 300.0);
+        close(delta.aggregate.as_fraction(), 200.0 / 300.0);
         assert_eq!(delta.cores.len(), 2);
         assert_eq!(delta.cores[0].label, "cpu0");
-        assert_eq!(delta.cores[0].fraction, 0.8);
+        assert_eq!(delta.cores[0].fraction.as_fraction(), 0.8);
         assert_eq!(delta.cores[1].label, "cpu1");
-        assert_eq!(delta.cores[1].fraction, 0.6);
-        assert!((0.0..=1.0).contains(&delta.aggregate));
-        assert!(delta.cores.iter().all(|c| (0.0..=1.0).contains(&c.fraction)));
+        assert_eq!(delta.cores[1].fraction.as_fraction(), 0.6);
     }
 
     #[test]
@@ -489,7 +488,7 @@ mod tests {
         assert_eq!(mem.free_bytes, 9172100.0 * 1024.0);
         assert_eq!(mem.swap_total_bytes, 16095228.0 * 1024.0);
         assert_eq!(mem.swap_free_bytes, 16090556.0 * 1024.0);
-        close(mem.used_fraction, (32191112.0 - 18139792.0) / 32191112.0);
+        close(mem.used_fraction.as_fraction(), (32191112.0 - 18139792.0) / 32191112.0);
     }
 
     #[test]
@@ -497,7 +496,6 @@ mod tests {
         let mem = parse_mem(&vm()["mem"]).unwrap();
         assert_eq!(mem.swap_total_bytes, 0.0);
         assert_eq!(mem.swap_free_bytes, 0.0);
-        assert!((0.0..=1.0).contains(&mem.used_fraction));
     }
 
     #[test]
@@ -664,8 +662,7 @@ mod tests {
         assert_eq!(rows[0].mount, "/");
         assert_eq!(rows[0].size, 269427478528.0);
         assert_eq!(rows[0].used, 164616077312.0);
-        close(rows[0].fraction, 164616077312.0 / 269427478528.0);
-        assert!((0.0..=1.0).contains(&rows[0].fraction));
+        close(rows[0].fraction.as_fraction(), 164616077312.0 / 269427478528.0);
         assert_eq!(rows[1].source, "/dev/nvme0n1p1");
         assert_eq!(rows[1].mount, "/boot");
         assert_eq!(rows[2].source, "macbook:");

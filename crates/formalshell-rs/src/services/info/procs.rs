@@ -12,6 +12,7 @@ use async_io::Timer;
 #[cfg(test)]
 use fs_system::monitor::collect::split_sections;
 use fs_system::monitor::procs::{self, DeltaOptions, ProcRecord, ProcRow};
+use fs_types::Fraction;
 use futures_lite::FutureExt;
 use serde_json::{Value, json};
 
@@ -83,8 +84,8 @@ impl State {
             })),
             "rows": rows.iter().take(40).map(|r| json!({
                 "pid": r.pid, "ppid": r.ppid, "name": r.name, "cmd": r.cmd, "kernel": r.kernel,
-                "state": r.state, "threads": r.threads, "cpuFraction": num(r.cpu_fraction),
-                "memBytes": r.mem_bytes, "memFraction": num(r.mem_fraction),
+                "state": r.state, "threads": r.threads, "cpuFraction": num(r.cpu_fraction.map(Fraction::as_fraction)),
+                "memBytes": r.mem_bytes, "memFraction": num(r.mem_fraction.map(Fraction::as_fraction)),
             })).collect::<Vec<_>>(),
         })
     }

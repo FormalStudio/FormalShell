@@ -10,6 +10,7 @@
 //! charge_control_end_threshold whole percents.
 
 use fs_js as js;
+use fs_types::Percent;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -423,7 +424,7 @@ pub struct Port {
 pub struct Extras {
     pub cpu_w: Option<f64>,
     pub gpu_w: Option<f64>,
-    pub iphone_percent: Option<f64>,
+    pub iphone_percent: Option<Percent>,
     /// The battery holds at its charge limit, as UPower's state says
     /// (`charge_threshold_active`); the supply files cannot tell it.
     pub held: bool,
@@ -464,7 +465,7 @@ fn port(port: &TypecPort, snapshot: &Snapshot, extras: &Extras) -> Port {
 
     let product = port.product.as_str();
     let percent = if !product.is_empty() && product.to_lowercase().contains("iphone") {
-        extras.iphone_percent.map(js::round)
+        extras.iphone_percent.map(|p| p.rounded())
     } else {
         None
     };
@@ -497,7 +498,7 @@ fn port(port: &TypecPort, snapshot: &Snapshot, extras: &Extras) -> Port {
         label: if connected {
             let who = if product.is_empty() { "Device" } else { product };
             match percent {
-                Some(p) => format!("{who}, {}%", js::num_str(p)),
+                Some(p) => format!("{who}, {p}%"),
                 None => who.to_string(),
             }
         } else {
@@ -657,7 +658,7 @@ pub fn sample_flow() -> Flow {
         ]
         .join("\n"),
     );
-    build_flow(&snapshot, &Extras { cpu_w: None, gpu_w: Some(22.73), iphone_percent: Some(87.0), held: true })
+    build_flow(&snapshot, &Extras { cpu_w: None, gpu_w: Some(22.73), iphone_percent: Some(Percent::whole(87)), held: true })
 }
 
 #[cfg(test)]
@@ -813,7 +814,7 @@ mod tests {
 
     #[test]
     fn g815_ports_from_ucsi() {
-        let f = flow(G815, Extras { iphone_percent: Some(87.4), ..Default::default() });
+        let f = flow(G815, Extras { iphone_percent: Some(Percent::from_percent(87.4)), ..Default::default() });
         assert_eq!(f.ports.len(), 2);
         assert_eq!(f.powering_ports, 2);
         assert_eq!(f.ports[0].name, "USB-C 1");
@@ -835,7 +836,7 @@ mod tests {
 
     #[test]
     fn iphone_percent_only_on_iphone_port() {
-        let f = flow(G815, Extras { iphone_percent: Some(50.0), ..Default::default() });
+        let f = flow(G815, Extras { iphone_percent: Some(Percent::whole(50)), ..Default::default() });
         assert_eq!(f.ports[1].label, "Device");
     }
 
