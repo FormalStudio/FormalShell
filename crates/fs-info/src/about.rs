@@ -54,11 +54,6 @@ fn os_release(text: &str, key: &str) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-/// This machine's os-release `ID`, which the launcher's logo is keyed by.
-pub fn os_id() -> Option<String> {
-    os_release(&std::fs::read_to_string("/etc/os-release").ok()?, "ID")
-}
-
 /// DMI fills unset strings with OEM placeholders.
 fn dmi(text: &str) -> Option<String> {
     let v = text.trim();

@@ -2,28 +2,39 @@
 //! logo out of font-logos, else an icon by name. A left click opens or
 //! closes the launcher.
 
+use crate::services::wants::{Source, Want};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
 use crate::paint::Look;
 
-#[derive(Default)]
 pub struct Launcher {
+    /// The about service's read, for os-release's `ID`.
+    want: Want,
     configured: String,
     os_id: Option<String>,
 }
 
+impl Default for Launcher {
+    fn default() -> Self {
+        Self { want: Want::new(Source::About), configured: String::new(), os_id: None }
+    }
+}
+
 impl Cell for Launcher {
+    fn visible(&mut self, on: bool) {
+        self.want.hold(on);
+    }
+
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Config]
+        &[Topic::Config, Topic::About]
     }
 
     fn read(&mut self, env: &Env) -> bool {
         let configured = crate::settings::LAUNCHER_ICON.get(&env.store.config).trim().to_owned();
-        if self.os_id.is_none() {
-            self.os_id = Some(fs_info::about::os_id().unwrap_or_default());
-        }
-        let changed = configured != self.configured;
+        let os_id = env.store.about.as_ref().and_then(|a| a.os_id.clone());
+        let changed = configured != self.configured || os_id != self.os_id;
         self.configured = configured;
+        self.os_id = os_id;
         changed
     }
 

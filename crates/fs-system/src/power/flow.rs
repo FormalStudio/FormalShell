@@ -1,7 +1,8 @@
 //! Where the power goes (adapter, laptop, battery, USB-C ports), built from
-//! one sysfs snapshot. The panel runs `collect_command()`, hands the text to
-//! `build_flow` with whatever it measured itself (RAPL, the dGPU, the iPhone
-//! bridge), and the drawing reads the result. Everything the kernel does not
+//! one sysfs snapshot. The shell reads it into the `@section` text
+//! `parse_snapshot` takes, hands that to `build_flow` with whatever it
+//! measured itself (RAPL, the dGPU, the iPhone bridge), and the drawing
+//! reads the result. Everything the kernel does not
 //! report stays `None`, and the drawing prints a missing figure as absent.
 //!
 //! Units, per Documentation/ABI/testing/sysfs-class-power: power_now is
@@ -15,30 +16,12 @@ use std::sync::LazyLock;
 
 pub(crate) const FIXED_SUPPLY_VOLTS: f64 = 5.0;
 
-const SUPPLY_KEYS: &str = "type scope online status capacity power_now voltage_now current_now charge_control_end_threshold";
+/// The `power_supply` attributes the snapshot text carries per supply.
+pub const SUPPLY_KEYS: [&str; 9] =
+    ["type", "scope", "online", "status", "capacity", "power_now", "voltage_now", "current_now", "charge_control_end_threshold"];
 
-pub fn collect_command() -> Vec<String> {
-    let script = [
-        "for d in /sys/class/power_supply/*; do".to_string(),
-        r##"[ -d "$d" ] || continue;"##.to_string(),
-        r##"echo "@supply ${d##*/}";"##.to_string(),
-        format!(
-            r##"for k in {SUPPLY_KEYS}; do [ -r "$d/$k" ] && echo "$k=$(cat "$d/$k" 2>/dev/null)"; done;"##
-        ),
-        "done;".to_string(),
-        "for d in /sys/class/typec/port[0-9]*; do".to_string(),
-        r##"case "$d" in *-partner) continue;; esac;"##.to_string(),
-        r##"[ -d "$d" ] || continue;"##.to_string(),
-        r##"echo "@typec ${d##*/}";"##.to_string(),
-        r##"for k in power_role power_operation_mode; do [ -r "$d/$k" ] && echo "$k=$(cat "$d/$k" 2>/dev/null)"; done;"##.to_string(),
-        r##"if [ -e "$d-partner" ]; then echo partner=1;"##.to_string(),
-        r##"for p in "$d-partner"/*/product; do [ -r "$p" ] && echo "product=$(cat "$p" 2>/dev/null)"; done; fi;"##.to_string(),
-        "done;".to_string(),
-        "echo @ucsi; cat /run/formalshell/ucsi 2>/dev/null; true".to_string(),
-    ]
-    .join(" ");
-    vec!["sh".into(), "-c".into(), script]
-}
+/// The `typec` port attributes the snapshot text carries per port.
+pub const PORT_KEYS: [&str; 2] = ["power_role", "power_operation_mode"];
 
 fn num(text: &str) -> Option<f64> {
     if js::trim(text).is_empty() {
@@ -960,13 +943,5 @@ mod tests {
         assert_eq!(f.battery.state.as_str(), "held");
         assert_eq!(f.powering_ports, 2);
         assert_eq!(f.laptop.detail, "GPU only");
-    }
-
-    #[test]
-    fn collect_command_is_a_shell_script() {
-        let argv = collect_command();
-        assert_eq!(argv[0], "sh");
-        assert_eq!(argv[1], "-c");
-        assert!(argv[2].contains("/run/formalshell/ucsi"));
     }
 }
