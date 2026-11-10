@@ -13,7 +13,8 @@ use fs_system::monitor::gpu::{self, OffloadTools};
 use fs_types::{Window, WindowId};
 
 use super::activity::{self, Input};
-use super::compositor;
+use super::menu::State as MenuState;
+use super::{compositor, proc};
 use crate::runtime::{Ctx, Publisher};
 use crate::store::{self, Store};
 
@@ -124,6 +125,37 @@ fn entry(store: &Store, id: &str) -> Option<DesktopEntry> {
     store.menu.tree.nodes.values().find_map(|n| n.entry.as_ref().filter(|e| e.id == id)).cloned()
 }
 
+fn uwsm() -> bool {
+    std::env::var_os("UWSM_FINALIZE_VARNAMES").is_some_and(|v| !v.is_empty())
+}
+
+/// Proc.appLaunch: under uwsm a plain entry goes by its id, so uwsm reads
+/// its Exec line; everything else runs its own argv.
+pub fn app_argv(menu: &MenuState, id: &str) -> Option<Vec<String>> {
+    let command = menu.exec.apps.get(id).filter(|c| !c.is_empty())?;
+    let plain = id.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') && id.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    if uwsm() && plain {
+        return Some(proc::argv(&["uwsm", "app", "--", &format!("{id}.desktop")]));
+    }
+    Some(scoped(command))
+}
+
+/// Desktop action `key` of entry `id`, run as its own argv.
+pub fn action_argv(menu: &MenuState, id: &str, key: &str) -> Option<Vec<String>> {
+    let command = menu.exec.actions.get(&(id.to_owned(), key.to_owned())).filter(|c| !c.is_empty())?;
+    Some(scoped(command))
+}
+
+/// `command` in a scope of its own under uwsm, as it is outside one.
+pub fn scoped(command: &[String]) -> Vec<String> {
+    if !uwsm() {
+        return command.to_vec();
+    }
+    let mut argv = proc::argv(&["uwsm", "app", "--"]);
+    argv.extend(command.iter().cloned());
+    argv
+}
+
 /// Desktop entry `id`'s next window focused, else the entry launched.
 pub fn open(store: &Store, id: &str) {
     let Some(entry) = entry(store, id) else { return };
@@ -131,7 +163,7 @@ pub fn open(store: &Store, id: &str) {
     match next_window(&match_windows(Some(&entry), &snapshot.windows), &snapshot.focused_window_id) {
         Some(window) => compositor::focus_window(&window),
         None => {
-            if let Some(argv) = super::menu::launch_argv(&store.menu, id) {
+            if let Some(argv) = app_argv(&store.menu, id) {
                 spawn(store, id, &argv);
             }
         }

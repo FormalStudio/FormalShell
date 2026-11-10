@@ -46,19 +46,6 @@ fn probe_size(store: &Store) -> u32 {
     (store.theme.theme.space.lg * 2.0).round() as u32
 }
 
-/// Proc.appLaunch: its own scope under uwsm, the command itself outside a
-/// uwsm session.
-fn launch(store: &Store, entry: &Entry, action: &Action) {
-    let argv = if std::env::var_os("UWSM_FINALIZE_VARNAMES").is_some_and(|v| !v.is_empty()) && !action.command.is_empty() {
-        ["uwsm", "app", "--"].iter().map(|s| (*s).to_owned()).chain(action.command.iter().cloned()).collect()
-    } else {
-        action.command.clone()
-    };
-    if !argv.is_empty() {
-        crate::services::launch::spawn(store, &entry.id, &argv);
-    }
-}
-
 impl Panel for AppMenu {
     fn title(&self, _: &View) -> String {
         "App menu".into()
@@ -138,7 +125,7 @@ impl Panel for AppMenu {
             if let Some(entry) = &sub.entry
                 && let Some(a) = entry.actions.get(i)
             {
-                launch(fx.store, entry, a);
+                fx.push(Out::Launch(entry.id.clone(), a.command.clone()));
                 fx.push(Out::Close);
             }
         } else if let Some(i) = stop.strip_prefix("window:").and_then(|i| i.parse::<usize>().ok()) {

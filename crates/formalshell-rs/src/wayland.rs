@@ -1925,6 +1925,11 @@ impl App {
                 }
             }
             Out::Quick(run) => self.quick(run),
+            Out::Launch(id, command) => {
+                if !command.is_empty() {
+                    crate::services::launch::spawn(&self.store, &id, &crate::services::launch::scoped(&command));
+                }
+            }
             Out::Act(action) => {
                 let anchor = match holder {
                     Holder::Host => self.panel.as_ref().and_then(|h| h.place.anchor),

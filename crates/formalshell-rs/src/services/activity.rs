@@ -29,7 +29,7 @@ use zbus::{MatchRule, MessageStream};
 use crate::runtime::{Ctx, Runtime, now_ms};
 use crate::services::appicon::{applications_dirs, scan_launchable};
 use crate::services::notifications::{self, Op};
-use crate::services::{compositor, menu};
+use crate::services::{compositor, launch};
 use crate::store::{self, Store};
 
 const LAUNCHER_ENTRY: &str = "com.canonical.Unity.LauncherEntry";
@@ -520,8 +520,8 @@ fn focus_app(store: &Store, app: &str) {
     match window {
         Some(win) => compositor::focus_window(&win.id),
         None => {
-            if let Some(argv) = menu::launch_argv(&store.menu, id) {
-                super::launch::spawn(store, id, &argv);
+            if let Some(argv) = launch::app_argv(&store.menu, id) {
+                launch::spawn(store, id, &argv);
             }
         }
     }

@@ -582,36 +582,6 @@ pub struct Exec {
     pub actions: HashMap<(String, String), Vec<String>>,
 }
 
-fn uwsm() -> bool {
-    std::env::var_os("UWSM_FINALIZE_VARNAMES").is_some_and(|v| !v.is_empty())
-}
-
-/// Proc.appLaunch: under uwsm a plain entry goes by its id, so uwsm reads
-/// its Exec line; everything else runs its own argv.
-pub fn launch_argv(state: &State, id: &str) -> Option<Vec<String>> {
-    let command = state.exec.apps.get(id).filter(|c| !c.is_empty())?;
-    let plain = id.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') && id.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
-    if uwsm() && plain {
-        return Some(proc::argv(&["uwsm", "app", "--", &format!("{id}.desktop")]));
-    }
-    Some(under_uwsm(command))
-}
-
-/// Desktop action `key` of entry `id`, run as its own argv.
-pub fn action_argv(state: &State, id: &str, key: &str) -> Option<Vec<String>> {
-    let command = state.exec.actions.get(&(id.to_owned(), key.to_owned())).filter(|c| !c.is_empty())?;
-    Some(under_uwsm(command))
-}
-
-fn under_uwsm(command: &[String]) -> Vec<String> {
-    if !uwsm() {
-        return command.to_vec();
-    }
-    let mut argv = proc::argv(&["uwsm", "app", "--"]);
-    argv.extend(command.iter().cloned());
-    argv
-}
-
 /// Desktop entries installed or removed while the shell runs reach the
 /// apps source without a summon: every applications directory and its
 /// subdirectories watched, one that does not exist yet (`/usr/local/share`

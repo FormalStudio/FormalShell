@@ -118,6 +118,9 @@ pub enum Out {
     Act(crate::surfaces::bar::cell::Action),
     /// A quick settings control's call, the card left open.
     Quick(quick::Run),
+    /// Desktop entry `.0` launched off a command line of its own (one of
+    /// its actions'), the card left open.
+    Launch(String, Vec<String>),
 }
 
 /// What a panel may do from an input.

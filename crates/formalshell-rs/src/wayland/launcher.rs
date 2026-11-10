@@ -497,12 +497,12 @@ impl App {
             Intent::WindowFullscreen(id) => compositor::send(Command::ToggleFullscreen(WindowId::new(id))),
             Intent::AppOpen(id) => launch::open(&self.store, id),
             Intent::AppNew(id) => {
-                if let Some(argv) = index::launch_argv(&self.store.menu, id) {
+                if let Some(argv) = launch::app_argv(&self.store.menu, id) {
                     launch::spawn(&self.store, id, &argv);
                 }
             }
             Intent::AppAction(id, key) => {
-                if let Some(argv) = index::action_argv(&self.store.menu, id, key) {
+                if let Some(argv) = launch::action_argv(&self.store.menu, id, key) {
                     launch::spawn(&self.store, id, &argv);
                 }
             }

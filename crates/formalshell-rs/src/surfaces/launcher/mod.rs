@@ -2298,7 +2298,7 @@ impl Model {
         match action.run {
             Run::Target(TargetKind::App) => {
                 let Some(id) = target.id.strip_prefix("target-app:") else { return Out::None };
-                let Some(mut argv) = index::launch_argv(&store.menu, id) else { return Out::None };
+                let Some(mut argv) = crate::services::launch::app_argv(&store.menu, id) else { return Out::None };
                 argv.push(node.path.clone());
                 crate::services::launch::spawn(store, id, &argv);
             }

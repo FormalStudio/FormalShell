@@ -53,7 +53,7 @@ fn open_app(app: &mut App, args: &[Value]) -> Reply {
 
 fn launch(app: &mut App, args: &[Value]) -> Reply {
     let id = args[0].str();
-    let Some(argv) = crate::services::menu::launch_argv(&app.store.menu, id) else {
+    let Some(argv) = crate::services::launch::app_argv(&app.store.menu, id) else {
         return Err(format!("no desktop entry '{id}'"));
     };
     crate::services::launch::spawn(&app.store, id, &argv);
