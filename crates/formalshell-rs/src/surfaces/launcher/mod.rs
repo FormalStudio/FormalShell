@@ -491,9 +491,10 @@ pub enum Out {
     Close,
     /// An `@ipc:` call the App answers in process.
     Call(IpcCall),
-    /// A verb of the launcher's the App answers, and the subject of the
-    /// row that ran it.
-    Intent(Intent, SubjectId),
+    /// A verb of the launcher's the App answers, the subject of the row
+    /// that ran it, and whether the launcher stays open after. The App
+    /// closes the launcher, since the order differs by verb.
+    Intent(Intent, SubjectId, bool),
     /// A command line the App spawns.
     Spawn(Vec<String>),
 }
@@ -2430,34 +2431,35 @@ impl Model {
             Run::Target(_) | Run::Note => return Out::None,
             Run::Ipc(call) => Out::Call(call.clone()),
             Run::Intent(intent) => {
-                let out = Out::Intent(intent.clone(), fs_menu::actions::subject_id(node));
+                let subject = fs_menu::actions::subject_id(node);
                 match intent {
                     // An abbreviation's own actions are no pick: picking
                     // would teach the pair straight back. A pin is no pick
                     // either: it would count twice.
                     Intent::AbbrevForget(_) | Intent::AbbrevPin(_) | Intent::RecentPin(_) | Intent::RecentUnpin(_) => {
                         self.dirty = true;
-                        if !action.keep_open {
-                            self.close();
-                        }
-                        return out;
+                        return Out::Intent(intent.clone(), subject, action.keep_open);
                     }
                     // The picker closes the card itself once a tile takes
                     // the picture.
                     Intent::WallpaperSet(_) => {
                         self.picked(store, node);
-                        return out;
+                        return Out::Intent(intent.clone(), subject, true);
                     }
-                    Intent::WallpaperSetFor(..) => return out,
+                    Intent::WallpaperSetFor(..) => return Out::Intent(intent.clone(), subject, true),
                     Intent::EndProcess(pid) => {
                         self.dirty = true;
                         if !self.monitor_armed.press(*pid) {
                             return Out::None;
                         }
-                        out
                     }
-                    _ => out,
+                    _ => {}
                 }
+                if action.paste_after {
+                    self.paste = true;
+                }
+                self.picked(store, node);
+                return Out::Intent(intent.clone(), subject, action.keep_open);
             }
             Run::Spawn(argv) => Out::Spawn(argv.clone()),
             Run::Shell(line) if line.is_empty() => Out::None,

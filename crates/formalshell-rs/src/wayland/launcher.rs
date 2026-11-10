@@ -443,11 +443,20 @@ impl App {
         match out {
             Out::None => {}
             Out::Close => self.hide_launcher(),
-            Out::Intent(intent, subject) => {
-                if !self.launcher.open {
-                    self.hide_launcher();
+            // A row's own verb runs inside the launcher's session (a
+            // launcher plugin hears a line only while the launcher is open);
+            // the App's may open the launcher again, so it closes first.
+            Out::Intent(intent, subject, keep_open) => {
+                let close = !keep_open && self.launcher.open;
+                if intent.row_only() {
+                    self.run_intent(&intent, Some(&subject));
                 }
-                self.run_intent(&intent, Some(&subject));
+                if close {
+                    self.menu_close();
+                }
+                if !intent.row_only() {
+                    self.run_intent(&intent, Some(&subject));
+                }
             }
             Out::Spawn(argv) => {
                 if !self.launcher.open {
