@@ -29,9 +29,20 @@ leg_firefox_install_fixture() {
   settings_pin '.layout = "sidebar"'
   mkdir -p "$fi_dir"
   rm -rf "$fi_dir/upstream.git" "$fi_dir/spec"
-  git clone -q --bare https://github.com/FormalSnake/dotfiles "$fi_dir/upstream.git" \
-    || fail "--firefox-install: could not clone the spec from GitHub"
-  git clone -q "$fi_dir/upstream.git" "$fi_dir/spec"
+  # A stalled transfer has hung a clone for over an hour and a cut one has
+  # left a pack git could not index: each try is bounded, a slow link
+  # aborts, and a second try starts clean.
+  local try cloned="" err=""
+  for try in 1 2; do
+    rm -rf "$fi_dir/upstream.git"
+    err=$(timeout 300 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 \
+      clone -q --bare https://github.com/FormalSnake/dotfiles "$fi_dir/upstream.git" 2>&1) && { cloned=1; break; }
+    err="try $try exited $? (124 is the 300s bound): $err"
+    echo "--firefox-install: $err" >&2
+  done
+  [ -n "$cloned" ] || { echo "SMOKE_FAIL: --firefox-install: could not clone the spec from GitHub: $err" >&2; exit 1; }
+  git clone -q "$fi_dir/upstream.git" "$fi_dir/spec" \
+    || { echo "SMOKE_FAIL: --firefox-install: could not check the spec out of its bare copy" >&2; exit 1; }
   export FSPEC_SPEC="$fi_dir/spec"
   # zypper puts Firefox's desktop entry under /usr/share, which the
   # isolated session's XDG_DATA_DIRS leaves out.
@@ -48,7 +59,7 @@ leg_firefox_install_drive() {
 #!/usr/bin/env bash
 group='[.groups[] | select(.source == "fspec:install:$fi_pkg")] | first'
 call menu summon install > /dev/null 2>&1
-sleep 1
+until_settled
 "$wtype_bin" firefox
 until_jq 60 "$fi_dir/rows.json" '.ids | index("$fi_row") != null' call menu status
 shoot "$fi_dir/rows.png"
@@ -79,7 +90,7 @@ done
 call sidebar status > "$fi_dir/sidebar-done.json" 2>&1
 shoot "$fi_dir/done-card.png"
 call menu summon "" > /dev/null 2>&1
-sleep 0.5
+until_settled
 "$wtype_bin" firefox
 sleep 3
 status menu "$fi_dir/found.json"
