@@ -235,7 +235,9 @@ pub(super) fn sample(earth: &Earth, pool: &mut Vec<Arc<Pixmap>>, coarse: bool, a
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::earth::pictures::{coded, pyramid};
+    use std::sync::{Arc, Mutex};
+
+    use crate::services::earth::pictures::{coded, on_disk, pyramid};
 
     const ROT: Rot = Rot { sin_lat: 0.3, cos_lat: 0.953_939_2, sin_lon: 0.5, cos_lon: 0.866_025_4 };
 
@@ -263,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_level_draws_the_one_under_it_and_asks_for_its_tiles() {
+    fn a_missing_level_draws_the_one_under_it() {
         let empty = pyramid(&[(1024, 512), (4096, 2048)], 512, false);
         let coarse = Earth::single(1024, 512, coded(1024, 512));
         let (a, stats) = draw(&empty, 547.0);
@@ -271,9 +273,25 @@ mod tests {
         assert_eq!(stats.level, 4096);
         assert!(stats.missing > 4 && stats.missing == stats.tiles, "{stats:?}");
         assert!(worst(&a, &b) <= 1, "the fallback differs from the coarse level by {}", worst(&a, &b));
-        let (_, resident) = draw(&pyramid(&[(1024, 512), (4096, 2048)], 512, true), 547.0);
-        assert_eq!((stats.level, stats.missing), (resident.level, resident.tiles), "it should ask for every tile the resident frame draws");
-        assert_eq!(draw(&empty, 547.0).1, stats, "the same view should ask for the same tiles again");
+    }
+
+    /// The decodes a frame queues are what makes its missing tiles drawable.
+    #[test]
+    fn the_tiles_a_frame_misses_draw_once_its_decodes_run() {
+        type Job = Box<dyn FnOnce() + Send>;
+        let dir = tempfile::tempdir().unwrap();
+        let jobs: Arc<Mutex<Vec<Job>>> = Arc::default();
+        let queue = jobs.clone();
+        let earth = on_disk(dir.path(), &[(1024, 512), (4096, 2048)], 512, Box::new(move |job| queue.lock().unwrap().push(job)));
+        let (_, asked) = draw(&earth, 547.0);
+        assert!(asked.level == 4096 && asked.missing > 4, "{asked:?}");
+        let queued = std::mem::take(&mut *jobs.lock().unwrap());
+        assert!(!queued.is_empty(), "the frame queued no decode for {} missing tiles", asked.missing);
+        for job in queued {
+            job();
+        }
+        let (_, drawn) = draw(&earth, 547.0);
+        assert_eq!((drawn.level, drawn.tiles, drawn.missing), (asked.level, asked.tiles, 0), "{drawn:?}");
     }
 
     #[test]

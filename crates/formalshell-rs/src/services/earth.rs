@@ -537,6 +537,24 @@ pub(crate) mod pictures {
         let base = cut(&coded(w, h), w, h, tile);
         Earth { tile, levels, base, shared: Some(shared), spawn: None }
     }
+
+    /// The same pyramid written under `dir` as `packaging/earth-tiles.py`
+    /// lays it out, loaded the way the atlas loads it, `spawn` running the
+    /// finer tiles' decodes.
+    pub(crate) fn on_disk(dir: &Path, sizes: &[(usize, usize)], tile: usize, spawn: Spawn) -> Earth {
+        let mut manifest = format!("tile {tile}\n");
+        for &(w, h) in sizes {
+            manifest += &format!("level {w} {h}\n");
+            let cols = Level::new(w, h, tile).cols;
+            std::fs::create_dir_all(dir.join(w.to_string())).unwrap();
+            for (i, t) in cut(&coded(w, h), w, h, tile).iter().enumerate() {
+                let picture = image::RgbImage::from_raw(t.w as u32, t.h as u32, t.rgb[..t.w * t.h * 3].to_vec()).unwrap();
+                picture.save(dir.join(w.to_string()).join(format!("{}_{}.jpg", i % cols, i / cols))).unwrap();
+            }
+        }
+        std::fs::write(dir.join("pyramid.txt"), manifest).unwrap();
+        Earth::tiled(dir, spawn, Box::new(|| {})).unwrap()
+    }
 }
 
 #[cfg(test)]

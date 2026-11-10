@@ -276,6 +276,31 @@ mod tests {
         }
     }
 
+    /// The widest power-of-two block every aligned square of which is one
+    /// colour, read off a frame of two pictures with no two pixels alike.
+    fn block_at(p: f64) -> usize {
+        let (w, h) = (128, 96);
+        let from = ramp(w, h);
+        let to: Vec<u8> = ramp(w, h).into_iter().rev().collect();
+        let mut out = vec![0; w * h * 4];
+        frame(&from, Some(&to), (w, h), &thresholds(w, h), p, &mut out);
+        let px = |x: usize, y: usize| &out[(y * w + x) * 4..(y * w + x) * 4 + 4];
+        let whole = |c: usize| (0..h).all(|y| (0..w).all(|x| px(x, y) == px(x - x % c, y - y % c)));
+        (0..=w.trailing_zeros()).rev().map(|k| 1 << k).find(|&c| whole(c)).unwrap_or(1)
+    }
+
+    #[test]
+    fn cells_coarsen_hold_and_refine() {
+        let sizes: Vec<usize> = (0..=12).map(|i| block_at(f64::from(i) / 12.0)).collect();
+        let (first, last) = (sizes[0], sizes[12]);
+        let (rising, peak) = (sizes[3], sizes[6]);
+        assert_eq!((first, last), (1, 1), "the ends are the pictures: {sizes:?}");
+        assert!(first < rising && rising < peak, "the cells should grow: {sizes:?}");
+        assert!(sizes[4..=8].iter().all(|&s| s == peak), "the cells should hold through the middle: {sizes:?}");
+        assert!(peak > sizes[9] && sizes[9] > last, "the cells should refine: {sizes:?}");
+        assert!(sizes[..=6].windows(2).all(|s| s[0] <= s[1]) && sizes[6..].windows(2).all(|s| s[0] >= s[1]), "{sizes:?}");
+    }
+
     #[test]
     fn thresholds_open_from_the_middle_and_stay_under_one() {
         let (w, h) = (2560, 1440);
