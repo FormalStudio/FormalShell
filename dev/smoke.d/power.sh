@@ -19,6 +19,7 @@
 # systemd-run, a class user session of another uid.
 leg_power_flag="--power"
 leg_power_order=281
+leg_power_claims="launcher=shared toasts=shared"
 leg_power_vm_only="it adds a user and a login session with sudo and asks the real logind to power off"
 leg_power_needs="jq wtype"
 

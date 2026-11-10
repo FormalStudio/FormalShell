@@ -34,7 +34,8 @@ frame, teardown) and sources every file here. A leg defines:
 - `leg_<n>_fixture_window` `keep` to leave the base run's fixture window in
   the frame; `leg_<n>_validate` checks a leg's own arguments and the legs it
   needs beside it, run before the build, and may set its claims.
-- `leg_<n>_claims` `"name name=value ..."`: what of the session a leg owns
+- `leg_<n>_claims` `"name name=value ..."`, required of a leg that drives
+  (`none` when it owns nothing): what of the session a leg owns
   (dotted names, a name covering every name under it) or shares (`=value`,
   shared with a leg claiming the same value). Two legs meeting on a claim
   are refused once, before the build, naming both and the claim. `session`

@@ -12,6 +12,7 @@
 # reads the same.
 leg_app_install_flag="--app-install"
 leg_app_install_order=28
+leg_app_install_claims="env.XDG_DATA_DIRS launcher=shared"
 leg_app_install_needs="convert jq"
 
 app_install_share="$iso_home/late/share"

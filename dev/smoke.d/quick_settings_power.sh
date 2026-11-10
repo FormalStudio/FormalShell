@@ -10,6 +10,7 @@
 # Return is never pressed on Suspend, which runs at once.
 leg_quick_settings_power_flag="--quick-settings-power"
 leg_quick_settings_power_order=282
+leg_quick_settings_power_claims="panel=shared"
 leg_quick_settings_power_vm_only="it reads the real logind's power answers, which the nested rig's private system bus does not carry"
 leg_quick_settings_power_needs="jq wtype grim"
 

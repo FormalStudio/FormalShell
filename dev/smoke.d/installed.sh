@@ -25,6 +25,7 @@
 # reads "PAM error") and the real one unlocks.
 leg_installed_flag="--installed <distro>"
 leg_installed_order=5
+leg_installed_claims="session"
 leg_installed_needs="wtype jq convert"
 
 installed_home=$HOME

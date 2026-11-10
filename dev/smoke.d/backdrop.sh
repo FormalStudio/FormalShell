@@ -20,6 +20,7 @@
 # stands in for nothing on real hardware.
 leg_backdrop_flag="--backdrop"
 leg_backdrop_order=212
+leg_backdrop_claims="wallpaper.animate=true launcher=shared"
 leg_backdrop_needs="convert jq foot"
 
 backdrop_results="$shot_dir/backdrop-results.txt"

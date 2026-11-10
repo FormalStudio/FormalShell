@@ -27,6 +27,7 @@
 # on an overlay the shell never saw settle.
 leg_record_flag="--record"
 leg_record_order=210
+leg_record_claims="recording.noDmabuf=true recording.webcam=true"
 leg_record_needs="file ffprobe"
 
 record_start_reply_path="$shot_dir/record-start-reply.txt"

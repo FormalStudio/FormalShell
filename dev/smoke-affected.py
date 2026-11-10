@@ -51,11 +51,11 @@ def manifest():
     which dev/remote.sh has already read)."""
     out = os.environ.get("FS_MANIFEST") or subprocess.run(["bash", os.path.join(root, "dev", "smoke.sh"), "--manifest"], check=True, capture_output=True, text=True).stdout
     legs = json.loads(out)["legs"]
-    # A leg that does not source costs its own runs alone: it is named here,
-    # and its runs fail loudly when they start.
+    # A leg that does not source, or drives with no claims, costs its own
+    # runs alone: it is named here, and its runs fail loudly when they start.
     for l in legs:
         if l.get("error"):
-            print("smoke-affected: leg %s does not source (%s); its runs will fail" % (l["leg"], l["error"]), file=sys.stderr)
+            print("smoke-affected: leg %s: %s; its runs will fail" % (l["leg"], l["error"]), file=sys.stderr)
     return [l for l in legs if l["flag"]]
 
 

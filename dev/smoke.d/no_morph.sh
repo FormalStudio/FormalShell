@@ -8,6 +8,7 @@
 # dump`'s `theme.morph` is false once the shell has the key.
 leg_no_morph_flag="--no-morph"
 leg_no_morph_order=8
+leg_no_morph_claims="motion.morph=false"
 leg_no_morph_needs="jq"
 leg_no_morph_fixture_window=keep
 

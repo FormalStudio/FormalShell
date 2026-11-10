@@ -154,7 +154,11 @@ if [ "${1:-}" = --manifest ]; then
     for field in flag order needs env commits vm_only budget scale1; do
       eval "m_$field=\${leg_${leg_name}_$field:-}"
     done
-    printf '%s\n' "$leg_name$sep$m_flag$sep${m_order:-500}$sep$m_needs$sep$m_env$sep$(manifest_helpers "$leg_file")$sep$m_commits$sep$m_vm_only$sep$m_budget$sep$m_scale1$sep"
+    m_claims=""
+    if declare -F "leg_${leg_name}_drive" >/dev/null && ! grep -q "^[[:space:]]*leg_${leg_name}_claims=" "$leg_file"; then
+      m_claims="drives and declares no leg_${leg_name}_claims"
+    fi
+    printf '%s\n' "$leg_name$sep$m_flag$sep${m_order:-500}$sep$m_needs$sep$m_env$sep$(manifest_helpers "$leg_file")$sep$m_commits$sep$m_vm_only$sep$m_budget$sep$m_scale1$sep$m_claims"
   }
   manifest_helpers() {
     grep -v '^[[:space:]]*#' "$1" | grep -oE 'dev/[A-Za-z0-9_-]+\.py' | sort -u | paste -sd ' ' - || true
@@ -287,8 +291,9 @@ for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_validate" >/dev/null; then "leg_${leg_name}_validate"; fi
 done
 
-# What a leg owns in the session, declared as leg_<n>_claims (a validate may
-# add to it): `name` alone owns it, `name=value` shares it with every claim
+# What a leg owns in the session, declared as leg_<n>_claims by every leg
+# that drives (`none` when it owns nothing; a validate may add to it):
+# `name` alone owns it, `name=value` shares it with every claim
 # of the same name and value. Names are dotted (a settings key, a surface:
 # `launcher`, `screen`, `pointer`), and a name covers every name under it,
 # so `bar.layout=default` and `bar.layout.right` meet. A `session` claim
@@ -296,7 +301,7 @@ done
 # drives nothing. A leg_<n>_vm_only leg needs the real system bus.
 leg_claims() {
   local v="leg_${1}_claims" vm="leg_${1}_vm_only"
-  printf '%s' "${!v:-}"
+  [ "${!v:-}" = none ] || printf '%s' "${!v:-}"
   [ -z "${!vm:-}" ] || printf ' bus.system=real'
 }
 claims_meet() {
@@ -317,6 +322,13 @@ leg_is_rider() {
   local v="leg_${1}_rider"
   [ -n "${!v:-}" ]
 }
+for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
+  claims_var="leg_${leg_name}_claims"
+  if declare -F "leg_${leg_name}_drive" >/dev/null && [ -z "${!claims_var:-}" ]; then
+    echo "--${leg_name//_/-} drives and declares no leg_${leg_name}_claims" >&2
+    exit 1
+  fi
+done
 for ((i = 0; i < ${#active_legs[@]}; i++)); do
   a=${active_legs[i]}
   for ((j = i + 1; j < ${#active_legs[@]}; j++)); do

@@ -35,6 +35,7 @@
 # trip is what this rig can honestly still prove of that half.
 leg_localsend_flag="--localsend"
 leg_localsend_order=231
+leg_localsend_claims="localsend toasts=shared"
 leg_localsend_vm_only="localsend-cli fixes its receive port at 53317, which a host's own shell holds"
 leg_localsend_needs="localsend-cli jq"
 

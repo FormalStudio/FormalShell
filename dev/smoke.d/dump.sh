@@ -9,6 +9,7 @@
 # state: the backend CompositorService picked, connected and streaming.
 leg_dump_flag="--dump"
 leg_dump_order=10
+leg_dump_claims="none"
 leg_dump_needs="jq"
 
 dump_path="$shot_dir/dump.json"

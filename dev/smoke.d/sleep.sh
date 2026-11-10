@@ -21,6 +21,7 @@
 # input, so the wake here is the short sleep's own fade back in.
 leg_sleep_flag="--sleep"
 leg_sleep_order=112
+leg_sleep_claims="lock wallpaper theme.mode=shared"
 leg_sleep_vm_only="it suspends the machine through logind with sudo"
 leg_sleep_needs="jq wtype convert"
 

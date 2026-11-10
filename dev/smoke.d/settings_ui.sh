@@ -28,6 +28,7 @@
 # the session, which the real password unlocks.
 leg_settings_ui_flag="--settings-ui"
 leg_settings_ui_order=260
+leg_settings_ui_claims="motion.morph=false theme.reactiveRims bar.style lock launcher=shared panel=shared"
 leg_settings_ui_needs="jq wtype wlrctl python3"
 
 settings_ui_settings="$iso_home/.config/formalshell/settings.json"

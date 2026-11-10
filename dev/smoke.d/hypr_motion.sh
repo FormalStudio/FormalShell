@@ -19,6 +19,7 @@
 # `animations:enabled` reads off.
 leg_hypr_motion_flag="--hypr-motion"
 leg_hypr_motion_order=241
+leg_hypr_motion_claims="motion.enabled hyprland.animations"
 leg_hypr_motion_needs="jq foot convert"
 
 hypr_motion_on="$shot_dir/hypr-motion-animations.json"

@@ -12,6 +12,7 @@
 # survivor dies with the session at teardown.
 leg_instance_flag="--instance"
 leg_instance_order=210
+leg_instance_claims="shell.instance"
 # Nothing is summoned over the desktop, so this leg keeps the base run's
 # focused fixture window in its frame.
 leg_instance_fixture_window=keep

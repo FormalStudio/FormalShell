@@ -14,6 +14,7 @@
 leg_shots_flag="--shots"
 leg_shots_commits="docs/shots *"
 leg_shots_order=235
+leg_shots_claims="screensaver.effect env.USER lock media.player=shared launcher=shared panel=shared toasts=shared"
 leg_shots_needs="wtype convert mpv ffmpeg notify-send"
 leg_shots_fixture_window=none
 

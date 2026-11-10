@@ -9,6 +9,7 @@
 # the session away, which is the whole feature.
 leg_console_flag="--console"
 leg_console_order=90
+leg_console_claims="console"
 leg_console_needs="foot"
 
 console_status_open_path="$shot_dir/console-status-open.json"

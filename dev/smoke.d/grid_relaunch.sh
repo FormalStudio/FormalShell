@@ -15,6 +15,7 @@
 # name and the placeholder icon.
 leg_grid_relaunch_flag="--grid-relaunch"
 leg_grid_relaunch_order=27
+leg_grid_relaunch_claims="menu.appGrid=true launcher=shared"
 leg_grid_relaunch_needs="jq"
 
 grid_relaunch_dir="$iso_home/.local/share/applications"

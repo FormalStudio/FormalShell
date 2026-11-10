@@ -17,6 +17,7 @@
 # drive takes once it has settled, read back for the column or the pane.
 leg_menu_budget_flag="--menu-budget"
 leg_menu_budget_order=22
+leg_menu_budget_claims="launcher"
 leg_menu_budget_budget="the launcher and bar frame budgets are g815's numbers"
 leg_menu_budget_needs="foot convert jq"
 

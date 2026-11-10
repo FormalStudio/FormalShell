@@ -18,6 +18,7 @@
 # byte-identical (sha256). The empty list and the peers are photographed.
 leg_launcher_send_flag="--launcher-send"
 leg_launcher_send_order=33
+leg_launcher_send_claims="localsend launcher=shared"
 leg_launcher_send_vm_only="its stand-in peer runs in a network namespace it makes with sudo"
 leg_launcher_send_needs="jq wtype wl-copy localsend-cli"
 

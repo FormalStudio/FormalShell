@@ -15,6 +15,7 @@
 # lastError is the one shape that never is: a silent no-op.
 leg_nightlight_flag="--nightlight"
 leg_nightlight_order=210
+leg_nightlight_claims="nightlight location"
 
 nightlight_active_path="$shot_dir/nightlight-active.png"
 nightlight_status1_path="$shot_dir/nightlight-status-1.json"

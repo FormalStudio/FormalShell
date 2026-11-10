@@ -14,6 +14,7 @@
 # confirm by eye.
 leg_hdr_flag="--hdr"
 leg_hdr_order=215
+leg_hdr_claims="panel=shared"
 leg_hdr_needs="jq"
 
 hdr_status_path="$shot_dir/hdr-status.json"

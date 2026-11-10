@@ -29,6 +29,7 @@
 # line rather than passing quietly or failing the whole port.
 leg_capture_flag="--capture"
 leg_capture_order=200
+leg_capture_claims="recording.noDmabuf=true screen=shared"
 leg_capture_needs="file jq"
 # The picker is ABOUT windows, so the base run's fixture window is this
 # leg's subject rather than something in the frame's way.

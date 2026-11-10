@@ -32,6 +32,7 @@
 # one. FS_SMOKE_SCALE=1.25 runs it at g815's laptop panel scale.
 leg_glass_behind_flag="--glass-behind"
 leg_glass_behind_order=239
+leg_glass_behind_claims="wallpaper hyprland.blur launcher=shared panel=shared toasts=shared"
 leg_glass_behind_needs="jq convert foot python3 notify-send"
 
 glass_behind_bright="$shot_dir/glass-behind-bright.png"

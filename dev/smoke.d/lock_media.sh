@@ -26,6 +26,7 @@
 # lock the one session.
 leg_lock_media_flag="--lock-media"
 leg_lock_media_order=111
+leg_lock_media_claims="lock wallpaper theme.mode=shared media.player=shared"
 leg_lock_media_needs="mpv ffmpeg convert wtype jq"
 
 lock_media_track="$shot_dir/lock-media-track.flac"

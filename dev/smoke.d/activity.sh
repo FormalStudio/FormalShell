@@ -47,6 +47,7 @@
 # rest counted as `+9`, and the panel listing all ten.
 leg_activity_flag="--activity"
 leg_activity_order=236
+leg_activity_claims="fspec bar.layout=default toasts=shared panel=shared"
 leg_activity_needs="jq python3 notify-send convert wtype wlrctl"
 
 act_marks="$shot_dir/act"

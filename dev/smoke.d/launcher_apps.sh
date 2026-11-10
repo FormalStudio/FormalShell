@@ -10,6 +10,7 @@
 # it, so the card never rests on half a row over the foot.
 leg_launcher_apps_flag="--launcher-apps"
 leg_launcher_apps_order=262
+leg_launcher_apps_claims="launcher=shared"
 leg_launcher_apps_needs="jq"
 
 launcher_apps_dir="$iso_home/.local/share/applications"

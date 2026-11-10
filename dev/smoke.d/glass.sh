@@ -12,6 +12,7 @@
 # changes at least 2% of the screen's right half.
 leg_glass_flag="--glass"
 leg_glass_order=236
+leg_glass_claims="wallpaper hyprland.blur panel=shared toasts=shared"
 leg_glass_needs="jq convert notify-send"
 
 glass_bright="$shot_dir/glass-bright.png"

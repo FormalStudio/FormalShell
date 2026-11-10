@@ -22,6 +22,7 @@
 # geometry, so those two prove grim to tesseract to wl-copy end to end.
 leg_ocr_flag="--ocr"
 leg_ocr_order=215
+leg_ocr_claims="screen=shared"
 leg_ocr_needs="foot wl-copy wl-paste jq"
 
 ocr_fixture_png="$shot_dir/ocr-fixture-screen.png"

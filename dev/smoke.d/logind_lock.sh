@@ -14,6 +14,7 @@
 # unlocking it.
 leg_logind_lock_flag="--logind-lock"
 leg_logind_lock_order=113
+leg_logind_lock_claims="lock env.XDG_SESSION_ID launcher=shared"
 leg_logind_lock_vm_only="it needs the real logind session the shell runs in"
 leg_logind_lock_needs="jq wtype"
 
