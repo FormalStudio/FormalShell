@@ -31,7 +31,7 @@ fn strs(v: &[&str]) -> Vec<String> {
 
 #[test]
 fn text_entry_maps_to_preview_label_action_node() {
-    let nodes = clipboard_provider(&[text("a", "hello world", local_ms(14, 2))], ClipMode::Copy, true);
+    let nodes = clipboard_provider(&[text("a", "hello world", local_ms(14, 2))], ClipMode::Copy, true, chrono::Local::now());
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0].id, "clipboard.a");
     assert_eq!(nodes[0].label, "hello world");
@@ -54,6 +54,7 @@ fn emoji_only_rows_are_flagged_and_keep_their_run() {
         &[text("a", "\u{1F602}\n", 0), text("b", "\u{2764}\u{FE0F}\n\u{1F339}", 0), text("c", "rose \u{1F339}", 0), image("d", "/tmp/x.png", 0)],
         ClipMode::Copy,
         true,
+        chrono::Local::now(),
     );
     assert!(nodes[0].emoji_only);
     assert_eq!(nodes[0].label, "\u{1F602}");
@@ -69,10 +70,10 @@ fn emoji_only_rows_are_flagged_and_keep_their_run() {
 #[test]
 fn clipssh_path_rides_copy_mode_image_rows_only() {
     let entries = [image("img", "/state/clipboard-images/abc.png", 0), text("txt", "hello", 0)];
-    let copy = clipboard_provider(&entries, ClipMode::Copy, true);
+    let copy = clipboard_provider(&entries, ClipMode::Copy, true, chrono::Local::now());
     assert_eq!(copy[0].clipssh_path, "/state/clipboard-images/abc.png");
     assert_eq!(copy[1].clipssh_path, "");
-    let share = clipboard_provider(&entries, ClipMode::Share, true);
+    let share = clipboard_provider(&entries, ClipMode::Share, true, chrono::Local::now());
     assert_eq!(share[0].clipssh_path, "");
     assert_eq!(share[1].clipssh_path, "");
 }
@@ -83,7 +84,7 @@ fn clipssh_path_rides_copy_mode_image_rows_only() {
 fn legacy_text_entry_without_kind_still_maps_as_text() {
     let legacy: Entry = serde_json::from_value(serde_json::json!({ "id": "a", "text": "legacy" })).unwrap();
     assert_eq!(legacy.kind, EntryKind::Text);
-    let nodes = clipboard_provider(&[legacy], ClipMode::Copy, true);
+    let nodes = clipboard_provider(&[legacy], ClipMode::Copy, true, chrono::Local::now());
     assert_eq!(nodes[0].label, "legacy");
     assert_eq!(nodes[0].thumb_source, "");
 }
@@ -94,7 +95,7 @@ fn image_entry_maps_to_image_label_desc_and_thumb() {
         mime: Some("image/png".into()),
         ..image("b", "/state/clipboard-images/abc.png", local_ms(9, 5))
     };
-    let nodes = clipboard_provider(&[entry], ClipMode::Copy, true);
+    let nodes = clipboard_provider(&[entry], ClipMode::Copy, true, chrono::Local::now());
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0].id, "clipboard.b");
     assert_eq!(nodes[0].label, "Image");
@@ -108,7 +109,7 @@ fn image_entry_maps_to_image_label_desc_and_thumb() {
 
 #[test]
 fn mixed_entries_preserve_order() {
-    let nodes = clipboard_provider(&[image("b", "/img/one.png", 1000), text("a", "one", 999)], ClipMode::Copy, true);
+    let nodes = clipboard_provider(&[image("b", "/img/one.png", 1000), text("a", "one", 999)], ClipMode::Copy, true, chrono::Local::now());
     assert_eq!(nodes.len(), 2);
     assert_eq!(nodes[0].label, "Image");
     assert_eq!(nodes[1].label, "one");
@@ -116,14 +117,14 @@ fn mixed_entries_preserve_order() {
 
 #[test]
 fn empty_items_maps_to_empty_list() {
-    assert!(clipboard_provider(&[], ClipMode::Copy, true).is_empty());
+    assert!(clipboard_provider(&[], ClipMode::Copy, true, chrono::Local::now()).is_empty());
 }
 
 // clipboard.paste off: the row still copies, it just stops touching the
 // focused window, and says Copy rather than promising a paste.
 #[test]
 fn paste_disabled_drops_paste_marker_and_changes_verb() {
-    let nodes = clipboard_provider(&[Entry::text("a", "hi")], ClipMode::Copy, false);
+    let nodes = clipboard_provider(&[Entry::text("a", "hi")], ClipMode::Copy, false, chrono::Local::now());
     assert_eq!(nodes[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:clipboard.copy:a"));
     assert!(!nodes[0].paste_after);
     assert_eq!(nodes[0].verb.as_deref(), Some("Copy"));
@@ -133,7 +134,7 @@ fn paste_disabled_drops_paste_marker_and_changes_verb() {
 // clipboard.paste says.
 #[test]
 fn share_rows_never_paste() {
-    let nodes = clipboard_provider(&[Entry::text("a", "hi")], ClipMode::Share, true);
+    let nodes = clipboard_provider(&[Entry::text("a", "hi")], ClipMode::Share, true, chrono::Local::now());
     assert_eq!(nodes[0].id, "share.history.a");
     assert!(!nodes[0].paste_after);
     assert_eq!(nodes[0].verb.as_deref(), Some("Share"));
@@ -191,7 +192,7 @@ fn paste_argv_rejects_a_chord_with_no_key() {
 // node shapes.
 #[test]
 fn search_empty_query_returns_rows_unchanged() {
-    let rows = clipboard_provider(&[text("a", "hello", 1000)], ClipMode::Copy, true);
+    let rows = clipboard_provider(&[text("a", "hello", 1000)], ClipMode::Copy, true, chrono::Local::now());
     assert_eq!(clipboard_search(&rows, "").len(), rows.len());
     assert_eq!(clipboard_search(&rows, "   ").len(), rows.len());
 }
@@ -199,7 +200,7 @@ fn search_empty_query_returns_rows_unchanged() {
 #[test]
 fn search_matches_beyond_the_truncated_label() {
     let long_text = format!("{}findme", "x".repeat(80));
-    let rows = clipboard_provider(&[text("a", &long_text, 1000)], ClipMode::Copy, true);
+    let rows = clipboard_provider(&[text("a", &long_text, 1000)], ClipMode::Copy, true, chrono::Local::now());
     // The label truncates at 60 chars; the match text does not.
     assert!(!rows[0].label.contains("findme"));
     assert_eq!(clipboard_search(&rows, "findme").len(), 1);
@@ -207,7 +208,7 @@ fn search_matches_beyond_the_truncated_label() {
 
 #[test]
 fn search_is_case_insensitive() {
-    let rows = clipboard_provider(&[text("a", "Hello World", 1000)], ClipMode::Copy, true);
+    let rows = clipboard_provider(&[text("a", "Hello World", 1000)], ClipMode::Copy, true, chrono::Local::now());
     assert_eq!(clipboard_search(&rows, "WORLD").len(), 1);
     assert_eq!(clipboard_search(&rows, "world").len(), 1);
 }
@@ -218,6 +219,7 @@ fn search_finds_image_rows_by_their_label() {
         &[image("a", "/img/one.png", 1000), text("b", "grocery list", 999)],
         ClipMode::Copy,
         true,
+        chrono::Local::now(),
     );
     let hits = clipboard_search(&rows, "image");
     assert_eq!(hits.len(), 1);
@@ -226,7 +228,7 @@ fn search_finds_image_rows_by_their_label() {
 
 #[test]
 fn search_excludes_non_matching_rows() {
-    let rows = clipboard_provider(&[text("a", "apple", 1000), text("b", "banana", 999)], ClipMode::Copy, true);
+    let rows = clipboard_provider(&[text("a", "apple", 1000), text("b", "banana", 999)], ClipMode::Copy, true, chrono::Local::now());
     let hits = clipboard_search(&rows, "apple");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].id, "clipboard.a");

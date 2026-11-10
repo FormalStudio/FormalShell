@@ -89,7 +89,7 @@ fn snapshot() -> String {
     let sob = emoji.rows("sob", true, &[], 0.0);
     out.push(format!("emoji sob: {} {}", sob[0].id, sob[0].icon));
 
-    let clips: Vec<Node> = clipboard_provider(&[Entry::text("a", "notebook entry"), Entry::text("b", "other"), Entry::image("c", "/tmp/x.png")], ClipMode::Copy, true);
+    let clips: Vec<Node> = clipboard_provider(&[Entry::text("a", "notebook entry"), Entry::text("b", "other"), Entry::image("c", "/tmp/x.png")], ClipMode::Copy, true, chrono::Local::now());
     for q in ["", "note", "zzz"] {
         out.push(line(&format!("clip {q:?}"), clipboard_search(&clips, q).into_iter().map(|n| n as &Node)));
     }

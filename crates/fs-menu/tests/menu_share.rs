@@ -199,7 +199,7 @@ fn merged_tree_auto_parents_the_dynamic_subtree() {
 
 #[test]
 fn share_mode_reuses_copy_rows_with_a_distinct_id_namespace() {
-    let nodes = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Share, true);
+    let nodes = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Share, true, chrono::Local::now());
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0].id, "share.history.a");
     assert_eq!(nodes[0].label, "hello");
@@ -214,7 +214,7 @@ fn share_mode_reuses_copy_rows_with_a_distinct_id_namespace() {
 fn share_mode_preserves_image_rows_shape() {
     let entry = Entry { captured_at: Some(local_ms(9, 5)), ..Entry::image("b", "/img/one.png") };
     assert_eq!(entry.kind, EntryKind::Image);
-    let nodes = clipboard_provider(&[entry], ClipMode::Share, true);
+    let nodes = clipboard_provider(&[entry], ClipMode::Share, true, chrono::Local::now());
     assert_eq!(nodes[0].id, "share.history.b");
     assert_eq!(nodes[0].label, "Image");
     assert_eq!(nodes[0].desc.as_deref(), Some("09:05"));
@@ -224,7 +224,7 @@ fn share_mode_preserves_image_rows_shape() {
 
 #[test]
 fn default_copy_mode_is_unaffected_by_the_new_parameter() {
-    let nodes = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Copy, true);
+    let nodes = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Copy, true, chrono::Local::now());
     assert_eq!(nodes[0].id, "clipboard.a");
     assert_eq!(nodes[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:clipboard.copy:a"));
 }

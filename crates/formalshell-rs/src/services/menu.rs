@@ -872,8 +872,8 @@ mod tests {
         rows.extend(audio_rows(&[AudioDevice { name: "sink".into(), label: "S".into(), is_sink: true }, AudioDevice { name: "src".into(), label: "M".into(), is_sink: false }]));
         rows.extend(radio_rows(&RadioState { running: true, favorites: vec![station("u1")] }));
         rows.extend(radio_result_rows(&[station("u1"), station("u2")], &HashSet::from(["u1".to_owned()])));
-        rows.extend(clipboard_provider(&clip, ClipMode::Copy, false));
-        rows.extend(clipboard_provider(&clip, ClipMode::Share, false));
+        rows.extend(clipboard_provider(&clip, ClipMode::Copy, false, chrono::Local::now()));
+        rows.extend(clipboard_provider(&clip, ClipMode::Share, false, chrono::Local::now()));
         rows.extend(clipssh_rows(&[ClipsshAlias { name: "box".into(), target: "k@box".into() }]));
         rows.extend(package_rows(&[package("zypper:foot", true), package("flatpak:org.example.App", false)]));
         rows.extend(tray_provider(&[TrayItem { id: "org.kde.Item:1".into(), title: "Item".into(), tooltip_title: String::new() }]));

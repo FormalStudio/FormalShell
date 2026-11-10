@@ -214,7 +214,7 @@ fn station() {
 
 #[test]
 fn clipboard_entry() {
-    let rows = clipboard_provider(&[Entry::image("b", "/img/one.png"), Entry::text("a", "hello")], ClipMode::Copy, true);
+    let rows = clipboard_provider(&[Entry::image("b", "/img/one.png"), Entry::text("a", "hello")], ClipMode::Copy, true, chrono::Local::now());
     let image = of(&rows[0]);
     assert_eq!(ids(&image), ["run", "alternate", "copy-only", "send-to", "delete"]);
     assert_eq!(image[0].label, "Paste");
@@ -226,9 +226,9 @@ fn clipboard_entry() {
     assert_eq!(image[4].run, Run::parse("@ipc:clipboard.remove:b"));
     assert!(image[4].keep_open && image[4].destructive);
     assert_eq!(ids(&of(&rows[1])), ["run", "copy-only", "send-to", "delete"]);
-    let copy = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Copy, false);
+    let copy = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Copy, false, chrono::Local::now());
     assert_eq!(ids(&of(&copy[0])), ["run", "send-to", "delete"]);
-    let share = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Share, false);
+    let share = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Share, false, chrono::Local::now());
     assert!(!ids(&of(&share[0])).contains(&"send-to"));
 }
 

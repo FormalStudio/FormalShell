@@ -803,8 +803,9 @@ impl App {
         }
         let c = &self.store.clipboard;
         let paste = crate::settings::CLIPBOARD_PASTE.get(&self.store.config);
-        let rows = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Copy, paste);
-        let shared = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Share, paste);
+        let now = chrono::Local::now();
+        let rows = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Copy, paste, now);
+        let shared = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Share, paste, now);
         self.apply(Diff::Menu(index::Diff::Source(Provider::Clipboard, rows)));
         self.apply(Diff::Menu(index::Diff::Source(Provider::ShareHistory, shared)));
     }

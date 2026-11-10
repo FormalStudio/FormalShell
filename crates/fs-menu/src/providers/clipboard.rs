@@ -49,7 +49,8 @@ pub enum ClipMode {
 /// nothing puts that binary on a session PATH, so the spawned form was a
 /// silent exit 127 everywhere but the VM test rig.
 ///
-/// `paste` is `clipboard.paste`, threaded in so this stays pure. It marks a
+/// `paste` is `clipboard.paste` and `now` the clock the day sections read,
+/// both threaded in so this stays pure. It marks a
 /// copy row for the paste hook, which synthesizes the chord into whatever
 /// window focus returns to; a share row hands the entry to LocalSend and
 /// never touches the focused window.
@@ -58,11 +59,10 @@ pub enum ClipMode {
 /// Both providers read the same history list and `tree.nodes` is one flat map
 /// keyed by id, so reusing `clipboard.<id>` for share rows would overwrite the
 /// real clipboard node's rows.
-pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<Node> {
+pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool, now: DateTime<Local>) -> Vec<Node> {
     let share = mode == ClipMode::Share;
     let paste_after = !share && paste;
     let id_prefix = if share { "share.history." } else { CLIPBOARD_ENTRY_PREFIX };
-    let now = Local::now();
     items
         .iter()
         .map(|entry| {
