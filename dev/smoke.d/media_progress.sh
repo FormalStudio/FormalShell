@@ -257,12 +257,38 @@ for y, row in rows.items():
     segs[y] = out
 def under(y, start, end):
     return any(abs(s - start) <= 2 and abs(e - end) <= 2 for s, e, _ in segs.get(y, []))
-best = (0, 0)
+best = None
 for y, out in segs.items():
     for start, end, fill in out:
-        if end - start + 1 > best[0] and under(y + 1, start, end) and under(y + 2, start, end):
-            best = (end - start + 1, fill)
-print("%.4f %d" % (best[1] / best[0] if best[0] else 0.0, best[0]))
+        if (best is None or end - start > best[2] - best[1]) and under(y + 1, start, end) and under(y + 2, start, end):
+            best = (y, start, end, fill)
+if best is None:
+    print("0.0000 0")
+    raise SystemExit
+y, start, end, fill = best
+width = end - start + 1
+# A seekable track carries a knob that travels the groove less its own
+# width and covers the fill end at its centre, so its place is the position
+# and its far half is not fill. The knob is what stands above and below the
+# groove rows inside the track; a track with no knob reads off its fill.
+def knob_xs(ky):
+    return [x for x, v in rows.get(ky, {}).items() if v == 2 and start <= x <= end]
+# Its centre comes off the rows clear of the groove, every one of them
+# symmetric about it, and its size off its height, since it is round.
+groove = [gy for gy in rows if under(gy, start, end)]
+spans, top, bottom = [], min(groove), max(groove)
+for step, ky in ((-1, top - 1), (1, bottom + 1)):
+    while knob_xs(ky):
+        xs = knob_xs(ky)
+        spans.append((min(xs) + max(xs)) / 2)
+        top, bottom = min(top, ky), max(bottom, ky)
+        ky += step
+if spans:
+    size = bottom - top + 1
+    centre = sum(spans) / len(spans)
+    print("%.4f %d" % ((centre - (size - 1) / 2 - start) / (width - size), width))
+else:
+    print("%.4f %d" % (fill / width, width))
 '
 }
 
