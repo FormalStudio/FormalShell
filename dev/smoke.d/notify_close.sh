@@ -79,8 +79,6 @@ leg_notify_close_assert() {
   cat "$notify_close_dispatch_path" 2>/dev/null || true
   grep -q '^button ' "$notify_close_rect_path" 2>/dev/null \
     || fail "no toast card in debug dump's toastCards: $(head -c 300 "$notify_close_dump_path" 2>/dev/null)"
-  grep -q '"popups":1' "$notify_close_status_parked_path" 2>/dev/null \
-    || fail "expected one popup with the pointer parked on its close button, got: $(cat "$notify_close_status_parked_path" 2>/dev/null)"
-  grep -q '"popups":0' "$notify_close_status_after_path" 2>/dev/null \
-    || fail "the click on the close button left the notification up, got: $(cat "$notify_close_status_after_path" 2>/dev/null)"
+  expect_jq "$notify_close_status_parked_path" '.popups == 1' "expected one popup with the pointer parked on its close button" '{popups, pending}'
+  expect_jq "$notify_close_status_after_path" '.popups == 0' "the click on the close button left the notification up" '{popups, pending}'
 }

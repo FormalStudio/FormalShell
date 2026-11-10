@@ -67,14 +67,14 @@ leg_tooltip_assert() {
   done
   # The surface does not exist at all until a cell's own lazy Loader arms
   # it, so its absence here is what makes the second dump mean something.
-  if grep -q 'formalshell:tooltip' "$tooltip_layers_before_path"; then
+  if "$jq_bin" -e "$layers_jq"'layer("formalshell:tooltip") | length > 0' "$tooltip_layers_before_path" > /dev/null 2>&1; then
     fail "a tooltip layer surface was already mapped before the pointer parked on anything"
   fi
-  if ! grep -q 'formalshell:tooltip' "$tooltip_layers_after_path"; then
+  if ! "$jq_bin" -e "$layers_jq"'layer("formalshell:tooltip") | length > 0' "$tooltip_layers_after_path" > /dev/null 2>&1; then
     echo "--- pointer moves, then cursorpos ---" >&2
     cat "$tooltip_dispatch_path" >&2 2>/dev/null || true
     echo "--- layer namespaces after the park ---" >&2
-    grep -o '"namespace": "[^"]*"' "$tooltip_layers_after_path" >&2 || true
+    "$jq_bin" -r "$layers_jq"'layers[].namespace' "$tooltip_layers_after_path" >&2 || true
     fail "no formalshell:tooltip layer surface after parking the pointer on the panel header's close button"
   fi
   # Printed on the happy path too: it is the only evidence of WHERE the

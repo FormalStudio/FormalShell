@@ -100,11 +100,7 @@ EOS
 #
 # No backticks in here: this script is written through an unquoted heredoc,
 # so a quoted identifier in a comment runs as a command.
-for _ in \$(seq 1 40); do
-  $ipc call debug dump > "$bar_position_dump_path" 2>&1
-  grep -q '"barPosition":"$(leg_arg bar_position)"' "$bar_position_dump_path" && break
-  sleep 0.5
-done
+until_jq 20 "$bar_position_dump_path" '.theme.barPosition == "$(leg_arg bar_position)"' call debug dump
 sleep 1
 "$hyprctl_bin" -j layers > "$bar_position_layers_path" 2>&1
 "$hyprctl_bin" -j monitors > "$bar_position_monitors_path" 2>&1
@@ -172,15 +168,13 @@ leg_bar_position_assert() {
   # `collapses` is the only list there is to report, so `open` is what the
   # expand changes.
   local hidden_names='"bluetooth","weather","tray","bell","indicators","monitor","keyboardLayout","display","github","usage","tailscale","systemUpdate","clock"'
-  if ! grep -q "\"chevron\":true,\"collapses\":\[$hidden_names\],\"open\":false" "$bar_position_status_collapsed_path" 2>/dev/null; then
-    fail "bar chevron status did not report the governed names off the strip while collapsed. Got: $(cat "$bar_position_status_collapsed_path" 2>/dev/null)"
-  fi
+  expect_jq "$bar_position_status_collapsed_path" "any(.regions[]; .chevron == true and .collapses == [$hidden_names] and .open == false)" \
+    "bar chevron status did not report the governed names off the strip while collapsed" '.regions'
   if ! grep -q '^ok$' "$bar_position_expand_reply_path" 2>/dev/null; then
     fail "bar chevron expand was refused. Got: $(cat "$bar_position_expand_reply_path" 2>/dev/null)"
   fi
-  if ! grep -q "\"chevron\":true,\"collapses\":\[$hidden_names\],\"open\":true" "$bar_position_status_expanded_path" 2>/dev/null; then
-    fail "bar chevron expand did not open quick settings. Got: $(cat "$bar_position_status_expanded_path" 2>/dev/null)"
-  fi
+  expect_jq "$bar_position_status_expanded_path" "any(.regions[]; .chevron == true and .collapses == [$hidden_names] and .open == true)" \
+    "bar chevron expand did not open quick settings" '.regions'
   # The card off the strip's inner side, on whichever edge the strip is.
   "$jq_bin" -e '.open == true and .from == "chevron:right" and ([.rows[] | select(.kind == "info")] | length > 0)' "$bar_position_quick_path" > /dev/null 2>&1 \
     || fail "the chevron's card is not quick settings carrying its governed cells as tiles: $(cat "$bar_position_quick_path" 2>/dev/null)"

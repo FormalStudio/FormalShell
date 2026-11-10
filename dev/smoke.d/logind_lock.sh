@@ -76,21 +76,21 @@ leg_logind_lock_assert() {
   echo "logind-lock: session $sid ($(loginctl show-session "$sid" -p Type -p Class --value 2>/dev/null | tr '\n' ' '))"
   grep -qx no "$p-hint-0.txt" || fail "LockedHint before the lock was not no: $(cat "$p-hint-0.txt")"
   grep -q '^rc=0$' "$p-lock-rc.txt" || fail "loginctl lock-session $sid failed: $(cat "$p-lock-rc.txt")"
-  grep -q '"locked":true' "$p-status-1.json" || fail "loginctl lock-session did not lock: $(cat "$p-status-1.json")"
-  grep -q '"secure":true' "$p-status-1.json" || fail "the logind lock never went secure: $(cat "$p-status-1.json")"
+  expect_jq "$p-status-1.json" '.locked == true' "loginctl lock-session did not lock" '{locked, secure}'
+  expect_jq "$p-status-1.json" '.secure == true' "the logind lock never went secure" '{locked, secure}'
   grep -qx yes "$p-hint-1.txt" || fail "LockedHint not yes while locked: $(cat "$p-hint-1.txt")"
   grep -qx false "$p-after-unlock-session.txt" || fail "loginctl unlock-session did not lift the lock: $(cat "$p-after-unlock-session.txt")"
   grep -q "lock: logind asked for the unlock" "$shell_log_path" || fail "no logind Unlock in the shell log"
-  grep -q '"locked":false' "$p-status-2.json" || fail "the lock was still up after unlock-session: $(cat "$p-status-2.json")"
+  expect_jq "$p-status-2.json" '.locked == false' "the lock was still up after unlock-session" '{locked}'
   grep -qx no "$p-hint-2.txt" || fail "LockedHint not back to no after the unlock: $(cat "$p-hint-2.txt")"
   "$jq_bin" -e '.ids | index("system.lock")' "$p-menu.json" > /dev/null 2>&1 \
     || fail "typing lock in the launcher offered no system.lock row: $(cat "$p-menu.json")"
-  grep -q '"locked":true' "$p-status-3.json" \
+  "$jq_bin" -e '.locked == true' "$p-status-3.json" > /dev/null 2>&1 \
     || fail "the launcher's Lock row did not lock (activate: $(cat "$p-activate.txt" 2>/dev/null)): $(cat "$p-status-3.json"); shell log: $(grep -E 'lock|session|menu' "$shell_log_path" | tail -15)"
   grep -qx yes "$p-hint-3.txt" || fail "LockedHint not yes after the Lock row: $(cat "$p-hint-3.txt")"
   n=$(grep -c "lock: logind asked for the lock" "$shell_log_path" 2>/dev/null || true)
   [ "${n:-0}" -eq 2 ] || fail "expected two logind Lock signals in the shell log (lock-session, the Lock row), got ${n:-0}"
-  grep -q '"locked":false' "$p-status-4.json" || fail "the password did not unlock the Lock row's lock: $(cat "$p-status-4.json")"
+  expect_jq "$p-status-4.json" '.locked == false' "the password did not unlock the Lock row's lock" '{locked}'
   grep -qx no "$p-hint-4.txt" || fail "LockedHint not no after the second unlock: $(cat "$p-hint-4.txt")"
   echo "SMOKE_LOGIND_LOCK_LOCKED $p-locked.png"
   echo "SMOKE_LOGIND_LOCK_UNLOCKED $p-unlocked.png"

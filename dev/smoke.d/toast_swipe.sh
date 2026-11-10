@@ -114,7 +114,7 @@ toast_swipe_left() {
 }
 
 toast_swipe_popups() {
-  sed -n "s/^$1 .*\"popups\":\([0-9]*\).*/\1/p" "$toast_swipe_status_path" 2>/dev/null
+  sed -n "s/^$1 //p" "$toast_swipe_status_path" 2>/dev/null | "$jq_bin" -r '.popups // empty' 2>/dev/null
 }
 
 leg_toast_swipe_assert() {

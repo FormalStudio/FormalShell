@@ -77,7 +77,7 @@ echo \$! > "$bar_room_pid_path"
 SECONDS=0
 while [ "\$SECONDS" -lt 8 ]; do
   $ipc call media status > "$bar_room_status_path" 2>&1
-  grep -qF "\"title\":\"$bar_room_title\"" "$bar_room_status_path" && break
+  "$jq_bin" -e --arg t "$bar_room_title" '.title == \$t' "$bar_room_status_path" > /dev/null 2>&1 && break
   sleep 1
 done
 sleep 3
@@ -96,9 +96,8 @@ EOF
 
 leg_bar_room_assert() {
   local hidden budget natural
-  if [ ! -s "$bar_room_status_path" ] || ! grep -qF "\"title\":\"$bar_room_title\"" "$bar_room_status_path"; then
-    fail "media status never showed the bar-room long-title track, got: $(cat "$bar_room_status_path" 2>/dev/null)"
-  fi
+  "$jq_bin" -e --arg t "$bar_room_title" '.title == $t' "$bar_room_status_path" > /dev/null 2>&1 \
+    || fail "media status never showed the bar-room long-title track, got: $(cat "$bar_room_status_path" 2>/dev/null)"
   if [ ! -s "$bar_room_json_path" ]; then
     fail "no bar room output produced"
   fi

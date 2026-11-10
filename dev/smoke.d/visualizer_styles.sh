@@ -59,12 +59,7 @@ set -u
 mpv_pid=\$!
 echo "\$mpv_pid" > "$visualizer_styles_pid_path"
 
-SECONDS=0
-while [ "\$SECONDS" -lt 8 ]; do
-  $ipc call media status > "$visualizer_styles_status_path" 2>&1
-  grep -qF "\"title\":\"$visualizer_styles_track_title\"" "$visualizer_styles_status_path" && break
-  sleep 1
-done
+until_jq 8 "$visualizer_styles_status_path" '.title == "$visualizer_styles_track_title"' call media status
 
 $ipc call panel open media > /dev/null 2>&1
 # The running spectrum keeps the card moving, so it never reads at rest.
@@ -152,9 +147,8 @@ EOF
 }
 
 leg_visualizer_styles_assert() {
-  if [ ! -s "$visualizer_styles_status_path" ] || ! grep -qF "\"title\":\"$visualizer_styles_track_title\"" "$visualizer_styles_status_path"; then
-    fail "media status never showed the visualizer styles smoke tone, got: $(cat "$visualizer_styles_status_path" 2>/dev/null)"
-  fi
+  "$jq_bin" -e --arg t "$visualizer_styles_track_title" '.title == $t' "$visualizer_styles_status_path" > /dev/null 2>&1 \
+    || fail "media status never showed the visualizer styles smoke tone, got: $(cat "$visualizer_styles_status_path" 2>/dev/null)"
   if [ ! -s "$visualizer_styles_rect_path" ]; then
     fail "could not find the spectrum box's rect from two frames of the running spectrum"
   fi

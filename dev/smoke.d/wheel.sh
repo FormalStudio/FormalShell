@@ -204,7 +204,7 @@ EOF
 }
 
 wheel_field() {
-  sed -n 's/.*"'"$2"'":\([0-9-]*\).*/\1/p' "$1"
+  "$jq_bin" -r --arg k "$2" '.[$k] // empty' "$1" 2>/dev/null
 }
 
 leg_wheel_assert() {
@@ -220,7 +220,7 @@ leg_wheel_assert() {
   # ended up and that the axis event was sent at all.
   cat "$wheel_dispatch_path" 2>/dev/null || true
   # The two Style previews, 120 fixtures and the Sky cell after them.
-  if ! grep -q '"count":123' "$wheel_picker_before_path"; then
+  if ! "$jq_bin" -e '.count == 123' "$wheel_picker_before_path" > /dev/null 2>&1; then
     fail "the grid did not list the Style previews, all 120 fixtures and the sky, so an unscrolled view proves nothing, got: $(cat "$wheel_picker_before_path")"
   fi
   before_scroll=$(wheel_field "$wheel_menu_before_path" scrollTop)
@@ -272,7 +272,7 @@ leg_wheel_assert() {
   fi
   echo "SMOKE_WHEEL_FINGER up $up_scroll, held $mid_scroll (overscroll $mid_over), 400ms after lift $settled_scroll = scrollMax $end_max"
   local reads over
-  reads=$(sed -n 's/.*"scrollTop":\([0-9-]*\).*/\1/p' "$wheel_notch_end_path" | tr '\n' ' ')
+  reads=$("$jq_bin" -rR 'fromjson? | .scrollTop // empty' "$wheel_notch_end_path" | tr '\n' ' ')
   if [ "$(echo "$reads" | wc -w)" -lt 5 ]; then
     fail "the notch at the end produced $(echo "$reads" | wc -w) status reads, not 5"
   fi
@@ -321,10 +321,9 @@ leg_wheel_assert() {
 wheel_samples() {
   local line top over coast
   while IFS= read -r line; do
-    top=$(sed -n 's/.*"scrollTop":\([0-9-]*\).*/\1/p' <<< "$line")
-    over=$(sed -n 's/.*"overscroll":\([0-9-]*\).*/\1/p' <<< "$line")
-    coast=$(sed -n 's/.*"coasting":\([a-z]*\).*/\1/p' <<< "$line")
-    if [ -n "$top" ] && [ -n "$over" ] && [ -n "$coast" ]; then
+    read -r top over coast < <("$jq_bin" -rR 'fromjson? | select(.scrollTop != null and .overscroll != null and .coasting != null)
+      | "\(.scrollTop) \(.overscroll) \(.coasting)"' <<< "${line#* }")
+    if [ -n "$coast" ]; then
       echo "${line%% *} $top $over $coast"
     fi
   done < "$1"
@@ -341,7 +340,7 @@ wheel_assert_coast() {
   # 70 px/s of fingers lifted at once stays where it was lifted.
   slow_a=$(wheel_field "$wheel_slow_lift_path" scrollTop)
   slow_b=$(wheel_field "$wheel_slow_settled_path" scrollTop)
-  if [ -z "$slow_a" ] || [ "$slow_a" != "$slow_b" ] || [ "$slow_a" -ge "$end_max" ] || grep -q '"coasting":true' "$wheel_slow_settled_path"; then
+  if [ -z "$slow_a" ] || [ "$slow_a" != "$slow_b" ] || [ "$slow_a" -ge "$end_max" ] || "$jq_bin" -e '.coasting == true' "$wheel_slow_settled_path" > /dev/null 2>&1; then
     fail "a slow drag lifted at scrollTop $slow_a read $slow_b 600ms later (scrollMax $end_max): it coasted"
   fi
   echo "SMOKE_WHEEL_SLOW_LIFT scrollTop $slow_a held at $slow_b"
@@ -377,7 +376,7 @@ wheel_assert_coast() {
   touch_a=$(wheel_field "$wheel_touch_path" scrollTop)
   touch_b=$(wheel_field "$wheel_touch_settled_path" scrollTop)
   if [ -z "$touch_a" ] || [ "$touch_a" != "$touch_b" ] || [ "$touch_a" -le 470 ] || [ "$touch_a" -ge "$((free_final - 20))" ] \
-    || grep -q '"coasting":true' "$wheel_touch_settled_path"; then
+    || "$jq_bin" -e '.coasting == true' "$wheel_touch_settled_path" > /dev/null 2>&1; then
     fail "a finger 150ms into the coast left scrollTop $touch_a then $touch_b, against 470 at the lift and $free_final for a free coast"
   fi
   echo "SMOKE_WHEEL_COAST_TOUCH stopped at $touch_a, a free coast went to $free_final"

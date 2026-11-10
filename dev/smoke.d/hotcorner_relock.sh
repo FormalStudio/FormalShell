@@ -206,7 +206,7 @@ hotcorner_relock_expect() {
 
 hotcorner_relock_saver_expect() {
   local path="$1" want="$2" what="$3"
-  if [ ! -s "$path" ] || ! grep -q "\"active\":$want," "$path"; then
+  if ! "$jq_bin" -e --argjson a "$want" '.active == $a' "$path" > /dev/null 2>&1; then
     echo "--- pointer moves ---" >&2
     cat "$hotcorner_relock_moves_path" >&2 2>/dev/null || true
     fail "$what (screensaver active wanted $want, got: $(cat "$path" 2>/dev/null))"

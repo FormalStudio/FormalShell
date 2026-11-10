@@ -65,26 +65,22 @@ leg_theme_toggle_assert() {
     # Flexoki hexes only ever enter theme.json through the fallback palette
     # write, so any appearance of one means a toggle reset the theme instead
     # of re-running matugen. Matched -i because that write is uppercase.
-    if [ ! -s "$theme_json_dump1_path" ] || ! grep -qF '"mode": "dark"' "$theme_json_dump1_path" \
-      || grep -iqF '"background": "#100f0f"' "$theme_json_dump1_path"; then
+    if [ ! -s "$theme_json_dump1_path" ] || ! "$jq_bin" -e '.mode == "dark" and (.background | ascii_downcase) != "#100f0f"' "$theme_json_dump1_path" > /dev/null 2>&1; then
       [ -f "$theme_json_dump1_path" ] && cat "$theme_json_dump1_path" >&2
       fail "pre-toggle theme.json is missing or not matugen-derived dark"
     fi
     if [ ! -s "$theme_toggle_status_path" ] \
-      || ! grep -qF '"wallpaper":"'"$wp2_path"'"' "$theme_toggle_status_path" \
-      || ! grep -qF '"mode":"light"' "$theme_toggle_status_path"; then
+      || ! "$jq_bin" -e --arg wp "$wp2_path" '.wallpaper == $wp and .mode == "light"' "$theme_toggle_status_path" > /dev/null 2>&1; then
       [ -f "$theme_toggle_status_path" ] && cat "$theme_toggle_status_path" >&2
       fail "theme status after toggle did not report mode:light with the wallpaper kept"
     fi
     cat "$theme_toggle_status_path"; echo
-    if [ ! -s "$theme_json_dump2_path" ] || ! grep -qF '"mode": "light"' "$theme_json_dump2_path" \
-      || grep -iqF '"background": "#fffcf0"' "$theme_json_dump2_path"; then
+    if [ ! -s "$theme_json_dump2_path" ] || ! "$jq_bin" -e '.mode == "light" and (.background | ascii_downcase) != "#fffcf0"' "$theme_json_dump2_path" > /dev/null 2>&1; then
       [ -f "$theme_json_dump2_path" ] && cat "$theme_json_dump2_path" >&2
       fail "theme.json after the dark to light toggle is not matugen-derived light (toggle reset to fallback?)"
     fi
     if [ ! -s "$theme_toggle_status2_path" ] \
-      || ! grep -qF '"wallpaper":"'"$wp2_path"'"' "$theme_toggle_status2_path" \
-      || ! grep -qF '"mode":"dark"' "$theme_toggle_status2_path"; then
+      || ! "$jq_bin" -e --arg wp "$wp2_path" '.wallpaper == $wp and .mode == "dark"' "$theme_toggle_status2_path" > /dev/null 2>&1; then
       [ -f "$theme_toggle_status2_path" ] && cat "$theme_toggle_status2_path" >&2
       fail "theme status after the second toggle did not report mode:dark with the wallpaper kept"
     fi
@@ -95,16 +91,13 @@ leg_theme_toggle_assert() {
     fi
   else
     if [ ! -s "$theme_toggle_status_path" ] \
-      || ! grep -qF '"wallpaper":""' "$theme_toggle_status_path" \
-      || ! grep -qF '"mode":"light"' "$theme_toggle_status_path" \
-      || ! grep -qF '"themeJsonPresent":true' "$theme_toggle_status_path"; then
+      || ! "$jq_bin" -e '.wallpaper == "" and .mode == "light" and .themeJsonPresent == true' "$theme_toggle_status_path" > /dev/null 2>&1; then
       [ -f "$theme_toggle_status_path" ] && cat "$theme_toggle_status_path" >&2
       fail "theme status after toggle did not report mode:light with no wallpaper"
     fi
     cat "$theme_toggle_status_path"; echo
     if [ ! -s "$theme_toggle_status2_path" ] \
-      || ! grep -qF '"wallpaper":""' "$theme_toggle_status2_path" \
-      || ! grep -qF '"mode":"dark"' "$theme_toggle_status2_path"; then
+      || ! "$jq_bin" -e '.wallpaper == "" and .mode == "dark"' "$theme_toggle_status2_path" > /dev/null 2>&1; then
       [ -f "$theme_toggle_status2_path" ] && cat "$theme_toggle_status2_path" >&2
       fail "theme status after the second toggle did not report mode:dark"
     fi

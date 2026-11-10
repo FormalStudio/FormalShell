@@ -31,7 +31,7 @@ EOF
 
 leg_gallery_assert() {
   echo "SMOKE_GALLERY_IPC $(tr '\n' ' ' < "$gallery_log_path" 2>/dev/null || echo '(no reply)')"
-  if ! grep -q '"isOpen":true' "$gallery_log_path" 2>/dev/null; then
+  if ! "$jq_bin" -enR '[inputs | fromjson? | objects] | any(.[]; .isOpen == true)' "$gallery_log_path" > /dev/null 2>&1; then
     fail "gallery did not report isOpen after open: $(cat "$gallery_log_path" 2>/dev/null)"
   fi
 }

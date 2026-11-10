@@ -68,11 +68,7 @@ until_settled"
   fi
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-for _ in \$(seq 1 40); do
-  $ipc call debug dump > "$bar_style_dump_path" 2>&1
-  grep -q '"barStyle":"$(leg_arg bar_style)"' "$bar_style_dump_path" && break
-  sleep 0.5
-done
+until_jq 20 "$bar_style_dump_path" '.theme.barStyle == "$(leg_arg bar_style)"' call debug dump
 sleep 1
 $wallpaper
 $ipc call debug dump > "$bar_style_dump_path" 2>&1

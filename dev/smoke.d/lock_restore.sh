@@ -36,7 +36,7 @@ leg_lock_restore_drive() {
 #!/usr/bin/env bash
 $ipc call lock lock > /dev/null 2>&1
 for _ in \$(seq 1 20); do
-  $ipc call lock status 2>/dev/null | grep -q '"secure":true' && break
+  $ipc call lock status 2>/dev/null | "$jq_bin" -e '.secure == true' > /dev/null 2>&1 && break
   sleep 0.25
 done
 old=\$($find_daemons | head -n1)
@@ -48,7 +48,7 @@ export LIBGL_ALWAYS_SOFTWARE=1
 new=\$!
 echo "old=\$old new=\$new" > "$lock_restore_pids_path"
 for _ in \$(seq 1 60); do
-  $ipc call lock status 2>/dev/null | grep -q '"secure":true' && break
+  $ipc call lock status 2>/dev/null | "$jq_bin" -e '.secure == true' > /dev/null 2>&1 && break
   sleep 0.25
 done
 $ipc call lock status > "$lock_restore_status_path" 2>&1
@@ -75,16 +75,12 @@ leg_lock_restore_assert() {
     fail "the second shell never found the held lock"
   fi
   cat "$lock_restore_status_path" 2>/dev/null; echo
-  if ! grep -q '"locked":true' "$lock_restore_status_path" || ! grep -q '"secure":true' "$lock_restore_status_path"; then
-    fail "the second shell's lock is not locked and secure. Got: $(cat "$lock_restore_status_path" 2>/dev/null)"
-  fi
+  expect_jq "$lock_restore_status_path" '.locked == true and .secure == true' "the second shell's lock is not locked and secure" '{locked, secure}'
   avatar_px=$(colour_px "$lock_restore_back_path" '#1FB86A' 4%)
   echo "restored lock avatar pixels: ${avatar_px:-none}"
   if [ "${avatar_px:-0}" -lt 1250 ]; then
     fail "the restored lock drew no avatar (${avatar_px:-0} pixels of its colour): not our lock surface on screen"
   fi
   cat "$lock_restore_after_path" 2>/dev/null; echo
-  if ! grep -q '"locked":false' "$lock_restore_after_path"; then
-    fail "the real password did not unlock the restored lock. Got: $(cat "$lock_restore_after_path" 2>/dev/null)"
-  fi
+  expect_jq "$lock_restore_after_path" '.locked == false' "the real password did not unlock the restored lock" '{locked}'
 }

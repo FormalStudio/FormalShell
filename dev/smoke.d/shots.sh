@@ -63,10 +63,7 @@ burst() {
 slow() { $ipc call debug motionScale "\$1" > /dev/null 2>&1; }
 "$mpv_bin" --no-video --really-quiet --loop "$shots_track" &
 echo \$! > "$shot_dir/shots-mpv.pid"
-for _ in \$(seq 10); do
-  $ipc call media status 2>/dev/null | grep -qF '"title":"$shots_title"' && break
-  sleep 1
-done
+until_jq 10 "$shot_dir/shots-media.json" '.title == "$shots_title"' call media status
 sleep 2
 
 $ipc call menu toggle > /dev/null 2>&1
@@ -144,7 +141,7 @@ $ipc call screensaver start > /dev/null 2>&1
 sleep 1
 $ipc call screensaver frame 0 > /dev/null 2>&1
 sleep 2
-convergence=\$($ipc call screensaver frameInfo 2>/dev/null | grep -o '"convergenceFrame":[0-9]*' | cut -d: -f2)
+convergence=\$($ipc call screensaver frameInfo 2>/dev/null | "$jq_bin" -r '.convergenceFrame // empty' 2>/dev/null)
 stride=\$(( (\${convergence:-0} + 89) / 90 ))
 [ "\$stride" -lt 1 ] && stride=1
 echo "\$stride" > "$shots_dir/screensaver-stride"

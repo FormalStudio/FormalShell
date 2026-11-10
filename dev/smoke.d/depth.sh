@@ -125,8 +125,8 @@ leg_depth_assert() {
   echo "SMOKE_DEPTH_ON $depth_on_path"
   echo "SMOKE_DEPTH_OFF $depth_off_path"
   cat "$depth_status_on_path"; echo
-  grep -q '"depth":true' "$depth_status_on_path" || fail "lock status did not report depth:true with a map beside the wallpaper. Got: $(cat "$depth_status_on_path")"
-  grep -q '"depth":true' "$depth_status_off_path" && fail "lock status still reported depth:true after lock.depth was set false. Got: $(cat "$depth_status_off_path")"
+  expect_jq "$depth_status_on_path" 'any(.outputs[]?; .depth == true)' "lock status did not report depth:true with a map beside the wallpaper" '[.outputs[]?.depth]'
+  expect_jq "$depth_status_off_path" 'all(.outputs[]?; .depth != true)' "lock status still reported depth:true after lock.depth was set false" '[.outputs[]?.depth]'
   [ -n "$depth_real" ] || [ -n "$depth_generate" ] && return 0
   local rect x y bottom crop
   rect=$("$jq_bin" -c 'first(.. | objects | select(.depthRect != null) | .depthRect)' "$depth_status_on_path")

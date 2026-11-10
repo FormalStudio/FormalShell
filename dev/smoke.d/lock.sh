@@ -114,9 +114,7 @@ leg_lock_assert() {
     fail "no lock status produced"
   fi
   cat "$lock_status_path"; echo
-  if ! grep -q '"locked":false' "$lock_status_path"; then
-    fail "lock status did not report locked:false after unlock. Got: $(cat "$lock_status_path")"
-  fi
+  expect_jq "$lock_status_path" '.locked == false' "lock status did not report locked:false after unlock" '{locked}'
   local ms
   ms=$(cat "$lock_unlock_ms_path" 2>/dev/null)
   echo "lock unlock over a stuck keyring: ${ms:-none} ms ($(cat "$lock_keyring_path" 2>/dev/null))"
@@ -127,9 +125,7 @@ leg_lock_assert() {
   fi
   # The swappable-locker half: this run writes no `lock.command`, so
   # the built-in surface is the one that came up and `external` has to say so.
-  if ! grep -q '"external":false' "$lock_status_path"; then
-    fail "lock status did not report external:false with no lock.command set. Got: $(cat "$lock_status_path")"
-  fi
+  expect_jq "$lock_status_path" '.external == false' "lock status did not report external:false with no lock.command set" '{external}'
   # The avatar over the clock: ~/.face's colour covering at least a 40px
   # disc's worth of the locked frame (a quarter of the 90px slot).
   local avatar_px

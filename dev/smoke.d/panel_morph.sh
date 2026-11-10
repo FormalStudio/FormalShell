@@ -165,8 +165,7 @@ scanned() {
   SECONDS=0
   while [ "\$SECONDS" -lt "\$ceiling" ]; do
     $ipc call network status > "$panel_morph_scan_path" 2>&1
-    if grep -qF '"name":"FORMALTEST"' "$panel_morph_scan_path" \
-      && grep -qF '"name":"FORMALTEST-EAP"' "$panel_morph_scan_path"; then
+    if "$jq_bin" -e '[.. | objects | .name? | strings] | any(. == "FORMALTEST") and any(. == "FORMALTEST-EAP")' "$panel_morph_scan_path" > /dev/null 2>&1; then
       return 0
     fi
     sleep 1

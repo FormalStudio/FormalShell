@@ -205,6 +205,12 @@ _multi_output_black() {
   $convert_bin "$1" -alpha off -fuzz 2% -fill white +opaque black -format '%[fx:1-mean]' info: 2>/dev/null
 }
 
+# _multi_output_saver_active <label> <true|false>: the screensaver status
+# logged under that label reads active as asked.
+_multi_output_saver_active() {
+  sed -n "s/^status $1: //p" "$multi_output_saver" | "$jq_bin" -e --argjson a "$2" '.active == $a' > /dev/null 2>&1
+}
+
 leg_multi_output_assert() {
   local f n out share colors
   for f in "$multi_output_layers_one" "$multi_output_layers_two" "$multi_output_layers_gone" "$multi_output_monitors" "$multi_output_dump"; do
@@ -282,7 +288,7 @@ leg_multi_output_assert() {
   echo "SMOKE_MULTI_OUTPUT_UNHIDDEN $multi_output_unhidden_png"
 
   cat "$multi_output_saver"
-  grep -q '^status shown: .*"active":true' "$multi_output_saver" || fail "screensaver start did not show it: $(grep '^status shown' "$multi_output_saver")"
+  _multi_output_saver_active shown true || fail "screensaver start did not show it: $(grep '^status shown' "$multi_output_saver")"
   [ -s "$multi_output_saver_layers" ] || fail "no layer dump while the screensaver showed"
   n=$("$jq_bin" -r 'keys | length' "$multi_output_saver_layers")
   [ "$n" = 2 ] || fail "expected two outputs while the screensaver showed, got $n"
@@ -299,13 +305,13 @@ leg_multi_output_assert() {
   done
   echo "SMOKE_MULTI_OUTPUT_SAVER_FIRST $multi_output_saver_first_png"
   echo "SMOKE_MULTI_OUTPUT_SAVER_SECOND $multi_output_saver_second_png"
-  grep -q '^status moved: .*"active":false' "$multi_output_saver" || fail "a pointer move on $multi_output_second did not dismiss the screensaver: $(grep '^status moved' "$multi_output_saver")"
+  _multi_output_saver_active moved false || fail "a pointer move on $multi_output_second did not dismiss the screensaver: $(grep '^status moved' "$multi_output_saver")"
   n=$("$jq_bin" -r "$layers_jq"'layer("formalshell:screensaver") | length' "$multi_output_saver_dismissed")
   [ "$n" = 0 ] || fail "$n screensaver layers still mapped after the pointer move dismissed it"
   echo "SMOKE_MULTI_OUTPUT_SAVER_DISMISS a pointer move on $multi_output_second took the screensaver off both outputs"
   n=$(_multi_output_count "$multi_output_layers_gone" "$("$jq_bin" -r 'keys[0]' "$multi_output_layers_gone")" "formalshell:screensaver")
   [ "$n" = 1 ] || fail "the first output carries $n screensaver layers once $multi_output_second went under it, want 1"
-  grep -q '^status readd: .*"active":true' "$multi_output_saver" || fail "the screensaver stopped across the output's removal and return: $(grep '^status readd' "$multi_output_saver")"
+  _multi_output_saver_active readd true || fail "the screensaver stopped across the output's removal and return: $(grep '^status readd' "$multi_output_saver")"
   for out in $("$jq_bin" -r 'keys[]' "$multi_output_saver_readd"); do
     n=$(_multi_output_count "$multi_output_saver_readd" "$out" "formalshell:screensaver")
     echo "screensaver after re-adding: $out carries $n"

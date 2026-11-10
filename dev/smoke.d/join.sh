@@ -255,7 +255,7 @@ leg_join_assert() {
   # and read as a pass on the frames alone.
   local want=top
   leg_on bar_position && want=$(leg_arg bar_position)
-  grep -q "\"barPosition\":\"$want\"" "$join_dump_path" 2>/dev/null || fail \
+  "$jq_bin" -e --arg w "$want" '.theme.barPosition == $w' "$join_dump_path" > /dev/null 2>&1 || fail \
     "the shell reports a bar on another edge than the $want this run asked for: $(head -c 400 "$join_dump_path" 2>/dev/null)"
   echo "SMOKE_JOIN_EDGE ok $want"
 

@@ -152,7 +152,7 @@ leg_flexoki_assert() {
   echo "SMOKE_FLEXOKI_APPS gtk-3.0 and qt6ct palettes are Flexoki"
 
   # And the shell's own half, which the static write still owns.
-  theme_primary=$(sed -n 's/.*"primary": "\(#[0-9a-f]\{6\}\)".*/\1/p' "$flexoki_theme_json_path" 2>/dev/null | head -1)
+  theme_primary=$("$jq_bin" -r '.primary // empty' "$flexoki_theme_json_path" 2>/dev/null)
   [ "$theme_primary" = "#4385be" ] || fail "theme.json primary is '$theme_primary', not the Flexoki blue"
 
   # Nothing above can distinguish a rewrite from a lucky matugen run without

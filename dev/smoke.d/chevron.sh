@@ -332,12 +332,9 @@ leg_chevron_assert() {
   if [ -f "$chevron_open_path" ]; then
     echo "SMOKE_CHEVRON_OPEN $chevron_open_path"
   fi
-  if ! grep -q '"chevronRegions":\["right"\]' "$chevron_status_shut_path"; then
-    fail "bar chevron status did not resolve exactly one chevron, in the right region. Got: $(cat "$chevron_status_shut_path")"
-  fi
-  if ! grep -q "\"collapses\":\[$chevron_hidden_names\],\"open\":false" "$chevron_status_shut_path"; then
-    fail "bar chevron status does not govern the names placed before it, with its card shut. Got: $(cat "$chevron_status_shut_path")"
-  fi
+  expect_jq "$chevron_status_shut_path" '.chevronRegions == ["right"]' "bar chevron status did not resolve exactly one chevron, in the right region" '{chevronRegions}'
+  expect_jq "$chevron_status_shut_path" ".regions.right.collapses == [$chevron_hidden_names] and .regions.right.open == false" \
+    "bar chevron status does not govern the names placed before it, with its card shut" '.regions'
   if [ ! -f "$chevron_shut_path" ]; then
     fail "no chevron-shut screenshot produced"
   fi
@@ -351,9 +348,8 @@ leg_chevron_assert() {
   # The same names, still governed, now with the card up. An empty
   # `collapses` here would mean the layout changed under the run rather than
   # the surface.
-  if ! grep -q "\"collapses\":\[$chevron_hidden_names\],\"open\":true" "$chevron_status_open_path"; then
-    fail "bar chevron expand did not open the card while keeping the same governed names. Got: $(cat "$chevron_status_open_path")"
-  fi
+  expect_jq "$chevron_status_open_path" ".regions.right.collapses == [$chevron_hidden_names] and .regions.right.open == true" \
+    "bar chevron expand did not open the card while keeping the same governed names" '.regions'
   if [ ! -f "$chevron_open_path" ]; then
     fail "no chevron-open screenshot produced"
   fi
@@ -366,9 +362,7 @@ leg_chevron_assert() {
   if ! grep -q '^weather$' "$chevron_panel_state_path" 2>/dev/null; then
     fail "clicking the Weather tile did not hand over to its panel. Got: $(cat "$chevron_panel_state_path" 2>/dev/null), pointer: $(cat "$chevron_dispatch_path" 2>/dev/null)"
   fi
-  if ! grep -q '"open":false' "$chevron_status_child_path" 2>/dev/null; then
-    fail "the weather panel hangs off a card still open rather than taking its place. Got: $(cat "$chevron_status_child_path" 2>/dev/null)"
-  fi
+  expect_jq "$chevron_status_child_path" 'all(.regions[]; .open == false)' "the weather panel hangs off a card still open rather than taking its place" '.regions'
   if [ ! -f "$chevron_child_path" ]; then
     fail "no chevron-child screenshot produced"
   fi
@@ -377,9 +371,7 @@ leg_chevron_assert() {
   if [ ! -s "$chevron_status_closed_again_path" ]; then
     fail "no bar chevron status (closed again) produced"
   fi
-  if ! grep -q '"open":false' "$chevron_status_closed_again_path"; then
-    fail "the chevron reads open with nothing up. Got: $(cat "$chevron_status_closed_again_path")"
-  fi
+  expect_jq "$chevron_status_closed_again_path" 'all(.regions[]; .open == false)' "the chevron reads open with nothing up" '.regions'
   _chevron_assert_clicks
   _chevron_assert_ink
 }

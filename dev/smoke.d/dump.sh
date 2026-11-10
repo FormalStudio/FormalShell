@@ -28,17 +28,12 @@ leg_dump_assert() {
     fail "no debug dump produced"
   fi
   cat "$dump_path"; echo
-  # One grep for both halves: `available` is the dump's own next key after
-  # `compositor` (DebugIpc.dump), and it is also an audio/brightness key, so
-  # matching it on its own would pass on a shell with no backend at all.
-  if ! grep -qF '"compositor":"hyprland","available":true' "$dump_path"; then
-    fail "the dump does not report a connected hyprland backend: $(cat "$dump_path")"
-  fi
+  # The top-level `available` is the backend's; audio and brightness carry
+  # their own deeper in, which would pass on a shell with no backend at all.
+  expect_jq "$dump_path" '.compositor == "hyprland" and .available == true' "the dump does not report a connected hyprland backend" '{compositor, available}'
   # A backend that connected but never got its state populated reports an
   # empty list here, which is what an event stream that dropped looks like.
-  if grep -qF '"workspaces":[]' "$dump_path"; then
-    fail "the dump carries no workspaces, the backend connected but its state never populated: $(cat "$dump_path")"
-  fi
+  expect_jq "$dump_path" '.workspaces != []' "the dump carries no workspaces, the backend connected but its state never populated" '{workspaces}'
   # The four keys the theme reads off settings.json, against the file the
   # shell loaded: a written value reads back, an absent or unknown one is
   # the default (`layout` bar, `bar.style` transparent, `motion.morph`

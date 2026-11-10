@@ -153,13 +153,13 @@ leg_tray_assert() {
     fail "no tray status produced"
   fi
   cat "$tray_status_path"; echo
-  tray_count=$(grep -o '"id":' "$tray_status_path" | wc -l | tr -d ' ')
+  tray_count=$("$jq_bin" '.items | length' "$tray_status_path" 2>/dev/null)
   if [ "$tray_count" != "6" ]; then
     fail "tray status did not report all 6 fixture items (got $tray_count), stub registration likely failed"
   fi
   # The tray has no drawer, so nothing here may report one. A drawer/expanded
   # key coming back would mean a stale build, not a passing run.
-  if grep -qE '"(drawer|expanded|pinned|bucket)":' "$tray_status_path"; then
+  if "$jq_bin" -e '[paths | .[-1] | strings] | any(IN("drawer", "expanded", "pinned", "bucket"))' "$tray_status_path" > /dev/null 2>&1; then
     fail "tray status still reports drawer/bucket state, got: $(cat "$tray_status_path")"
   fi
   if [ ! -f "$tray_strip_path" ]; then
@@ -212,14 +212,14 @@ leg_tray_assert() {
     fail "no root debug query produced"
   fi
   cat "$tray_query_root_path"; echo
-  if grep -q '"tray\.' "$tray_query_root_path"; then
+  if "$jq_bin" -e '[.. | strings] | any(startswith("tray."))' "$tray_query_root_path" > /dev/null 2>&1; then
     fail "a root query still reaches tray rows, got: $(cat "$tray_query_root_path")"
   fi
   if [ ! -s "$tray_query_route_path" ]; then
     fail "no in-route debug query produced"
   fi
   cat "$tray_query_route_path"; echo
-  if ! grep -q '"id":"tray\.tray-fixture-2"' "$tray_query_route_path"; then
+  if ! "$jq_bin" -e 'any(.[]; .id == "tray.tray-fixture-2")' "$tray_query_route_path" > /dev/null 2>&1; then
     fail "the tray route cannot search its own rows, got: $(cat "$tray_query_route_path")"
   fi
   leg_on sidebar || return 0

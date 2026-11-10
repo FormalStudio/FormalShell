@@ -20,18 +20,12 @@ leg_light_drive() {
   local script="$shot_dir/light-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-for _ in \$(seq 1 40); do
-  $ipc call theme status > "$light_status_path" 2>&1
-  grep -qF '"mode":"light"' "$light_status_path" && break
-  sleep 0.5
-done
+until_jq 20 "$light_status_path" '.mode == "light"' call theme status
 EOS
   hypr_exec_once "bash $script"
 }
 
 leg_light_assert() {
-  [ -s "$light_status_path" ] || fail "no theme status produced for the light check"
-  grep -qF '"mode":"light"' "$light_status_path" \
-    || fail "theme status does not report mode light: $(head -c 300 "$light_status_path")"
+  expect_jq "$light_status_path" '.mode == "light"' "theme status does not report mode light" '{mode, modeKey, effective}'
   echo "SMOKE_LIGHT mode=light"
 }

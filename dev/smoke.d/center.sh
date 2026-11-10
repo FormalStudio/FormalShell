@@ -144,18 +144,10 @@ leg_center_assert() {
   done
   # "pending":0 would mean the expired notify-sends never reached the tier
   # the bell cell counts, and the summon would have shown an empty list.
-  if grep -q '"pending":0,' "$center_status_before_path"; then
-    fail "pending count was zero before the centre summon: $(cat "$center_status_before_path")"
-  fi
-  if ! grep -q '"centerOpen":false' "$center_status_before_path"; then
-    fail "centre reported open before the summon: $(cat "$center_status_before_path")"
-  fi
-  if ! grep -q '"centerOpen":true' "$center_status_open_path"; then
-    fail "showHistory did not open the centre: $(cat "$center_status_open_path")"
-  fi
-  if ! grep -q '"centerOpen":false' "$center_status_closed_path"; then
-    fail "second showHistory did not close the centre: $(cat "$center_status_closed_path")"
-  fi
+  expect_jq "$center_status_before_path" '.pending != 0' "pending count was zero before the centre summon" '{pending, popups, centerOpen}'
+  expect_jq "$center_status_before_path" '.centerOpen == false' "centre reported open before the summon" '{pending, popups, centerOpen}'
+  expect_jq "$center_status_open_path" '.centerOpen == true' "showHistory did not open the centre" '{pending, popups, centerOpen}'
+  expect_jq "$center_status_closed_path" '.centerOpen == false' "second showHistory did not close the centre" '{pending, popups, centerOpen}'
   if [ ! -s "$center_dismiss_one_path" ]; then
     fail "no notifications dismissOne answer produced"
   fi
@@ -167,9 +159,7 @@ leg_center_assert() {
     if ! grep -q "^ok$" "$center_dismiss_one_path"; then
       fail "dismissOne did not drop the sticky critical toast, got: $(cat "$center_dismiss_one_path")"
     fi
-    if ! grep -q '"popups":0' "$center_status_closed_path"; then
-      fail "a toast survived dismissOne: $(cat "$center_status_closed_path")"
-    fi
+    expect_jq "$center_status_closed_path" '.popups == 0' "a toast survived dismissOne" '{pending, popups, centerOpen}'
   else
     # Run alone, every popup this leg fired has expired into pending by the
     # time dismissOne runs, and an empty popup tier answers `none` rather

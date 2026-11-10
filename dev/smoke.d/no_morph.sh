@@ -22,11 +22,7 @@ leg_no_morph_drive() {
   local script="$shot_dir/no-morph-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-for _ in \$(seq 1 40); do
-  $ipc call debug dump > "$no_morph_dump_path" 2>&1
-  grep -q '"morph":false' "$no_morph_dump_path" && break
-  sleep 0.5
-done
+until_jq 20 "$no_morph_dump_path" '.theme.morph == false' call debug dump
 EOS
   hypr_exec_once "bash $script"
 }

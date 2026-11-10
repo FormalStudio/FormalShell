@@ -75,11 +75,7 @@ leg_bar_title_drive() {
 #!/usr/bin/env bash
 "$mpv_bin" --no-video --really-quiet --loop-file=inf "$bar_title_track_path" &
 echo \$! > "$bar_title_pid_path"
-for _ in \$(seq 1 16); do
-  $ipc call media status > "$bar_title_status_path" 2>&1
-  grep -qF "\"title\":\"$bar_title_track\"" "$bar_title_status_path" && break
-  sleep 0.5
-done
+until_jq 8 "$bar_title_status_path" '.title == "$bar_title_track"' call media status
 spawn_foot formalshell-bar-title "" "$bar_title_text"
 # Waits for the title to reach the cell rather than sleeping at it; the
 # beat after is the label refit (Theme.motion.spatial past the last change)
@@ -203,9 +199,8 @@ leg_bar_title_assert() {
     *) fail "the title cell stops short of the room it was given: $verdict" ;;
   esac
   # The two labels sharing the strip.
-  if ! grep -qF "\"title\":\"$bar_title_track\"" "$bar_title_status_path" 2>/dev/null; then
-    fail "media status never showed the bar-title track, got: $(cat "$bar_title_status_path" 2>/dev/null)"
-  fi
+  "$jq_bin" -e --arg t "$bar_title_track" '.title == $t' "$bar_title_status_path" > /dev/null 2>&1 \
+    || fail "media status never showed the bar-title track, got: $(cat "$bar_title_status_path" 2>/dev/null)"
   "$jq_bin" -c '.[0] | {nowPlaying, activeWindow}' "$bar_title_json_path"
   verdict=$("$jq_bin" -r '
     .[0] as $b | $b.nowPlaying as $p | $b.activeWindow as $w

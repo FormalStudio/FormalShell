@@ -74,7 +74,7 @@ leg_login_lock_drive() {
   write_script "$early" <<EOF
 #!/usr/bin/env bash
 for _ in \$(seq 1 200); do
-  $ipc call lock status 2>/dev/null | grep -q '"secure":true' && break
+  $ipc call lock status 2>/dev/null | "$jq_bin" -e '.secure == true' > /dev/null 2>&1 && break
   sleep 0.05
 done
 "$hyprctl_bin" eval 'hl.monitor({ output = "", mode = "${out_w}x${out_h}@60", position = "0x0", scale = $login_lock_rescale })' > /dev/null 2>&1
@@ -83,7 +83,7 @@ done
 # commits one at the new size: the grab waits for the mode to hold.
 last=
 for _ in \$(seq 1 40); do
-  now=\$("$hyprctl_bin" monitors -j 2>/dev/null | tr -d ' \\n' | grep -o '"width":[0-9]*,"height":[0-9]*' | head -n 1)
+  now=\$("$hyprctl_bin" monitors -j 2>/dev/null | "$jq_bin" -r '.[0] | "\\(.width)x\\(.height)"' 2>/dev/null)
   [ -n "\$now" ] && [ "\$now" = "\$last" ] && break
   last=\$now
   sleep 0.15
@@ -179,11 +179,9 @@ leg_login_lock_assert() {
   fi
 
   cat "$login_lock_early_json"; echo
-  grep -q '"locked":true' "$login_lock_early_json" && grep -q '"secure":true' "$login_lock_early_json" \
-    || fail "the login lock was not up and secure with no lock call. Got: $(cat "$login_lock_early_json")"
-  grep -q '"boot":true' "$login_lock_early_json" || fail "lock status did not report the boot lock"
-  grep -q '"buttons":\["poweroff","reboot","otheruser"\]' "$login_lock_early_json" \
-    || fail "the boot lock does not offer Shutdown, Reboot and Other user. Got: $(cat "$login_lock_early_json")"
+  expect_jq "$login_lock_early_json" '.locked == true and .secure == true' "the login lock was not up and secure with no lock call" '{locked, secure}'
+  expect_jq "$login_lock_early_json" '.boot == true' "lock status did not report the boot lock" '{boot}'
+  expect_jq "$login_lock_early_json" '.buttons == ["poweroff", "reboot", "otheruser"]' "the boot lock does not offer Shutdown, Reboot and Other user" '{buttons}'
 
   # The early frame: the picture whole, at 1:1, centred on black.
   local size w h box early card area
@@ -234,20 +232,19 @@ leg_login_lock_assert() {
   [ "$first_card" -eq 0 ] || [ "$first_card" -gt "$last_pink" ] || fail "the card entered before the splash was gone"
 
   cat "$login_lock_tab_json"; echo
-  grep -q '"buttonCursor":"poweroff"' "$login_lock_tab_json" || fail "Tab did not reach the Shutdown button. Got: $(cat "$login_lock_tab_json")"
+  expect_jq "$login_lock_tab_json" '.buttonCursor == "poweroff"' "Tab did not reach the Shutdown button" '{buttonCursor}'
   cat "$login_lock_armed_json"; echo
-  grep -q '"armed":"otheruser"' "$login_lock_armed_json" || fail "Return did not arm Other user. Got: $(cat "$login_lock_armed_json")"
-  grep -q '"locked":true' "$login_lock_armed_json" || fail "arming Other user left the lock"
+  expect_jq "$login_lock_armed_json" '.armed == "otheruser"' "Return did not arm Other user" '{armed}'
+  expect_jq "$login_lock_armed_json" '.locked == true' "arming Other user left the lock" '{locked}'
   if [ -f "$login_lock_refused_json" ]; then
     cat "$login_lock_refused_json"; echo
-    grep -q '"authError":"Reboot refused"' "$login_lock_refused_json" \
-      || fail "a Reboot logind cannot take did not say so under the field. Got: $(cat "$login_lock_refused_json")"
+    expect_jq "$login_lock_refused_json" '.authError == "Reboot refused"' "a Reboot logind cannot take did not say so under the field" '{authError}'
   else
     echo "login lock: the refused Reboot skipped, the system bus is not this run's private one"
   fi
 
   cat "$login_lock_after_json"; echo
-  grep -q '"locked":false' "$login_lock_after_json" || fail "the real password did not unlock the login lock. Got: $(cat "$login_lock_after_json")"
-  grep -q '"boot":false' "$login_lock_after_json" || fail "the boot lock outlived its unlock"
+  expect_jq "$login_lock_after_json" '.locked == false' "the real password did not unlock the login lock" '{locked}'
+  expect_jq "$login_lock_after_json" '.boot == false' "the boot lock outlived its unlock" '{boot}'
   grep -q '^gone$' "$login_lock_marker_after" || fail "the login marker was still there once the boot lock was up"
 }

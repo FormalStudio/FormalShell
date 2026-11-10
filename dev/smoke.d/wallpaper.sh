@@ -134,7 +134,7 @@ leg_wallpaper_assert() {
   # The compositor palette. `theme status` reports the wallpaper and the mode
   # but not a colour, so theme.json is the primary's source of truth here and
   # the two hypr files are checked against it rather than against each other.
-  theme_primary=$(sed -n 's/.*"primary": "#\([0-9a-fA-F]\{6\}\)".*/\1/p' "$theme_json_path" 2>/dev/null | head -1)
+  theme_primary=$("$jq_bin" -r '.primary // empty | ltrimstr("#")' "$theme_json_path" 2>/dev/null)
   if [ -z "$theme_primary" ]; then
     fail "no primary in $theme_json_path"
   fi

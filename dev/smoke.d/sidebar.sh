@@ -249,7 +249,7 @@ cardclicks() {
       echo "\$1 \$on \$where panel=\$($ipc call panel state 2>&1 | tr -d '\n') center=\$($ipc call notifications status 2>/dev/null | "$jq_bin" .centerOpen)" >> "$sidebar_card_clicks"
       $ipc call panel close > /dev/null 2>&1
       sleep 0.3
-      $ipc call notifications status 2>/dev/null | grep -q '"centerOpen":true' && $ipc call notifications showHistory > /dev/null 2>&1
+      $ipc call notifications status 2>/dev/null | "$jq_bin" -e '.centerOpen == true' > /dev/null 2>&1 && $ipc call notifications showHistory > /dev/null 2>&1
       sleep 1
     done
   done 3< <("$jq_bin" -r '.hits[] | select(.on | IN("panel:calendar", "panel:media", "panel:notifications-center", "panel:activity")) | "\(.on) \(.x) \(.y) \(.w) \(.h)"' "\$2")
@@ -287,10 +287,7 @@ $ipc call sidebar expand > /dev/null 2>&1
 sleep 2
 $ipc call sidebar status > "$sidebar_status_expanded" 2>&1
 settings_retarget '.bar.position = "right"'
-for _ in \$(seq 1 20); do
-  $ipc call sidebar status 2>/dev/null | grep -q '"edge":"right"' && break
-  sleep 0.5
-done
+until_jq 10 "$shot_dir/sidebar-edge-right.json" '.edge == "right"' call sidebar status
 sleep 1
 "$hyprctl_bin" -j layers > "$sidebar_layers_right" 2>&1
 EOS
