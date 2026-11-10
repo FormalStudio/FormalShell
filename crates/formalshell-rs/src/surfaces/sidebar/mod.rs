@@ -18,8 +18,9 @@ pub mod minimap;
 use std::collections::HashMap;
 use std::time::Instant;
 
+use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
 use fs_chrome::bar::panels::PanelId;
-use fs_types::{Edge, IRect, NotificationId};
+use fs_types::{Edge, IRect, NotificationId, Region};
 use fs_info::clock::format_qt;
 use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
@@ -620,6 +621,32 @@ fn action(on: &crate::ui::On, map: &minimap::Map) -> Action {
     }
 }
 
+/// The builtins the column draws a card or button of its own for; the
+/// foot's chevron holds the rest of the right region. Indicators stay out:
+/// the Activity card is only the first of their rail.
+pub const DRAWN: &[Builtin] = &[
+    Builtin::Launcher,
+    Builtin::Workspaces,
+    Builtin::ActiveWindow,
+    Builtin::Clock,
+    Builtin::NowPlaying,
+    Builtin::Visualizer,
+    Builtin::Network,
+    Builtin::Tray,
+    Builtin::Bell,
+    Builtin::Chevron,
+];
+
+/// The entries the foot's chevron reads: the right region, Audio leading
+/// whether or not the layout names it, since its button in the foot is the
+/// one the chevron took.
+pub fn chevron_entries(right: &[Entry]) -> Vec<Entry> {
+    let audio = Entry { kind: EntryKind::Builtin(Builtin::Audio), region: Region::Right, collapsible: false };
+    let mut out = vec![audio.clone()];
+    out.extend(right.iter().filter(|e| e.kind != audio.kind).cloned());
+    out
+}
+
 /// Collapse state lives in state.json, never in settings.json.
 pub fn set_collapsed(collapsed: bool) {
     state::set(vec![Field::SidebarCollapsed(collapsed)]);
@@ -1057,4 +1084,28 @@ fn rail_clock(p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRec
 /// at about 0.7 of the size.
 pub fn cap_height(size: f64) -> f64 {
     (size * 0.7).round()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fs_chrome::bar::layout;
+
+    fn entry(b: Builtin) -> Entry {
+        Entry { kind: EntryKind::Builtin(b), region: Region::Right, collapsible: false }
+    }
+
+    fn names(entries: &[Entry]) -> String {
+        entries.iter().map(|e| e.name()).collect::<Vec<_>>().join(",")
+    }
+
+    #[test]
+    fn the_foot_chevron_holds_the_right_region_less_the_column() {
+        use Builtin::*;
+        let right: Vec<Entry> = [Display, Chevron, Tray, Battery, Network, Bluetooth, Bell, Indicators].map(entry).to_vec();
+        let held = layout::overflow_entries(&chevron_entries(&right), Some(DRAWN));
+        assert_eq!(names(&held), "audio,display,battery,bluetooth,indicators");
+        let held = layout::overflow_entries(&chevron_entries(&[entry(Battery), entry(Audio)]), Some(DRAWN));
+        assert_eq!(names(&held), "audio,battery");
+    }
 }

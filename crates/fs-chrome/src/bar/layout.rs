@@ -540,41 +540,26 @@ pub fn collapsed_names(entries: &[Entry]) -> Vec<String> {
         .collect()
 }
 
-/// The same governed entries, as copies that no longer answer to the chevron.
-/// The second bar renders the group through the bar's own region delegate,
-/// which collapses anything annotated `collapsible` to nothing, which inside
-/// the overflow is exactly the group it is there to show. Clearing the
-/// annotation on a copy leaves the strip's own entries untouched.
-pub fn overflow_entries(entries: &[Entry]) -> Vec<Entry> {
+/// What a chevron holds, as copies that no longer answer to it: on the
+/// strip (`drawn` none) the entries it governs, and where something else
+/// draws some of them (the sidebar's column) every entry of `entries` whose
+/// builtin is not in `drawn`, governed or not. The second bar renders the
+/// group through the bar's own region delegate, which collapses anything
+/// annotated `collapsible` to nothing, which inside the overflow is exactly
+/// the group it is there to show. Clearing the annotation on a copy leaves
+/// the strip's own entries untouched.
+pub fn overflow_entries(entries: &[Entry], drawn: Option<&[Builtin]>) -> Vec<Entry> {
     entries
         .iter()
-        .filter(|e| e.collapsible)
+        .filter(|e| match drawn {
+            None => e.collapsible,
+            Some(drawn) => !matches!(e.kind, EntryKind::Builtin(b) if drawn.contains(&b)),
+        })
         .map(|e| Entry {
             collapsible: false,
             ..e.clone()
         })
         .collect()
-}
-
-/// What the sidebar's chevron holds: every entry of the right region the
-/// column draws no card or button of its own for, governed or not, as
-/// copies clear of the gate. Audio leads whether or not the layout names
-/// it, since its button in the column's foot is the one the chevron took.
-/// Indicators stay: the Activity card is only the first of their rail.
-pub fn sidebar_overflow_entries(right: &[Entry]) -> Vec<Entry> {
-    use Builtin::*;
-    let own = |e: &Entry| {
-        matches!(
-            e.kind,
-            EntryKind::Builtin(
-                Launcher | Workspaces | ActiveWindow | Clock | NowPlaying | Visualizer | Network | Tray | Bell | Chevron
-            )
-        )
-    };
-    let audio = Entry { kind: EntryKind::Builtin(Audio), region: Region::Right, collapsible: false };
-    let mut out = vec![audio.clone()];
-    out.extend(right.iter().filter(|e| !own(e) && e.kind != audio.kind).map(|e| Entry { collapsible: false, ..e.clone() }));
-    out
 }
 
 /// What quick settings draws itself (specs/2026-11-04-quick-settings.md
@@ -585,17 +570,11 @@ fn absorbed(e: &Entry) -> bool {
     matches!(e.kind, EntryKind::Builtin(Audio | Network | Bluetooth | Battery | Display | Indicators | Microphone | Chevron))
 }
 
-/// The info tiles quick settings opened off a region's chevron carries:
-/// the entries it governs, less what the card already draws, in layout
-/// order.
-pub fn quick_extras(entries: &[Entry]) -> Vec<Entry> {
-    overflow_entries(entries).into_iter().filter(|e| !absorbed(e)).collect()
-}
-
-/// The same under the sidebar: the right region's entries the column has
-/// no card for, governed or not, less what the card already draws.
-pub fn sidebar_quick_extras(right: &[Entry]) -> Vec<Entry> {
-    sidebar_overflow_entries(right).into_iter().filter(|e| !absorbed(e)).collect()
+/// The info tiles quick settings opened off a chevron carries: what the
+/// chevron holds ([`overflow_entries`]), less what the card already draws,
+/// in layout order.
+pub fn quick_extras(entries: &[Entry], drawn: Option<&[Builtin]>) -> Vec<Entry> {
+    overflow_entries(entries, drawn).into_iter().filter(|e| !absorbed(e)).collect()
 }
 
 pub fn has_chevron(entries: &[Entry]) -> bool {
@@ -1161,7 +1140,7 @@ mod tests {
         let r = resolve_bar(
             json!({ "layout": { "right": ["bluetooth", "weather", "chevron", "battery", "audio"] } }),
         );
-        let entries = overflow_entries(&r.regions.right);
+        let entries = overflow_entries(&r.regions.right, None);
         assert_eq!(entries.len(), 2);
         assert_eq!(names(&entries), "bluetooth,weather");
         for e in &entries {
@@ -1178,15 +1157,14 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_overflow_is_the_right_region_less_the_column() {
+    fn a_drawn_set_keeps_every_entry_it_does_not_name() {
         let r = resolve_bar(json!({ "layout": { "right": [
             "display", "tailscale", "chevron", "tray", "battery", "earbuds", "network", "bluetooth", "bell", "indicators"
         ] } }));
-        let entries = sidebar_overflow_entries(&r.regions.right);
-        assert_eq!(names(&entries), "audio,display,tailscale,battery,earbuds,bluetooth,indicators");
+        let drawn = [Builtin::Chevron, Builtin::Tray, Builtin::Network, Builtin::Bell];
+        let entries = overflow_entries(&r.regions.right, Some(&drawn));
+        assert_eq!(names(&entries), "display,tailscale,battery,earbuds,bluetooth,indicators");
         assert!(entries.iter().all(|e| !e.collapsible && e.region == Region::Right));
-        let r = resolve_bar(json!({ "layout": { "right": ["battery", "audio"] } }));
-        assert_eq!(names(&sidebar_overflow_entries(&r.regions.right)), "audio,battery");
     }
 
     #[test]
@@ -1195,21 +1173,22 @@ mod tests {
             "layout": { "right": ["bluetooth", "weather", "tray", "bell", "indicators", "custom:cpu", "github", "chevron", "battery", "audio", "network"] },
             "modules": [{ "id": "cpu", "type": "command", "command": ["true"], "interval": 1000 }]
         }));
-        let extras = quick_extras(&r.regions.right);
+        let extras = quick_extras(&r.regions.right, None);
         assert_eq!(names(&extras), "weather,tray,bell,custom:cpu,github");
         assert!(extras.iter().all(|e| !e.collapsible));
         let r = resolve_bar(json!({ "layout": { "right": ["audio", "microphone", "display", "network", "chevron", "battery"] } }));
-        assert!(quick_extras(&r.regions.right).is_empty());
+        assert!(quick_extras(&r.regions.right, None).is_empty());
         let r = resolve_bar(json!({ "layout": { "right": ["battery", "audio"] } }));
-        assert!(quick_extras(&r.regions.right).is_empty());
+        assert!(quick_extras(&r.regions.right, None).is_empty());
     }
 
     #[test]
-    fn sidebar_quick_extras_drop_what_the_card_draws() {
+    fn quick_extras_under_a_drawn_set_drop_what_the_card_draws() {
         let r = resolve_bar(json!({ "layout": { "right": [
             "display", "tailscale", "chevron", "tray", "battery", "earbuds", "network", "bluetooth", "bell", "indicators", "usage"
         ] } }));
-        assert_eq!(names(&sidebar_quick_extras(&r.regions.right)), "tailscale,earbuds,usage");
+        let drawn = [Builtin::Chevron, Builtin::Tray, Builtin::Network, Builtin::Bell];
+        assert_eq!(names(&quick_extras(&r.regions.right, Some(&drawn))), "tailscale,earbuds,usage");
     }
 
     #[test]
@@ -1218,7 +1197,7 @@ mod tests {
             json!({ "layout": { "left": ["launcher", "chevron", "workspaces", "activeWindow"] } }),
         );
         assert_eq!(
-            names(&overflow_entries(&r.regions.left)),
+            names(&overflow_entries(&r.regions.left, None)),
             "workspaces,activeWindow"
         );
     }
@@ -1226,7 +1205,7 @@ mod tests {
     #[test]
     fn a_region_with_no_chevron_has_no_overflow() {
         let r = resolve_bar(json!({ "layout": { "right": ["battery", "audio"] } }));
-        assert_eq!(overflow_entries(&r.regions.right).len(), 0);
+        assert_eq!(overflow_entries(&r.regions.right, None).len(), 0);
     }
 
     // A module entry carries more than a name, and the copy has to keep all
@@ -1237,7 +1216,7 @@ mod tests {
             "layout": { "right": ["custom:cpu", "chevron", "audio"] },
             "modules": [{ "id": "cpu", "type": "command", "command": ["true"], "interval": 1000 }]
         }));
-        let entries = overflow_entries(&r.regions.right);
+        let entries = overflow_entries(&r.regions.right, None);
         assert_eq!(entries.len(), 1);
         match &entries[0].kind {
             EntryKind::Module { id, module } => {

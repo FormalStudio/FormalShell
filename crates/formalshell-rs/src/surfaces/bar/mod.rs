@@ -35,7 +35,7 @@ use vello_cpu::kurbo::{Arc, BezPath, Point, Rect, RoundedRect, Shape, SvgArc, Ve
 use crate::scene::{NodeId, Paint, Scene};
 use crate::store::{Store, Topic};
 use crate::surfaces::card::Join;
-use crate::surfaces::sidebar::Sidebar;
+use crate::surfaces::sidebar::{self, Sidebar};
 use crate::paint::{Kit, Painter};
 use cell::{Action, Button, Env};
 use cells::{tray::Tray, workspaces::Workspaces};
@@ -507,24 +507,32 @@ impl Bar {
         self.set_idle(self.idle);
     }
 
-    /// The governed entries of a region, which `bar chevron status` lists.
-    /// Under the sidebar the one chevron is the column's foot button, and
-    /// its entries the right region's cells the column has no room for.
-    pub fn overflow_entries(&self, region: Region) -> Vec<Entry> {
-        if self.sidebar().is_some() {
-            return layout::sidebar_overflow_entries(self.resolved.regions.get(Region::Right));
+    /// What `region`'s chevron answers for: whether there is one, the
+    /// entries it reads and what of them is drawn elsewhere. Under the
+    /// sidebar the one chevron is the column's foot button, on the right.
+    fn chevron(&self, region: Region) -> (bool, Vec<Entry>, Option<&'static [Builtin]>) {
+        match self.sidebar() {
+            Some(_) => (region == Region::Right, sidebar::chevron_entries(self.resolved.regions.get(Region::Right)), Some(sidebar::DRAWN)),
+            None => {
+                let entries = self.resolved.regions.get(region);
+                (layout::has_chevron(entries), entries.to_vec(), None)
+            }
         }
-        layout::overflow_entries(self.resolved.regions.get(region))
+    }
+
+    /// The entries `region`'s chevron holds, which `bar chevron status`
+    /// lists.
+    pub fn overflow_entries(&self, region: Region) -> Vec<Entry> {
+        let (_, entries, drawn) = self.chevron(region);
+        layout::overflow_entries(&entries, drawn)
     }
 
     /// The entries quick settings opened off `region`'s chevron shows as
-    /// info tiles: what that chevron governs, less what the card draws
+    /// info tiles: what that chevron holds, less what the card draws
     /// itself.
     pub fn quick_extras(&self, region: Region) -> Vec<Entry> {
-        if self.sidebar().is_some() {
-            return layout::sidebar_quick_extras(self.resolved.regions.get(Region::Right));
-        }
-        layout::quick_extras(self.resolved.regions.get(region))
+        let (_, entries, drawn) = self.chevron(region);
+        layout::quick_extras(&entries, drawn)
     }
 
     /// The panel of the right region's nth panel-bearing cell, 1-based
@@ -564,10 +572,7 @@ impl Bar {
     }
 
     pub fn has_chevron(&self, region: Region) -> bool {
-        if self.sidebar().is_some() {
-            return region == Region::Right;
-        }
-        layout::has_chevron(self.resolved.regions.get(region))
+        self.chevron(region).0
     }
 
     /// The strip with the pass its cells are read against, none under the
