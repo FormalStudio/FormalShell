@@ -15,6 +15,15 @@ use super::notifications::{self, Op};
 use crate::runtime::Ctx;
 use crate::store;
 
+/// Where a power action is pressed from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Seat {
+    /// A logged-in session: the lock, quick settings, the settings page.
+    Session,
+    /// The greeter, before anyone has logged in.
+    Greeter,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Suspend,
@@ -32,6 +41,22 @@ impl Action {
             Self::Reboot => "reboot",
             Self::PowerOff => "poweroff",
         }
+    }
+
+    /// The icon its button carries, wherever one is drawn.
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Suspend => "moon",
+            Self::Reboot => "rotate-cw",
+            Self::PowerOff => "power",
+        }
+    }
+
+    /// Whether a press from `seat` arms first and a second press goes
+    /// ahead: a reboot or power off ends a session's work, a suspend keeps
+    /// it, and the greeter has no session to lose.
+    pub fn confirms(self, seat: Seat) -> bool {
+        seat == Seat::Session && matches!(self, Self::Reboot | Self::PowerOff)
     }
 
     pub fn parse(verb: &str) -> Option<Self> {

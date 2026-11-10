@@ -413,7 +413,7 @@ impl Greeter {
 
     /// A card control, clicked.
     fn activate(&mut self, on: &crate::ui::On, what: What) {
-        if let Some(action) = power::Action::parse(on) {
+        if let Some(action) = power::Action::parse(on).filter(|a| !a.confirms(power::Seat::Greeter)) {
             let _ = std::thread::Builder::new().name("fs-power".into()).spawn(move || {
                 let method = action.method();
                 if let Err(e) = futures_lite::future::block_on(power::call(method)) {

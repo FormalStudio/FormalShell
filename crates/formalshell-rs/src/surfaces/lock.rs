@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 use crate::scene::{Bitmap, NodeId, Scene};
 use fs_types::IRect;
-use crate::services::power::Action;
+use crate::services::power::{Action, Seat};
 use crate::services::wallpaper::{self, DepthCut, Picture};
 use crate::paint::{Kit, Painter};
 use crate::surfaces::login::{self, Backdrop, Prompt, Under, View};
@@ -114,9 +114,17 @@ impl Button {
         }
     }
 
+    /// Every button the lock shows arms first.
+    pub fn confirms(self) -> bool {
+        match self {
+            Self::Power(a) => a.confirms(Seat::Session),
+            Self::OtherUser => true,
+        }
+    }
+
     fn icon(self) -> &'static str {
         match self {
-            Self::Power(a) => login::power_icon(a),
+            Self::Power(a) => a.icon(),
             Self::OtherUser => "users",
         }
     }
@@ -450,6 +458,12 @@ pub fn backdrop(p: &Picture, cut: Option<DepthCut>) -> (Bitmap, Option<Bitmap>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_armed_button_asks_in_the_launchers_words() {
+        let words: Vec<String> = [Button::SHUTDOWN, Button::REBOOT, Button::OtherUser].into_iter().map(|b| crate::ui::confirm::ask(b.label())).collect();
+        assert_eq!(words, ["Confirm Shutdown?", "Confirm Reboot?", "Confirm Other user?"]);
+    }
 
     #[test]
     fn ink_follows_the_backdrop() {

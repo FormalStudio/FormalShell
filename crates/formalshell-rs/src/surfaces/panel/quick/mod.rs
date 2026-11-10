@@ -393,8 +393,7 @@ pub enum Pick {
     Effect(String),
     Edge(Edge),
     Reconnect,
-    /// A power menu row, by its [`POWER`] `what`.
-    Power(&'static str),
+    Power(Leave),
     /// A Background row, by its [`Task::what`].
     Task(String),
 }
@@ -412,7 +411,7 @@ impl std::fmt::Display for Pick {
             Pick::Effect(id) => write!(f, "m:keyboard:{id}"),
             Pick::Edge(edge) => write!(f, "m:ipad:{}", edge.as_str()),
             Pick::Reconnect => f.write_str("m:ipad:reconnect"),
-            Pick::Power(what) => write!(f, "m:power:{what}"),
+            Pick::Power(leave) => write!(f, "m:power:{}", leave.id()),
             Pick::Task(what) => write!(f, "m:{BACKGROUND}:{what}"),
         }
     }
@@ -575,25 +574,55 @@ pub struct MenuView {
     pub settings: Option<(&'static str, Hand)>,
 }
 
-/// One power menu action: as `m:power:<what>` names it, its row's words
-/// at rest, and what an armed row asks after (`confirm::ask`), "" for one
-/// that needs no second Enter.
-pub struct Power {
-    pub what: &'static str,
-    pub rest: &'static str,
-    pub noun: &'static str,
+/// One power menu row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Leave {
+    Power(PowerAction),
+    Logout,
 }
 
-pub const POWER: [Power; 4] = [
-    Power { what: "suspend", rest: "Suspend", noun: "" },
-    Power { what: "reboot", rest: "Restart…", noun: "restart" },
-    Power { what: "poweroff", rest: "Power off…", noun: "power off" },
-    Power { what: "logout", rest: "Log out…", noun: "log out" },
-];
+impl Leave {
+    pub const ALL: [Leave; 4] = [Leave::Power(PowerAction::Suspend), Leave::Power(PowerAction::Reboot), Leave::Power(PowerAction::PowerOff), Leave::Logout];
+
+    /// As `m:power:<id>` names it.
+    fn id(self) -> &'static str {
+        match self {
+            Leave::Power(a) => a.id(),
+            Leave::Logout => "logout",
+        }
+    }
+
+    /// The row's words at rest.
+    fn rest(self) -> &'static str {
+        match self {
+            Leave::Power(PowerAction::Suspend) => "Suspend",
+            Leave::Power(PowerAction::Reboot) => "Restart\u{2026}",
+            Leave::Power(PowerAction::PowerOff) => "Power off\u{2026}",
+            Leave::Logout => "Log out\u{2026}",
+        }
+    }
+
+    /// What an armed row asks after (`confirm::ask`).
+    fn noun(self) -> &'static str {
+        match self {
+            Leave::Power(PowerAction::Suspend) => "suspend",
+            Leave::Power(PowerAction::Reboot) => "restart",
+            Leave::Power(PowerAction::PowerOff) => "power off",
+            Leave::Logout => "log out",
+        }
+    }
+
+    fn confirms(self) -> bool {
+        match self {
+            Leave::Power(a) => a.confirms(power::Seat::Session),
+            Leave::Logout => true,
+        }
+    }
+}
 
 /// `id`'s menu off the store, `armed` the power row a first Enter armed;
 /// none for a control with no menu now.
-pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
+pub fn menu(store: &Store, id: &str, armed: Option<Leave>) -> Option<MenuView> {
     if id == BACKGROUND {
         let mut lines: Vec<Line> = background(store).into_iter().map(|task| Line::Task { key: Pick::Task(task.what.clone()), task }).collect();
         if lines.is_empty() {
@@ -717,12 +746,12 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
         "power" => {
             let can = store.logind;
             let mut lines = Vec::new();
-            for Power { what, rest, noun } in POWER {
-                let shown = match what {
-                    "suspend" => can.suspend,
-                    "reboot" => can.reboot,
-                    "poweroff" => can.power_off,
-                    _ => {
+            for leave in Leave::ALL {
+                let shown = match leave {
+                    Leave::Power(PowerAction::Suspend) => can.suspend,
+                    Leave::Power(PowerAction::Reboot) => can.reboot,
+                    Leave::Power(PowerAction::PowerOff) => can.power_off,
+                    Leave::Logout => {
                         if !lines.is_empty() {
                             lines.push(Line::Separator);
                         }
@@ -730,9 +759,9 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                     }
                 };
                 if shown {
-                    let armed = armed == Some(what);
-                    let title = if armed { crate::ui::confirm::ask(noun) } else { rest.to_owned() };
-                    lines.push(Line::Row { key: Pick::Power(what), glyph: "", title, detail: None, mark: None, checked: false, armed });
+                    let armed = armed == Some(leave);
+                    let title = if armed { crate::ui::confirm::ask(leave.noun()) } else { leave.rest().to_owned() };
+                    lines.push(Line::Row { key: Pick::Power(leave), glyph: "", title, detail: None, mark: None, checked: false, armed });
                 }
             }
             MenuView { glyph: "power", title: "Power off", on: false, lines, settings: None }
@@ -763,7 +792,7 @@ struct MenuState {
     /// The dim's share, `effects`.
     dim: Animated,
     /// The power row a first Enter armed.
-    armed: Armed<&'static str>,
+    armed: Armed<Leave>,
     /// The cursor has gone into the menu since it opened.
     entered: bool,
     /// Where the cursor goes next, once.
@@ -1178,7 +1207,7 @@ impl Panel for QuickSettings {
     fn reached(&mut self, stop: &On, _fx: &mut Effect) {
         let m = self.menu.get_mut();
         let on = match stop.get::<Hit>() {
-            Some(Hit::Row(Pick::Power(what))) => Some(*what),
+            Some(Hit::Row(Pick::Power(leave))) => Some(*leave),
             _ => None,
         };
         m.armed.keep(on.as_ref());
@@ -1371,30 +1400,23 @@ impl QuickSettings {
             Pick::Effect(id) => refused("keyboard", lights::effect(&fx.store.lights, &id)),
             Pick::Reconnect => refused("ipad", ipad::send(&fx.store.ipad, |_| Ok(ipad::Cmd::Reconnect))),
             Pick::Edge(edge) => refused("ipad", ipad::send(&fx.store.ipad, |i| Ok(ipad::Cmd::Position(edge, i.stretch)))),
-            Pick::Power(what) => self.power(what, fx),
+            Pick::Power(leave) => self.power(leave, fx),
             Pick::Task(what) => background_row(&what, fx),
         }
     }
 
     /// Suspend at once; the rest arm on a first Enter and run on a second,
     /// as the launcher's Shutdown and Reboot rows do. The card closes first.
-    fn power(&mut self, what: &str, fx: &mut Effect) {
+    fn power(&mut self, leave: Leave, fx: &mut Effect) {
         let m = self.menu.get_mut();
-        let Some(power) = POWER.iter().find(|p| p.what == what) else { return };
-        let action = match power.what {
-            "suspend" => Some(PowerAction::Suspend),
-            "reboot" => Some(PowerAction::Reboot),
-            "poweroff" => Some(PowerAction::PowerOff),
-            _ => None,
-        };
-        if !power.noun.is_empty() && !m.armed.press(power.what) {
+        if leave.confirms() && !m.armed.press(leave) {
             return;
         }
         m.armed.clear();
         fx.push(Out::Close);
-        match action {
-            Some(a) => power::request(a),
-            None => fx.push(Out::Do(Verb::Logout)),
+        match leave {
+            Leave::Power(a) => power::request(a),
+            Leave::Logout => fx.push(Out::Do(Verb::Logout)),
         }
     }
 
@@ -1590,4 +1612,15 @@ pub fn report(store: &Store, card: Option<&QuickSettings>, boxes: &[(String, IRe
 /// Whether the open card last drew an info tile for `id`.
 pub fn drew(card: &QuickSettings, id: &str) -> bool {
     card.drawn.borrow().iter().any(|x| x.id == id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_armed_power_row_asks_after_its_noun() {
+        let words: Vec<String> = Leave::ALL.into_iter().filter(|l| l.confirms()).map(|l| crate::ui::confirm::ask(l.noun())).collect();
+        assert_eq!(words, ["Confirm restart?", "Confirm power off?", "Confirm log out?"]);
+    }
 }

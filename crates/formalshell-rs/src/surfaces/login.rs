@@ -180,15 +180,6 @@ pub fn picture_size(theme: &Theme) -> f64 {
     (theme.space.control_height * 2.0).round()
 }
 
-/// The icon a power action's button carries, on the greeter and the lock.
-pub fn power_icon(action: power::Action) -> &'static str {
-    match action {
-        power::Action::Suspend => "moon",
-        power::Action::Reboot => "rotate-cw",
-        power::Action::PowerOff => "power",
-    }
-}
-
 /// A decoded wallpaper's BGRA as a bitmap's RGBA, opaque.
 pub fn rgba(bgra: &[u8]) -> Vec<u8> {
     bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect()
@@ -278,7 +269,7 @@ impl Controls<'_> {
             let chip = w::trigger(s, "users", name, self.menu == Menu::Users).on("users");
             chips.push(if self.menu == Menu::Users { chip.float(list()) } else { chip });
         }
-        let power = power::Action::ALL.map(|a| w::icon_button(power_icon(a)).on(a.id())).to_vec();
+        let power = power::Action::ALL.map(|a| w::icon_button(a.icon()).on(a.id())).to_vec();
         let mut col = Vec::new();
         if !chips.is_empty() {
             col.push(w::row(s.sm, chips));

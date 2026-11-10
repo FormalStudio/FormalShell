@@ -12,20 +12,62 @@ use fs_chrome::bar::panels::PanelId;
 
 use super::{Effect, Out, Panel, Verb, View};
 use crate::services::power;
+use crate::ui::confirm::Armed;
 use crate::store::Topic;
 use crate::ui::{El, Event, On, Size, Type, Weight, What, w};
 
 #[derive(Default)]
 pub struct Settings {
-    /// The restart or shut down button pressed once, by its row.
-    armed: Option<usize>,
+    /// The restart or shut down button pressed once.
+    armed: Armed<Session>,
 }
 
-/// A tile or a session button, by its row in [`TILES`] or [`SESSION`].
+/// A session button beside the tiles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Session {
+    Lock,
+    Power(power::Action),
+}
+
+impl Session {
+    const ALL: [Session; 4] = [Session::Lock, Session::Power(power::Action::Suspend), Session::Power(power::Action::Reboot), Session::Power(power::Action::PowerOff)];
+
+    fn id(self) -> &'static str {
+        match self {
+            Session::Lock => "lock",
+            Session::Power(a) => a.id(),
+        }
+    }
+
+    fn icon(self) -> &'static str {
+        match self {
+            Session::Lock => "lock",
+            Session::Power(a) => a.icon(),
+        }
+    }
+
+    fn tip(self) -> &'static str {
+        match self {
+            Session::Lock => "Lock",
+            Session::Power(power::Action::Suspend) => "Suspend",
+            Session::Power(power::Action::Reboot) => "Restart",
+            Session::Power(power::Action::PowerOff) => "Shut down",
+        }
+    }
+
+    fn confirms(self) -> bool {
+        match self {
+            Session::Lock => false,
+            Session::Power(a) => a.confirms(power::Seat::Session),
+        }
+    }
+}
+
+/// A tile by its row in [`TILES`], or a session button.
 #[derive(Clone, Copy, PartialEq)]
 enum Press {
     Tile(usize),
-    Session(usize),
+    Session(Session),
 }
 
 impl crate::ui::on::HitId for Press {}
@@ -34,7 +76,7 @@ impl std::fmt::Display for Press {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Press::Tile(i) => write!(f, "tile:{}", TILES[i].0),
-            Press::Session(i) => write!(f, "session:{}", SESSION[i].0),
+            Press::Session(b) => write!(f, "session:{}", b.id()),
         }
     }
 }
@@ -45,9 +87,6 @@ const TILES: [(&str, &str, &str, PanelId); 4] = [
     ("system", "hexagon", "System", PanelId::SettingsSystem),
     ("info", "info", "Information", PanelId::Info),
 ];
-
-const SESSION: [(&str, &str, &str); 4] =
-    [("lock", "lock", "Lock"), ("suspend", "moon", "Suspend"), ("reboot", "rotate-cw", "Restart"), ("poweroff", "power", "Shut down")];
 
 impl Panel for Settings {
     fn title(&self, _: &View) -> String {
@@ -95,13 +134,12 @@ impl Panel for Settings {
             })
             .collect();
         let button_h = (tile_h * rows + gap * (rows - 1.0) - gap * 3.0) / 4.0;
-        let session = SESSION
-            .iter()
-            .enumerate()
-            .map(|(i, (_, glyph, tip))| {
-                let armed = self.armed == Some(i);
+        let session = Session::ALL
+            .into_iter()
+            .map(|b| {
+                let armed = self.armed.is(&b);
                 let side = button_h - s.lg * 2.0;
-                let chip = w::cell(w::row(0.0, vec![w::spacer(), w::icon(*glyph).size(Type::Display), w::spacer()]).fill().height(side))
+                let chip = w::cell(w::row(0.0, vec![w::spacer(), w::icon(b.icon()).size(Type::Display), w::spacer()]).fill().height(side))
                     .cell_state(|c| {
                         c.glyph = true;
                         c.round = true;
@@ -118,9 +156,9 @@ impl Panel for Settings {
                     })
                     .height(button_h)
                     .interactive()
-                    .tip(*tip)
-                    .stop(Press::Session(i))
-                    .on(Press::Session(i))
+                    .tip(b.tip())
+                    .stop(Press::Session(b))
+                    .on(Press::Session(b))
             })
             .collect();
         w::panel_text(s, w::row(gap, vec![w::grid(2, gap, tiles), w::column(gap, session).width(Size::Px(column))]).fill())
@@ -151,34 +189,39 @@ impl Panel for Settings {
 
 impl Settings {
     fn disarm_off(&mut self, stop: Option<&On>) {
-        if self.armed.is_some_and(|i| stop.and_then(|s| s.get::<Press>()) != Some(&Press::Session(i))) {
-            self.armed = None;
-        }
+        let on = match stop.and_then(|s| s.get::<Press>()) {
+            Some(&Press::Session(b)) => Some(b),
+            _ => None,
+        };
+        self.armed.keep(on.as_ref());
     }
 
     fn go(&mut self, on: &On, fx: &mut Effect) {
-        let armed = self.armed.take();
-        let i = match on.get::<Press>() {
+        let b = match on.get::<Press>() {
+            Some(&Press::Session(b)) => b,
             Some(&Press::Tile(i)) => {
+                self.armed.clear();
                 fx.push(Out::Panel(TILES[i].3, None));
                 return;
             }
-            Some(&Press::Session(i)) => i,
-            None => return,
+            None => {
+                self.armed.clear();
+                return;
+            }
         };
-        let id = SESSION[i].0;
-        if id == "lock" {
-            fx.push(Out::Close);
-            fx.push(Out::Do(Verb::Lock));
+        if b.confirms() && !self.armed.press(b) {
             return;
         }
-        if matches!(id, "reboot" | "poweroff") && armed != Some(i) {
-            self.armed = Some(i);
-            return;
-        }
-        if let Some(action) = power::Action::parse(id) {
-            power::request(action);
-            fx.push(Out::Close);
+        self.armed.clear();
+        match b {
+            Session::Lock => {
+                fx.push(Out::Close);
+                fx.push(Out::Do(Verb::Lock));
+            }
+            Session::Power(action) => {
+                power::request(action);
+                fx.push(Out::Close);
+            }
         }
     }
 }

@@ -988,7 +988,7 @@ impl App {
         self.lock.armed.keep(button.as_ref());
         match pressed {
             Some(Control::Button(b)) => {
-                if self.lock.armed.press(b) {
+                if !b.confirms() || self.lock.armed.press(b) {
                     self.lock_button(b);
                 }
             }
