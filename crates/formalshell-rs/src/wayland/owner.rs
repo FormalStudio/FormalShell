@@ -1485,4 +1485,8 @@ impl Owner for HotCorners {
     fn configure(&self, app: &mut App, surface: &WlSurface, _: (i32, i32)) {
         app.hot_corner_configure(surface);
     }
+
+    fn output_gone(&self, app: &mut App, output: &WlOutput) {
+        app.hot_corner_output_gone(output);
+    }
 }

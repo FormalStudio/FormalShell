@@ -86,6 +86,16 @@ impl App {
 
     /// Builds the corners the config and the output list ask for.
     pub(super) fn sync_hot_corners(&mut self) {
+        self.build_hot_corners(None);
+    }
+
+    /// sctk still lists a departing output while it says so, and sends
+    /// nothing once it is gone: the corners are rebuilt here without it.
+    pub(super) fn hot_corner_output_gone(&mut self, output: &WlOutput) {
+        self.build_hot_corners(Some(output));
+    }
+
+    fn build_hot_corners(&mut self, gone: Option<&WlOutput>) {
         if !self.store.config.loaded {
             return;
         }
@@ -98,6 +108,7 @@ impl App {
         let outputs: Vec<(WlOutput, String, Option<(f64, f64, f64, f64)>)> = self
             .outputs
             .outputs()
+            .filter(|o| Some(o) != gone)
             .map(|o| {
                 let info = self.outputs.info(&o);
                 let rect = info.as_ref().and_then(|i| {
@@ -126,6 +137,9 @@ impl App {
             return;
         }
         self.hot.key = key;
+        for i in 0..self.hot.wins.len() {
+            self.stop_dwell(i);
+        }
         self.hot.wins.clear();
         let now = self.corner_ms();
         for w in windows {

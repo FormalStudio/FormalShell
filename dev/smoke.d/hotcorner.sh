@@ -37,9 +37,7 @@ leg_hotcorner_drive() {
   local script="$shot_dir/hotcorner-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-# A leg before this one may have just removed an output of its own, and
-# the corners it rebuilds can read doubled for a moment after.
-until_jq 5 "$hotcorner_layers_path" '[.[] | .levels[]?[]? | select(.namespace == "formalshell:hotcorner")] | length == 3' "$hyprctl_bin" -j layers
+"$hyprctl_bin" -j layers > "$hotcorner_layers_path" 2>&1
 # Hyprland lays outputs out in logical pixels: the first one's width over
 # its scale.
 width=\$("$hyprctl_bin" -j monitors | "$jq_bin" '.[0] | .width / .scale | round')
