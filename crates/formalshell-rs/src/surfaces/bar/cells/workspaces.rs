@@ -17,6 +17,7 @@ use vello_cpu::kurbo::Affine;
 use crate::motion::{Animated, Kind, PULSE_MS, breathe};
 use crate::services::appicon::{self, Icon};
 use crate::services::agents;
+use fs_info::agents::Badge;
 use crate::settings;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Summary, View};
@@ -24,19 +25,19 @@ use crate::paint::{Ink, Kit, Look, Painter, Tone};
 use crate::text::{Family, TextStyle};
 
 
-fn badge_glyph(state: &str) -> &'static str {
+fn badge_glyph(state: Badge) -> &'static str {
     match state {
-        "working" => "loader-circle",
-        "blocked" => "circle-alert",
-        _ => "circle-check",
+        Badge::Working => "loader-circle",
+        Badge::Blocked => "circle-alert",
+        Badge::Done | Badge::None => "circle-check",
     }
 }
 
-fn badge_ink(state: &str, look: &Look) -> Rgba {
+fn badge_ink(state: Badge, look: &Look) -> Rgba {
     match state {
-        "blocked" => look.destructive,
-        "done" => look.primary,
-        _ => look.foreground,
+        Badge::Blocked => look.destructive,
+        Badge::Done => look.primary,
+        Badge::Working | Badge::None => look.foreground,
     }
 }
 
@@ -117,7 +118,7 @@ pub struct Workspaces {
     agents: bool,
     /// Wheel travel since the last step, in notches.
     wheel_sum: f64,
-    agent_state: HashMap<String, String>,
+    agent_state: HashMap<String, Badge>,
     icons: HashMap<String, Icon>,
     queries: Vec<appicon::Query>,
     probed: Option<(u32, Vec<appicon::Query>)>,
@@ -189,11 +190,11 @@ fn caption_style(look: &Look) -> TextStyle {
 
 impl Workspaces {
     fn waiting(&self, slot: &Slot) -> bool {
-        self.agents && !slot.current && slot.windows.iter().any(|w| self.agent_state.get(w.id.as_str()).is_some_and(|s| s == "blocked"))
+        self.agents && !slot.current && slot.windows.iter().any(|w| self.agent(&w.id) == Badge::Blocked)
     }
 
-    fn agent(&self, window_id: &WindowId) -> &str {
-        if self.agents && !window_id.is_empty() { self.agent_state.get(window_id.as_str()).map_or("", String::as_str) } else { "" }
+    fn agent(&self, window_id: &WindowId) -> Badge {
+        if self.agents && !window_id.is_empty() { self.agent_state.get(window_id.as_str()).copied().unwrap_or(Badge::None) } else { Badge::None }
     }
 
     fn focused_index(&self) -> i64 {
@@ -283,12 +284,12 @@ impl Workspaces {
 
     /// The agent badge on the corner of `anchor`, on its own nodes so a frame
     /// of a spinner or a pulse damages that rect alone.
-    fn badge(&self, kit: &mut Kit, p: &mut Painter, anchor: IRect, state: &str, now: Instant, alpha: f32) {
+    fn badge(&self, kit: &mut Kit, p: &mut Painter, anchor: IRect, state: Badge, now: Instant, alpha: f32) {
         let look = kit.look.clone();
         let size = look.caption as i32;
         let xxs = look.xxs as i32;
         let badge = IRect::new(anchor.right() + xxs - size, anchor.y - xxs, size, size);
-        let pulse = if state == "blocked" { breathe(self.clock, now) } else { 1.0 };
+        let pulse = if state == Badge::Blocked { breathe(self.clock, now) } else { 1.0 };
         let a = alpha * pulse;
         p.rect(badge, look.background.with_alpha(look.background.a * a), size as f32 / 2.0);
         let g = fs_theme::icons::glyph(badge_glyph(state));
@@ -296,7 +297,7 @@ impl Workspaces {
         let (bw, bh) = shaped.box_size();
         let at = (badge.x + (size - bw) / 2, badge.y + (size - bh) / 2);
         let centre = (badge.x as f64 + size as f64 / 2.0, badge.y as f64 + size as f64 / 2.0);
-        let turn = if state == "working" && look.motion {
+        let turn = if state == Badge::Working && look.motion {
             let elapsed = now.saturating_duration_since(self.clock).as_secs_f64() * 1000.0;
             (elapsed / PULSE_MS).fract() * std::f64::consts::TAU
         } else {
@@ -348,7 +349,7 @@ impl Workspaces {
                             "appId": w.app_id,
                             "focused": w.is_focused,
                             "icon": self.icons.get(w.id.as_str()).is_some_and(|i| !i.source.is_empty()),
-                            "agent": self.agent(&w.id),
+                            "agent": self.agent(&w.id).as_str(),
                             "rect": rect(r),
                         })
                     })
@@ -396,9 +397,9 @@ impl Cell for Workspaces {
         let ids: Vec<&str> = slots.iter().flat_map(|s| s.windows.iter().map(|w| w.id.as_str())).collect();
         let scale = env.raster;
         self.raster = scale;
-        let agents_now: HashMap<String, String> = ids
+        let agents_now: HashMap<String, Badge> = ids
             .iter()
-            .filter_map(|id| env.store.agents.by_window.get(*id).map(|s| ((*id).to_owned(), s.clone())))
+            .filter_map(|id| env.store.agents.by_window.get(*id).map(|s| ((*id).to_owned(), *s)))
             .collect();
         let icons_now: HashMap<String, Icon> =
             ids.iter().filter_map(|id| env.store.appicon.get(id, self.icon_size.round() as u32, scale).map(|i| ((*id).to_owned(), i))).collect();
@@ -462,9 +463,9 @@ impl Cell for Workspaces {
 
     /// The focused workspace, or T3 Code's agents where one waits or works.
     fn summary(&self) -> Option<Summary> {
-        let states: Vec<&str> = if self.agents { self.agent_state.values().map(String::as_str).collect() } else { Vec::new() };
-        let count = |state: &str| states.iter().filter(|s| **s == state).count();
-        let (blocked, working) = (count("blocked"), count("working"));
+        let states: Vec<Badge> = if self.agents { self.agent_state.values().copied().collect() } else { Vec::new() };
+        let count = |state: Badge| states.iter().filter(|s| **s == state).count();
+        let (blocked, working) = (count(Badge::Blocked), count(Badge::Working));
         let agents = |n: usize, what: &str| if n == 1 { format!("1 agent {what}") } else { format!("{n} agents {what}") };
         let (value, tone) = if blocked > 0 {
             (agents(blocked, "waiting"), Tone::Destructive)
@@ -662,7 +663,7 @@ impl Custom for Workspaces {
                     }
                 }
                 let state = self.agent(&w.id);
-                if !state.is_empty() {
+                if state != Badge::None {
                     self.badge(kit, p, r, state, now, ink.alpha);
                 }
             }
@@ -682,7 +683,7 @@ impl Custom for Workspaces {
             if let Some(chip) = self.chips.first() {
                 let cr = self.chip_rect(chip, rect);
                 let anchor = IRect::new(cr.right() - look.caption as i32, cr.y + look.xxs as i32 * 2, 0, 0);
-                self.badge(kit, p, anchor, "working", now, ink.alpha);
+                self.badge(kit, p, anchor, Badge::Working, now, ink.alpha);
             }
         }
     }
@@ -691,9 +692,9 @@ impl Custom for Workspaces {
         let badges = self.slots.iter().take(self.chips.len()).enumerate().any(|(i, s)| {
             let chip = &self.chips[i];
             s.windows.iter().take(chip.icons).any(|w| match self.agent(&w.id) {
-                "working" => self.motion,
-                "blocked" => true,
-                _ => false,
+                Badge::Working => self.motion,
+                Badge::Blocked => true,
+                Badge::Done | Badge::None => false,
             })
         });
         let waiting = self.slots.iter().any(|s| self.waiting(s));

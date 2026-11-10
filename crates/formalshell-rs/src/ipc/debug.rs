@@ -59,7 +59,7 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
         "fullscreenOutputs": c.fullscreen_outputs,
         "floatingOutputs": c.floating_outputs,
         "configLoaded": app.store.config.settings(),
-        "agents": {"stateByWindow": app.store.agents.by_window, "stateByHost": app.store.agents.by_host},
+        "agents": {"stateByWindow": badges(&app.store.agents.by_window), "stateByHost": badges(&app.store.agents.by_host)},
         "iphone": phone,
         "activity": app.store.activity.to_json(),
         "depth": app.store.depth.status(),
@@ -207,4 +207,8 @@ fn r0_cast(app: &mut App, args: &[Value]) -> Reply {
 fn render() -> serde_json::Value {
     let s = crate::gpu::status();
     json!({"asked": s.asked.as_str(), "backend": s.backend, "reason": s.reason, "device": s.device})
+}
+
+fn badges(by: &std::collections::BTreeMap<String, fs_info::agents::Badge>) -> std::collections::BTreeMap<&str, &'static str> {
+    by.iter().map(|(k, b)| (k.as_str(), b.as_str())).collect()
 }

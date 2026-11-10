@@ -28,12 +28,12 @@ pub struct Watch {
     pub hosts: Vec<String>,
 }
 
-/// Window id and host to "working", "blocked" or "done"; a window with
-/// nothing to report is absent, a host whose last reply failed reads "".
+/// Window id and host to their badge; a window with nothing to report is
+/// absent, a host whose last reply failed reads [`Badge::None`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
-    pub by_window: BTreeMap<String, String>,
-    pub by_host: BTreeMap<String, String>,
+    pub by_window: BTreeMap<String, Badge>,
+    pub by_host: BTreeMap<String, Badge>,
 }
 
 pub struct Diff(pub State);
@@ -92,11 +92,11 @@ struct Service {
 
 impl Service {
     fn publish(&mut self, ctx: &Ctx) {
-        let worst = self.state.by_host.values().map(|s| Badge::parse(s)).max().unwrap_or(Badge::None);
+        let worst = self.state.by_host.values().copied().max().unwrap_or(Badge::None);
         let by_window = if worst == Badge::None {
             BTreeMap::new()
         } else {
-            self.watch.windows.iter().map(|id| (id.clone(), worst.as_str().to_owned())).collect()
+            self.watch.windows.iter().map(|id| (id.clone(), worst)).collect()
         };
         self.state.by_window = by_window;
         ctx.publish(store::Diff::Agents(Diff(self.state.clone())));
@@ -123,11 +123,11 @@ impl Service {
         if !self.pollers.contains_key(host) {
             return;
         }
-        let state = agents::parse_line(Some(line)).map_or("", Badge::as_str);
-        if self.state.by_host.get(host).map(String::as_str) == Some(state) {
+        let state = agents::parse_line(Some(line)).unwrap_or(Badge::None);
+        if self.state.by_host.get(host) == Some(&state) {
             return;
         }
-        self.state.by_host.insert(host.to_owned(), state.to_owned());
+        self.state.by_host.insert(host.to_owned(), state);
         self.publish(ctx);
     }
 }
