@@ -1,6 +1,6 @@
 // The root "wallpaper" node and the rows its level shows. The picker is a menu
 // ROUTE: an ordinary provider entry `default-menu.jsonc` declares itself, whose
-// level the launcher renders as a grid of `image_rows`.
+// level the launcher renders as a grid of `tile_rows`.
 //
 // Loads the real shipped default-menu.jsonc rather than a fixture mirroring it:
 // the point is that the declaration in the file the package ships still builds
@@ -14,13 +14,9 @@ use common::*;
 use fs_menu::model::build_tree;
 use fs_menu::node::{Entries, Kind, Provider};
 use fs_menu::providers::{
-    Item, ItemKind, Mode, ProviderFn, apply_providers, catalog, image_basename, image_rows, items, tile_rows, title_of,
+    Item, ItemKind, Mode, apply_providers, catalog, image_basename, items, tile_rows, title_of,
 };
 use serde_json::json;
-
-fn strs(v: &[&str]) -> Vec<String> {
-    v.iter().map(|s| s.to_string()).collect()
-}
 
 #[test]
 fn shipped_default_declares_the_wallpaper_route() {
@@ -51,7 +47,7 @@ fn it_builds_as_a_root_provider_level() {
 #[test]
 fn no_provider_fn_leaves_the_level_childless() {
     let mut tree = build_tree(&default_menu(), &Entries::new());
-    apply_providers(&mut tree, &HashMap::<Provider, ProviderFn>::new());
+    apply_providers(&mut tree, &HashMap::new());
     assert!(tree.nodes["wallpaper"].child_ids.is_empty());
 }
 
@@ -63,34 +59,6 @@ fn user_overlay_can_hide_it() {
     let tree = build_tree(&only, &entries(json!({ "wallpaper": { "hidden": true } })));
     assert!(!tree.nodes.contains_key("wallpaper"));
     assert!(tree.root_ids.is_empty());
-}
-
-#[test]
-fn image_rows_carry_the_path_and_a_basename_label() {
-    let rows = image_rows(&strs(&["/pics/aurora.png", "/pics/dune.jpg"]), "");
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].kind, Kind::Image);
-    assert_eq!(rows[0].path, "/pics/aurora.png");
-    assert_eq!(rows[0].label, "aurora.png");
-    assert_eq!(rows[0].parent_id.as_deref(), Some("wallpaper"));
-}
-
-// Filtering is on the basename only: every row in a listing shares the same
-// directory component, so matching it would make any query that happens to
-// contain a directory name match the whole listing.
-#[test]
-fn image_rows_filter_on_the_basename_not_the_directory() {
-    let paths = strs(&["/home/kyan/dune/aurora.png", "/home/kyan/dune/dune.jpg"]);
-    assert_eq!(image_rows(&paths, "dune").len(), 1);
-    assert_eq!(image_rows(&paths, "dune")[0].path, "/home/kyan/dune/dune.jpg");
-    assert_eq!(image_rows(&paths, "AURORA").len(), 1);
-    assert_eq!(image_rows(&paths, "").len(), 2);
-}
-
-#[test]
-fn image_rows_tolerate_an_empty_listing() {
-    assert_eq!(image_rows(&[], "").len(), 0);
-    assert_eq!(image_rows(&[], "x").len(), 0);
 }
 
 // Pairs and singles. The scan hands over the picker directory AND its

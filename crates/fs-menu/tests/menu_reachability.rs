@@ -11,7 +11,7 @@ use fs_chrome::bar::panels::PanelId;
 use fs_menu::actions::{IpcCall, Run};
 use fs_menu::node::{Kind, Provider};
 use fs_menu::providers::{
-    ProviderFn, RadioState, RadioStation, TrayItem, apply_providers, capture_entries, panel_ids, panels_provider,
+    RadioState, RadioStation, TrayItem, apply_providers, capture_entries, panel_ids, panels_provider,
     radio_result_rows, radio_rows, tray_provider,
 };
 use fs_menu::search;
@@ -146,18 +146,11 @@ fn wifi_is_a_root_provider_node() {
 
 fn device_tree() -> fs_menu::node::Tree {
     let mut tree = real_tree();
-    let mut fns: HashMap<Provider, ProviderFn> = HashMap::new();
-    fns.insert(
-        Provider::Radio,
-        Box::new(|| {
-            let favorite = RadioStation { uuid: "u-1".into(), name: "Groove Salad".into(), ..RadioStation::default() };
-            let result = RadioStation { uuid: "u-2".into(), name: "Zebra Jazz".into(), ..RadioStation::default() };
-            let mut rows = radio_rows(&RadioState { running: false, favorites: vec![favorite] });
-            rows.extend(radio_result_rows(&[result], &HashSet::new()));
-            rows
-        }),
-    );
-    apply_providers(&mut tree, &fns);
+    let favorite = RadioStation { uuid: "u-1".into(), name: "Groove Salad".into(), ..RadioStation::default() };
+    let result = RadioStation { uuid: "u-2".into(), name: "Zebra Jazz".into(), ..RadioStation::default() };
+    let mut rows = radio_rows(&RadioState { running: false, favorites: vec![favorite] });
+    rows.extend(radio_result_rows(&[result], &HashSet::new()));
+    apply_providers(&mut tree, &HashMap::from([(Provider::Radio, rows)]));
     tree
 }
 

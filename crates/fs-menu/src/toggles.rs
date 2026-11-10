@@ -149,10 +149,3 @@ pub fn checked_for(node: Option<&Node>, snap: Option<&Snapshot>, cond_results: O
     }
     cond_results.is_some_and(|c| c.get(&node.id) == Some(&true))
 }
-
-/// A fresh map with `id` set, leaving `source` alone.
-pub fn with_result(source: &HashMap<String, bool>, id: &str, ok: bool) -> HashMap<String, bool> {
-    let mut out = source.clone();
-    out.insert(id.to_string(), ok);
-    out
-}

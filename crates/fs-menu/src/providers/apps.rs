@@ -56,9 +56,6 @@ pub fn apps_provider(
         .collect()
 }
 
-/// A provider's produced rows, computed on demand.
-pub type ProviderFn<'a> = Box<dyn Fn() -> Vec<Node> + 'a>;
-
 /// Parents `children` under the node `provider_id`, registers them in
 /// `tree.nodes` and appends them to its `child_ids`. This is the one-source
 /// primitive: a caller that recomputed a single provider's rows attaches just
@@ -95,12 +92,11 @@ pub fn attach_children(tree: &mut Tree, provider_id: &str, children: Vec<Node>) 
     }
 }
 
-/// Merges every "provider" node's produced children into `tree` (a
-/// `build_tree` result): for each provider node it looks up its `provider`
-/// name in `provider_fns`, parents the returned nodes under it, and registers
-/// them in `tree.nodes`. Provider nodes the walk creates are not themselves
+/// Merges every "provider" node's rows into `tree` (a `build_tree`
+/// result): each provider node takes the rows `sources` holds under its
+/// `provider` name. Provider nodes those rows carry are not themselves
 /// expanded.
-pub fn apply_providers(tree: &mut Tree, provider_fns: &HashMap<Provider, ProviderFn>) {
+pub fn apply_providers(tree: &mut Tree, sources: &HashMap<Provider, Vec<Node>>) {
     let targets: Vec<(String, Provider)> = tree
         .nodes
         .values()
@@ -108,8 +104,8 @@ pub fn apply_providers(tree: &mut Tree, provider_fns: &HashMap<Provider, Provide
         .filter_map(|n| n.provider.clone().map(|p| (n.id.clone(), p)))
         .collect();
     for (id, provider) in targets {
-        if let Some(f) = provider_fns.get(&provider) {
-            attach_children(tree, &id, f());
+        if let Some(rows) = sources.get(&provider) {
+            attach_children(tree, &id, rows.clone());
         }
     }
 }

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use fs_menu::model::{build_tree, entries_from_value, parse_jsonc};
 use fs_menu::node::{DesktopEntry, Entries, Node, Provider, Tree};
-use fs_menu::providers::{ProviderFn, TrayItem, apply_providers, panels_provider, tray_provider};
+use fs_menu::providers::{TrayItem, apply_providers, panels_provider, tray_provider};
 use serde_json::Value;
 
 /// A file under the repo root.
@@ -32,10 +32,8 @@ pub fn default_menu() -> Entries {
 /// own registry does it.
 pub fn real_tree() -> Tree {
     let mut tree = build_tree(&default_menu(), &Entries::new());
-    let mut fns: HashMap<Provider, ProviderFn> = HashMap::new();
-    fns.insert(Provider::Panels, Box::new(panels_provider));
-    fns.insert(Provider::Tray, Box::new(|| tray_provider(&[] as &[TrayItem])));
-    apply_providers(&mut tree, &fns);
+    let sources = HashMap::from([(Provider::Panels, panels_provider()), (Provider::Tray, tray_provider(&[] as &[TrayItem]))]);
+    apply_providers(&mut tree, &sources);
     tree
 }
 

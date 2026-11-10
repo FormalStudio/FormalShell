@@ -143,20 +143,9 @@ impl State {
         true
     }
 
-    /// Providers.applyProviders over the base, one source at a time.
     fn assemble(&mut self) {
         let mut tree = self.base.clone();
-        let targets: Vec<(String, Provider)> = tree
-            .nodes
-            .values()
-            .filter(|n| n.kind == Kind::Provider)
-            .filter_map(|n| n.provider.clone().map(|p| (n.id.clone(), p)))
-            .collect();
-        for (id, provider) in targets {
-            if let Some(rows) = self.sources.get(&provider) {
-                providers::attach_children(&mut tree, &id, rows.clone());
-            }
-        }
+        providers::apply_providers(&mut tree, &self.sources);
         self.tree = tree;
     }
 

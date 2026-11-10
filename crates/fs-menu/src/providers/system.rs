@@ -126,53 +126,6 @@ pub fn tray_provider(items: &[TrayItem]) -> Vec<Node> {
         .collect()
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct GpuOutput {
-    pub name: String,
-    pub connected: bool,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct GpuCard {
-    pub card: String,
-    pub name: String,
-    pub discrete: bool,
-    pub driver: String,
-    pub outputs: Vec<GpuOutput>,
-}
-
-fn gpu_outputs_desc(outputs: &[GpuOutput]) -> String {
-    let connected: Vec<&str> = outputs.iter().filter(|o| o.connected).map(|o| o.name.as_str()).collect();
-    if connected.is_empty() { "no outputs".to_string() } else { connected.join(", ") }
-}
-
-/// One inert note row per card: name, integrated/discrete, driver, connected
-/// outputs. No cards renders an honest "No GPU" row instead of an empty
-/// level. There is no "launch on GPU" route: it would be a second full copy of
-/// the app list in every root search, for a choice the Shift+Enter accelerator on
-/// the app row already offers.
-pub fn gpu_provider(cards: &[GpuCard]) -> Vec<Node> {
-    if cards.is_empty() {
-        return vec![Node::note("gpu.empty", "No GPU")];
-    }
-    cards
-        .iter()
-        .map(|card| Node {
-            desc: Some(format!(
-                "{} \u{b7} {} \u{b7} {}",
-                if card.discrete { "Discrete" } else { "Integrated" },
-                card.driver,
-                gpu_outputs_desc(&card.outputs)
-            )),
-            ..Node::new(
-                format!("gpu.card.{}", card.card),
-                if card.name.is_empty() { &card.card } else { &card.name },
-                Kind::Note,
-            )
-        })
-        .collect()
-}
-
 const LIGHT_COLORS: &[(&str, &str)] = &[
     ("ff0000", "Red"),
     ("ff4000", "Orange"),

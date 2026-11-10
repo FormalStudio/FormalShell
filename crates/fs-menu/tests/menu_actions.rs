@@ -13,8 +13,8 @@ use fs_menu::keybinds::rows as bind_rows;
 use fs_menu::model::build_tree;
 use fs_menu::node::{DesktopEntry, Entries, Kind, Node};
 use fs_menu::providers::{
-    AudioDevice, BluetoothState, ClipMode, EmojiEntry, EmojiIndex, RadioState, RadioStation, WifiNetwork, WifiState, apps_provider,
-    attach_children, audio_rows, bluetooth_rows, clipboard_provider, image_rows, radio_rows, wifi_rows,
+    AudioDevice, BluetoothState, ClipMode, EmojiEntry, EmojiIndex, Item, ItemKind, RadioState, RadioStation, WifiNetwork, WifiState, apps_provider,
+    attach_children, audio_rows, bluetooth_rows, clipboard_provider, radio_rows, tile_rows, wifi_rows,
 };
 use fs_types::Bind;
 use serde_json::json;
@@ -240,7 +240,15 @@ fn emoji() {
 
 #[test]
 fn wallpaper() {
-    let row = &image_rows(&["/w/sea.jpg".into()], "")[0];
+    let tile = |id: &str, kind| Item { id: id.into(), kind, title: "Sea".into(), credit: None };
+    let rows = tile_rows(
+        &[tile("/w/sea.jpg", ItemKind::Single { path: "/w/sea.jpg".into(), filed: None }), tile("sky", ItemKind::Sky)],
+        "yours",
+        true,
+        "sky:6",
+        "",
+    );
+    let row = &rows[0];
     let all = of(row);
     assert_eq!(ids(&all), ["set", "open-file", "copy-path"]);
     assert_eq!(all[0].label, "Set wallpaper");
@@ -252,8 +260,7 @@ fn wallpaper() {
     assert_eq!(single[2].run, Run::parse("@ipc:wallpaper.setFor:dark:/w/sea.jpg"));
     let choosing = actions_for(&Subject { single: true, picker_select: true, ..Subject::of(row) });
     assert_eq!(ids(&choosing), ["set", "open-file", "copy-path"]);
-    let sky = &image_rows(&["sky:6".into()], "")[0];
-    assert_eq!(ids(&of(sky)), ["set"]);
+    assert_eq!(ids(&of(&rows[1])), ["set"]);
 }
 
 #[test]

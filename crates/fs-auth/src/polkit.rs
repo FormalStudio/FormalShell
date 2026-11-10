@@ -206,14 +206,13 @@ fn user_identities(identities: &[(String, HashMap<String, OwnedValue>)]) -> Vec<
 /// one completes the request, and dropping the flow dismisses it.
 pub struct AuthFlow {
     request: AuthRequest,
-    selected: usize,
     session: Option<HelperSession>,
     finished: bool,
 }
 
 impl AuthFlow {
     pub async fn start(request: AuthRequest) -> Self {
-        let mut flow = Self { request, selected: 0, session: None, finished: false };
+        let mut flow = Self { request, session: None, finished: false };
         flow.restart().await;
         flow
     }
@@ -223,15 +222,7 @@ impl AuthFlow {
     }
 
     pub fn selected(&self) -> &Identity {
-        &self.request.identities[self.selected]
-    }
-
-    pub async fn select_identity(&mut self, index: usize) {
-        if index >= self.request.identities.len() || index == self.selected || self.finished {
-            return;
-        }
-        self.selected = index;
-        self.restart().await;
+        &self.request.identities[0]
     }
 
     pub async fn submit(&mut self, response: Zeroizing<String>) {
@@ -291,8 +282,7 @@ impl AuthFlow {
 
     async fn restart(&mut self) {
         self.session = None;
-        let identity = &self.request.identities[self.selected];
-        self.session = HelperSession::start(&identity.name, &self.request.cookie).await.ok();
+        self.session = HelperSession::start(&self.selected().name, &self.request.cookie).await.ok();
     }
 
     fn finish(&mut self, success: bool) {

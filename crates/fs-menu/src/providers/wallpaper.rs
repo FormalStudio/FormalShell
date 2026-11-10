@@ -63,22 +63,6 @@ fn filed_mode(path: &str, base: &str) -> Option<Mode> {
     }
 }
 
-/// Rows for the "wallpaper" route. `query` filters on the basename only: a
-/// path's directory component is identical for every row in a listing, so
-/// matching it would make every query match everything.
-pub fn image_rows(paths: &[String], query: &str) -> Vec<Node> {
-    let q = fs_js::trim(query).to_lowercase();
-    paths
-        .iter()
-        .filter(|p| q.is_empty() || image_basename(p).to_lowercase().contains(&q))
-        .map(|p| Node {
-            parent_id: Some("wallpaper".to_string()),
-            path: p.clone(),
-            ..Node::new(format!("wallpaper.{p}"), image_basename(p), Kind::Image)
-        })
-        .collect()
-}
-
 /// The picker's rows for `items` in `section`: each tile's node id is
 /// `wallpaper.<item id>`, its label the title, its path the file it shows now
 /// (a pair's dark half when `dark`, the Sky's `sky` source). `query` matches
