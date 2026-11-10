@@ -169,7 +169,6 @@ impl App {
             self.launcher.open(&self.store, None);
         }
         if self.launcher.show_panel(&self.store, id) {
-            self.launcher_panel_start();
             self.show_launcher();
         }
     }
@@ -179,11 +178,14 @@ impl App {
         self.launcher.panel.as_ref().filter(|_| self.launcher.open && self.launcher.on_panel()).map(|p| p.id)
     }
 
-    /// `Panel::start` once for a panel the launcher took up.
-    fn launcher_panel_start(&mut self) {
-        if let Some(p) = self.launcher.panel.as_mut().filter(|p| !p.started) {
+    /// The held panel's wants named again, and `Panel::start` once for a
+    /// panel the launcher just took up, by whichever route it came in on
+    /// (`menu summon`, a row, `menu_panel`). Its wants go when it drops.
+    fn launcher_panel_sync(&mut self) {
+        let Some(p) = self.launcher.panel.as_mut() else { return };
+        p.wants.set(&p.module.wants(&self.store));
+        if !p.started {
             p.started = true;
-            p.wants.set(&p.module.wants(&self.store));
             let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
             p.module.start(&mut fx);
         }
@@ -369,6 +371,7 @@ impl App {
     /// The rows again, now, so an IPC read answers off the same state a
     /// frame would draw.
     pub fn resolve_launcher(&mut self) {
+        self.launcher_panel_sync();
         if self.launcher_resolve {
             self.launcher_resolve = false;
             self.launcher.motion_scale = self.motion_scale;
