@@ -51,6 +51,7 @@ use fs_types::{Edge, Region as BarRegion};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
+use smithay_client_toolkit::reexports::client::protocol::wl_display::WlDisplay;
 use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface};
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
@@ -227,6 +228,7 @@ pub struct App {
     /// (the lock's blank, settle) ignores inhibitors, which a playing video
     /// holds; caffeinate's idle takes either version.
     idle_notifier: Option<ExtIdleNotifierV1>,
+    display: WlDisplay,
     qh: QueueHandle<Self>,
     handle: Option<LoopHandle<'static, App>>,
     pub runtime: Option<Runtime>,
@@ -344,7 +346,7 @@ pub struct App {
 
 impl App {
     /// `started` is the clock every logged `t=` counts from.
-    pub fn new(globals: &GlobalList, qh: &QueueHandle<Self>, started: Instant, motion_scale: f64, prompter: Option<fs_auth::prompter::Prompter>) -> Self {
+    pub fn new(display: WlDisplay, globals: &GlobalList, qh: &QueueHandle<Self>, started: Instant, motion_scale: f64, prompter: Option<fs_auth::prompter::Prompter>) -> Self {
         let compositor = CompositorState::bind(globals, qh).expect("wl_compositor is not available");
         let layer_shell = LayerShell::bind(globals, qh).expect("zwlr_layer_shell_v1 is not available");
         let shm = Shm::bind(globals, qh).expect("wl_shm is not available");
@@ -362,6 +364,7 @@ impl App {
             shm,
             pixels,
             idle_notifier: globals.bind(qh, 1..=2, crate::surface::Ignore).ok(),
+            display,
             qh: qh.clone(),
             handle: None,
             runtime: None,

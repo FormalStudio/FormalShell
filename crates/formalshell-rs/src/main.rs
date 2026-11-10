@@ -77,7 +77,7 @@ fn main() {
     let handle = event_loop.handle();
     WaylandSource::new(conn.clone(), queue).insert(handle.clone()).expect("wayland source");
 
-    let mut app = App::new(&globals, &qh, started, motion_scale(), prompter);
+    let mut app = App::new(conn.display(), &globals, &qh, started, motion_scale(), prompter);
     app.warm_bar_faces();
     trace::phase("app");
 

@@ -171,7 +171,8 @@ impl State {
 /// Every `@ipc:` call on `nodes` checked against what answers it
 /// (`ipc::check`): one that fits takes its function's arguments, one that
 /// does not is dropped, logged once with its reason, and a row left with
-/// no action of its own goes dim. Returns the refusals.
+/// no action of its own, or holding a refused column action, goes dim.
+/// Returns the refusals.
 fn check_calls<'a>(nodes: impl Iterator<Item = &'a mut Node>) -> Vec<String> {
     static LOGGED: LazyLock<std::sync::Mutex<HashSet<String>>> = LazyLock::new(Default::default);
     let mut refused = Vec::new();
@@ -196,8 +197,14 @@ fn check_calls<'a>(nodes: impl Iterator<Item = &'a mut Node>) -> Vec<String> {
         if !check(&n.id, &mut n.alternate) {
             n.alternate_label = None;
         }
+        // A refused override left empty would fall back to the built-in
+        // action of the same id, and one left out would hand Enter to the
+        // next: it stays in the column running nothing, on a dim row.
         for a in &mut n.actions {
-            check(&format!("{} {}", n.id, a.id), &mut a.action);
+            if !check(&format!("{} {}", n.id, a.id), &mut a.action) {
+                a.action = Some(Run::Note);
+                n.dim = Some(true);
+            }
         }
     }
     let mut logged = LOGGED.lock().expect("refusals");
@@ -793,8 +800,22 @@ mod tests {
         ]);
         assert_eq!((node("mine").action.clone(), node("mine").dim), (None, Some(true)));
         assert_eq!((node("alt").alternate.clone(), node("alt").alternate_label.clone(), node("alt").dim), (None, None, None));
-        assert_eq!(node("col").actions[0].action, None);
+        assert_eq!((node("col").actions[0].action.clone(), node("col").dim), (Some(Run::Note), Some(true)));
         assert_eq!(node("col").action, Some(Run::Shell("foot -e htop".into())));
         assert_eq!(node("fine").action, Some(Run::Ipc(IpcCall::new("panel", "open").arg("audio:extra"))));
+    }
+
+    #[test]
+    fn a_refused_override_of_a_builtin_action_runs_nothing() {
+        let user = entries_from_value(&json!({
+            "mine": {"label": "Mine", "kind": "action", "action": "foot -e htop", "actions": [{"id": "run", "action": "@ipc:nope.verb"}]},
+        }))
+        .unwrap();
+        let mut tree = base_over(&BaseInputs::default(), &user);
+        assert_eq!(check_calls(tree.nodes.values_mut()).len(), 1);
+        let s = Subject::of(&tree.nodes["mine"]);
+        let run = actions_for(&s).into_iter().find(|a| a.id == "run").map(|a| a.run);
+        assert_eq!(run, Some(Run::Note));
+        assert_eq!((fs_menu::actions::first_action(&s), fs_menu::actions::second_action(&s)), (None, None));
     }
 }

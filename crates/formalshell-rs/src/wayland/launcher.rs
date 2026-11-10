@@ -8,6 +8,9 @@ use fs_chrome::bar::panels::PanelId;
 use fs_menu::actions::IpcCall;
 use fs_types::WindowId;
 use smithay_client_toolkit::compositor::Region;
+use smithay_client_toolkit::dispatch2::Dispatch2;
+use smithay_client_toolkit::reexports::client::protocol::wl_callback::{self, WlCallback};
+use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::seat::keyboard::KeyEvent;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
@@ -22,6 +25,18 @@ use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
 use crate::surfaces::modal::{Modal, Part};
 use crate::text::{Family, TextStyle};
 use crate::ui::field::{self, Modifiers};
+
+/// A screen-reading call held for the compositor's answer to a sync sent
+/// after the launcher's surfaces went.
+pub struct AfterUnmap(IpcCall);
+
+impl Dispatch2<WlCallback, App> for AfterUnmap {
+    fn event(&self, app: &mut App, _: &WlCallback, event: wl_callback::Event, _: &Connection, _: &QueueHandle<App>) {
+        if let wl_callback::Event::Done { .. } = event {
+            app.run_call(&self.0);
+        }
+    }
+}
 
 /// Targets whose calls grab the screen.
 const SCREEN_READERS: [&str; 3] = ["screenshot", "capture", "record"];
@@ -1061,8 +1076,10 @@ impl App {
             if std::mem::take(&mut self.launcher.paste) && !self.launcher.open {
                 self.paste_chord();
             }
+            // A screen grab waits until the compositor has taken the card
+            // down: a sync sent after the teardown is answered once it has.
             if let Some(call) = self.launcher.after_unmap.take() {
-                self.run_call(&call);
+                self.display.sync(&self.qh, AfterUnmap(call));
             }
             return;
         }
