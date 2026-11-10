@@ -2,7 +2,7 @@
 #   cd crates && cargo build --release --package formalshell-rs
 # The shell is Linux only.
 
-# rustup's proxies act on the name they run as and install the pinned toolchain on first use.
+# rustup's proxies act on the name they run as and install crates/rust-toolchain.toml's toolchain on first use.
 RUST = ["cargo", "rustc", "rustdoc", "rustfmt", "cargo-fmt", "cargo-clippy", "clippy-driver"]
 
 # matugen publishes an x86_64 Linux build only.
@@ -15,5 +15,4 @@ dev(
     # The lock screen authenticates through PAM.
     libs = [lib(n) for n in ["libpipewire-0.3", "libspa-0.2", "wayland-client", "xkbcommon", "fontconfig", "pam", "pam_misc"]],
     bins = [bin(n) for n in ["pkg-config", "gcc", "clang"]],
-    env = {"RUSTUP_TOOLCHAIN": "1.99.1"},
 )
