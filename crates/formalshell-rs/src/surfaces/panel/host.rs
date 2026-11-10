@@ -35,7 +35,7 @@ use crate::surface::Surface;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::card::{Card, CardSpec, Ends, Sizing};
 use crate::surfaces::card_window::CardWindow;
-use crate::ui::{self, Button, El, Event, Ui, What, w};
+use crate::ui::{self, Button, El, Event, On, Ui, What, w};
 
 /// Where a card hangs: the line it comes out of, its ends, and the cell
 /// it is centred on.
@@ -98,52 +98,61 @@ impl Place {
 #[derive(Default)]
 pub struct Cursor {
     pub index: usize,
-    pub key: Option<String>,
+    pub key: Option<On>,
     pub active: bool,
     pub keyed: bool,
     pub travels: bool,
 }
 
 impl Cursor {
-    pub fn starting(key: Option<String>) -> Self {
+    pub fn starting(key: Option<On>) -> Self {
         Self { key, ..Self::default() }
     }
 
     /// The stop under the cursor, while it shows.
-    pub fn shown(&self) -> Option<&str> {
-        self.key.as_deref().filter(|_| self.active)
+    pub fn shown(&self) -> Option<&On> {
+        self.key.as_ref().filter(|_| self.active)
     }
 
     /// Keeps the cursor on its stop through a relayout, or on the nearest
-    /// one when its stop went.
+    /// one when its stop went. The stop as drawn replaces the one held, so
+    /// a key a panel named by its words carries the drawn value after.
     pub fn sync(&mut self, stops: &[ui::Stop]) {
         if stops.is_empty() {
             self.key = None;
             return;
         }
-        if let Some(i) = self.key.as_ref().and_then(|k| stops.iter().position(|st| &st.key == k)) {
+        if let Some(i) = self.key.as_ref().and_then(|k| stops.iter().position(|st| st.key == *k)) {
             self.index = i;
         } else {
             self.index = self.index.min(stops.len() - 1);
-            self.key = Some(stops[self.index].key.clone());
+        }
+        self.key = Some(stops[self.index].key.clone());
+    }
+
+    /// Puts the cursor on `key`, taking the stop as drawn where there is one.
+    fn land(&mut self, key: On, stops: &[ui::Stop]) {
+        match stops.iter().position(|st| st.key == key) {
+            Some(i) => {
+                self.index = i;
+                self.key = Some(stops[i].key.clone());
+            }
+            None => self.key = Some(key),
         }
     }
 
     /// The stop a panel moved the cursor to by itself.
     pub fn take(&mut self, module: &mut dyn Panel, stops: &[ui::Stop]) {
         if let Some(k) = module.take_cursor() {
-            if let Some(i) = stops.iter().position(|st| st.key == k) {
-                self.index = i;
-            }
             self.travels = self.active;
-            self.key = Some(k);
+            self.land(k, stops);
         }
     }
 
     /// An arrow: steps the value on a stop that carries one, else walks.
     /// True when the cursor landed on another stop.
     fn walk(&mut self, module: &mut dyn Panel, stops: &[ui::Stop], dx: i32, dy: i32, fx: &mut Effect) -> bool {
-        let nav = module.nav(self.key.as_deref());
+        let nav = module.nav(self.key.as_ref());
         if self.active
             && dy == 0
             && dx != 0
@@ -184,18 +193,15 @@ pub enum Driven {
 /// One key into a panel outside a text field: the cursor model every card
 /// holding a panel shares, the host's and the launcher's.
 pub fn drive(module: &mut dyn Panel, cursor: &mut Cursor, stops: &[ui::Stop], name: Key, fx: &mut Effect) -> Driven {
-    let stop = cursor.shown().map(str::to_owned);
+    let stop = cursor.shown().cloned();
     let mut walked = false;
     match name {
         Key::Escape if module.escape() => {}
         Key::Escape => return Driven::Escape,
         Key::Tab(d) => {
-            if let Some(k) = module.tab(cursor.key.as_deref(), d) {
-                if let Some(i) = stops.iter().position(|st| st.key == k) {
-                    cursor.index = i;
-                }
+            if let Some(k) = module.tab(cursor.key.as_ref(), d) {
                 cursor.travels = cursor.active;
-                cursor.key = Some(k);
+                cursor.land(k, stops);
             }
             cursor.active = true;
             cursor.keyed = true;
@@ -218,10 +224,10 @@ pub fn drive(module: &mut dyn Panel, cursor: &mut Cursor, stops: &[ui::Stop], na
                     module.delete(&k, fx);
                 }
             }
-            _ => module.key(stop.as_deref(), &t, fx),
+            _ => module.key(stop.as_ref(), &t, fx),
         },
     }
-    if let Some(k) = cursor.shown().map(str::to_owned) {
+    if let Some(k) = cursor.shown().cloned() {
         module.reached(&k, fx);
     }
     cursor.take(module, stops);
@@ -363,8 +369,7 @@ impl Host {
     /// The body's viewport, its content's height, how far it is scrolled
     /// and the row the cursor sits on, as last drawn.
     pub fn viewport(&self) -> (IRect, f64, f64, Option<(&str, IRect)>) {
-        let key = self.cursor.key.as_deref().filter(|_| self.cursor.active);
-        let row = key.and_then(|k| self.body.stops.iter().find(|s| s.key == k)).map(|s| (s.key.as_str(), s.rect));
+        let row = self.cursor.shown().and_then(|k| self.body.stops.iter().find(|s| s.key == *k)).map(|s| (s.key.as_str(), s.rect));
         (self.viewport, self.content_h, self.scroll.target(), row)
     }
 
@@ -471,7 +476,7 @@ impl Host {
             store,
             theme,
             output: self.place.output,
-            cursor: self.cursor.key.as_deref().filter(|_| self.cursor.active),
+            cursor: self.cursor.shown(),
             hovered: self.hovered_stop(),
             now,
             motion_scale: self.scale,
@@ -481,7 +486,7 @@ impl Host {
 
     /// The stop under the pointer: the hit's own, else the smallest row
     /// round it that has one.
-    fn hovered_stop(&self) -> Option<String> {
+    fn hovered_stop(&self) -> Option<On> {
         let path = self.body.hover.as_ref()?;
         let hit = self.body.hits.iter().find(|h| &h.path == path)?;
         if hit.stop.is_some() {
@@ -673,7 +678,7 @@ impl Host {
         self.body.halo_owned = true;
         self.body.motion_scale = self.scale;
         self.head.motion_scale = self.scale;
-        self.body.cursor = self.cursor.key.clone().filter(|_| self.cursor.active);
+        self.body.cursor = self.cursor.shown().map(On::to_string);
         self.body.ring = self.cursor.keyed;
         let origin = (fx + pad, top - scroll);
         let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + self.content_h), Some(body_clip), alpha, theme, kit, scene, now);
@@ -685,7 +690,7 @@ impl Host {
 
         // One halo for the whole list travelling on a key step,
         // with the cursor's fill riding it.
-        let stop = self.cursor.key.as_ref().filter(|_| self.cursor.active && self.cursor.keyed).and_then(|k| self.body.stops.iter().find(|s| &s.key == k)).cloned();
+        let stop = self.cursor.key.as_ref().filter(|_| self.cursor.active && self.cursor.keyed).and_then(|k| self.body.stops.iter().find(|s| s.key == *k)).cloned();
         let cr = theme.cursor_ring();
         let fast = Clock::SpatialFast.ms(theme) * self.scale;
         match stop {
@@ -758,13 +763,16 @@ impl Host {
         }
     }
 
-    /// Enter on `stop` as though the cursor sat there, for an IPC verb.
-    pub fn activate(&mut self, stop: &str, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
+    /// Enter on `stop` as though the cursor sat there: the stop drawn with
+    /// its words where there is one, so an IPC verb naming a stop by its
+    /// words reaches the panel's own value.
+    pub fn activate(&mut self, stop: On, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
         if !self.open {
             return Vec::new();
         }
+        let stop = self.body.stops.iter().find(|st| st.key == stop).map_or(stop, |st| st.key.clone());
         let mut fx = Effect::new(store, runtime);
-        self.module.activate(stop, &mut fx);
+        self.module.activate(&stop, &mut fx);
         fx.outs()
     }
 
@@ -778,8 +786,8 @@ impl Host {
     pub fn quick_boxes(&self) -> Vec<(String, IRect)> {
         let mut out = self.body.keyed.clone();
         for st in &self.body.stops {
-            if !out.iter().any(|(k, _)| *k == st.key) {
-                out.push((st.key.clone(), st.rect));
+            if !out.iter().any(|(k, _)| st.key == *k) {
+                out.push((st.key.to_string(), st.rect));
             }
         }
         out
@@ -856,7 +864,7 @@ impl Host {
         self.head.hover = head_hover;
         let after = self.hovered_stop();
         if after != before {
-            self.module.pointed(after.as_deref());
+            self.module.pointed(after.as_ref());
         }
         // A row the pointer reaches takes the cursor, without the ring.
         if let Some((true, h)) = &hit
@@ -1085,7 +1093,7 @@ mod tests {
     #[test]
     fn spatial_arrows_land_on_the_nearest_box_in_their_direction() {
         use fs_types::IRect;
-        let stop = |x, y, w, h| crate::ui::Stop { key: String::new(), rect: IRect::new(x, y, w, h), radius: 0.0 };
+        let stop = |x, y, w, h| crate::ui::Stop { key: "".into(), rect: IRect::new(x, y, w, h), radius: 0.0 };
         // Two buttons at the right end of a short row, then a grid of two
         // 178 wide tiles, the second row's first tile split by its arrow.
         let stops = [

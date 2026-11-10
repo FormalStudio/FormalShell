@@ -1396,7 +1396,7 @@ impl App {
                 if w.shown.set_hover(w.shown.hit(x, y).map(|h| h.path)) {
                     self.launcher.dirty = true;
                     if let Some(p) = self.launcher.panel.as_mut() {
-                        p.module.pointed(w.shown.hovered_stop().as_deref());
+                        p.module.pointed(w.shown.hovered_stop().as_ref());
                     }
                 }
             }

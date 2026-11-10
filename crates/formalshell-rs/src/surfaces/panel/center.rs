@@ -20,7 +20,7 @@ use crate::services::notifications::{Diff, Op};
 use crate::surfaces::activity;
 use crate::store::{self, Topic};
 use crate::ui::el::Kind;
-use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
+use crate::ui::{El, Event, Ink, On, Type, Variant, Weight, What, w};
 
 /// A press on one entry, by the entry's group key.
 enum Press {
@@ -219,8 +219,8 @@ impl Panel for Center {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        match stop {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
+        match stop.as_str() {
             "filter" => self.filter = (self.filter + 1) % FILTERS.len(),
             "dnd" => send(fx, Op::SetDnd(!fx.store.notifications.model.dnd)),
             "clear" => send(fx, Op::ClearHistory),
@@ -229,13 +229,13 @@ impl Panel for Center {
         }
     }
 
-    fn delete(&mut self, stop: &str, fx: &mut Effect) {
+    fn delete(&mut self, stop: &On, fx: &mut Effect) {
         if let Some(g) = find(fx.store, stop) {
             send(fx, Op::DismissGroup(g.member_ids.clone()));
         }
     }
 
-    fn key(&mut self, _: Option<&str>, text: &str, fx: &mut Effect) {
+    fn key(&mut self, _: Option<&On>, text: &str, fx: &mut Effect) {
         if text == "d" {
             send(fx, Op::SetDnd(!fx.store.notifications.model.dnd));
         }

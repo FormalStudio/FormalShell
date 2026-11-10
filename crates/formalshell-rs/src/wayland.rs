@@ -1734,7 +1734,7 @@ impl App {
                     h.back = opener;
                 }
                 if let Some(stop) = then {
-                    self.panel_activate(id, &stop);
+                    self.panel_activate(id, stop);
                 }
             }
             Out::Back(id, from) => {
@@ -1821,7 +1821,7 @@ impl App {
 
     /// Enter on `stop` in the open panel `id`, as the keyboard would;
     /// `false` when that panel is not up.
-    pub fn panel_activate(&mut self, id: PanelId, stop: &str) -> bool {
+    pub fn panel_activate(&mut self, id: PanelId, stop: crate::ui::On) -> bool {
         let Some(h) = self.panel.as_mut().filter(|p| p.is_open() && p.panel() == Some(id)) else { return false };
         let outs = h.activate(stop, &self.store, self.runtime.as_ref());
         self.panel_outs(Holder::Host, outs);

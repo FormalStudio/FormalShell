@@ -16,7 +16,7 @@ use super::{Effect, Nav, Panel, View};
 use crate::services::ams;
 use crate::services::iphone::{self as service, Cmd};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Type, Variant, What, w};
+use crate::ui::{El, Event, Ink, On, Type, Variant, What, w};
 use crate::ui::el::Opt;
 
 const TRANSPORT: [(&str, ams::Command); 3] = [("skip-back", ams::Command::Prev), ("", ams::Command::Toggle), ("skip-forward", ams::Command::Next)];
@@ -54,7 +54,7 @@ impl Panel for Iphone {
         service::command(Cmd::MarkRead);
     }
 
-    fn nav(&self, _: Option<&str>) -> Nav {
+    fn nav(&self, _: Option<&On>) -> Nav {
         Nav { steps: self.np_on.get(), ..Nav::default() }
     }
 
@@ -62,7 +62,7 @@ impl Panel for Iphone {
         let s = &v.theme.space;
         let st = &v.store.iphone;
         let ams = &v.store.media.ams;
-        self.np_on.set(v.cursor == Some("np"));
+        self.np_on.set(v.cursor.is_some_and(|c| *c == "np"));
         let not_installed = !st.installed;
         let daemon_down = st.installed && !st.observer;
         let no_phone = st.observer && !st.connected;
@@ -171,7 +171,7 @@ impl Panel for Iphone {
         }
     }
 
-    fn activate(&mut self, stop: &str, _: &mut Effect) {
+    fn activate(&mut self, stop: &On, _: &mut Effect) {
         if stop == "np" {
             press(self.np_index);
         } else if stop == "pair" {
@@ -179,7 +179,7 @@ impl Panel for Iphone {
         }
     }
 
-    fn step(&mut self, stop: &str, direction: i32, _: &mut Effect) {
+    fn step(&mut self, stop: &On, direction: i32, _: &mut Effect) {
         if stop == "np" {
             self.np_index = (self.np_index as i32 + direction).clamp(0, TRANSPORT.len() as i32 - 1) as usize;
         }

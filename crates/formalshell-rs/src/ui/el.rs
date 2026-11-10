@@ -261,8 +261,9 @@ pub struct El {
     pub pad: [f64; 4],
     /// Identity across rebuilds; the index in the parent otherwise.
     pub key: Option<String>,
-    /// A keyboard cursor stop, addressed by `key`.
-    pub stop: bool,
+    /// A keyboard cursor stop, addressed by `key` (its words) and handed
+    /// back to the surface as this value.
+    pub stop: Option<super::On>,
     /// What a click fires, addressed to the surface by this id.
     pub on: Option<super::On>,
     pub tip: Option<String>,
@@ -307,7 +308,7 @@ impl El {
             Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } => Size::Fill,
             _ => Size::Hug,
         };
-        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, reveal: None, float: None, stretch: false }
+        Self { kind, width, pad: [0.0; 4], key: None, stop: None, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, reveal: None, float: None, stretch: false }
     }
 
     pub fn custom(widget: impl super::Widget) -> Self {
@@ -356,9 +357,10 @@ impl El {
     }
 
     /// A cursor stop: the keyboard can land here, and Enter activates it.
-    pub fn stop(mut self, key: impl Into<String>) -> Self {
-        self.key = Some(key.into());
-        self.stop = true;
+    pub fn stop(mut self, stop: impl Into<super::On>) -> Self {
+        let stop = stop.into();
+        self.key = Some(stop.as_str().to_owned());
+        self.stop = Some(stop);
         self
     }
 

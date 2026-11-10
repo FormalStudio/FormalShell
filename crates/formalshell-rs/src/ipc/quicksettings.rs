@@ -114,13 +114,13 @@ fn activate(app: &mut App, args: &[Value]) -> Reply {
     }
     match quick::tiles(&app.store).into_iter().find(|t| t.id == id) {
         None if extra(app, id) => {
-            app.panel_activate(ID, id);
+            app.panel_activate(ID, id.into());
             ok()
         }
         None => Err(format!("unknown control '{id}'")),
         Some(t) if !t.available() => Err(format!("{id} is unavailable: {}", t.reason.unwrap_or_default())),
         Some(_) => {
-            app.panel_activate(ID, id);
+            app.panel_activate(ID, id.into());
             ok()
         }
     }

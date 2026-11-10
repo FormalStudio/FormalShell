@@ -14,7 +14,7 @@ use super::{Effect, Out, Panel, View};
 use crate::services::appicon::{self, Action, Entry};
 use crate::services::compositor;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, w};
+use crate::ui::{El, Event, On, w};
 
 /// The probe's key in the appicon slice: the workspaces cell asks for the
 /// same windows at its own size under their ids.
@@ -22,6 +22,23 @@ const PROBE: &str = "appmenu";
 
 #[derive(Default)]
 pub struct AppMenu;
+
+/// An action's row or a window's, by its place in its list.
+enum Press {
+    Action(usize),
+    Window(usize),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Press::Action(i) => write!(f, "action:{i}"),
+            Press::Window(i) => write!(f, "window:{i}"),
+        }
+    }
+}
 
 struct Subject {
     window: Window,
@@ -94,7 +111,7 @@ impl Panel for AppMenu {
             Some(w::picture(sub.image.clone(), s.panel_icon)),
         );
 
-        let action_rows = actions.iter().enumerate().map(|(i, a)| w::panel_row(s, "", &a.name, None, Vec::new()).stop(format!("action:{i}")).on(format!("action:{i}"))).collect();
+        let action_rows = actions.iter().enumerate().map(|(i, a)| w::panel_row(s, "", &a.name, None, Vec::new()).stop(Press::Action(i)).on(Press::Action(i))).collect();
         let empty = if sub.entry.is_none() { "No desktop entry" } else { "No actions" };
         let action_section = w::panel_section_n(s, "Actions", actions.len(), action_rows, empty);
 
@@ -106,8 +123,8 @@ impl Panel for AppMenu {
                 let current = win.id == sub.window.id;
                 let title = if win.title.is_empty() { &win.app_id } else { &win.title };
                 w::panel_row_checked(s, "", title, None, Vec::new(), current)
-                    .stop(format!("window:{i}"))
-                    .on(format!("window:{i}"))
+                    .stop(Press::Window(i))
+                    .on(Press::Window(i))
             })
             .collect();
         let windows = w::panel_section_n(s, "Windows", sub.windows.len(), window_rows, "");
@@ -119,21 +136,26 @@ impl Panel for AppMenu {
         self.activate(&ev.on, fx);
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         let Some(sub) = subject(fx.store, fx.store.display.scales.primary()) else { return };
-        if let Some(i) = stop.strip_prefix("action:").and_then(|i| i.parse::<usize>().ok()) {
-            if let Some(entry) = &sub.entry
-                && let Some(a) = entry.actions.get(i)
-            {
-                fx.push(Out::Launch(entry.id.clone(), a.command.clone()));
-                fx.push(Out::Close);
+        match stop.get::<Press>() {
+            Some(&Press::Action(i)) => {
+                if let Some(entry) = &sub.entry
+                    && let Some(a) = entry.actions.get(i)
+                {
+                    fx.push(Out::Launch(entry.id.clone(), a.command.clone()));
+                    fx.push(Out::Close);
+                }
             }
-        } else if let Some(i) = stop.strip_prefix("window:").and_then(|i| i.parse::<usize>().ok()) {
-            if let Some(win) = sub.windows.get(i) {
-                compositor::focus_window(&win.id);
-                fx.push(Out::Close);
+            Some(&Press::Window(i)) => {
+                if let Some(win) = sub.windows.get(i) {
+                    compositor::focus_window(&win.id);
+                    fx.push(Out::Close);
+                }
             }
-        } else if stop == "close-window" {
+            None => {}
+        }
+        if stop == "close-window" {
             compositor::close_window(&sub.window.id);
             fx.push(Out::Close);
         }

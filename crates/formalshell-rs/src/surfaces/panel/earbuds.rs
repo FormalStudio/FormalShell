@@ -35,7 +35,7 @@ use crate::services::devices::earbuds;
 use crate::services::wants::Source;
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
-use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
+use crate::ui::{El, Event, Ink, On, Type, Variant, Weight, What, w};
 
 /// A press on a control, by its key; `Opt` is a dropdown's row by its index.
 enum Press {
@@ -60,6 +60,26 @@ impl std::fmt::Display for Press {
             Press::Opt(key, i) => write!(f, "opt:{key}:{i}"),
             Press::Toggle(key) => write!(f, "toggle:{key}"),
             Press::Range(key) => write!(f, "range:{key}"),
+        }
+    }
+}
+
+/// A cursor stop that is not a dropdown's row: the device choice, a
+/// control by its key, or the member row of a control's picked tier.
+enum Line {
+    Device,
+    Control(String),
+    Tier(String),
+}
+
+impl crate::ui::on::HitId for Line {}
+
+impl std::fmt::Display for Line {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Line::Device => f.write_str(DEVICE),
+            Line::Control(key) => f.write_str(key),
+            Line::Tier(key) => write!(f, "{key}{TIER}"),
         }
     }
 }
@@ -148,7 +168,8 @@ impl Earbuds {
         self.rings.get(key).copied().filter(|i| *i < opts).unwrap_or(selected.unwrap_or(0))
     }
 
-    fn group(&self, key: &str, opts: &[(String, String, String)], selected: Option<usize>, values: Option<&Control>) -> El {
+    fn devices_group(&self, opts: &[(String, String, String)], selected: Option<usize>, values: Option<&Control>) -> El {
+        let key = DEVICE;
         let options = opts
             .iter()
             .map(|(value, label, icon)| {
@@ -159,7 +180,7 @@ impl Earbuds {
             .collect();
         // An index past the end selects nothing, for a value no option holds.
         let index = selected.unwrap_or(usize::MAX);
-        w::group(options, index, true).ring(self.ring(key, opts.len(), selected)).wrap().stop(key.to_owned()).on(Press::Pick(key.to_owned()))
+        w::group(options, index, true).ring(self.ring(key, opts.len(), selected)).wrap().stop(Line::Device).on(Press::Pick(key.to_owned()))
     }
 
     /// A press writes the device and moves only the ring: the selection
@@ -213,24 +234,23 @@ impl Earbuds {
             let at = picked(ctl, &es);
             let options = es.iter().map(|e| e.label.clone()).collect();
             let mut parts = vec![w::Part::Loose(if heading {
-                w::panel_control(s, choice_heading(s, ctl), w::segmented(options, at.unwrap_or(usize::MAX)).fill().stop(key.clone()).on(Press::Seg(key.clone())))
+                w::panel_control(s, choice_heading(s, ctl), w::segmented(options, at.unwrap_or(usize::MAX)).fill().stop(Line::Control(key.clone())).on(Press::Seg(key.clone())))
             } else {
-                w::panel_choice(s, options, at.unwrap_or(usize::MAX)).stop(key.clone()).on(Press::Seg(key.clone()))
+                w::panel_choice(s, options, at.unwrap_or(usize::MAX)).stop(Line::Control(key.clone())).on(Press::Seg(key.clone()))
             })];
             if let Some(e) = at.map(|a| &es[a]).filter(|e| e.tier) {
                 let inner = e.members.iter().position(|m| Some(*m) == selected);
                 let labels = e.members.iter().map(|m| opts[*m].label.clone()).collect();
-                parts.push(w::Part::Loose(w::panel_choice(s, labels, inner.unwrap_or(usize::MAX)).stop(format!("{key}{TIER}")).on(Press::Tier(key.clone()))));
+                parts.push(w::Part::Loose(w::panel_choice(s, labels, inner.unwrap_or(usize::MAX)).stop(Line::Tier(key.clone())).on(Press::Tier(key.clone()))));
             }
             return parts;
         }
         let open = self.menu == *key;
         let current = selected.map_or("Choose", |i| opts[i].label.as_str());
-        let mut trigger = w::trigger(s, "", current, open).stop(key.clone()).on(Press::Menu(key.clone()));
+        let mut trigger = w::trigger(s, "", current, open).stop(Line::Control(key.clone())).on(Press::Menu(key.clone()));
         if open {
             let list = opts.iter().enumerate().map(|(i, o)| {
-                let press = Press::Opt(key.clone(), i);
-                w::menu_item(s, "", &o.label, Some(i) == selected, Vec::new()).stop(press.to_string()).on(press)
+                w::menu_item(s, "", &o.label, Some(i) == selected, Vec::new()).stop(Press::Opt(key.clone(), i)).on(Press::Opt(key.clone(), i))
             });
             trigger = trigger.float(w::column(0.0, list.collect()));
         }
@@ -461,12 +481,12 @@ fn head_block(s: &fs_theme::tokens::Space, dev: &Device, m: &Motion) -> El {
 fn toggle_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let on = ctl.value == Value::Bool(true);
     let hint = (!ctl.hint.is_empty()).then(|| ctl.hint.clone());
-    w::panel_switch(s, "", &ctl.label, hint, on, Press::Toggle(ctl.key.clone())).stop(ctl.key.clone()).on(Press::Toggle(ctl.key.clone()))
+    w::panel_switch(s, "", &ctl.label, hint, on, Press::Toggle(ctl.key.clone())).stop(Line::Control(ctl.key.clone())).on(Press::Toggle(ctl.key.clone()))
 }
 
 fn range_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let track = w::slider(model::range_fraction(Some(ctl))).on(Press::Range(ctl.key.clone()));
-    w::panel_meter(s, None, &ctl.label, vec![w::panel_value(model::range_text(Some(ctl)))], Some(track)).stop(ctl.key.clone())
+    w::panel_meter(s, None, &ctl.label, vec![w::panel_value(model::range_text(Some(ctl)))], Some(track)).stop(Line::Control(ctl.key.clone()))
 }
 
 /// The plain battery rows, for a device with no pictures.
@@ -519,7 +539,7 @@ impl Panel for Earbuds {
         }
         if e.devices().len() > 1 {
             let (opts, selected) = devices(e);
-            out.push(w::panel_control(s, w::panel_heading(s, "Device"), self.group(DEVICE, &opts, selected, None)));
+            out.push(w::panel_control(s, w::panel_heading(s, "Device"), self.devices_group(&opts, selected, None)));
         }
         let Some(dev) = dev else { return w::column(0.0, out) };
         match art(dev, "duo", s.control_height * 3.0, v.raster) {
@@ -607,63 +627,67 @@ impl Panel for Earbuds {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         let e = &fx.store.earbuds;
-        if stop == DEVICE {
-            let (opts, selected) = devices(e);
-            let at = self.ring(DEVICE, opts.len(), selected);
-            self.press(fx, at);
-            return;
-        }
         if stop == RECENTER {
             earbuds::send(earbuds::Cmd::Recenter);
             return;
         }
-        if let Some(rest) = stop.strip_prefix("opt:") {
+        if let Some(Press::Opt(key, i)) = stop.get::<Press>() {
             self.menu.clear();
-            if let Some((key, i)) = rest.rsplit_once(':').and_then(|(key, i)| Some((key, i.parse().ok()?))) {
-                self.pick_option(fx, key, i);
-            }
+            self.pick_option(fx, key, *i);
             return;
         }
-        match model::control(e.active(), stop) {
-            Some(ctl) if ctl.kind == ControlKind::Toggle => set(fx, stop, (ctl.value != Value::Bool(true)).to_string()),
-            Some(ctl) if ctl.kind == ControlKind::Choice && entries(ctl).len() > SEGMENTS => self.toggle_menu(stop),
-            _ => {}
+        match stop.get::<Line>() {
+            Some(Line::Device) => {
+                let (opts, selected) = devices(e);
+                let at = self.ring(DEVICE, opts.len(), selected);
+                self.press(fx, at);
+            }
+            Some(Line::Control(key)) => match model::control(e.active(), key) {
+                Some(ctl) if ctl.kind == ControlKind::Toggle => set(fx, key, (ctl.value != Value::Bool(true)).to_string()),
+                Some(ctl) if ctl.kind == ControlKind::Choice && entries(ctl).len() > SEGMENTS => self.toggle_menu(key),
+                _ => {}
+            },
+            Some(Line::Tier(_)) | None => {}
         }
     }
 
-    fn step(&mut self, stop: &str, direction: i32, fx: &mut Effect) {
+    fn step(&mut self, stop: &On, direction: i32, fx: &mut Effect) {
         let e = &fx.store.earbuds;
-        if stop == DEVICE {
-            let (opts, selected) = devices(e);
-            let at = self.ring(DEVICE, opts.len(), selected) as i32 + direction;
-            self.rings.insert(DEVICE.to_owned(), at.clamp(0, (opts.len() as i32 - 1).max(0)) as usize);
-            return;
-        }
-        if let Some(key) = stop.strip_suffix(TIER) {
-            let Some(ctl) = model::control(e.active(), key) else { return };
-            let es = entries(ctl);
-            let Some(members) = picked(ctl, &es).map(|at| es[at].members.clone()) else { return };
-            let at = members.iter().position(|m| model::option_index(Some(ctl)) == Some(*m)).map_or(0, |i| i as i32 + direction);
-            self.pick_member(fx, key, at.clamp(0, members.len() as i32 - 1) as usize);
-            return;
-        }
-        let Some(ctl) = model::control(e.active(), stop) else { return };
+        let key = match stop.get::<Line>() {
+            Some(Line::Device) => {
+                let (opts, selected) = devices(e);
+                let at = self.ring(DEVICE, opts.len(), selected) as i32 + direction;
+                self.rings.insert(DEVICE.to_owned(), at.clamp(0, (opts.len() as i32 - 1).max(0)) as usize);
+                return;
+            }
+            Some(Line::Tier(key)) => {
+                let Some(ctl) = model::control(e.active(), key) else { return };
+                let es = entries(ctl);
+                let Some(members) = picked(ctl, &es).map(|at| es[at].members.clone()) else { return };
+                let at = members.iter().position(|m| model::option_index(Some(ctl)) == Some(*m)).map_or(0, |i| i as i32 + direction);
+                self.pick_member(fx, key, at.clamp(0, members.len() as i32 - 1) as usize);
+                return;
+            }
+            Some(Line::Control(key)) => key,
+            None => return,
+        };
+        let Some(ctl) = model::control(e.active(), key) else { return };
         match ctl.kind {
             ControlKind::Range => Self::step_range(fx, ctl, direction as f64),
             ControlKind::Choice => {
                 let es = entries(ctl);
                 if es.len() <= SEGMENTS {
                     let at = picked(ctl, &es).map_or(0, |i| i as i32 + direction);
-                    self.pick_entry(fx, stop, at.clamp(0, es.len() as i32 - 1) as usize);
+                    self.pick_entry(fx, key, at.clamp(0, es.len() as i32 - 1) as usize);
                 }
             }
             ControlKind::Toggle => {}
         }
     }
 
-    fn nav(&self, _: Option<&str>) -> Nav {
+    fn nav(&self, _: Option<&On>) -> Nav {
         Nav::STEPS
     }
 }

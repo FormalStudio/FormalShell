@@ -35,11 +35,11 @@ use crate::services::visualizer;
 use crate::settings::{APPLE_MUSIC_ART, VISUALIZER, VISUALIZER_STYLE};
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
-use crate::ui::{El, Event, Ink, Type, What, w};
+use crate::ui::{El, Event, Ink, On, Type, What, w};
 
-/// A press on a row the panel lists: a source or output by its id, a lyric
-/// line by its index.
-enum Press {
+/// A press on a row the panel lists, and that row's cursor stop: a source
+/// or output by its id, a lyric line by its index.
+pub(super) enum Press {
     Pick(String),
     Lyric(usize),
 }
@@ -72,7 +72,7 @@ pub struct Media {
     in_lyrics: bool,
     /// The stops of each keyboard section present in the last body, in Tab
     /// order: the transport, the tracks, the menu.
-    sections: std::cell::RefCell<Vec<Vec<String>>>,
+    sections: std::cell::RefCell<Vec<Vec<On>>>,
 }
 
 impl Default for Media {
@@ -209,7 +209,7 @@ impl Media {
         rows.into_iter()
             .map(|(id, label, icon, playing, current)| {
                 let playing = playing.then(|| w::icon("play").size(Type::Caption).ink(Ink::Muted));
-                w::menu_item(s, icon, label, current, playing.into_iter().collect()).stop(format!("pick:{id}")).on(Press::Pick(id))
+                w::menu_item(s, icon, label, current, playing.into_iter().collect()).stop(Press::Pick(id.clone())).on(Press::Pick(id))
             })
             .collect()
     }
@@ -289,14 +289,14 @@ impl Panel for Media {
         set_follow(fx, true);
     }
 
-    fn cursor_start(&self) -> Option<String> {
+    fn cursor_start(&self) -> Option<On> {
         Some("transport".into())
     }
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let m = &v.store.media;
-        self.stepping.set(matches!(v.cursor, Some("transport" | "progress" | "volume")));
+        self.stepping.set(matches!(v.cursor.map(On::as_str), Some("transport" | "progress" | "volume")));
         let enabled = spectrum_enabled(v);
         let Some(a) = m.active() else {
             motion_art::want(motion_art::PANEL, None);
@@ -400,9 +400,10 @@ impl Panel for Media {
         let body = if v.store.lyrics.synced() {
             let settings = crate::services::lyrics::Settings::read(&v.store.config);
             let ly = &v.store.lyrics;
-            let cursor = v.cursor.and_then(|k| match k {
-                "lyric-resync" => Some(ly.lines.len()),
-                _ => k.strip_prefix("lyric:").and_then(|i| i.parse::<usize>().ok()),
+            let cursor = v.cursor.and_then(|k| match (k.as_str(), k.get::<Press>()) {
+                ("lyric-resync", _) => Some(ly.lines.len()),
+                (_, Some(&Press::Lyric(i))) => Some(i),
+                _ => None,
             });
             let on_line = cursor.is_some_and(|c| c < ly.lines.len());
             let pane = El::custom(lyrics::Pane {
@@ -423,24 +424,24 @@ impl Panel for Media {
         };
         let mut sections = Vec::new();
         if !ids.is_empty() {
-            sections.push(vec!["transport".to_owned()]);
+            sections.push(vec![On::from("transport")]);
         }
-        let tracks: Vec<String> = [has_timeline(&a).then_some("progress"), a.volume.filter(|_| !a.volume_fixed).map(|_| "volume")].into_iter().flatten().map(str::to_owned).collect();
+        let tracks: Vec<On> = [has_timeline(&a).then_some("progress"), a.volume.filter(|_| !a.volume_fixed).map(|_| "volume")].into_iter().flatten().map(On::from).collect();
         if !tracks.is_empty() {
             sections.push(tracks);
         }
         if v.store.lyrics.synced() {
             let n = v.store.lyrics.lines.len();
-            sections.push((0..n).map(|i| format!("lyric:{i}")).chain(std::iter::once("lyric-resync".to_owned())).collect());
+            sections.push((0..n).map(|i| Press::Lyric(i).into()).chain(std::iter::once(On::from("lyric-resync"))).collect());
         }
-        let mut menu = vec!["source".to_owned()];
+        let mut menu = vec![On::from("source")];
         if m.can_route() {
-            menu.push("output".to_owned());
+            menu.push("output".into());
         }
         if self.menu == "source" {
-            menu.extend(std::iter::once("pick:".to_owned()).chain(m.players().into_iter().map(|p| format!("pick:{}", p.id))));
+            menu.extend(std::iter::once(Press::Pick(String::new()).into()).chain(m.players().into_iter().map(|p| Press::Pick(p.id).into())));
         } else if self.menu == "output" {
-            menu.extend(m.outputs().iter().map(|(id, _)| format!("pick:{id}")));
+            menu.extend(m.outputs().iter().map(|(id, _)| Press::Pick(id.clone()).into()));
         }
         sections.push(menu);
         *self.sections.borrow_mut() = sections;
@@ -505,18 +506,18 @@ impl Panel for Media {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        if let Some(id) = stop.strip_prefix("pick:") {
-            self.pick(id, fx);
-            return;
-        }
-        if let Some(i) = stop.strip_prefix("lyric:").and_then(|i| i.parse::<usize>().ok()) {
-            if let Some(line) = fx.store.lyrics.lines.get(i) {
-                fx.store.media.seek_to(seconds(line.time));
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
+        match stop.get::<Press>() {
+            Some(Press::Pick(id)) => return self.pick(id, fx),
+            Some(&Press::Lyric(i)) => {
+                if let Some(line) = fx.store.lyrics.lines.get(i) {
+                    fx.store.media.seek_to(seconds(line.time));
+                }
+                return;
             }
-            return;
+            None => {}
         }
-        match stop {
+        match stop.as_str() {
             "lyric-resync" => set_follow(fx, true),
             "transport" if fx.store.media.active().is_none() => fx.push(Out::Summon(super::ATLAS)),
             "source" => self.toggle_menu("source"),
@@ -538,8 +539,8 @@ impl Panel for Media {
         }
     }
 
-    fn step(&mut self, stop: &str, direction: i32, fx: &mut Effect) {
-        match stop {
+    fn step(&mut self, stop: &On, direction: i32, fx: &mut Effect) {
+        match stop.as_str() {
             "transport" => {
                 let n = fx.store.media.active().map_or(0, |a| transport(&a, fx.store.media.kopuz()).len());
                 if n > 0 {
@@ -552,7 +553,7 @@ impl Panel for Media {
         }
     }
 
-    fn tab(&mut self, stop: Option<&str>, direction: i32) -> Option<String> {
+    fn tab(&mut self, stop: Option<&On>, direction: i32) -> Option<On> {
         let sections = self.sections.borrow();
         if sections.is_empty() {
             return None;
@@ -563,15 +564,15 @@ impl Panel for Media {
         sections[next as usize].first().cloned()
     }
 
-    fn nav(&self, _: Option<&str>) -> Nav {
+    fn nav(&self, _: Option<&On>) -> Nav {
         Nav { steps: self.stepping.get(), ..Nav::default() }
     }
 
     /// Reaching the lyrics parks the column back on the song: the cursor
     /// is about to drive it, and a column left where a wheel put it would
     /// answer the first Up with a jump.
-    fn reached(&mut self, stop: &str, fx: &mut Effect) {
-        let now = stop.starts_with("lyric");
+    fn reached(&mut self, stop: &On, fx: &mut Effect) {
+        let now = stop.as_str() == "lyric-resync" || matches!(stop.get::<Press>(), Some(Press::Lyric(_)));
         if now && !self.in_lyrics {
             set_follow(fx, true);
         }

@@ -80,6 +80,12 @@ impl PartialEq<str> for On {
     }
 }
 
+impl PartialEq<String> for On {
+    fn eq(&self, other: &String) -> bool {
+        self.words == *other
+    }
+}
+
 impl PartialEq<&str> for On {
     fn eq(&self, other: &&str) -> bool {
         self.words == *other

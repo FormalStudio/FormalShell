@@ -29,7 +29,7 @@ use super::{Effect, Nav, Panel, View, Walk};
 use crate::services::info::kick;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Size, Type, Weight, w};
+use crate::ui::{El, Event, Ink, On, Size, Type, Weight, w};
 
 const WEEKDAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
@@ -43,15 +43,23 @@ pub struct Calendar {
     /// two values resolve.
     show_life: Option<bool>,
     last_year_click: Option<Instant>,
-    cursor: Option<String>,
+    cursor: Option<Day>,
 }
 
 fn today() -> NaiveDate {
     Local::now().date_naive()
 }
 
-fn key(index: usize) -> String {
-    format!("day:{index}")
+/// A day's cell in the month grid, by its index.
+#[derive(Clone, Copy)]
+struct Day(usize);
+
+impl crate::ui::on::HitId for Day {}
+
+impl std::fmt::Display for Day {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "day:{}", self.0)
+    }
 }
 
 impl Calendar {
@@ -68,13 +76,13 @@ impl Calendar {
         self.selected = d;
         self.year = d.year();
         self.month = d.month();
-        self.cursor = Some(key(grid::index_of_date(&self.cells(), d)));
+        self.cursor = Some(Day(grid::index_of_date(&self.cells(), d)));
     }
 
     fn step_month(&mut self, delta: i32) {
         (self.year, self.month) = grid::step_month(self.year, self.month, delta);
         self.selected = today();
-        self.cursor = Some(key(grid::index_of_date(&self.cells(), self.selected)));
+        self.cursor = Some(Day(grid::index_of_date(&self.cells(), self.selected)));
     }
 
     /// `calendar select`: the day `iso` names (YYYY-MM-DD) selected.
@@ -106,7 +114,7 @@ impl Panel for Calendar {
         vec![Source::Calendar]
     }
 
-    fn nav(&self, _: Option<&str>) -> Nav {
+    fn nav(&self, _: Option<&On>) -> Nav {
         Nav { walk: Walk::Grid(grid::COLUMNS), steps: false }
     }
 
@@ -114,12 +122,12 @@ impl Panel for Calendar {
         kick(Source::Calendar);
     }
 
-    fn cursor_start(&self) -> Option<String> {
-        Some(key(grid::index_of_date(&self.cells(), today())))
+    fn cursor_start(&self) -> Option<On> {
+        Some(Day(grid::index_of_date(&self.cells(), today())).into())
     }
 
-    fn take_cursor(&mut self) -> Option<String> {
-        self.cursor.take()
+    fn take_cursor(&mut self) -> Option<On> {
+        self.cursor.take().map(On::from)
     }
 
     fn actions(&self, _: &View) -> Vec<El> {
@@ -166,8 +174,8 @@ impl Panel for Calendar {
                     .interactive()
                     .width(Size::Px(side))
                     .height(side)
-                    .stop(key(i))
-                    .on(key(i));
+                    .stop(Day(i))
+                    .on(Day(i));
                 row.push(slot(circle));
             }
             lines.push(w::row(0.0, row).fill().swap(i64::from(self.year) * 12 + i64::from(self.month)));
@@ -227,19 +235,19 @@ impl Panel for Calendar {
                     self.last_year_click = Some(now);
                 }
             }
-            other => self.activate(other, fx),
+            _ => self.activate(&ev.on, fx),
         }
     }
 
-    fn activate(&mut self, stop: &str, _: &mut Effect) {
-        if let Some(i) = stop.strip_prefix("day:").and_then(|i| i.parse::<usize>().ok())
+    fn activate(&mut self, stop: &On, _: &mut Effect) {
+        if let Some(&Day(i)) = stop.get::<Day>()
             && let Some(d) = grid::date_at(&self.cells(), i)
         {
             self.select(d);
         }
     }
 
-    fn key(&mut self, _: Option<&str>, text: &str, _: &mut Effect) {
+    fn key(&mut self, _: Option<&On>, text: &str, _: &mut Effect) {
         match text {
             "[" => self.step_month(-1),
             "]" => self.step_month(1),
@@ -259,7 +267,7 @@ mod tests {
 
     use crate::ui::{Button, What};
 
-    fn click(c: &mut Calendar, on: &str) {
+    fn click(c: &mut Calendar, on: impl Into<On>) {
         let store = Store::default();
         let mut fx = Effect::new(&store, None);
         c.event(&Event { on: on.into(), what: What::Click, button: Button::Left }, &mut fx);
@@ -285,7 +293,7 @@ mod tests {
         assert_eq!(c.take_cursor(), None);
 
         // The first cell is a September padding day: clicking it realigns the view.
-        click(&mut c, "day:0");
+        click(&mut c, Day(0));
         let status = c.status();
         assert_eq!(status["selected"], "2026-09-28");
         assert_eq!(status["view"], "September 2026");

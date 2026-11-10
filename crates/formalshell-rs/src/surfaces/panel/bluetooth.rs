@@ -15,7 +15,7 @@ use super::{Effect, Panel, View};
 use crate::services::devices::bluetooth::{ActionKind, Bluetooth as Bt, Cmd, send};
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Variant, What, w};
+use crate::ui::{El, Event, Ink, On, Variant, What, w};
 
 /// A press on a device's row or its buttons.
 enum Press {
@@ -29,7 +29,7 @@ impl crate::ui::on::HitId for Press {}
 impl std::fmt::Display for Press {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Press::Row(a) => write!(f, "row:{a}"),
+            Press::Row(a) => write!(f, "dev:{a}"),
             Press::Forget(a) => write!(f, "forget:{a}"),
             Press::Trust(a) => write!(f, "trust:{a}"),
         }
@@ -60,8 +60,7 @@ fn find(bt: &Bt, address: BtAddress) -> Option<(Bucket, &Device)> {
 
 fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
     let s = &v.theme.space;
-    let key = format!("dev:{}", d.address);
-    let revealed = v.cursor == Some(key.as_str());
+    let revealed = matches!(v.cursor.and_then(|c| c.get::<Press>()), Some(&Press::Row(a)) if a == d.address);
     let busy = bt.action.as_ref().filter(|(a, _)| *a == d.address).map(|(_, k)| *k);
     let failed = bt.failure.as_ref().filter(|(a, _)| *a == d.address && busy.is_none()).map(|(_, t)| *t);
     let trust_pending = matches!(busy, Some(ActionKind::Trust | ActionKind::Untrust));
@@ -97,7 +96,7 @@ fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
     let connected = bucket == Bucket::Connected;
     let glyph = if connected { "bluetooth-connected" } else { "bluetooth" };
     let detail = (failed.is_none() && !status.is_empty()).then(|| status.clone());
-    let row = w::panel_row_checked(s, glyph, &d.name, detail, trailing, connected).stop(key);
+    let row = w::panel_row_checked(s, glyph, &d.name, detail, trailing, connected).stop(Press::Row(d.address));
     let row = if idle { row.on(Press::Row(d.address)) } else { row };
     match failed {
         Some(_) => w::column(0.0, vec![row, w::panel_error(s, status)]),
@@ -202,14 +201,14 @@ impl Panel for Bluetooth {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        if let Some(a) = stop.strip_prefix("dev:").and_then(BtAddress::parse) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
+        if let Some(&Press::Row(a)) = stop.get::<Press>() {
             activate(&fx.store.bluetooth, a);
         }
     }
 
-    fn delete(&mut self, stop: &str, fx: &mut Effect) {
-        if let Some(a) = stop.strip_prefix("dev:").and_then(BtAddress::parse) {
+    fn delete(&mut self, stop: &On, fx: &mut Effect) {
+        if let Some(&Press::Row(a)) = stop.get::<Press>() {
             forget(&fx.store.bluetooth, a);
         }
     }

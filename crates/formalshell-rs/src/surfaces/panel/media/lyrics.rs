@@ -309,7 +309,7 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
                 // Off the viewport while the column is still travelling to
                 // it: the cursor keeps its place in the stop order.
                 let edge = if top < 0.0 { vpi.y } else { vpi.bottom() - 1 };
-                cx.stop(Stop { key: format!("lyric:{i}"), rect: IRect::new(vpi.x, edge, vpi.w, 1), radius: t.radii.md });
+                cx.stop(Stop { key: super::Press::Lyric(i).into(), rect: IRect::new(vpi.x, edge, vpi.w, 1), radius: t.radii.md });
                 cx.animate();
             }
             continue;
@@ -427,10 +427,10 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
         p.finish();
         cx.done(last);
         if cursor_row {
-            cx.stop(Stop { key: format!("lyric:{i}"), rect: row_rect.intersect(&vpi), radius: t.radii.md });
+            cx.stop(Stop { key: super::Press::Lyric(i).into(), rect: row_rect.intersect(&vpi), radius: t.radii.md });
             cx.animate();
         } else if v.cursor.is_some_and(|c| c < lines.len()) {
-            cx.stop(Stop { key: format!("lyric:{i}"), rect: row_rect.intersect(&vpi), radius: t.radii.md });
+            cx.stop(Stop { key: super::Press::Lyric(i).into(), rect: row_rect.intersect(&vpi), radius: t.radii.md });
         }
         cx.hit(Hit { rect: row_rect.intersect(&clip), path: rpath, on: Some(super::Press::Lyric(i).into()), tip: None, stop: None, what: HitWhat::Click });
     }

@@ -56,7 +56,7 @@ use crate::runtime::Runtime;
 use quick::Origin;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event};
+use crate::ui::{El, Event, On};
 
 /// What a panel reads while it describes itself.
 pub struct View<'a> {
@@ -65,10 +65,10 @@ pub struct View<'a> {
     /// The output's size, for a panel sized off it (the gallery).
     pub output: (f64, f64),
     /// The stop holding the keyboard cursor.
-    pub cursor: Option<&'a str>,
+    pub cursor: Option<&'a On>,
     /// The stop of the row the pointer is over, whichever of its parts it is
     /// on; the keyboard cursor does not count.
-    pub hovered: Option<String>,
+    pub hovered: Option<On>,
     /// The frame being drawn, for a body that moves on its own clock.
     pub now: std::time::Instant,
     /// The card's `debug motionScale`, 1 at full speed.
@@ -103,7 +103,7 @@ pub enum Out {
     Summon(&'static str),
     /// Open this panel in the open one's place, then press Enter on this
     /// stop of its (a network's row, opening its passphrase step).
-    Panel(PanelId, Option<String>),
+    Panel(PanelId, Option<On>),
     /// Back to the card that handed over to this one, opened again from
     /// where it was.
     Back(PanelId, Origin),
@@ -227,12 +227,12 @@ pub trait Panel: std::any::Any {
     /// reach: what a panel asks for once as it opens (a probe, a refresh).
     fn start(&mut self, _fx: &mut Effect) {}
     /// The stop the cursor starts on, before any key moves it.
-    fn cursor_start(&self) -> Option<String> {
+    fn cursor_start(&self) -> Option<On> {
         None
     }
     /// The stop the panel moved the cursor to on its own (a selection
     /// carrying it to another cell), once.
-    fn take_cursor(&mut self) -> Option<String> {
+    fn take_cursor(&mut self) -> Option<On> {
         None
     }
     /// Whether the header carries the host's close button.
@@ -263,27 +263,27 @@ pub trait Panel: std::any::Any {
     /// An element's `on` action fired.
     fn event(&mut self, _ev: &Event, _fx: &mut Effect) {}
     /// Enter or Space on a stop.
-    fn activate(&mut self, _stop: &str, _fx: &mut Effect) {}
+    fn activate(&mut self, _stop: &On, _fx: &mut Effect) {}
     /// Left or Right on a stop whose [`Nav`] steps.
-    fn step(&mut self, _stop: &str, _direction: i32, _fx: &mut Effect) {}
+    fn step(&mut self, _stop: &On, _direction: i32, _fx: &mut Effect) {}
     /// Tab or Shift+Tab (`direction` -1) from the stop under the cursor:
     /// the stop to land on when the panel walks sections,
     /// or none to only reveal the cursor.
-    fn tab(&mut self, _stop: Option<&str>, _direction: i32) -> Option<String> {
+    fn tab(&mut self, _stop: Option<&On>, _direction: i32) -> Option<On> {
         None
     }
     /// After every key: the stop now holding the cursor.
-    fn reached(&mut self, _stop: &str, _fx: &mut Effect) {}
+    fn reached(&mut self, _stop: &On, _fx: &mut Effect) {}
     /// The stop under the pointer changed, `None` once it is over none.
-    fn pointed(&mut self, _stop: Option<&str>) {}
+    fn pointed(&mut self, _stop: Option<&On>) {}
     /// Backspace outside a text field: a page going back up a level.
     fn back(&mut self, _fx: &mut Effect) {}
     /// `x` on a stop.
-    fn delete(&mut self, _stop: &str, _fx: &mut Effect) {}
+    fn delete(&mut self, _stop: &On, _fx: &mut Effect) {}
     /// A printable key no binding took.
-    fn key(&mut self, _stop: Option<&str>, _text: &str, _fx: &mut Effect) {}
+    fn key(&mut self, _stop: Option<&On>, _text: &str, _fx: &mut Effect) {}
     /// What the arrows do on `stop`, the stop under the cursor if any.
-    fn nav(&self, _stop: Option<&str>) -> Nav {
+    fn nav(&self, _stop: Option<&On>) -> Nav {
         Nav::default()
     }
     /// The body is moving its own height (an in-place menu opening): the

@@ -12,7 +12,7 @@ use fs_theme::tokens::WEIGHTS;
 use vello_cpu::kurbo::{Affine, Arc, BezPath, Circle, Rect, Shape};
 
 use super::el::{CellState, Font, Kind, Ring, Size, Type, Variant, Weight};
-use super::{Cx, El, Hit, HitWhat, Ink, Stop, boxes, irect};
+use super::{Cx, El, Hit, HitWhat, Ink, On, Stop, boxes, irect};
 use crate::motion::{Kind as Clock, PULSE_MS};
 use crate::scene::{Paint, Scene};
 use fs_types::IRect;
@@ -541,7 +541,7 @@ fn badge(cx: &mut Cx, rect: Rect, name: &str, path: &str) {
 }
 
 fn stop(cx: &mut Cx, el: &El, inner: Rect) {
-    let (true, Some(key)) = (el.stop, &el.key) else { return };
+    let Some(key) = &el.stop else { return };
     let radius = stop_radius(cx, el, inner.height());
     // A squares group's stop is the square the cursor is on, so the halo
     // marks one option rather than the row.
@@ -637,7 +637,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         return;
     }
     stop(cx, el, inner);
-    let stop_key = el.stop.then(|| el.key.clone()).flatten();
+    let stop_key = el.stop.clone();
     match &el.kind {
         Kind::Column { gap, children } => {
             let mut y = inner.y0;
@@ -926,7 +926,7 @@ fn stop_radius(cx: &Cx, el: &El, h: f64) -> f64 {
 
 /// A cell's box over its states, with the cursor and the hover wash.
 #[allow(clippy::too_many_arguments)]
-fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, child: &El, path: &str, stop: Option<String>) {
+fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, child: &El, path: &str, stop: Option<On>) {
     let t = cx.theme;
     let owned = cx.fill_owned();
     let fill_state = if state.active {
@@ -1051,7 +1051,7 @@ fn button(
     square: bool,
     path: &str,
     radius: Option<f64>,
-    stop: Option<String>,
+    stop: Option<On>,
     pick: Option<(usize, bool)>,
 ) {
     let t = cx.theme;
@@ -1126,7 +1126,7 @@ fn switch_track(t: &fs_theme::theme::Theme) -> (f64, f64) {
     (t.metric(Role::SwitchTrack, "width"), knob + pad * 2.0)
 }
 
-fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &str, stop: Option<String>) {
+fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &str, stop: Option<On>) {
     let t = cx.theme;
     let inset = t.metric(Role::SwitchTrack, "padding");
     let (track_w, track_h) = switch_track(t);
@@ -1164,7 +1164,7 @@ fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &st
 }
 
 #[allow(clippy::too_many_arguments)]
-fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interactive: bool, path: &str, stop: Option<String>) {
+fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interactive: bool, path: &str, stop: Option<On>) {
     let t = cx.theme;
     let mut groove = t.box_style(Role::TrackGroove, None);
     let (_, ring) = cx.cursor(stop.as_deref());
@@ -1233,7 +1233,7 @@ fn group_grid(natural: f64, count: usize, width: f64, pad: f64) -> (usize, usize
 }
 
 #[allow(clippy::too_many_arguments)]
-fn group(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize, exclusive: bool, cursor_index: usize, wrap: bool, path: &str, stop: Option<String>) {
+fn group(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize, exclusive: bool, cursor_index: usize, wrap: bool, path: &str, stop: Option<On>) {
     let t = cx.theme;
     let s = t.space.clone();
     let trough = t.box_style(Role::Trough, None);
@@ -1273,7 +1273,7 @@ fn group(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize
 /// with a ghost button over it for the glyph and the hover; the halo
 /// rides the cursor's square off its stop (`paint_body`).
 #[allow(clippy::too_many_arguments)]
-fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize, path: &str, stop: Option<String>) {
+fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize, path: &str, stop: Option<On>) {
     let t = cx.theme;
     let gap = t.space.panel_gap;
     let n = options.len().max(1);
@@ -1309,7 +1309,7 @@ fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usi
 }
 
 #[allow(clippy::too_many_arguments)]
-fn segmented(cx: &mut Cx, el: &El, r: Rect, options: &[String], index: usize, path: &str, stop: Option<String>) {
+fn segmented(cx: &mut Cx, el: &El, r: Rect, options: &[String], index: usize, path: &str, stop: Option<On>) {
     let t = cx.theme;
     let s = t.space.clone();
     let (_, ring) = cx.cursor(stop.as_deref());

@@ -21,10 +21,12 @@ use crate::services::compositor::{self, Command};
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::services::compositor::OutputsState;
-use crate::ui::{El, Event, Ink, Type, Weight, What, w};
+use crate::ui::{El, Event, Ink, On, Type, Weight, What, w};
 
-/// A press on an output's or a brightness device's control, by its name or id.
+/// A press on an output's or a brightness device's control, by its name or
+/// id; `Output` is an output's row as a cursor stop.
 enum Press {
+    Output(String),
     Enable(String),
     Scale(String),
     Hdr(String),
@@ -36,6 +38,7 @@ impl crate::ui::on::HitId for Press {}
 impl std::fmt::Display for Press {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Press::Output(name) => write!(f, "output:{name}"),
             Press::Enable(name) => write!(f, "enable:{name}"),
             Press::Scale(name) => write!(f, "scale:{name}"),
             Press::Hdr(name) => write!(f, "hdr:{name}"),
@@ -146,12 +149,12 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
         let slider = w::slider(outputs::fraction_for_scale(row.scale)).on(Press::Scale(row.name.clone()));
         lines.push(w::meter(s, None, "Scale", vec![w::panel_value(outputs::format_scale(row.scale))], Some(slider)));
     }
-    w::panel_cell(s, w::column(s.xxs, lines).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("output:{}", row.name))
+    w::panel_cell(s, w::column(s.xxs, lines).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(Press::Output(row.name.clone()))
 }
 
 fn brightness_row(v: &View, d: &Brightness) -> El {
     let track = w::slider(d.percent as f64 / 100.0).on(Press::Brightness(d.id.clone()));
-    w::panel_meter(&v.theme.space, Some("sun"), &d.label, vec![w::panel_value(format!("{}%", d.percent))], Some(track)).stop(format!("brightness:{}", d.id))
+    w::panel_meter(&v.theme.space, Some("sun"), &d.label, vec![w::panel_value(format!("{}%", d.percent))], Some(track)).stop(Press::Brightness(d.id.clone()))
 }
 
 impl Panel for Display {
@@ -194,7 +197,7 @@ impl Panel for Display {
         if !hdr.is_empty() {
             let list = hdr
                 .iter()
-                .map(|n| w::panel_switch(s, "sun", n.as_str(), None, display::hdr_on(store, n), Press::Hdr(n.to_string())).stop(format!("hdr:{n}")))
+                .map(|n| w::panel_switch(s, "sun", n.as_str(), None, display::hdr_on(store, n), Press::Hdr(n.to_string())).stop(Press::Hdr(n.to_string())))
                 .collect();
             parts.push(w::panel_section_n(s, "HDR", hdr.len(), list, ""));
         }
@@ -245,30 +248,28 @@ impl Panel for Display {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         let store = fx.store;
         let rows = sorted(store);
-        let (what, arg) = stop.split_once(':').unwrap_or((stop, ""));
-        match what {
-            "output" => toggle_output(&rows, arg),
-            "hdr" => fx.push(Out::Quick(quick::Run::HdrOutput(arg.to_owned(), !display::hdr_on(store, arg)))),
-            "mirror" => set_mirror(store, &rows, outputs::mirrored_names(&rows).is_empty()),
+        match stop.get::<Press>() {
+            Some(Press::Output(name)) => toggle_output(&rows, name),
+            Some(Press::Hdr(name)) => fx.push(Out::Quick(quick::Run::HdrOutput(name.clone(), !display::hdr_on(store, name)))),
+            None if stop == "mirror" => set_mirror(store, &rows, outputs::mirrored_names(&rows).is_empty()),
             _ => {}
         }
     }
 
-    fn step(&mut self, stop: &str, direction: i32, fx: &mut Effect) {
+    fn step(&mut self, stop: &On, direction: i32, fx: &mut Effect) {
         let store = fx.store;
         let rows = sorted(store);
-        let (what, arg) = stop.split_once(':').unwrap_or((stop, ""));
-        match what {
-            "output" => {
-                if let Some(row) = outputs::find_output(&rows, arg).filter(|r| r.enabled) {
+        match stop.get::<Press>() {
+            Some(Press::Output(name)) => {
+                if let Some(row) = outputs::find_output(&rows, name).filter(|r| r.enabled) {
                     set_scale(row, outputs::step_scale(row.scale, direction as f64));
                 }
             }
-            "brightness" => {
-                if let Some(d) = store.display.devices().iter().find(|d| d.id == arg) {
+            Some(Press::Brightness(id)) => {
+                if let Some(d) = store.display.devices().iter().find(|d| &d.id == id) {
                     set_brightness(fx, d, d.percent as f64 + direction as f64 * STEP);
                 }
             }
@@ -276,7 +277,7 @@ impl Panel for Display {
         }
     }
 
-    fn nav(&self, _: Option<&str>) -> Nav {
+    fn nav(&self, _: Option<&On>) -> Nav {
         Nav::STEPS
     }
 }

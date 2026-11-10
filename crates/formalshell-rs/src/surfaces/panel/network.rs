@@ -20,9 +20,10 @@ use crate::services::clipboard;
 use crate::services::devices::network as net;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Variant, What, w};
+use crate::ui::{El, Event, Ink, On, Variant, What, w};
 
 /// A press on a network's row or its buttons, by the SSID or device name.
+/// A row's words are its cursor stop's.
 enum Press {
     Row(String),
     Forget(String),
@@ -34,11 +35,16 @@ impl crate::ui::on::HitId for Press {}
 impl std::fmt::Display for Press {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Press::Row(ssid) => write!(f, "row:{ssid}"),
+            Press::Row(ssid) => write!(f, "wifi:{ssid}"),
             Press::Forget(ssid) => write!(f, "forget:{ssid}"),
             Press::Wired(name) => write!(f, "wired:{name}"),
         }
     }
+}
+
+/// A network's row as a stop, for a card handing over to this panel on it.
+pub fn row_stop(ssid: String) -> crate::ui::On {
+    Press::Row(ssid).into()
 }
 
 /// The mask the passphrase field draws.
@@ -59,10 +65,6 @@ pub struct Network {
     field: Option<Field>,
     /// The "Known networks" disclosure, closed on every open.
     known_open: bool,
-}
-
-fn row_key(ssid: &str) -> String {
-    format!("wifi:{ssid}")
 }
 
 impl Network {
@@ -156,7 +158,6 @@ impl Network {
     fn wifi_row(&self, v: &View, r: &net::Row) -> El {
         let s = &v.theme.space;
         let n = &v.store.network;
-        let key = row_key(&r.ssid);
         let mine = |ssid: &str| ssid == r.ssid;
         let status = match (&n.action, &n.failure) {
             (Some((kind, ssid)), _) if mine(ssid) => Some((kind.busy().to_owned(), false)),
@@ -170,7 +171,7 @@ impl Network {
         let glyph = if r.in_range { signal_glyph(r.signal) } else { "wifi-off" };
         let mut trailing = Vec::new();
         // Forget reveals on the row the pointer is on.
-        if r.known && !r.connected && v.hovered.as_deref() == Some(key.as_str()) && n.action.is_none() {
+        if r.known && !r.connected && matches!(v.hovered.as_ref().and_then(|h| h.get::<Press>()), Some(Press::Row(ssid)) if *ssid == r.ssid) && n.action.is_none() {
             trailing.push(w::icon("trash").ink(Ink::Muted).on(Press::Forget(r.ssid.clone())).tip("Forget"));
         }
         if r.connected {
@@ -191,7 +192,7 @@ impl Network {
             parts.push(w::column(s.panel_gap, fields).pad(0.0, 0.0, 0.0, s.panel_gap));
         }
         let bare = parts.len() == 1;
-        let cell = w::panel_cell(s, w::column(0.0, parts).fill()).stop(key).on(Press::Row(r.ssid.clone()));
+        let cell = w::panel_cell(s, w::column(0.0, parts).fill()).stop(Press::Row(r.ssid.clone())).on(Press::Row(r.ssid.clone()));
         if bare { cell.height(s.panel_row) } else { cell }
     }
 
@@ -306,7 +307,7 @@ impl Panel for Network {
             .map(|d| {
                 let button = w::button(if d.connected { "Disconnect" } else { "Connect" }).variant(Variant::Ghost).on(Press::Wired(d.name.clone()));
                 w::panel_row_with(s, Some(w::panel_chip(s, "ethernet-port", d.connected)), w::label(d.name.clone()), None, vec![button])
-                    .stop(format!("wired:{}", d.name))
+                    .stop(Press::Wired(d.name.clone()))
                     .on(Press::Wired(d.name.clone()))
             })
             .collect();
@@ -395,7 +396,7 @@ impl Panel for Network {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         if stop == "speedtest" {
             Self::speed(fx);
         } else if stop == "share" {
@@ -404,15 +405,17 @@ impl Panel for Network {
             net::send(net::Cmd::TogglePassword);
         } else if stop == "known" {
             self.known_open = !self.known_open;
-        } else if let Some(ssid) = stop.strip_prefix("wifi:") {
-            self.activate_row(ssid, fx);
-        } else if let Some(name) = stop.strip_prefix("wired:") {
-            Self::wired(name, fx);
+        } else {
+            match stop.get::<Press>() {
+                Some(Press::Row(ssid)) => self.activate_row(ssid, fx),
+                Some(Press::Wired(name)) => Self::wired(name, fx),
+                Some(Press::Forget(_)) | None => {}
+            }
         }
     }
 
-    fn delete(&mut self, stop: &str, fx: &mut Effect) {
-        if let Some(ssid) = stop.strip_prefix("wifi:") {
+    fn delete(&mut self, stop: &On, fx: &mut Effect) {
+        if let Some(Press::Row(ssid)) = stop.get::<Press>() {
             self.forget(ssid, fx);
         }
     }

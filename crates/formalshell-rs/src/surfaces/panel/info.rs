@@ -15,7 +15,7 @@ use super::{Effect, Out, Panel, View};
 use crate::services::compositor;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Size, Type, Weight, What, w};
+use crate::ui::{El, Event, Ink, On, Size, Type, Weight, What, w};
 
 const MANUAL: &str = "https://github.com/FormalStudio/FormalShell/blob/main/docs/USAGE.md";
 
@@ -103,7 +103,7 @@ impl Panel for Info {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         if stop == "manual" {
             open_manual(fx);
         }

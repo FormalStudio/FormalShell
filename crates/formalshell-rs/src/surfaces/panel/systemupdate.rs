@@ -12,7 +12,7 @@ use super::{Effect, Panel, View};
 use crate::services::info::kick;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Variant, w};
+use crate::ui::{El, Event, Ink, On, Variant, w};
 
 pub struct SystemUpdate;
 
@@ -109,7 +109,7 @@ impl Panel for SystemUpdate {
         }
     }
 
-    fn activate(&mut self, stop: &str, _: &mut Effect) {
+    fn activate(&mut self, stop: &On, _: &mut Effect) {
         if stop == "check" {
             check();
         }

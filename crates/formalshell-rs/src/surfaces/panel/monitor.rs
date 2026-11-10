@@ -12,7 +12,7 @@ use fs_system::monitor::format::pct;
 use super::{Effect, Out, Panel, View};
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, w};
+use crate::ui::{El, On, w};
 
 pub struct Monitor;
 
@@ -93,7 +93,7 @@ impl Panel for Monitor {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         if stop == "open" {
             fx.push(Out::Summon("monitor"));
         }

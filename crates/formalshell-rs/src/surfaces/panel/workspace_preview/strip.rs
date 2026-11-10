@@ -14,7 +14,7 @@ use crate::ui::{Cx, Hit, HitWhat, On, Stop, Widget, boxes, irect, thumb};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tile {
     /// Its cursor stop and its identity across draws.
-    pub key: String,
+    pub key: On,
     /// What a click on it fires.
     pub on: On,
     /// Its box in the content, before the scroll.

@@ -95,7 +95,7 @@ pub struct Hit {
     pub on: Option<On>,
     pub tip: Option<String>,
     /// The cursor stop this rect belongs to, if any.
-    pub stop: Option<String>,
+    pub stop: Option<On>,
     pub what: HitWhat,
 }
 
@@ -117,7 +117,7 @@ pub enum HitWhat {
 /// One keyboard stop, in reading order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stop {
-    pub key: String,
+    pub key: On,
     pub rect: IRect,
     pub radius: f64,
 }
@@ -655,7 +655,7 @@ impl Cx<'_> {
                 // Where the cursor's row sits in the list, laid out unscrolled.
                 let before = self.ui.stops.len();
                 draw::offscreen_stops(self, &list, Rect::new(0.0, 0.0, w - pad * 2.0, content), &format!("{path}/list"));
-                let row = self.ui.stops.drain(before..).find(|st| Some(&st.key) == cursor.as_ref());
+                let row = self.ui.stops.drain(before..).find(|st| cursor.as_deref() == Some(st.key.as_str()));
                 if let Some(st) = row {
                     let (top, bottom) = (st.rect.y as f64, st.rect.bottom() as f64);
                     if top < scroll {
@@ -694,7 +694,7 @@ impl Cx<'_> {
                 self.ui.float_cards.push((r, scroll));
             }
             let added: Vec<Stop> = self.ui.stops.drain(before..).collect();
-            self.ui.float_keys.extend(added.iter().map(|st| st.key.clone()));
+            self.ui.float_keys.extend(added.iter().map(|st| st.key.to_string()));
             let at = (at + shift).min(before);
             shift += added.len();
             self.ui.stops.splice(at..at, added);

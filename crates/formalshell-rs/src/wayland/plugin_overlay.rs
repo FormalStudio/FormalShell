@@ -19,7 +19,7 @@ use crate::services::plugins;
 use crate::paint::Kit;
 use crate::surfaces::modal::{Modal, Part};
 use crate::surfaces::panel::plugin;
-use crate::ui::{self, Size, Ui, w};
+use crate::ui::{self, On, Size, Ui, w};
 
 const NAMESPACE: &str = "formalshell:plugin-overlay";
 
@@ -31,7 +31,7 @@ pub struct Window {
     ui: Ui,
     key: &'static str,
     id: String,
-    cursor: Option<String>,
+    cursor: Option<On>,
     /// The keyboard put the cursor there, so its ring draws.
     ring: bool,
     pressed: Option<crate::ui::On>,
@@ -112,7 +112,7 @@ impl App {
         true
     }
 
-    fn overlay_activate(&mut self, stop: &str) {
+    fn overlay_activate(&mut self, stop: &On) {
         let Some(w) = &self.plugin_overlay else { return };
         plugin::activate(&self.store, &w.id, stop);
     }
@@ -181,13 +181,13 @@ impl App {
                 if pressed.is_none() || pressed != on {
                     return true;
                 }
-                match on.as_deref() {
-                    Some("outside") => self.overlay_close(),
+                match on {
+                    Some(on) if on == "outside" => self.overlay_close(),
                     Some(stop) => {
-                        w.cursor = Some(stop.to_owned());
+                        w.cursor = Some(stop.clone());
                         w.ring = false;
                         w.dirty = true;
-                        self.overlay_activate(stop);
+                        self.overlay_activate(&stop);
                     }
                     None => {}
                 }
@@ -249,7 +249,7 @@ impl App {
         let scene = &mut w.modal.win.card.scene;
         let (x, y) = (frame.x as f64 + s.panel_padding, frame.y as f64 + s.panel_padding);
         w.ui.anchor = Some(top);
-        (w.ui.cursor, w.ui.ring) = (w.cursor.clone(), w.ring);
+        (w.ui.cursor, w.ui.ring) = (w.cursor.as_ref().map(On::to_string), w.ring);
         w.ui.draw(&body, Rect::new(x, y, x + inner, y + body_h), Some(clip), alpha, theme, kit, scene, now).animating
     }
 }

@@ -14,11 +14,13 @@ use crate::services::info::tailscale::{Action, Poll};
 use crate::services::info::{kick, tailscale};
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, w};
+use crate::ui::{El, Event, On, w};
 
-/// A press on a row carrying an address to copy.
+/// A press on a row carrying an address to copy, and a peer's row as a
+/// cursor stop, by its place in the list.
 enum Press {
     Copy(String),
+    Peer(usize),
 }
 
 impl crate::ui::on::HitId for Press {}
@@ -27,6 +29,7 @@ impl std::fmt::Display for Press {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Press::Copy(ip) => write!(f, "copy:{ip}"),
+            Press::Peer(i) => write!(f, "peer{i}"),
         }
     }
 }
@@ -125,7 +128,7 @@ impl Panel for Tailscale {
             .map(|(i, p)| {
                 let detail = [p.os.clone(), p.ip.clone()].into_iter().flatten().collect::<Vec<_>>().join("  ");
                 let dot = w::dot(if p.online { primary } else { muted }, s.sm).pulse(t.action == Action::Up);
-                let row = w::panel_row(s, "", p.name.clone(), Some(detail), vec![dot]).stop(format!("peer{i}"));
+                let row = w::panel_row(s, "", p.name.clone(), Some(detail), vec![dot]).stop(Press::Peer(i));
                 match &p.ip {
                     Some(ip) => row.on(Press::Copy(ip.clone())),
                     None => row,
@@ -148,14 +151,15 @@ impl Panel for Tailscale {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        match stop {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
+        match stop.as_str() {
             "status" => toggle(fx),
             "self" => copy(fx, self_ip(fx.store)),
             _ => {
-                let peer = stop.strip_prefix("peer").and_then(|i| i.parse::<usize>().ok());
-                let ip = peer.and_then(|i| fx.store.tailscale.status.as_ref()?.peers.get(i)?.ip.clone());
-                copy(fx, ip);
+                if let Some(&Press::Peer(i)) = stop.get::<Press>() {
+                    let ip = fx.store.tailscale.status.as_ref().and_then(|s| s.peers.get(i)?.ip.clone());
+                    copy(fx, ip);
+                }
             }
         }
     }

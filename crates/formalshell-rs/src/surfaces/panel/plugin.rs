@@ -15,7 +15,7 @@ use fs_theme::tokens::Space;
 use super::{Effect, Panel, View};
 use crate::services::plugins::{self, Row, RowKind, Run};
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Variant, w};
+use crate::ui::{El, Event, On, Variant, w};
 
 /// Panel names are `&'static str` end to end, so a plugin's is leaked once
 /// and reused: one short string per plugin id ever seen.
@@ -46,8 +46,19 @@ pub fn width(s: &Space, plugin: Option<&Plugin>) -> f64 {
     }
 }
 
-fn stop(row: &Row) -> String {
-    format!("row:{}", row.id)
+/// A row's keyboard stop and click target, by the id the plugin gave it.
+struct RowId(String);
+
+impl crate::ui::on::HitId for RowId {}
+
+impl std::fmt::Display for RowId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "row:{}", self.0)
+    }
+}
+
+fn stop(row: &Row) -> On {
+    RowId(row.id.clone()).into()
 }
 
 /// The rows as a body. Every row but a label is one keyboard stop and one
@@ -82,7 +93,7 @@ pub fn body(s: &Space, run: Option<&Run>) -> El {
 }
 
 /// The keyboard stops of what `run` shows, in reading order.
-pub fn stops(run: Option<&Run>) -> Vec<String> {
+pub fn stops(run: Option<&Run>) -> Vec<On> {
     match run {
         Some(Run::Live(d)) => d.rows.iter().filter(|r| r.kind != RowKind::Label).map(stop).collect(),
         _ => Vec::new(),
@@ -90,9 +101,9 @@ pub fn stops(run: Option<&Run>) -> Vec<String> {
 }
 
 /// Tells plugin `id` that the row behind `stop` was activated.
-pub fn activate(store: &Store, id: &str, stop: &str) {
+pub fn activate(store: &Store, id: &str, stop: &On) {
     let Some(Run::Live(display)) = store.plugins.runs.get(id) else { return };
-    let Some(row) = stop.strip_prefix("row:").and_then(|row| display.rows.iter().find(|r| r.id == row && r.kind != RowKind::Label)) else {
+    let Some(row) = stop.get::<RowId>().and_then(|row| display.rows.iter().find(|r| r.id == row.0 && r.kind != RowKind::Label)) else {
         return;
     };
     let checked = (row.kind == RowKind::Toggle).then_some(!row.checked);
@@ -139,7 +150,7 @@ impl Panel for PluginPanel {
         activate(fx.store, &self.id, &ev.on);
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         activate(fx.store, &self.id, stop);
     }
 }

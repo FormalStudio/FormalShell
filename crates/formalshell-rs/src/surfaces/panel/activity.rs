@@ -8,7 +8,7 @@ use super::{Effect, Panel, View};
 use crate::store::Topic;
 use crate::services::activity::{self, Verb};
 use crate::surfaces::activity as rows;
-use crate::ui::{El, Event, w};
+use crate::ui::{El, Event, On, w};
 
 const EARLIER: usize = 10;
 
@@ -42,8 +42,8 @@ impl Panel for Activity {
         &[Topic::Activity]
     }
 
-    fn take_cursor(&mut self) -> Option<String> {
-        self.cursor.take()
+    fn take_cursor(&mut self) -> Option<On> {
+        self.cursor.take().map(crate::ui::On::from)
     }
 
     fn body(&self, v: &View) -> El {
@@ -80,15 +80,15 @@ impl Panel for Activity {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         run(Verb::Open, stop, fx);
     }
 
-    fn delete(&mut self, stop: &str, fx: &mut Effect) {
+    fn delete(&mut self, stop: &On, fx: &mut Effect) {
         run(Verb::Dismiss, stop, fx);
     }
 
-    fn key(&mut self, stop: Option<&str>, text: &str, fx: &mut Effect) {
+    fn key(&mut self, stop: Option<&On>, text: &str, fx: &mut Effect) {
         if let (Some(stop), "r") = (stop, text) {
             run(Verb::Retry, stop, fx);
         }

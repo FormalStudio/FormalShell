@@ -31,9 +31,10 @@ use crate::scene::Bitmap;
 use crate::services::compositor;
 use crate::store::Topic;
 use crate::ui::el::Pic;
-use crate::ui::{El, Event, Ink, Size, What, w};
+use crate::ui::{El, Event, Ink, On, Size, What, w};
 
-/// A press on a window's thumbnail, by its id.
+/// A press on a window's thumbnail, and the thumbnail's cursor stop, by
+/// the window's id.
 enum Press {
     Focus(String),
 }
@@ -43,7 +44,7 @@ impl crate::ui::on::HitId for Press {}
 impl std::fmt::Display for Press {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Press::Focus(id) => write!(f, "focus:{id}"),
+            Press::Focus(id) => write!(f, "win:{id}"),
         }
     }
 }
@@ -161,7 +162,7 @@ impl Panel for WorkspacePreview {
                 let edge = (v.theme.space.xl * 2.0).round() as u32;
                 let icon = v.store.appicon.get(&icon_key(&p.id), edge, v.raster).and_then(|i| i.image);
                 Some(Tile {
-                    key: format!("win:{}", p.id),
+                    key: Press::Focus(p.id.to_string()).into(),
                     on: Press::Focus(p.id.to_string()).into(),
                     rect,
                     picture: Pic(shared.thumbs.get(&p.id).cloned()),
@@ -177,7 +178,7 @@ impl Panel for WorkspacePreview {
         shared.laid = laid;
         drop(shared);
 
-        let footer_win = v.cursor.and_then(|k| k.strip_prefix("win:")).and_then(|id| windows.iter().find(|w| w.id == id));
+        let footer_win = v.cursor.and_then(|k| k.get::<Press>()).and_then(|Press::Focus(id)| windows.iter().find(|w| w.id == id.as_str()));
         let footer = match footer_win {
             Some(w) => w::caption(if w.title.is_empty() { w.app_id.clone() } else { w.title.clone() }).ink(Ink::Fg),
             None => w::caption("Click a window to jump to it"),
@@ -218,8 +219,8 @@ impl Panel for WorkspacePreview {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        if let Some(id) = stop.strip_prefix("win:") {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
+        if let Some(Press::Focus(id)) = stop.get::<Press>() {
             self.focus(id, fx);
         }
     }

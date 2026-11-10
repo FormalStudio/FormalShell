@@ -25,7 +25,7 @@ use crate::services::devices;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::el::Opt;
-use crate::ui::{El, Event, Ink, Type, Weight, What, w};
+use crate::ui::{El, Event, Ink, On, Type, Weight, What, w};
 
 const PROFILES: [Profile; 3] = [Profile::PowerSaver, Profile::Balanced, Profile::Performance];
 const ICONS: [&str; 3] = ["leaf", "gauge", "zap"];
@@ -232,21 +232,21 @@ impl Panel for Power {
         }
     }
 
-    fn activate(&mut self, stop: &str, _: &mut Effect) {
+    fn activate(&mut self, stop: &On, _: &mut Effect) {
         if stop == "profile" {
             let at = self.cursor.get().unwrap_or(0);
             self.apply(at);
         }
     }
 
-    fn step(&mut self, stop: &str, direction: i32, _: &mut Effect) {
+    fn step(&mut self, stop: &On, direction: i32, _: &mut Effect) {
         if stop == "profile" {
             let at = self.cursor.get().unwrap_or(0) as i32 + direction;
             self.cursor.set(Some(at.clamp(0, 2) as usize));
         }
     }
 
-    fn nav(&self, _: Option<&str>) -> Nav {
+    fn nav(&self, _: Option<&On>) -> Nav {
         Nav::STEPS
     }
 }

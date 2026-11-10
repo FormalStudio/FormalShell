@@ -70,7 +70,7 @@ impl Shown {
 
     /// The smallest scroll that shows the embedded panel's cursor stop.
     pub fn follow_panel(&self, m: &mut Model) {
-        let Some(st) = m.panel.as_ref().and_then(|p| p.cursor.shown()).and_then(|k| self.body.stops.iter().find(|st| st.key == k)) else { return };
+        let Some(st) = m.panel.as_ref().and_then(|p| p.cursor.shown()).and_then(|k| self.body.stops.iter().find(|st| st.key == *k)) else { return };
         let top = st.rect.y as f64 - self.panel_origin;
         let (h, view) = (st.rect.h as f64, m.body_h);
         let mut next = m.scroll;

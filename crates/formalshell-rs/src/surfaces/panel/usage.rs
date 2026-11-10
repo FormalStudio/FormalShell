@@ -15,7 +15,7 @@ use crate::services::info::usage::{Claude, Codex, State};
 use crate::services::info::kick;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, w};
+use crate::ui::{El, Event, Ink, On, w};
 
 pub struct Usage;
 
@@ -130,7 +130,7 @@ impl Panel for Usage {
         }
     }
 
-    fn activate(&mut self, _: &str, _: &mut Effect) {
+    fn activate(&mut self, _: &On, _: &mut Effect) {
         refresh();
     }
 }

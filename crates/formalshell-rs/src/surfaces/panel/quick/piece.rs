@@ -5,17 +5,18 @@
 
 use fs_theme::tokens::Space;
 
+use super::Hit;
 use crate::ui::w::{caption, cell, column, icon, icon_button, label, panel_chip, panel_line, panel_row, panel_value, row, separator, slider, space, spacer, text_inset};
 use crate::ui::{El, Ink, Size, Type, Weight};
 
-fn tile(content: El, id: &str, on: bool, available: bool) -> El {
+fn tile(content: El, hit: Hit, on: bool, available: bool) -> El {
     let c = cell(content).cell_state(|c| {
         c.group = true;
         c.open = on;
         c.disabled = !available;
         c.inset = Some((0.0, 0.0));
     });
-    if available { c.interactive().on(id).stop(id) } else { c.key(id).fade(0.5) }
+    if available { c.interactive().on(hit.clone()).stop(hit) } else { c.key(hit.to_string()).fade(0.5) }
 }
 
 /// A tile's line: the chip `sm` in, so the chip column is the same in
@@ -27,28 +28,32 @@ fn line(s: &Space, glyph: &str, title: &str, subtitle: Option<&str>, on: bool) -
 
 /// A glyph centred in a `panelRow` square tile: a split's arrow, a system
 /// button.
-fn square(s: &Space, id: &str, glyph: &str, on: bool, available: bool) -> El {
+fn square(s: &Space, hit: Hit, glyph: &str, on: bool, available: bool) -> El {
     let mark = row(0.0, vec![spacer(), icon(glyph).size(Type::Heading), spacer()]).fill().height(s.panel_row);
-    tile(mark, id, on, available).width(Size::Px(s.panel_row)).height(s.panel_row)
+    tile(mark, hit, on, available).width(Size::Px(s.panel_row)).height(s.panel_row)
+}
+
+fn toggle_tile(s: &Space, hit: Hit, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, available: bool) -> El {
+    tile(line(s, glyph, title, subtitle, on), hit, on, available).height(s.panel_row)
 }
 
 /// A plain toggle, `panelRow` tall, as wide as its grid column.
 pub fn toggle(s: &Space, id: &str, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, available: bool) -> El {
-    tile(line(s, glyph, title, subtitle, on), id, on, available).height(s.panel_row)
+    toggle_tile(s, Hit::Tile(id.to_owned()), glyph, title, subtitle, on, available)
 }
 
 /// A toggle with a menu: the toggle (`id`) and its arrow tile
 /// (`<id>:menu`) `rowGap` apart, both lit while on.
 pub fn split(s: &Space, id: &str, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, available: bool) -> El {
     let part = toggle(s, id, glyph, title, subtitle, on, available);
-    let arrow = square(s, &format!("{id}:menu"), "chevron-right", on, available);
+    let arrow = square(s, Hit::Arrow(id.to_owned()), "chevron-right", on, available);
     row(s.row_gap, vec![part, arrow]).fill().height(s.panel_row)
 }
 
 /// An extra's tile (§7): a toggle that is never on, the cell's value as
 /// its subtitle, a click handing over to the cell's panel.
 pub fn info(s: &Space, id: &str, glyph: &str, title: &str, value: Option<&str>) -> El {
-    toggle(s, id, glyph, title, value, false, true)
+    toggle_tile(s, Hit::Extra(id.to_owned()), glyph, title, value, false, true)
 }
 
 /// Background (§6): a full-width row, its chip on the tiles' chip column
@@ -56,19 +61,19 @@ pub fn info(s: &Space, id: &str, glyph: &str, title: &str, value: Option<&str>) 
 /// its menu.
 pub fn background(s: &Space, id: &str, title: &str) -> El {
     let mark = row(0.0, vec![spacer(), icon("chevron-right").ink(Ink::Muted), spacer()]).width(Size::Px(s.panel_mark * 2.0));
-    panel_row(s, "activity", title, None, vec![mark]).cell_state(|c| c.inset = Some((s.sm, 0.0))).on(id).stop(id)
+    panel_row(s, "activity", title, None, vec![mark]).cell_state(|c| c.inset = Some((s.sm, 0.0))).on(Hit::Tile(id.to_owned())).stop(Hit::Tile(id.to_owned()))
 }
 
 /// The system row's button: a square tile, its name the tooltip.
 pub fn button(s: &Space, id: &str, glyph: &str, tip: &str) -> El {
-    square(s, id, glyph, false, true).tip(tip)
+    square(s, Hit::Tile(id.to_owned()), glyph, false, true).tip(tip)
 }
 
 /// The system row's battery: a tile as wide as its chip and its value in
 /// `mono`.
 pub fn battery(s: &Space, id: &str, glyph: &str, value: &str) -> El {
     let line = row(s.panel_gap, vec![panel_chip(s, glyph, false), panel_value(value)]).height(s.panel_row).pad(s.sm, 0.0, s.lg, 0.0);
-    tile(line, id, false, true).width(Size::Hug).height(s.panel_row)
+    tile(line, Hit::Tile(id.to_owned()), false, true).width(Size::Hug).height(s.panel_row)
 }
 
 /// A slider row, `panelRowCompact` tall: its glyph a button (`<id>:icon`,
@@ -76,10 +81,11 @@ pub fn battery(s: &Space, id: &str, glyph: &str, value: &str) -> El {
 /// (`<id>:menu`) opening its devices. The glyphs centre on the tiles' chip
 /// column and arrow column.
 pub fn slider_row(s: &Space, id: &str, glyph: &str, value: f64, menu: bool) -> El {
-    let button = |key: String, glyph: &str| icon_button(glyph).on(key.clone()).stop(key);
-    let mut parts = vec![button(format!("{id}:icon"), glyph), slider(value).fill().on(id).stop(id)];
+    let button = |hit: Hit, glyph: &str| icon_button(glyph).on(hit.clone()).stop(hit);
+    let tile = Hit::Tile(id.to_owned());
+    let mut parts = vec![button(Hit::Icon(id.to_owned()), glyph), slider(value).fill().on(tile.clone()).stop(tile)];
     if menu {
-        parts.push(button(format!("{id}:menu"), "chevron-right"));
+        parts.push(button(Hit::Arrow(id.to_owned()), "chevron-right"));
     }
     let x = s.sm + s.panel_mark - s.control_height / 2.0;
     row(s.panel_gap, parts).fill().height(s.panel_row_compact).pad(x, 0.0, x, 0.0)

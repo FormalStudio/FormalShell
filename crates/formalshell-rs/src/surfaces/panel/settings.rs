@@ -13,12 +13,30 @@ use fs_chrome::bar::panels::PanelId;
 use super::{Effect, Out, Panel, View, quick};
 use crate::services::power;
 use crate::store::Topic;
-use crate::ui::{El, Event, Size, Type, Weight, What, w};
+use crate::ui::{El, Event, On, Size, Type, Weight, What, w};
 
 #[derive(Default)]
 pub struct Settings {
-    /// The restart or shut down button pressed once.
-    armed: Option<&'static str>,
+    /// The restart or shut down button pressed once, by its row.
+    armed: Option<usize>,
+}
+
+/// A tile or a session button, by its row in [`TILES`] or [`SESSION`].
+#[derive(Clone, Copy, PartialEq)]
+enum Press {
+    Tile(usize),
+    Session(usize),
+}
+
+impl crate::ui::on::HitId for Press {}
+
+impl std::fmt::Display for Press {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Press::Tile(i) => write!(f, "tile:{}", TILES[i].0),
+            Press::Session(i) => write!(f, "session:{}", SESSION[i].0),
+        }
+    }
 }
 
 const TILES: [(&str, &str, &str, PanelId); 4] = [
@@ -54,7 +72,8 @@ impl Panel for Settings {
         let rows = TILES.len().div_ceil(2) as f64;
         let tiles = TILES
             .iter()
-            .map(|(id, glyph, name, _)| {
+            .enumerate()
+            .map(|(i, (_, glyph, name, _))| {
                 let face = w::column(
                     0.0,
                     vec![
@@ -71,15 +90,16 @@ impl Panel for Settings {
                     })
                     .height(tile_h)
                     .interactive()
-                    .stop(format!("tile:{id}"))
-                    .on(format!("tile:{id}"))
+                    .stop(Press::Tile(i))
+                    .on(Press::Tile(i))
             })
             .collect();
         let button_h = (tile_h * rows + gap * (rows - 1.0) - gap * 3.0) / 4.0;
         let session = SESSION
             .iter()
-            .map(|(id, glyph, tip)| {
-                let armed = self.armed == Some(*id);
+            .enumerate()
+            .map(|(i, (_, glyph, tip))| {
+                let armed = self.armed == Some(i);
                 let side = button_h - s.lg * 2.0;
                 let chip = w::cell(w::row(0.0, vec![w::spacer(), w::icon(*glyph).size(Type::Display), w::spacer()]).fill().height(side))
                     .cell_state(|c| {
@@ -99,8 +119,8 @@ impl Panel for Settings {
                     .height(button_h)
                     .interactive()
                     .tip(*tip)
-                    .stop(format!("session:{id}"))
-                    .on(format!("session:{id}"))
+                    .stop(Press::Session(i))
+                    .on(Press::Session(i))
             })
             .collect();
         w::panel_text(s, w::row(gap, vec![w::grid(2, gap, tiles), w::column(gap, session).width(Size::Px(column))]).fill())
@@ -108,50 +128,52 @@ impl Panel for Settings {
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
         if let What::Click = ev.what {
-            self.go(&ev.on.clone(), fx);
+            self.go(&ev.on, fx);
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         self.go(stop, fx);
     }
 
     /// The cursor leaving an armed button disarms it, as the launcher's
     /// confirm rows do on a selection change.
-    fn reached(&mut self, stop: &str, _fx: &mut Effect) {
+    fn reached(&mut self, stop: &On, _fx: &mut Effect) {
         self.disarm_off(Some(stop));
     }
 
     /// The pointer leaving it too, so a click, a move away and a click
     /// back arms again.
-    fn pointed(&mut self, stop: Option<&str>) {
+    fn pointed(&mut self, stop: Option<&On>) {
         self.disarm_off(stop);
     }
 }
 
 impl Settings {
-    fn disarm_off(&mut self, stop: Option<&str>) {
-        if self.armed.is_some_and(|id| stop.and_then(|s| s.strip_prefix("session:")) != Some(id)) {
+    fn disarm_off(&mut self, stop: Option<&On>) {
+        if self.armed.is_some_and(|i| stop.and_then(|s| s.get::<Press>()) != Some(&Press::Session(i))) {
             self.armed = None;
         }
     }
 
-    fn go(&mut self, on: &str, fx: &mut Effect) {
+    fn go(&mut self, on: &On, fx: &mut Effect) {
         let armed = self.armed.take();
-        if let Some(id) = on.strip_prefix("tile:") {
-            if let Some(t) = TILES.iter().find(|t| t.0 == id) {
-                fx.push(Out::Panel(t.3, None));
+        let i = match on.get::<Press>() {
+            Some(&Press::Tile(i)) => {
+                fx.push(Out::Panel(TILES[i].3, None));
+                return;
             }
-            return;
-        }
-        let Some(&(id, ..)) = on.strip_prefix("session:").and_then(|id| SESSION.iter().find(|b| b.0 == id)) else { return };
+            Some(&Press::Session(i)) => i,
+            None => return,
+        };
+        let id = SESSION[i].0;
         if id == "lock" {
             fx.push(Out::Close);
             fx.push(Out::Quick(quick::Run::Lock));
             return;
         }
-        if matches!(id, "reboot" | "poweroff") && armed != Some(id) {
-            self.armed = Some(id);
+        if matches!(id, "reboot" | "poweroff") && armed != Some(i) {
+            self.armed = Some(i);
             return;
         }
         if let Some(action) = power::Action::parse(id) {

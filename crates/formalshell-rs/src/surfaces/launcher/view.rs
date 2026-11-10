@@ -175,7 +175,7 @@ impl Shown {
 
     /// The stop under the pointer, whichever of its parts it is on, as the
     /// panel host reads it.
-    pub fn hovered_stop(&self) -> Option<String> {
+    pub fn hovered_stop(&self) -> Option<crate::ui::On> {
         let path = self.body.hover.as_ref()?;
         let hit = self.body.hits.iter().find(|h| &h.path == path)?;
         if hit.stop.is_some() {
@@ -386,7 +386,7 @@ impl Shown {
         let held = m.panel.as_ref().filter(|_| m.on_panel());
         self.body.halo_owned = false;
         self.body.fill_owned = held.is_none();
-        self.body.cursor = held.and_then(|p| p.cursor.shown()).map(str::to_owned);
+        self.body.cursor = held.and_then(|p| p.cursor.shown()).map(|k| k.to_string());
         self.body.ring = held.is_some_and(|p| p.cursor.keyed);
         let origin = (body_x, body_top - scroll);
         self.panel_origin = origin.1;

@@ -17,12 +17,37 @@ use super::{Effect, Nav, Panel, View};
 use crate::services::devices::audio::{self, Cmd, Lists, Row, Target};
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, What, w};
+use crate::ui::{El, Event, On, What, w};
 
-/// A press on a mute switch or a volume track, by the stop key of the row it sits on.
+/// One row of the panel, its cursor stop: the two masters, a device or a
+/// stream by its node id.
+#[derive(Clone, Copy, PartialEq)]
+enum Line {
+    Output,
+    Input,
+    OutputDevice(u32),
+    InputDevice(u32),
+    Stream(u32),
+}
+
+impl crate::ui::on::HitId for Line {}
+
+impl std::fmt::Display for Line {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Line::Output => f.write_str("output-slider"),
+            Line::Input => f.write_str("input-slider"),
+            Line::OutputDevice(id) => write!(f, "output-device:{id}"),
+            Line::InputDevice(id) => write!(f, "input-device:{id}"),
+            Line::Stream(id) => write!(f, "stream:{id}"),
+        }
+    }
+}
+
+/// A press on a mute switch or a volume track, by the row it sits on.
 enum Press {
-    Mute(String),
-    Volume(String),
+    Mute(Line),
+    Volume(Line),
 }
 
 impl crate::ui::on::HitId for Press {}
@@ -30,8 +55,8 @@ impl crate::ui::on::HitId for Press {}
 impl std::fmt::Display for Press {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Press::Mute(key) => write!(f, "mute:{key}"),
-            Press::Volume(key) => write!(f, "volume:{key}"),
+            Press::Mute(line) => write!(f, "mute:{line}"),
+            Press::Volume(line) => write!(f, "volume:{line}"),
         }
     }
 }
@@ -54,32 +79,25 @@ fn lists(store: &Store) -> Option<&Lists> {
     store.audio.lists.as_ref()
 }
 
-/// A stop's row: `output-device:<id>`, `input-device:<id>`, `stream:<id>`.
-fn by_key<'a>(l: &'a Lists, key: &str) -> Option<(&'static str, &'a Row)> {
-    let (kind, id) = key.split_once(':')?;
-    let id: u32 = id.parse().ok()?;
-    let rows = match kind {
-        "output-device" => &l.outputs,
-        "input-device" => &l.inputs,
-        "stream" => &l.streams,
-        _ => return None,
+/// A device or stream line's row in the lists.
+fn row_of(l: &Lists, line: Line) -> Option<&Row> {
+    let (rows, id) = match line {
+        Line::OutputDevice(id) => (&l.outputs, id),
+        Line::InputDevice(id) => (&l.inputs, id),
+        Line::Stream(id) => (&l.streams, id),
+        Line::Output | Line::Input => return None,
     };
-    let kind = match kind {
-        "output-device" => "output",
-        "input-device" => "input",
-        _ => "stream",
-    };
-    rows.iter().find(|r| r.id == id).map(|r| (kind, r))
+    rows.iter().find(|r| r.id == id)
 }
 
-fn device_row(id_key: String, glyph: &str, r: &Row, selected: bool, s: &fs_theme::tokens::Space) -> El {
-    w::panel_row_checked(s, glyph, &r.label, None, Vec::new(), selected).stop(id_key.clone()).on(id_key)
+fn device_row(line: Line, glyph: &str, r: &Row, selected: bool, s: &fs_theme::tokens::Space) -> El {
+    w::panel_row_checked(s, glyph, &r.label, None, Vec::new(), selected).stop(line).on(line)
 }
 
 /// A label, a percent and a mute switch over a track: the input master
 /// and every stream row.
-fn mixer_row(s: &fs_theme::tokens::Space, glyph: Option<&str>, label: &str, volume: f64, muted: bool, key: &str, track: El) -> El {
-    let values = vec![w::panel_value(format!("{}%", (volume * 100.0).round())), w::switch(!muted).on(Press::Mute(key.to_owned()))];
+fn mixer_row(s: &fs_theme::tokens::Space, glyph: Option<&str>, label: &str, volume: f64, muted: bool, line: Line, track: El) -> El {
+    let values = vec![w::panel_value(format!("{}%", (volume * 100.0).round())), w::switch(!muted).on(Press::Mute(line))];
     w::panel_meter(s, glyph, label, values, Some(track))
 }
 
@@ -88,25 +106,26 @@ impl Audio {
         audio::send(Cmd::Default { source: input, name: r.name.clone() });
     }
 
-    fn mute(fx: &Effect, stop: &str) {
+    fn mute(fx: &Effect, line: Line) {
         let a = &fx.store.audio;
         let Some(l) = lists(fx.store) else { return };
-        match stop {
-            "output-slider" => {
+        match line {
+            Line::Output => {
                 if let Some(id) = l.sink {
                     set_muted(id, !a.muted);
                 }
             }
-            "input-slider" => {
+            Line::Input => {
                 if let Some(r) = &l.source {
                     set_muted(r.id, !r.muted);
                 }
             }
-            _ => {
-                if let Some(("stream", r)) = by_key(l, stop) {
+            Line::Stream(_) => {
+                if let Some(r) = row_of(l, line) {
                     set_muted(r.id, !r.muted);
                 }
             }
+            Line::OutputDevice(_) | Line::InputDevice(_) => {}
         }
     }
 }
@@ -139,12 +158,12 @@ impl Panel for Audio {
                     title: if a.name.is_empty() { "Output".into() } else { a.name.clone() },
                     meta: if a.muted { "Muted" } else { "Active" }.into(),
                     readout: format!("{}%", (volume * 100.0).round()),
-                    trailing: Some(w::switch(!a.muted).on(Press::Mute("output-slider".into()))),
+                    trailing: Some(w::switch(!a.muted).on(Press::Mute(Line::Output))),
                     rail: Some(volume),
-                    rail_on: Some(Press::Volume("output-slider".into()).into()),
+                    rail_on: Some(Press::Volume(Line::Output).into()),
                 },
             )
-            .stop("output-slider");
+            .stop(Line::Output);
             out.push(hero);
         }
         if l.outputs.is_empty() && l.inputs.is_empty() {
@@ -153,17 +172,17 @@ impl Panel for Audio {
         // Device choice is the section's own rows, the current one checked:
         // one inset level, never a picker boxed inside the group.
         if l.outputs.len() > 1 {
-            let rows = l.outputs.iter().map(|r| device_row(format!("output-device:{}", r.id), "volume-2", r, Some(r.id) == l.sink, s)).collect();
+            let rows = l.outputs.iter().map(|r| device_row(Line::OutputDevice(r.id), "volume-2", r, Some(r.id) == l.sink, s)).collect();
             out.push(w::panel_section_n(s, "Output", l.outputs.len(), rows, ""));
         }
         if !l.inputs.is_empty() {
             let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume.as_f64()), r.muted));
-            let track = w::slider(volume).on(Press::Volume("input-slider".into()));
-            let master = mixer_row(s, Some(if muted { "mic-off" } else { "mic" }), "Level", volume, muted, "input-slider", track);
+            let track = w::slider(volume).on(Press::Volume(Line::Input));
+            let master = mixer_row(s, Some(if muted { "mic-off" } else { "mic" }), "Level", volume, muted, Line::Input, track);
             let source = l.source.as_ref().map(|r| r.id);
-            let mut rows = vec![master.stop("input-slider")];
+            let mut rows = vec![master.stop(Line::Input)];
             if l.inputs.len() > 1 {
-                rows.extend(l.inputs.iter().map(|r| device_row(format!("input-device:{}", r.id), "mic", r, Some(r.id) == source, s)));
+                rows.extend(l.inputs.iter().map(|r| device_row(Line::InputDevice(r.id), "mic", r, Some(r.id) == source, s)));
             }
             out.push(w::panel_section_n(s, "Input", l.inputs.len(), rows, ""));
         }
@@ -172,11 +191,11 @@ impl Panel for Audio {
                 .streams
                 .iter()
                 .map(|r| {
-                    let key = format!("stream:{}", r.id);
+                    let line = Line::Stream(r.id);
                     let volume = r.volume.as_f64();
-                    let track = w::slider(volume / 1.5).notch(1.0 / 1.5).on(Press::Volume(key.clone()));
+                    let track = w::slider(volume / 1.5).notch(1.0 / 1.5).on(Press::Volume(line));
                     let label = if r.label.is_empty() { "Stream" } else { &r.label };
-                    mixer_row(s, None, label, volume, r.muted, &key, track).stop(key)
+                    mixer_row(s, None, label, volume, r.muted, line, track).stop(line)
                 })
                 .collect();
             out.push(w::panel_section_n(s, "Apps", l.streams.len(), rows, ""));
@@ -189,31 +208,32 @@ impl Panel for Audio {
         let Some(l) = lists(store).cloned() else { return };
         let a = &store.audio;
         match (ev.on.get::<Press>(), &ev.what) {
-            (Some(Press::Mute(key)), What::Toggle(_)) => Self::mute(fx, key),
-            (Some(Press::Volume(key)), What::Fraction(_) | What::Wheel(_)) => {
+            (Some(&Press::Mute(line)), What::Toggle(_)) => Self::mute(fx, line),
+            (Some(&Press::Volume(line)), What::Fraction(_) | What::Wheel(_)) => {
                 let step = |cur: Visual| match ev.what {
                     What::Wheel(d) => cur.as_f64() + d as f64 * STEP,
                     _ => cur.as_f64(),
                 };
-                match key.as_str() {
-                    "output-slider" => {
+                match line {
+                    Line::Output => {
                         if let Some(id) = l.sink {
                             let to = if let What::Fraction(f) = ev.what { f } else { step(a.volume.unwrap_or_default()) };
                             set_volume(id, clamp_device(to));
                         }
                     }
-                    "input-slider" => {
+                    Line::Input => {
                         if let Some(r) = &l.source {
                             let to = if let What::Fraction(f) = ev.what { f } else { step(r.volume) };
                             set_volume(r.id, clamp_device(to));
                         }
                     }
-                    _ => {
-                        if let Some(("stream", r)) = by_key(&l, key) {
+                    Line::Stream(_) => {
+                        if let Some(r) = row_of(&l, line) {
                             let to = if let What::Fraction(f) = ev.what { f * 1.5 } else { step(r.volume) };
                             set_volume(r.id, clamp_stream(to));
                         }
                     }
+                    Line::OutputDevice(_) | Line::InputDevice(_) => {}
                 }
             }
             (_, What::Click) => self.activate(&ev.on.clone(), fx),
@@ -221,51 +241,54 @@ impl Panel for Audio {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
+        let Some(&line) = stop.get::<Line>() else { return };
         let Some(l) = lists(fx.store).cloned() else {
-            if stop == "output-slider" {
-                Self::mute(fx, stop);
+            if line == Line::Output {
+                Self::mute(fx, line);
             }
             return;
         };
-        match by_key(&l, stop) {
-            Some(("output", r)) => Self::make_default(false, r),
-            Some(("input", r)) => Self::make_default(true, r),
-            _ => Self::mute(fx, stop),
+        match (line, row_of(&l, line)) {
+            (Line::OutputDevice(_), Some(r)) => Self::make_default(false, r),
+            (Line::InputDevice(_), Some(r)) => Self::make_default(true, r),
+            _ => Self::mute(fx, line),
         }
     }
 
-    fn step(&mut self, stop: &str, direction: i32, fx: &mut Effect) {
+    fn step(&mut self, stop: &On, direction: i32, fx: &mut Effect) {
+        let Some(&line) = stop.get::<Line>() else { return };
         let Some(l) = lists(fx.store).cloned() else { return };
         let d = direction as f64 * STEP;
-        match stop {
-            "output-slider" => {
+        match line {
+            Line::Output => {
                 if let (Some(id), Some(v)) = (l.sink, fx.store.audio.volume) {
                     set_volume(id, clamp_device(v.as_f64() + d));
                 }
             }
-            "input-slider" => {
+            Line::Input => {
                 if let Some(r) = &l.source {
                     set_volume(r.id, clamp_device(r.volume.as_f64() + d));
                 }
             }
-            _ => {
-                if let Some(("stream", r)) = by_key(&l, stop) {
+            Line::Stream(_) => {
+                if let Some(r) = row_of(&l, line) {
                     set_volume(r.id, clamp_stream(r.volume.as_f64() + d));
                 }
             }
+            Line::OutputDevice(_) | Line::InputDevice(_) => {}
         }
     }
 
-    fn key(&mut self, stop: Option<&str>, text: &str, fx: &mut Effect) {
+    fn key(&mut self, stop: Option<&On>, text: &str, fx: &mut Effect) {
         if (text == "m" || text == "M")
-            && let Some(stop) = stop
+            && let Some(&line) = stop.and_then(|s| s.get::<Line>())
         {
-            Self::mute(fx, stop);
+            Self::mute(fx, line);
         }
     }
 
-    fn nav(&self, _: Option<&str>) -> Nav {
+    fn nav(&self, _: Option<&On>) -> Nav {
         Nav::STEPS
     }
 }

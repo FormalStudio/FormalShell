@@ -12,11 +12,13 @@ use crate::services::info::github::{Poll, Row};
 use crate::services::info::kick;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, w};
+use crate::ui::{El, Event, On, w};
 
-/// A press on a pull request's or an issue's row, by its URL.
+/// A press on a pull request's or an issue's row, by its URL, and the row
+/// as a cursor stop, by its place across both lists.
 enum Press {
     Open(String),
+    Row(usize),
 }
 
 impl crate::ui::on::HitId for Press {}
@@ -25,6 +27,7 @@ impl std::fmt::Display for Press {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Press::Open(url) => write!(f, "open:{url}"),
+            Press::Row(i) => write!(f, "row{i}"),
         }
     }
 }
@@ -87,7 +90,7 @@ impl Panel for Github {
                     // The query fetches a page; the last row says what it left out.
                     let hidden = (total as usize).saturating_sub(rows.len());
                     let trailing = if i + 1 == rows.len() && hidden > 0 { vec![w::panel_value(format!("{hidden} more"))] } else { Vec::new() };
-                    w::panel_row(s, "", r.title.clone(), repo, trailing).stop(format!("row{}", first + i)).on(Press::Open(r.url.clone()))
+                    w::panel_row(s, "", r.title.clone(), repo, trailing).stop(Press::Row(first + i)).on(Press::Open(r.url.clone()))
                 })
                 .collect();
             w::panel_section(s, title, cells, "None")
@@ -103,9 +106,9 @@ impl Panel for Github {
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &On, fx: &mut Effect) {
         let g = &fx.store.github;
-        let Some(i) = stop.strip_prefix("row").and_then(|i| i.parse::<usize>().ok()) else { return };
+        let Some(&Press::Row(i)) = stop.get::<Press>() else { return };
         let row = if i < g.pr_rows.len() { g.pr_rows.get(i) } else { g.issue_rows.get(i - g.pr_rows.len()) };
         if let Some(url) = row.map(|r| r.url.clone()) {
             open(&url, fx);
