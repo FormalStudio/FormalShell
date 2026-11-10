@@ -121,7 +121,7 @@ impl App {
         let (_, oh) = self.output_size();
         let s = &theme.space;
         let spec = CardSpec { nub: Some((s.xl, s.sm, s.xxs)), ..CardSpec::new(Edge::Right, 0.0, Sizing::Card { size: (height, width), anchor: oh / 2.0, length: oh as i32 }) };
-        let card = Card::new(&theme, spec, self.motion_scale, self.cast);
+        let card = Card::new(&theme, spec, self.cast);
         let surface = self.popout_surface(&card, Layer::Overlay);
         let mut popup = Popup::new(surface, card);
         popup.set_open(now, true);

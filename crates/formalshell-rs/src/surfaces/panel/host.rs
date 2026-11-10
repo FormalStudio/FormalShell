@@ -271,7 +271,6 @@ pub struct Host {
     pressed: Option<String>,
     dragging: Option<(String, IRect, f64)>,
     pub wake: Option<Instant>,
-    scale: f64,
     /// The frame's height, the most the output leaves it and whether the
     /// content was cut to that, as of the last layout.
     pub fit: std::cell::Cell<(f64, f64, bool)>,
@@ -296,11 +295,11 @@ pub struct Opener {
 const PRIME_MS: u64 = 75;
 
 impl Host {
-    pub fn new(module: Box<dyn Panel>, name: &'static str, place: Place, theme: &Theme, surface: Surface, scale: f64, cast: bool) -> Self {
+    pub fn new(module: Box<dyn Panel>, name: &'static str, place: Place, theme: &Theme, surface: Surface, cast: bool) -> Self {
         let size = (place.along_len() as i32, place.across_len() as i32);
         let rest = Rect::new(0.0, place.line_at, 0.0, place.line_at);
         let spec = CardSpec { ends: place.ends, ..CardSpec::new(place.edge, place.line_at, Sizing::Surface { size, rest }) };
-        let mut card = Card::new(theme, spec, scale, cast);
+        let mut card = Card::new(theme, spec, cast);
         let top = card.top_node();
         let halo = card.scene.add_after(Some(top), IRect::default(), Paint::Rect { fill: Rgba::TRANSPARENT, radius: 0.0 });
         card.scene.set_visible(halo, false);
@@ -335,7 +334,6 @@ impl Host {
             pressed: None,
             dragging: None,
             wake: None,
-            scale,
             fit: std::cell::Cell::new((0.0, 0.0, false)),
             name,
             from: Origin::Ipc,
@@ -448,8 +446,8 @@ impl Host {
             return false;
         }
         h.started = true;
-        h.travel.set(now, 1.0, Clock::Spatial.ms(theme) * self.scale);
-        h.alpha.set(now, 1.0, Clock::Effects.ms(theme) * self.scale);
+        h.travel.set(now, 1.0, Clock::Spatial.ms(theme));
+        h.alpha.set(now, 1.0, Clock::Effects.ms(theme));
         true
     }
 
@@ -479,7 +477,6 @@ impl Host {
             cursor: self.cursor.shown(),
             hovered: self.hovered_stop(),
             now,
-            motion_scale: self.scale,
             raster: self.win.surface.scale(),
         }
     }
@@ -536,7 +533,7 @@ impl Host {
         let (tw, th, content_h, follows) = self.target_size(theme, kit, store, now);
         let sized = t0.elapsed();
         self.content_h = content_h;
-        let spatial = Clock::Spatial.ms(theme) * self.scale;
+        let spatial = Clock::Spatial.ms(theme);
         let morph = self.morph.get_or_insert_with(|| (Animated::new(tw, Clock::Spatial.curve()), Animated::new(th, Clock::Spatial.curve())));
         if self.open {
             let armed = self.win.surface.mapped() && self.handoff.is_none() && self.morph_armed;
@@ -676,8 +673,6 @@ impl Host {
         let r_ = ring.ceil() as i32;
         let body_clip = IRect::new(vp.x - r_, vp.y - r_, vp.w + r_ * 2, vp.h + r_ * 2).intersect(&clip);
         self.body.halo_owned = true;
-        self.body.motion_scale = self.scale;
-        self.head.motion_scale = self.scale;
         self.body.cursor = self.cursor.shown().map(On::to_string);
         self.body.ring = self.cursor.keyed;
         let origin = (fx + pad, top - scroll);
@@ -692,7 +687,7 @@ impl Host {
         // with the cursor's fill riding it.
         let stop = self.cursor.key.as_ref().filter(|_| self.cursor.active && self.cursor.keyed).and_then(|k| self.body.stops.iter().find(|s| s.key == *k)).cloned();
         let cr = theme.cursor_ring();
-        let fast = Clock::SpatialFast.ms(theme) * self.scale;
+        let fast = Clock::SpatialFast.ms(theme);
         match stop {
             Some(st) => {
                 let local = [st.rect.x as f64 - origin.0, st.rect.y as f64 - origin.1, st.rect.w as f64, st.rect.h as f64];
@@ -746,7 +741,7 @@ impl Host {
         let (h, view) = (st.rect.h as f64, self.viewport.h as f64);
         let next = crate::scroll::follow(top, h, scroll, view, self.content_h);
         if (next - scroll).abs() > 0.5 {
-            self.scroll.set(now, next, Clock::SpatialFast.ms(theme) * self.scale);
+            self.scroll.set(now, next, Clock::SpatialFast.ms(theme));
         }
     }
 
@@ -953,10 +948,10 @@ impl Host {
     /// touchpad's.
     #[allow(clippy::too_many_arguments)]
     pub fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, travel: Travel, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
-        let (view, ms) = (self.viewport.h as f64, Clock::SpatialFast.ms(&store.theme.theme) * self.scale);
+        let (view, ms) = (self.viewport.h as f64, Clock::SpatialFast.ms(&store.theme.theme));
         if let Travel::Lift(_) = travel {
             let max = (self.content_h - view).max(0.0);
-            self.touch.travel(travel, self.scroll.target(), max, crate::scroll::BODY_NOTCH, view, ms, self.scale);
+            self.touch.travel(travel, self.scroll.target(), max, crate::scroll::BODY_NOTCH, view, ms, store.theme.theme.motion_scale);
             return Vec::new();
         }
         let point = IRect::new(x.floor() as i32, y.floor() as i32, 1, 1);
@@ -988,7 +983,7 @@ impl Host {
         // The body moves a whole notch a wheel frame, whatever the frame's
         // own size.
         let travel = if matches!(travel, Travel::Pixels { .. }) { travel } else { Travel::Notches(if up { -1.0 } else { 1.0 }) };
-        if let Some((next, glide)) = self.touch.travel(travel, self.scroll.target(), max, crate::scroll::BODY_NOTCH, view, ms, self.scale) {
+        if let Some((next, glide)) = self.touch.travel(travel, self.scroll.target(), max, crate::scroll::BODY_NOTCH, view, ms, store.theme.theme.motion_scale) {
             if glide {
                 self.scroll.set(Instant::now(), next, ms);
             } else {

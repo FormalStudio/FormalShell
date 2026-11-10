@@ -1269,14 +1269,13 @@ impl App {
         // not overshoot and a rise that does, once the first output can draw.
         if !self.lock.entered && !boot && self.lock.outs.iter().any(|o| o.surface.configured) {
             self.lock.entered = true;
-            let scale = self.motion_scale;
             self.lock.fade.jump(0.0);
-            self.lock.fade.set(now, 1.0, Clock::Effects.ms(theme) * scale);
+            self.lock.fade.set(now, 1.0, Clock::Effects.ms(theme));
             self.lock.rise.jump(theme.space.section_gap);
-            self.lock.rise.set(now, 0.0, Clock::Spatial.ms(theme) * scale);
+            self.lock.rise.set(now, 0.0, Clock::Spatial.ms(theme));
         }
         let blanked = self.lock_blanked();
-        let reveal = if theme.motion_enabled { theme.motion().families.reveal * self.motion_scale } else { 0.0 };
+        let reveal = if theme.motion_enabled { theme.motion().families.reveal } else { 0.0 };
         self.lock.wake.set(now, if blanked { 0.0 } else { 1.0 }, reveal);
         let departing = self.lock.departing || self.lock.depart.running(now);
         let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now) || departing;
@@ -1314,7 +1313,7 @@ impl App {
         let qh = self.qh.clone();
         let saver = &mut self.saver;
         let going = self.lock.departing;
-        let boot_ms = if theme.motion_enabled { dissolve::BOOT_MS * self.motion_scale } else { 0.0 };
+        let boot_ms = if theme.motion_enabled { dissolve::BOOT_MS * theme.motion_scale } else { 0.0 };
         for o in &mut self.lock.outs {
             if !o.surface.configured {
                 continue;
@@ -1379,7 +1378,6 @@ impl App {
                 o.surface.present(scene, damaged, &qh);
                 continue;
             }
-            o.view.ui.motion_scale = self.motion_scale;
             let (moving, report) = view::draw(&mut o.view, &shared, theme, &mut self.kit, now);
             let moving = moving || entering;
             if std::mem::replace(&mut o.saver, false) {

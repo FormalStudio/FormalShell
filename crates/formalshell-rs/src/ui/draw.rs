@@ -1613,7 +1613,7 @@ fn ring(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
     });
     let turn = if r == Ring::Unknown && t.motion_enabled {
         cx.animate();
-        ring_turn(cx.now, cx.motion_scale)
+        ring_turn(cx.now, cx.theme.motion_scale)
     } else {
         0.0
     };
@@ -1696,7 +1696,7 @@ fn indicator(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
     // frozen 0% through a long build, so it turns like the panel's ring.
     let turn = if r == Ring::Unknown && t.motion_enabled {
         cx.animate();
-        ring_turn(cx.now, cx.motion_scale)
+        ring_turn(cx.now, cx.theme.motion_scale)
     } else {
         0.0
     };

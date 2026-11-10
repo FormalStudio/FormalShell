@@ -476,7 +476,7 @@ impl Kit {
                         let d = b.0;
                         let centre = if vertical { (across_mid as f64, at + d / 2.0) } else { (at + d / 2.0, across_mid as f64) };
                         let fill = if *ring == Ring::Failed { look.destructive } else { ink.fg };
-                        let turn = if look.motion { crate::ui::ring_turn(f.now, self.motion_scale) } else { 0.0 };
+                        let turn = if look.motion { crate::ui::ring_turn(f.now, look.motion_scale) } else { 0.0 };
                         let strokes = crate::ui::ring_strokes(centre, d, look.xxs, *ring, turn, ink.of(look.muted_fill), ink.of(fill));
                         let bounds = crate::scene::Scene::cover(
                             vello_cpu::kurbo::Rect::new(centre.0 - d / 2.0, centre.1 - d / 2.0, centre.0 + d / 2.0, centre.1 + d / 2.0),

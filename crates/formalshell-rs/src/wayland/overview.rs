@@ -65,7 +65,7 @@ fn icon_key(id: &WindowId) -> String {
 impl App {
     fn overview_pace(&self) -> Pace {
         let m = self.store.theme.theme.motion();
-        Pace { ms: m.arrive * self.motion_scale, curve: Curve::from_table(&m.arrive_curve) }
+        Pace { ms: m.arrive, curve: Curve::from_table(&m.arrive_curve) }
     }
 
     pub fn overview_action(&mut self, action: Action) {

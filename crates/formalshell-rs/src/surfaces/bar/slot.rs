@@ -163,7 +163,7 @@ impl Slot {
             if let Some(changed) = swapped_text(&old_view, &self.view) {
                 self.ghost = Some(changed);
                 self.clocks.cross.jump(0.0);
-                self.clocks.cross.set(now, 1.0, kit.look.effects * kit.motion_scale);
+                self.clocks.cross.set(now, 1.0, kit.look.effects);
             }
         }
         let natural = match self.cell.custom() {
@@ -178,18 +178,17 @@ impl Slot {
             }
         };
         let look = &kit.look;
-        let scale = kit.motion_scale;
         if natural != self.natural || !animate {
             self.natural = natural;
             if animate && look.motion {
-                self.clocks.along.set(now, natural, look.spatial * scale);
+                self.clocks.along.set(now, natural, look.spatial);
             } else {
                 self.clocks.along.jump(natural);
             }
         }
         let fade = if self.view.shown { 1.0 } else { 0.0 };
         if animate && look.motion {
-            self.clocks.fade.set(now, fade, look.effects * scale);
+            self.clocks.fade.set(now, fade, look.effects);
         } else {
             self.clocks.fade.jump(fade);
         }
@@ -213,9 +212,8 @@ impl Slot {
         }
         self.open = open;
         let t = if open { 1.0 } else { 0.0 };
-        let scale = kit.motion_scale;
-        self.clocks.mark.set(now, t, kit.look.spatial_fast * scale);
-        self.clocks.mark_fade.set(now, t, kit.look.effects * scale);
+        self.clocks.mark.set(now, t, kit.look.spatial_fast);
+        self.clocks.mark_fade.set(now, t, kit.look.effects);
         self.dirty = true;
     }
 

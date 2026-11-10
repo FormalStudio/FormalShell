@@ -171,7 +171,7 @@ impl App {
             deform: DEFORM,
             ..CardSpec::new(Edge::Bottom, inset, Sizing::Surface { size: (out_w as i32, band as i32), rest: rest_rect })
         };
-        let card = Card::new(theme, spec, self.motion_scale, self.cast);
+        let card = Card::new(theme, spec, self.cast);
         let layer = self.overlay("formalshell:osd", Layer::Overlay, Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT, (0, band as u32), -1);
         let surface = Surface::new("osd", Backend::Gpu, layer, &self.shm, self.store.display.scales.primary());
         let mut popup = Popup::new(surface, card);

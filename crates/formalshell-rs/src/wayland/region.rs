@@ -162,7 +162,7 @@ impl App {
                 continue;
             }
             let frame = self.capture.picker.frames.get(&p.output).and_then(|f| f.as_ref());
-            let animating = p.sheet.draw(&self.capture.picker, &c, p.origin, frame, theme, kit, self.motion_scale, now);
+            let animating = p.sheet.draw(&self.capture.picker, &c, p.origin, frame, theme, kit, now);
             p.dirty = animating;
             p.surface.present(&mut p.sheet.scene, animating, &qh);
         }

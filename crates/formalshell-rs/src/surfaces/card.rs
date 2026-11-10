@@ -242,7 +242,6 @@ pub struct Card {
     deform: Deform,
     deform_running: bool,
     last_tick: Option<Instant>,
-    scale: f64,
     ends: Ends,
     deform_amount: f64,
     casts: NodeId,
@@ -274,7 +273,7 @@ pub fn popover_theme(theme: &Theme) -> Theme {
 }
 
 impl Card {
-    pub fn new(theme: &Theme, spec: CardSpec, scale: f64, cast: bool) -> Self {
+    pub fn new(theme: &Theme, spec: CardSpec, cast: bool) -> Self {
         let CardSpec { role, state, edge, size, line_at, ends, deform, nub, capsule, compositor_look } = spec;
         let mut look = Look::new(theme, role, state, cast);
         let (size, rest, clear) = match size {
@@ -322,7 +321,6 @@ impl Card {
             deform: Deform::new(),
             deform_running: false,
             last_tick: None,
-            scale,
             ends,
             deform_amount: deform,
             casts,
@@ -472,7 +470,7 @@ impl Card {
         if self.bypass {
             self.progress.jump(target);
         } else {
-            self.progress.set(now, target, self.look.emerge_ms * self.scale);
+            self.progress.set(now, target, self.look.emerge_ms);
         }
         self.tick(now);
     }
@@ -668,7 +666,7 @@ impl Card {
 
         let attach_target = if joinable && !(self.open && pose >= release_at) { 1.0 } else { 0.0 };
         if shown && !self.bypass {
-            self.attach.set(now, attach_target, self.look.attach_ms * self.scale);
+            self.attach.set(now, attach_target, self.look.attach_ms);
         } else {
             self.attach.jump(attach_target);
         }
@@ -881,15 +879,14 @@ pub struct Scrim {
     mapped: bool,
     pose: Animated,
     ms: f64,
-    scale: f64,
     /// The `scrim` role's fill alpha over its plain black.
     alpha: f64,
 }
 
 impl Scrim {
-    pub fn new(theme: &Theme, scale: f64) -> Self {
+    pub fn new(theme: &Theme) -> Self {
         let alpha = f64::from(theme.box_style(Role::Scrim, None).fill.a);
-        Self { open: true, mapped: false, pose: Animated::new(0.0, Kind::Spatial.curve()), ms: Kind::Spatial.ms(theme), scale, alpha }
+        Self { open: true, mapped: false, pose: Animated::new(0.0, Kind::Spatial.curve()), ms: Kind::Spatial.ms(theme), alpha }
     }
 
     pub fn mapped(&mut self, now: Instant) {
@@ -902,7 +899,7 @@ impl Scrim {
     pub fn set_open(&mut self, now: Instant, open: bool) {
         self.open = open;
         let target = if open && self.mapped { 1.0 } else { 0.0 };
-        self.pose.set(now, target, self.ms * self.scale);
+        self.pose.set(now, target, self.ms);
     }
 
     pub fn animating(&self, now: Instant) -> bool {
@@ -940,7 +937,7 @@ mod tests {
         let t = theme();
         let margin = t.space.bar_margin as i32;
         for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
-            let card = Card::new(&t, CardSpec::new(edge, 40.0, Sizing::Card { size: (200.0, 60.0), anchor: 500.0, length: 1080 }), 1.0, false);
+            let card = Card::new(&t, CardSpec::new(edge, 40.0, Sizing::Card { size: (200.0, 60.0), anchor: 500.0, length: 1080 }), false);
             let r = card.rest_rect();
             let depth = card.depth();
             let (along, off) = match edge {

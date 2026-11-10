@@ -117,8 +117,7 @@ fn motion_scale(app: &mut App, args: &[Value]) -> Reply {
     if !(1..=5000).contains(&percent) {
         return Err("percent must be 1..5000".into());
     }
-    app.motion_scale = percent as f64 / 100.0;
-    app.kit.motion_scale = app.motion_scale;
+    app.apply(crate::store::Diff::Theme(crate::services::theme::Diff::MotionScale(percent as f64 / 100.0)));
     ok()
 }
 

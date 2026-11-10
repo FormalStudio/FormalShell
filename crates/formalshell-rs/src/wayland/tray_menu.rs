@@ -80,7 +80,7 @@ impl App {
         let anchor = anchor.unwrap_or(live!(self).bar.length() as f64);
         menu.anchor = anchor;
         let size = Sizing::Card { size: oriented(menu.cap), anchor, length: live!(self).bar.length() };
-        let mut card = Card::new(theme, CardSpec { role: fs_theme::style::Role::Menu, ..CardSpec::new(edge, line_at, size) }, self.motion_scale, self.cast);
+        let mut card = Card::new(theme, CardSpec { role: fs_theme::style::Role::Menu, ..CardSpec::new(edge, line_at, size) }, self.cast);
         card.resize(now, anchor, live!(self).bar.length(), pad, oriented(menu.height().min(menu.cap)));
         menu.morph.jump(menu.height().min(menu.cap));
         let surface = self.popout_surface(&card, Layer::Overlay);
@@ -124,7 +124,7 @@ impl App {
                 let (w, h) = (m.width(), m.height().min(m.cap));
                 // The first size lands at once; every later one morphs.
                 if mapped && m.morph.target() > 0.0 {
-                    let ms = crate::motion::Kind::Spatial.ms(&self.store.theme.theme) * self.motion_scale;
+                    let ms = crate::motion::Kind::Spatial.ms(&self.store.theme.theme);
                     m.morph.set(now, h, ms);
                 } else {
                     m.morph.jump(h);

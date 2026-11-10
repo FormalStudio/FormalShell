@@ -71,8 +71,6 @@ pub struct View<'a> {
     pub hovered: Option<On>,
     /// The frame being drawn, for a body that moves on its own clock.
     pub now: std::time::Instant,
-    /// The card's `debug motionScale`, 1 at full speed.
-    pub motion_scale: f64,
     /// The scale the card's surface draws at, what its pictures are made at.
     pub raster: f64,
 }

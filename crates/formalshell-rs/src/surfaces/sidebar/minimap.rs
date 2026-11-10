@@ -553,7 +553,7 @@ impl Map {
                 Press::Window(_) => None,
             })
             .collect();
-        let ms = Clock::Spatial.ms(theme) * kit.motion_scale;
+        let ms = Clock::Spatial.ms(theme);
         let lifted = self.drag.as_ref().filter(|d| d.lifted).map(|d| (d.id.clone(), d.at));
         self.glides.retain(|id, _| self.slots.contains_key(id) || lifted.as_ref().is_some_and(|l| &l.0 == id));
         let fg = theme.colors.get(ColorRole::Foreground);

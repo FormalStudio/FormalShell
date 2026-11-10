@@ -335,7 +335,7 @@ impl Toasts {
 
     /// The stack in `spec`'s corner, `screenPadding` inside `insets`.
     #[allow(clippy::too_many_arguments)]
-    pub fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, insets: &Insets, spec: PositionSpec, scale: f64, now: Instant) {
+    pub fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, insets: &Insets, spec: PositionSpec, now: Instant) {
         let s = &theme.space;
         let n = &store.notifications;
         self.right = spec.right;
@@ -359,9 +359,9 @@ impl Toasts {
         }
 
         let motion = theme.motion();
-        let restack = (motion.restack * scale, Curve::from_table(&motion.restack_curve));
-        let arrive = (motion.arrive * scale, Curve::from_table(&motion.arrive_curve));
-        let effects = motion.families.effects * scale;
+        let restack = (motion.restack, Curve::from_table(&motion.restack_curve));
+        let arrive = (motion.arrive, Curve::from_table(&motion.arrive_curve));
+        let effects = motion.families.effects;
 
         // A group that left fades where it was; one back before its fade
         // ended takes its slot again.
@@ -436,7 +436,7 @@ impl Toasts {
 
         // The restack's window shared out over the cards still live, each
         // waiting its own rank's share.
-        let stagger = (motion.restack_stagger * scale / by_key.len().max(1) as f64).round();
+        let stagger = (motion.restack_stagger / by_key.len().max(1) as f64).round();
         for k in &stack_order {
             let Some(geom) = layout.by_key.get(k) else { continue };
             let Some(g) = (if expanded { geom.expanded.or(geom.collapsed) } else { geom.collapsed }) else { continue };
@@ -568,7 +568,7 @@ impl Toasts {
             let ry = if spec.top { slot.y.target() + ft - rh } else { slot.y.target() };
             let rest = Rect::new(cx - rw / 2.0, ry, cx + rw / 2.0, ry + rh);
             let base = b.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
-            slot.rim.aim(now, self.lit.as_ref(), rest, base, rim::blend_ms(theme, scale));
+            slot.rim.aim(now, self.lit.as_ref(), rest, base, rim::blend_ms(theme));
             let mut p = Painter::new(&mut self.scene, &mut slot.nodes, Some(around)).after(anchor);
             ui::boxes::paint_rimmed(&mut p, shown, &b, radius, alpha, 0.0, Some((&mut slot.rim, now, at.matrix)));
             p.finish();
@@ -580,7 +580,6 @@ impl Toasts {
             anchor = slot.nodes.last().copied().or(anchor);
             let content = slot.content.value(now).clamp(0.0, 1.0) as f32 * alpha;
             if content > 0.0 {
-                slot.ui.motion_scale = 1.0;
                 let pad = s.panel_padding;
                 let inner = Rect::new(fx + pad, fy + pad, fx + width - pad, fy + fh - pad);
                 // The words go right over their own box, never over the

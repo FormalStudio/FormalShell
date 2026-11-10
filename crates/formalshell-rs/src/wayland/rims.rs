@@ -119,7 +119,7 @@ impl App {
     /// turn decides what animates.
     pub(super) fn light_cards(&mut self, now: Instant) {
         let lit = self.rims.lit.clone();
-        let ms = rim::blend_ms(&self.store.theme.theme, self.motion_scale);
+        let ms = rim::blend_ms(&self.store.theme.theme);
         let output = self.output_size();
         for role in Role::ALL.into_iter().filter(|r| r.lit()) {
             if let Some(w) = self.card_mut(role) {

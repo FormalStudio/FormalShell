@@ -194,7 +194,7 @@ impl App {
         let (length, line_at) = (chrome.output.0, chrome.inset(Edge::Top));
         let size = headset::size(&face, &theme, &mut self.kit);
         let spec = CardSpec { capsule: true, ..CardSpec::new(Edge::Top, line_at, Sizing::Card { size, anchor: length / 2.0, length: length as i32 }) };
-        let card = Card::new(&theme, spec, self.motion_scale, self.cast);
+        let card = Card::new(&theme, spec, self.cast);
         let surface = self.popout_surface(&card, Layer::Top);
         let mut popup = Popup::new(surface, card);
         popup.set_open(now, true);

@@ -158,11 +158,10 @@ pub struct Card {
     front: usize,
     cross: Animated,
     placed: bool,
-    scale: f64,
 }
 
 impl Card {
-    pub fn new(surface: Surface, size: (i32, i32), scale: f64) -> Self {
+    pub fn new(surface: Surface, size: (i32, i32)) -> Self {
         let f = Clock::Effects.curve();
         let s = Clock::SpatialFast.curve();
         Self {
@@ -179,7 +178,6 @@ impl Card {
             front: 0,
             cross: Animated::new(1.0, f),
             placed: false,
-            scale,
         }
     }
 
@@ -190,8 +188,8 @@ impl Card {
     pub fn set_open(&mut self, theme: &Theme, open: bool, now: Instant) {
         self.open = open;
         let target = if open && self.surface.mapped() { 1.0 } else { 0.0 };
-        self.pose.set(now, target, Clock::Effects.ms(theme) * self.scale);
-        self.zoom.set(now, target, Clock::SpatialFast.ms(theme) * self.scale);
+        self.pose.set(now, target, Clock::Effects.ms(theme));
+        self.zoom.set(now, target, Clock::SpatialFast.ms(theme));
     }
 
     pub fn finished(&self, now: Instant) -> bool {
@@ -214,8 +212,8 @@ impl Card {
     /// Takes the group's committed ask: a new line crossfades in, a new
     /// item is travelled to when the card is already up.
     pub fn take(&mut self, theme: &Theme, kit: &mut Kit, ask: &Ask, travel: bool, now: Instant) {
-        let effects = Clock::Effects.ms(theme) * self.scale;
-        let fast = Clock::SpatialFast.ms(theme) * self.scale;
+        let effects = Clock::Effects.ms(theme);
+        let fast = Clock::SpatialFast.ms(theme);
         if self.texts[self.front] != ask.text {
             if travel && self.placed {
                 self.front = 1 - self.front;

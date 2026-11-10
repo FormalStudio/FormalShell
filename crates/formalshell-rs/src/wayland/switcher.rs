@@ -124,7 +124,7 @@ impl App {
 
     pub fn switcher_close(&mut self) {
         let now = Instant::now();
-        self.switcher.model.close(&self.store.theme.theme, now, self.motion_scale);
+        self.switcher.model.close(&self.store.theme.theme, now);
         if let Some((s, _)) = &self.switcher.win {
             s.layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             s.layer.commit();
@@ -246,7 +246,7 @@ impl App {
     pub fn switcher_present(&mut self) {
         let now = Instant::now();
         let window = self.switcher.win.is_some();
-        let due = self.switcher.model.tick(&self.store.theme.theme, now, self.motion_scale, window);
+        let due = self.switcher.model.tick(&self.store.theme.theme, now, window);
         if let Some(id) = &due.refocus {
             compositor::focus_window(id);
         }

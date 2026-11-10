@@ -473,7 +473,7 @@ impl App {
         let dither = theme.wallpaper_dither.then(|| self.store.config.f64("wallpaper.ditherColors").unwrap_or(6.0).max(1.0) as usize);
         let background = theme.colors.get(ColorRole::Background);
         let wanted = &self.store.desktop();
-        let reveal = theme.motion().families.reveal * self.motion_scale;
+        let reveal = theme.motion().families.reveal;
         let animate = crate::settings::WALLPAPER_ANIMATE.get(&self.store.config);
         for b in self.bars.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
             let Some((w, h)) = b.pixels() else { continue };
@@ -774,7 +774,7 @@ fn shard_beat(handle: &calloop::LoopHandle<'static, App>, output: WlOutput) -> O
     handle
         .insert_source(Timer::from_duration(period), move |deadline, _, app| {
             let now = Instant::now();
-            let (scale, qh) = (app.motion_scale, app.qh.clone());
+            let (scale, qh) = (app.store.theme.theme.motion_scale, app.qh.clone());
             let Some(b) = app.bars.heads.iter_mut().find(|h| h.output == output).and_then(|h| h.backdrop.as_mut()) else {
                 return TimeoutAction::Drop;
             };

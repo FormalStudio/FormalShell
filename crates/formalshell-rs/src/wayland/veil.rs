@@ -233,7 +233,7 @@ impl App {
     /// rather than shown late over the desktop, and the rest dissolve off it.
     pub(super) fn lift_handover(&mut self) {
         self.veil.handover.retain(|(_, v)| v.surface.commits() > 0);
-        let ms = if self.store.theme.theme.motion_enabled { dissolve::UNLOCK_MS * self.motion_scale } else { 0.0 };
+        let ms = if self.store.theme.theme.motion_enabled { dissolve::UNLOCK_MS * self.store.theme.theme.motion_scale } else { 0.0 };
         let now = Instant::now();
         for (_, v) in &mut self.veil.handover {
             v.dissolve(ms, now);
@@ -241,9 +241,9 @@ impl App {
     }
 
     fn fade_veils(&mut self, to: f32, ms: f64) {
-        let now = Instant::now();
+        let (now, scale) = (Instant::now(), self.store.theme.theme.motion_scale);
         for (_, v) in &mut self.veil.veils {
-            v.fade(to, ms * self.motion_scale, now);
+            v.fade(to, ms * scale, now);
         }
         self.veil.generation += 1;
     }
@@ -255,7 +255,7 @@ impl App {
         }
         // Hyprland draws no overlay over a session lock, so the lock fades
         // itself and no veil is made.
-        let locked = self.lock_depart(true, DEPART_MS * self.motion_scale);
+        let locked = self.lock_depart(true, DEPART_MS * self.store.theme.theme.motion_scale);
         let outputs: Vec<WlOutput> = if locked { Vec::new() } else { self.bars.heads.iter().map(|h| h.output.clone()).collect() };
         for output in outputs {
             if !self.veil.veils.iter().any(|(o, _)| *o == output) {
@@ -281,7 +281,7 @@ impl App {
     fn lift(&mut self) {
         self.veil.lifting = true;
         let ms = if self.veil.phase == Some(Phase::Arriving) { ARRIVE_MS } else { DEPART_MS };
-        self.lock_depart(false, ms * self.motion_scale);
+        self.lock_depart(false, ms * self.store.theme.theme.motion_scale);
         self.fade_veils(0.0, ms);
     }
 

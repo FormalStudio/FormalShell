@@ -269,8 +269,8 @@ fn stop_normal(card: Rect, i: usize) -> (f64, f64) {
 }
 
 /// The blend's length off the theme.
-pub fn blend_ms(theme: &fs_theme::theme::Theme, scale: f64) -> f64 {
-    Kind::SpatialFast.ms(theme) * scale
+pub fn blend_ms(theme: &fs_theme::theme::Theme) -> f64 {
+    Kind::SpatialFast.ms(theme)
 }
 
 #[cfg(test)]

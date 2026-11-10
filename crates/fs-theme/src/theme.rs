@@ -282,6 +282,7 @@ pub struct Theme {
     pub space: Space,
     pub letter_spacing: LetterSpacing,
     pub motion_enabled: bool,
+    /// `debug motionScale`, every clock `motion()` gives stretched by it.
     pub motion_scale: f64,
     pub bar_style: BarStyle,
     /// `motion.morph`: a card buds off the bar's inner edge and morphs

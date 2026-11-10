@@ -77,7 +77,7 @@ fn paint(cx: &mut Cx, r: Rect, bpm: Option<f64>, beat: bool, path: &str) {
     let t = cx.theme;
     let live = bpm.is_some_and(|b| b > 0.0);
     let beating = live && beat && t.motion_enabled;
-    let (now, scale) = (cx.now, cx.motion_scale);
+    let (now, scale) = (cx.now, t.motion_scale);
     let mut held = cx.take(path, || Beat { phase: 0.0, last: None });
     let st = &mut *held;
     if beating {

@@ -48,7 +48,6 @@ pub struct Shown {
     tip_box: NodeId,
     rules: Vec<NodeId>,
     output: (f64, f64),
-    scale: f64,
     pub hover: Option<String>,
     pub animating_content: bool,
 }
@@ -56,7 +55,7 @@ pub struct Shown {
 impl Shown {
     pub const DEFORM_AMOUNT: f64 = 0.1;
 
-    pub fn new(mut modal: Modal, output: (f64, f64), scale: f64) -> Self {
+    pub fn new(mut modal: Modal, output: (f64, f64)) -> Self {
         let card = &mut modal.win.card;
         let top = card.top_node();
         let globe_node = card.scene.add_after(Some(top), IRect::default(), Paint::Rect { fill: fs_theme::color::Rgba::TRANSPARENT, radius: 0.0 });
@@ -76,7 +75,6 @@ impl Shown {
             tip_box,
             rules: Vec::new(),
             output,
-            scale,
             hover: None,
             animating_content: false,
         }
@@ -119,9 +117,6 @@ impl Shown {
         let (ox, oy) = (frame.x as f64 + p, frame.y as f64 + p);
         let ctl = s.control_height;
         self.animating_content = false;
-        for u in [&mut self.head, &mut self.foot, &mut self.side, &mut self.list, &mut self.player, &mut self.help, &mut self.tip] {
-            u.motion_scale = self.scale;
-        }
         let scene = &mut self.modal.win.card.scene;
         let mut wake = false;
 

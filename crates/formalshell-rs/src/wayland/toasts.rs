@@ -142,7 +142,7 @@ impl App {
         // every clock's end value rather than its last sample.
         let animating = t.animating(now);
         if (self.toasts_dirty || animating || t.was_animating) && t.surface.mapped() {
-            t.draw(&self.store, theme, &mut self.kit, &insets, spec, self.motion_scale, now);
+            t.draw(&self.store, theme, &mut self.kit, &insets, spec, now);
             self.toasts_dirty = false;
             t.was_animating = animating;
         }
@@ -250,7 +250,7 @@ impl App {
             PointerEventKind::Axis { time, horizontal, vertical, source } if target == Some(Target::Toasts) => {
                 let finger = source == Some(wl_pointer::AxisSource::Finger);
                 let lift = ((horizontal.stop || vertical.stop) && finger).then_some(time);
-                let ms = Kind::Spatial.ms(&self.store.theme.theme) * self.motion_scale;
+                let ms = Kind::Spatial.ms(&self.store.theme.theme);
                 let Some(t) = &mut self.toasts else { return true };
                 let (moved, act) = t.swipe(x, y, crate::scroll::travel(&horizontal, source, time), lift, ms, Instant::now());
                 if moved {

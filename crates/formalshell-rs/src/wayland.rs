@@ -273,8 +273,6 @@ pub struct App {
     pub hdr: crate::services::display::Hdr,
     wake: Option<Instant>,
     rims: rims::Rims,
-    /// `debug motionScale`: every duration multiplied by this.
-    pub motion_scale: f64,
     /// The backdrop mark's word, by the style it was shaped in.
     shard_word: Option<(crate::text::TextStyle, crate::shards::Words)>,
     /// pantheon's cast under a joined card.
@@ -305,7 +303,8 @@ impl App {
         let shm = Shm::bind(globals, qh).expect("wl_shm is not available");
         let pixels = Pixels::bind(globals, qh)
             .expect("wp_viewporter, wp_single_pixel_buffer_manager_v1 and wp_alpha_modifier_v1 are required");
-        let store = Store::default();
+        let mut store = Store::default();
+        store.apply(Diff::Theme(crate::services::theme::Diff::MotionScale(motion_scale)));
         let bar = Bar::new(Edge::Top, &store.theme.theme, settings::layout(&store.config));
         let kit = Kit::new(&store.theme.theme);
         let mut app = Self {
@@ -364,7 +363,6 @@ impl App {
             dropped: Vec::new(),
             wake: None,
             rims: Default::default(),
-            motion_scale,
             shard_word: None,
             cast: false,
             debug_join: None,
@@ -853,7 +851,6 @@ impl App {
             scale: self.bar_wl().map_or_else(|| scales.primary(), |o| scales.on(o)),
             theme: &self.store.theme.theme,
             chrome: self.chrome(),
-            motion_scale: self.motion_scale,
             cast: self.cast,
         }
     }
@@ -884,7 +881,7 @@ impl App {
         if !open {
             return;
         }
-        let scrim = Scrim::new(&self.store.theme.theme, self.motion_scale);
+        let scrim = Scrim::new(&self.store.theme.theme);
         let layer = self.overlay("formalshell:scrim", Layer::Top, Anchor::all(), (0, 0), -1);
         let surface = PixelSurface::new("scrim", layer, scrim.tone(), &self.pixels, &self.qh);
         self.scrim = Some((scrim, surface));
@@ -1065,7 +1062,7 @@ impl App {
                     let layer = self.overlay("formalshell:tooltip", Layer::Overlay, Anchor::all(), (0, 0), -1);
                     let mut surface = Surface::new("tooltip", Backend::Gpu, layer, &self.shm, self.store.display.scales.primary());
                     surface.wait_map = true;
-                    self.tip_card = Some(tooltip::Card::new(surface, (size.0 as i32, size.1 as i32), self.motion_scale));
+                    self.tip_card = Some(tooltip::Card::new(surface, (size.0 as i32, size.1 as i32)));
                 }
                 let travel = self.tips.travel;
                 let card = self.tip_card.as_mut().expect("tooltip card");

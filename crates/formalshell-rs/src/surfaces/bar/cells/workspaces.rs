@@ -262,22 +262,22 @@ impl Workspaces {
 
     /// The chip label's colour this frame, gliding to `target` whenever the
     /// chip's state changes it.
-    fn label_color(&mut self, idx: i64, target: Rgba, now: Instant, look: &Look, scale: f64) -> Rgba {
+    fn label_color(&mut self, idx: i64, target: Rgba, now: Instant, look: &Look) -> Rgba {
         let fx = self.label_ink.entry(idx).or_insert_with(|| LabelInk { from: target, to: target, t: Animated::new(1.0, Kind::EffectsSlow.curve()) });
         if fx.to != target {
             fx.from = fx.from.mix(fx.to, fx.t.value(now) as f32);
             fx.to = target;
             fx.t.jump(0.0);
-            if look.motion { fx.t.set(now, 1.0, look.effects_slow * scale) } else { fx.t.jump(1.0) }
+            if look.motion { fx.t.set(now, 1.0, look.effects_slow) } else { fx.t.jump(1.0) }
         }
         fx.from.mix(fx.to, fx.t.value(now).clamp(0.0, 1.0) as f32)
     }
 
     /// An icon's clocks, born at its resting dim and fading in from nothing.
-    fn fx_of(&mut self, id: &str, dim: f64, now: Instant, look: &Look, scale: f64) -> &mut IconFx {
+    fn fx_of(&mut self, id: &str, dim: f64, now: Instant, look: &Look) -> &mut IconFx {
         self.fx.entry(id.to_owned()).or_insert_with(|| {
             let mut arrive = Animated::new(0.0, Kind::Effects.curve());
-            if look.motion { arrive.set(now, 1.0, look.effects * scale) } else { arrive.jump(1.0) }
+            if look.motion { arrive.set(now, 1.0, look.effects) } else { arrive.jump(1.0) }
             IconFx { dim: Animated::new(dim, Kind::Effects.curve()), arrive }
         })
     }
@@ -553,7 +553,7 @@ impl Custom for Workspaces {
             at += extent + look.sm;
         }
 
-        let clock = look.emphasized * kit.motion_scale;
+        let clock = look.emphasized;
         match focused {
             Some((start, end)) => {
                 if self.pill.placed && look.motion && self.pill.fade.value(now) > 0.0 {
@@ -563,14 +563,14 @@ impl Custom for Workspaces {
                 }
                 self.pill.placed = true;
                 if look.motion {
-                    self.pill.fade.set(now, 1.0, look.effects * kit.motion_scale);
+                    self.pill.fade.set(now, 1.0, look.effects);
                 } else {
                     self.pill.fade.jump(1.0);
                 }
             }
             None => {
                 if look.motion {
-                    self.pill.fade.set(now, 0.0, look.effects * kit.motion_scale);
+                    self.pill.fade.set(now, 0.0, look.effects);
                 } else {
                     self.pill.fade.jump(0.0);
                 }
@@ -613,7 +613,7 @@ impl Custom for Workspaces {
             } else {
                 ink.dim
             };
-            let color = self.label_color(slot.idx(), color, now, &look, kit.motion_scale);
+            let color = self.label_color(slot.idx(), color, now, &look);
             let (label_at, icon_at, overflow_at) = self.parts(&chip);
 
             let mut opacity = if waiting { breathe(self.clock, now) } else { 1.0 };
@@ -647,10 +647,9 @@ impl Custom for Workspaces {
                 let r = self.icon_rect(&chip, along, rect);
                 let focused_here = slot.is_focused() && w.is_focused;
                 let hovered_icon = self.hover_icon == Some((i, n));
-                let scale = kit.motion_scale;
                 let dim = if slot.is_focused() && !focused_here && !hovered_icon { 0.5 } else { 1.0 };
-                let fx = self.fx_of(w.id.as_str(), dim, now, &look, scale);
-                if look.motion { fx.dim.set(now, dim, look.effects * scale) } else { fx.dim.jump(dim) }
+                let fx = self.fx_of(w.id.as_str(), dim, now, &look);
+                if look.motion { fx.dim.set(now, dim, look.effects) } else { fx.dim.jump(dim) }
                 let a = (fx.arrive.value(now) * fx.dim.value(now)) as f32 * ink.alpha;
                 match self.icons.get(w.id.as_str()).and_then(|i| i.image.clone()) {
                     Some(image) => p.image(&image, (r.x, r.y), a),

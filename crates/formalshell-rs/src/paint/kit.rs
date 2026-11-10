@@ -58,6 +58,8 @@ pub struct Look {
     pub spatial_fast: f64,
     pub emphasized: f64,
     pub motion: bool,
+    /// The theme's `motion_scale`, for a clock the table has no token for.
+    pub motion_scale: f64,
     pub marquee_px: f64,
     pub marquee_hold: f64,
     /// The box under every cell (`bar.cell`), none where it draws nothing.
@@ -118,6 +120,7 @@ impl Look {
             spatial_fast: motion.spatial_fast,
             emphasized: motion.emphasized,
             motion: theme.motion_enabled,
+            motion_scale: theme.motion_scale,
             marquee_px: motion.marquee_px_per_sec,
             marquee_hold: motion.marquee_hold_ms,
             chip: Some(theme.box_style(Role::BarCell, None)).filter(|b| b.fill.a > 0.0 || b.border.as_ref().is_some_and(|l| l.width > 0.0)),
@@ -142,8 +145,6 @@ impl Look {
 pub struct Kit {
     pub text: Text,
     pub look: Look,
-    /// `debug motionScale`, on top of the theme's own clocks.
-    pub motion_scale: f64,
     /// While set, every style shaped in, so a surface's styles can be
     /// warmed ahead of its next open.
     pub seen: Option<Vec<TextStyle>>,
@@ -151,7 +152,7 @@ pub struct Kit {
 
 impl Kit {
     pub fn new(theme: &Theme) -> Self {
-        Self { text: Text::new(), look: Look::new(theme), motion_scale: 1.0, seen: None }
+        Self { text: Text::new(), look: Look::new(theme), seen: None }
     }
 
     pub fn set_theme(&mut self, theme: &Theme) {

@@ -150,6 +150,9 @@ pub enum Diff {
     Sky(Option<Sky>),
     /// `debug skyAt`: the instant the sky is read at, none for now.
     SkyAt(Option<i64>),
+    /// `debug motionScale` and `FORMALSHELL_SMOKE_MOTION_SCALE`, kept
+    /// across every resolve.
+    MotionScale(f64),
 }
 
 impl State {
@@ -172,6 +175,10 @@ impl State {
             }
             Diff::SkyAt(at) if at != self.sky_at => {
                 self.sky_at = at;
+                return true;
+            }
+            Diff::MotionScale(s) if s != self.theme.motion_scale => {
+                self.theme.motion_scale = s;
                 return true;
             }
             _ => return false,

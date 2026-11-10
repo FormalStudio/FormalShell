@@ -46,7 +46,6 @@ pub struct Make<'a> {
     pub scale: f64,
     pub theme: &'a Theme,
     pub chrome: Chrome,
-    pub motion_scale: f64,
     pub cast: bool,
 }
 
@@ -150,7 +149,7 @@ impl Modal {
             compositor_look: carry && !theme.morph,
             ..CardSpec::new(edge, inset, Sizing::Surface { size: (size.0 as i32, size.1 as i32), rest })
         };
-        let card = Card::new(theme, spec, make.motion_scale, make.cast);
+        let card = Card::new(theme, spec, make.cast);
         let look = spec.compositor_look.then(|| make.look_quads(surface.name, &surface, card.popover_margin()));
         let mut win = CardWindow::new(card, surface);
         win.look = look;

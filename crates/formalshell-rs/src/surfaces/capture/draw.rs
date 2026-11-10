@@ -58,14 +58,14 @@ impl Sheet {
 
     /// Lays out and paints; true while the selection box is travelling.
     #[allow(clippy::too_many_arguments)]
-    pub fn draw(&mut self, picker: &Picker, c: &Cands, origin: (f64, f64), frame: Option<&crate::scene::Bitmap>, theme: &Theme, kit: &mut Kit, scale: f64, now: Instant) -> bool {
+    pub fn draw(&mut self, picker: &Picker, c: &Cands, origin: (f64, f64), frame: Option<&crate::scene::Bitmap>, theme: &Theme, kit: &mut Kit, now: Instant) -> bool {
         let (sw, sh) = (self.scene.size.w, self.scene.size.h);
         let s = &theme.space;
         let current = picker.current(c);
         let target = current.as_ref().and_then(|e| e.rect).map(|r| fs_types::Rect::new(r.x - origin.0, r.y - origin.1, r.width, r.height));
         if let Some(t) = target {
             let travel = self.placed && picker.drag.is_none();
-            let ms = Clock::Spatial.ms(theme) * scale;
+            let ms = Clock::Spatial.ms(theme);
             for (a, v) in self.sel.iter_mut().zip([t.x, t.y, t.width, t.height]) {
                 if travel {
                     if a.target() != v {
@@ -124,7 +124,6 @@ impl Sheet {
         let mut drawn_animating = false;
         for ui in [&mut self.readout, &mut self.legend, &mut self.toolbar, &mut self.names] {
             ui.anchor = anchor;
-            ui.motion_scale = scale;
         }
         match current.as_ref().and_then(|e| e.rect.map(|r| (r, e))) {
             Some((r, e)) => {

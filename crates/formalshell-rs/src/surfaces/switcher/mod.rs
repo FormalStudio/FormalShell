@@ -219,12 +219,12 @@ impl Switcher {
     }
 
     /// The switch ends; a shown card fades out.
-    pub fn close(&mut self, theme: &Theme, now: Instant, scale: f64) {
+    pub fn close(&mut self, theme: &Theme, now: Instant) {
         self.show_at = None;
         self.open = false;
         if self.shown {
             self.shown = false;
-            self.set_fade(theme, now, scale, false);
+            self.set_fade(theme, now, false);
         }
     }
 
@@ -249,7 +249,7 @@ impl Switcher {
 
     /// Runs the clocks due at `now`; `window` says whether the card's
     /// window is still up from the last show.
-    pub fn tick(&mut self, theme: &Theme, now: Instant, scale: f64, window: bool) -> Due {
+    pub fn tick(&mut self, theme: &Theme, now: Instant, window: bool) -> Due {
         let due = |t: Option<Instant>| t.is_some_and(|t| t <= now);
         let mut out = Due::default();
         if due(self.commit_pending) {
@@ -264,7 +264,7 @@ impl Switcher {
         if due(self.show_at) {
             self.show_at = None;
             if self.open {
-                self.show(theme, now, scale, window);
+                self.show(theme, now, window);
                 out.show = Some(!window);
             }
         }
@@ -290,12 +290,12 @@ impl Switcher {
         out
     }
 
-    fn show(&mut self, theme: &Theme, now: Instant, scale: f64, window: bool) {
+    fn show(&mut self, theme: &Theme, now: Instant, window: bool) {
         self.shown = true;
         self.shows += 1;
         self.capturing = false;
         self.prime_at = None;
-        self.set_fade(theme, now, scale, true);
+        self.set_fade(theme, now, true);
         if window {
             self.prime_at = Some(now + PRIME);
             self.capture_at = Some(now + CAPTURE_AFTER);
@@ -310,11 +310,11 @@ impl Switcher {
         }
     }
 
-    fn set_fade(&mut self, theme: &Theme, now: Instant, scale: f64, open: bool) {
+    fn set_fade(&mut self, theme: &Theme, now: Instant, open: bool) {
         let motion = theme.motion();
         let curve = Curve::from_table(&motion.switcher_curve);
         let f = self.fade.get_or_insert_with(|| Animated::new(0.0, curve));
-        f.set(now, if open { 1.0 } else { 0.0 }, motion.switcher * scale);
+        f.set(now, if open { 1.0 } else { 0.0 }, motion.switcher);
     }
 
     /// Each thumbnail's id and device size for this layout.
@@ -464,8 +464,8 @@ mod tests {
         let t0 = Instant::now();
         let mut s = Switcher::default();
         assert!(s.begin(WorkspaceId::default(), t0));
-        assert_eq!(s.tick(&theme, t0 + Duration::from_millis(100), 1.0, false).show, None);
-        assert_eq!(s.tick(&theme, t0 + SHOW_AFTER, 1.0, false).show, Some(true));
+        assert_eq!(s.tick(&theme, t0 + Duration::from_millis(100), false).show, None);
+        assert_eq!(s.tick(&theme, t0 + SHOW_AFTER, false).show, Some(true));
         assert!(s.shown());
     }
 
@@ -477,8 +477,8 @@ mod tests {
         assert!(s.begin(WorkspaceId::default(), t0));
         let at = t0 + Duration::from_millis(40);
         assert_eq!(s.commit("w".into(), at), Some("w".into()));
-        s.close(&theme, at, 1.0);
-        assert_eq!(s.tick(&theme, t0 + SHOW_AFTER * 2, 1.0, false), Due::default());
+        s.close(&theme, at);
+        assert_eq!(s.tick(&theme, t0 + SHOW_AFTER * 2, false), Due::default());
         assert!(!s.shown() && s.shows() == 0);
         assert!(!s.begin(WorkspaceId::default(), at + Duration::from_millis(10)));
         assert!(s.begin(WorkspaceId::default(), at + COMMIT_RACE));

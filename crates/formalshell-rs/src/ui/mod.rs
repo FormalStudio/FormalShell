@@ -209,8 +209,6 @@ pub struct Ui {
     /// The container draws the selected fill and the cursor ring once for
     /// the whole list, travelling, so a selected cell draws neither.
     pub fill_owned: bool,
-    /// `debug motionScale` over the theme's clocks.
-    pub motion_scale: f64,
     /// The field a card's rim reads, and the surface's top left on the
     /// output; `None` draws every card's border flat.
     pub lit: Option<(crate::paint::rim::Lit, (f64, f64))>,
@@ -248,7 +246,6 @@ impl Ui {
             ring: false,
             halo_owned: true,
             fill_owned: false,
-            motion_scale: 1.0,
             lit: None,
             rims: HashMap::new(),
             float_room: None,
@@ -293,7 +290,6 @@ impl Ui {
         self.float_keys.clear();
         let frame = self.frame;
         let last = self.anchor;
-        let motion_scale = self.motion_scale;
         let mut cx = Cx {
             theme,
             kit,
@@ -305,7 +301,6 @@ impl Ui {
             ink: (Rgba::TRANSPARENT, Rgba::TRANSPARENT),
             last,
             drawn: Drawn::default(),
-            motion_scale,
             floats: Vec::new(),
         };
         cx.ink = (theme.colors.get(ColorRole::Foreground), theme.colors.get(ColorRole::MutedForeground));
@@ -458,7 +453,6 @@ pub fn measure(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> (f64, f64
         ink: (Rgba::TRANSPARENT, Rgba::TRANSPARENT),
         last: None,
         drawn: Drawn::default(),
-        motion_scale: 1.0,
         floats: Vec::new(),
     };
     draw::measure(&mut cx, root, width)
@@ -496,7 +490,6 @@ pub struct Cx<'a> {
     pub ink: (Rgba, Rgba),
     last: Option<NodeId>,
     drawn: Drawn,
-    pub motion_scale: f64,
     /// Lists waiting to float over the finished tree: each one's anchor, its
     /// content, its path, and where in `stops` its own stops go.
     floats: Vec<(Rect, El, String, usize)>,
@@ -507,7 +500,7 @@ impl Cx<'_> {
     /// is; the first time a key is seen it lands at once.
     pub fn tween(&mut self, key: &str, target: f64, kind: Clock) -> f64 {
         let frame = self.ui.frame;
-        let ms = kind.ms(self.theme) * self.motion_scale;
+        let ms = kind.ms(self.theme);
         let now = self.now;
         let t = self.ui.tweens.entry(key.to_owned()).or_insert_with(|| Tween {
             value: TweenValue::Num(Animated::new(target, kind.curve())),
@@ -564,7 +557,7 @@ impl Cx<'_> {
     pub fn color(&mut self, key: &str, target: Rgba) -> Rgba {
         let frame = self.ui.frame;
         let kind = Clock::EffectsSlow;
-        let ms = kind.ms(self.theme) * self.motion_scale;
+        let ms = kind.ms(self.theme);
         let now = self.now;
         let t = self.ui.tweens.entry(key.to_owned()).or_insert_with(|| Tween {
             value: TweenValue::Color { from: target, to: target, t: Animated::new(1.0, kind.curve()) },
@@ -711,7 +704,7 @@ impl Cx<'_> {
         };
         let mut rim = self.ui.rims.remove(path).unwrap_or_default();
         let card = Rect::new(r.x as f64 + origin.0, r.y as f64 + origin.1, r.right() as f64 + origin.0, r.bottom() as f64 + origin.1);
-        rim.aim(self.now, Some(&lit), card, base, crate::paint::rim::blend_ms(self.theme, self.motion_scale));
+        rim.aim(self.now, Some(&lit), card, base, crate::paint::rim::blend_ms(self.theme));
         Some(rim)
     }
 

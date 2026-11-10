@@ -233,8 +233,6 @@ pub struct Model {
     pub mirror_current: String,
     /// The monitor tiles' history lines, started when the route opens.
     monitor_history: MonitorHistory,
-    /// `debug motionScale`, which the scroll's glide and coast run at.
-    pub motion_scale: f64,
     /// What the query's abbreviations say, for the ranking and `abbrev`.
     lookup: fs_menu::abbrev::Lookup,
     /// The query as an abbreviation, when it is one.
@@ -376,12 +374,12 @@ impl Column {
 /// The drawn offset headed for `target`: a wheel's notch glides there on
 /// `effectsFast`, a key's follow travels on `spatialFast`, a touchpad's
 /// travel and a coast's frames land at once.
-fn glide(a: &mut Animated, now: Instant, target: f64, wheeled: bool, travels: bool, theme: &Theme, scale: f64) {
+fn glide(a: &mut Animated, now: Instant, target: f64, wheeled: bool, travels: bool, theme: &Theme) {
     let gap = (a.target() - target).abs();
     if wheeled && gap > 0.5 {
-        a.set_on(now, target, Clock::EffectsFast.ms(theme) * scale, Clock::EffectsFast.curve());
+        a.set_on(now, target, Clock::EffectsFast.ms(theme), Clock::EffectsFast.curve());
     } else if travels && gap > 0.5 {
-        a.set_on(now, target, Clock::SpatialFast.ms(theme) * scale, Clock::SpatialFast.curve());
+        a.set_on(now, target, Clock::SpatialFast.ms(theme), Clock::SpatialFast.curve());
     } else if !wheeled && !travels && gap > 0.0 {
         // A coast's tail moves under half a pixel a frame.
         a.jump(target);
@@ -442,7 +440,6 @@ impl Default for Model {
             mirror_current: String::new(),
             panel: None,
             monitor_history: MonitorHistory::default(),
-            motion_scale: 1.0,
             lookup: Default::default(),
             abbrev_key: None,
             column: None,
@@ -1262,9 +1259,9 @@ impl Model {
     /// wheel's notches glide a step each and stop on either end, a
     /// touchpad's travel lands at once and stretches past an end until the
     /// fingers lift, springing back over `release_ms` or coasting on.
-    pub fn scroll(&mut self, travel: Travel, release_ms: f64) {
+    pub fn scroll(&mut self, travel: Travel, release_ms: f64, slow: f64) {
         let (step, max) = (self.wheel_step(), self.max_scroll());
-        let Some((next, glide)) = self.touch.travel(travel, self.scroll, max, step, self.body_h, release_ms, self.motion_scale) else {
+        let Some((next, glide)) = self.touch.travel(travel, self.scroll, max, step, self.body_h, release_ms, slow) else {
             return;
         };
         self.travels = false;
@@ -1278,8 +1275,7 @@ impl Model {
     }
 
     /// The same frame over the actions column, which scrolls on its own.
-    pub fn scroll_actions(&mut self, travel: Travel, release_ms: f64) {
-        let slow = self.motion_scale;
+    pub fn scroll_actions(&mut self, travel: Travel, release_ms: f64, slow: f64) {
         let Some(c) = &mut self.column else { return };
         let max = c.max_scroll();
         let Some((next, glide)) = c.touch.travel(travel, c.scroll, max, c.row_h, c.view_h, release_ms, slow) else {

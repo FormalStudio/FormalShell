@@ -42,7 +42,6 @@ impl Shown {
             cursor: p.cursor.shown(),
             hovered: self.hovered_stop(),
             now: Instant::now(),
-            motion_scale: self.scale,
             raster: self.modal.win.surface.scale(),
         };
         Some(p.module.body(&v))
@@ -57,7 +56,6 @@ impl Shown {
             cursor: None,
             hovered: None,
             now: Instant::now(),
-            motion_scale: self.scale,
             raster: self.modal.win.surface.scale(),
         };
         p.width = crate::surfaces::panel::card_width(p.module.as_ref(), p.id.desc().width, &v, kit);

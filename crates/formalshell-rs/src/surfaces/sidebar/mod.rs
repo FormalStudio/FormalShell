@@ -313,8 +313,6 @@ impl Sidebar {
         let width = (strip.w as f64 - pad * 2.0).max(1.0);
         let (x0, y0) = (strip.x as f64 + pad, strip.y as f64 + pad);
         let bottom = (strip.y + strip.h) as f64 - pad;
-        self.top.motion_scale = kit.motion_scale;
-        self.foot.motion_scale = kit.motion_scale;
         self.collapsed = collapsed;
         self.map.rail = collapsed;
         self.map.read(store, output, raster);

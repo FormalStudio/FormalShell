@@ -92,7 +92,7 @@ impl App {
         self.atlas.win = None;
         let names = ["radio", "radio-scrim-band", "radio-scrim"];
         let modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Top, None, Shown::DEFORM_AMOUNT, false);
-        let shown = Shown::new(modal, self.output_size(), self.motion_scale);
+        let shown = Shown::new(modal, self.output_size());
         self.atlas.win = Some(Window { shown, pressed: None, sliding: false });
         let r = self.store.media.radio.clone();
         self.atlas.model.opened(&r, now);

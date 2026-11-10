@@ -204,7 +204,6 @@ impl App {
         if (d.dirty || !d.modal.win.surface.mapped()) && d.modal.win.surface.configured {
             d.dirty = false;
             d.modal.sync_region(&self.compositor);
-            d.ui.motion_scale = self.motion_scale;
             Self::lay_polkit(d, &self.store.theme.theme, &mut self.kit, now);
         }
         // A content effect still running (an error label's shake) lays out

@@ -830,7 +830,7 @@ impl MenuState {
     /// Sets the clocks toward what is asked, on the body's own clock.
     fn tick(&mut self, v: &View) -> Frame {
         let now = v.now;
-        let ms = |c: Clock| c.ms(v.theme) * v.motion_scale;
+        let ms = |c: Clock| c.ms(v.theme);
         if self.want != self.aimed {
             let (h, c) = (self.height.value(now).clamp(0.0, 1.0), self.content.value(now).clamp(0.0, 1.0));
             match (&self.want, &self.shown) {

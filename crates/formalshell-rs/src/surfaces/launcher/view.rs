@@ -18,7 +18,6 @@ pub struct Shown {
     foot: Ui,
     rules: Vec<NodeId>,
     pub output: (f64, f64),
-    pub(super) scale: f64,
     pub wake: Option<Instant>,
     /// The card's top, settled: the scroll's own animation.
     scroll: Animated,
@@ -59,7 +58,7 @@ impl Shown {
     /// The launcher's deform amount, lighter than a popout card's.
     pub const DEFORM_AMOUNT: f64 = 0.1;
 
-    pub fn new(theme: &Theme, mut modal: Modal, output: (f64, f64), scale: f64) -> Self {
+    pub fn new(theme: &Theme, mut modal: Modal, output: (f64, f64)) -> Self {
         let top = modal.layer.as_ref().map_or(modal.win.card.top_node(), |l| l.top);
         let scene = match &mut modal.layer {
             Some(l) => &mut l.scene,
@@ -83,7 +82,6 @@ impl Shown {
             foot: Ui::new(Some(top)),
             rules: Vec::new(),
             output,
-            scale,
             wake: None,
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             column_scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
@@ -248,7 +246,7 @@ impl Shown {
         let morphing = self.morph.0.running(now) || self.morph.1.running(now);
         self.sized_for = Some((key, query));
         if self.modal.win.surface.mapped() && self.modal.open && !typed && (resized || morphing) {
-            let ms = Clock::Spatial.ms(theme) * self.scale;
+            let ms = Clock::Spatial.ms(theme);
             self.morph.0.set(now, tw, ms);
             self.morph.1.set(now, th, ms);
         } else {
@@ -261,7 +259,7 @@ impl Shown {
             m.travels = false;
             m.wheeled = false;
         }
-        glide(&mut self.scroll, now, m.scroll, m.wheeled, m.travels, theme, self.scale);
+        glide(&mut self.scroll, now, m.scroll, m.wheeled, m.travels, theme);
         match &mut m.column {
             Some(c) => {
                 c.row_h = launcher_px(fs_theme::tokens::LAUNCHER.row_height);
@@ -272,7 +270,7 @@ impl Shown {
                     c.wheeled = false;
                     c.travels = false;
                 }
-                glide(&mut self.column_scroll, now, c.scroll, c.wheeled, c.travels, theme, self.scale);
+                glide(&mut self.column_scroll, now, c.scroll, c.wheeled, c.travels, theme);
             }
             None => self.column_scroll.jump(0.0),
         }
@@ -329,9 +327,6 @@ impl Shown {
             Some(l) => &mut l.scene,
             None => &mut self.modal.win.card.scene,
         };
-        self.head.motion_scale = self.scale;
-        self.body.motion_scale = self.scale;
-        self.foot.motion_scale = self.scale;
 
         // The field band: the line centred in it `xxl` in from either side,
         // a rule as far in under it. A held page's band is a panel card's
@@ -406,7 +401,7 @@ impl Shown {
                 let on = (m.level.clone(), m.query.text().to_owned());
                 let travels = self.sel_on.as_ref() == Some(&on) && (m.travels || !m.from_keys);
                 let local = [st.rect.x as f64 - origin.0, st.rect.y as f64 - origin.1, st.rect.w as f64, st.rect.h as f64];
-                let ms = Clock::SpatialFast.ms(theme) * self.scale;
+                let ms = Clock::SpatialFast.ms(theme);
                 for (a, t) in self.sel.iter_mut().zip(local) {
                     if travels { a.set_on(now, t, ms, Clock::SpatialFast.curve()) } else { a.jump(t) }
                 }
@@ -447,7 +442,7 @@ impl Shown {
             let half = (body_w * m.list_share(theme)).round();
             let r = Rect::new(body_x + half, body_top, body_x + body_w, body_top + body_h);
             let scroll = self.column_scroll.value(now) + c.touch.value(now);
-            let (el, settling) = column_el(m, theme, scroll, now, self.scale);
+            let (el, settling) = column_el(m, theme, scroll, now);
             let clip = ui::irect(r).intersect(&view_clip);
             let d = self.preview.draw(&el, Rect::new(r.x0, r.y0 - scroll, r.x1, r.y1 - scroll), Some(clip), alpha, theme, kit, scene, now);
             if d.animating || settling {
@@ -462,7 +457,7 @@ impl Shown {
             // The pane's arrival fades its content in on `effects` while the
             // card widens, as the actions column's does.
             let since = *self.pane_since.get_or_insert(now);
-            let ms = Clock::Effects.ms(theme) * self.scale;
+            let ms = Clock::Effects.ms(theme);
             let t = crate::motion::progress(since, ms, now);
             let el = if t < 1.0 { el.fade(Clock::Effects.curve().ease(t) as f32) } else { el };
             let d = self.preview.draw(&el, r, Some(view_clip), alpha, theme, kit, scene, now);
@@ -623,7 +618,7 @@ fn header(m: &Model, store: &Store, theme: &Theme, raster: f64) -> El {
     // A held panel takes the keys the field would: its page's title stands
     // where the query would be.
     if let Some(p) = m.panel.as_ref().filter(|_| m.on_panel()) {
-        let v = crate::surfaces::panel::View { store, theme, output: (0.0, 0.0), cursor: None, hovered: None, now: Instant::now(), motion_scale: 1.0, raster };
+        let v = crate::surfaces::panel::View { store, theme, output: (0.0, 0.0), cursor: None, hovered: None, now: Instant::now(), raster };
         let title = p.module.title(&v);
         if token.last() != Some(&title) {
             parts.push(crate::surfaces::panel::title(title));
@@ -718,7 +713,7 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
 /// list's height and inset, the cursor's row filled, faded in on `effects`
 /// as it opens, built only where `scroll` puts the viewport. True while
 /// that fade runs.
-fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) -> (El, bool) {
+fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant) -> (El, bool) {
     let s = &theme.space;
     let Some(c) = &m.column else { return (w::space(0.0), false) };
     let row_h = c.row_h.max(1.0);
@@ -728,7 +723,7 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
     let fits = (c.view_h / row_h).ceil() as usize + 1;
     let last = (first + fits).min(c.shown.len());
     let more = c.more(scroll);
-    let ms = Clock::Effects.ms(theme) * scale;
+    let ms = Clock::Effects.ms(theme);
     let progress = |since: Instant| crate::motion::progress(since, ms, now);
     let joined = c.joined.map(|(from, at)| (from, progress(at)));
     let mut rows = vec![w::space(first.min(last) as f64 * row_h)];

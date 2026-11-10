@@ -266,7 +266,7 @@ fn hull(points: &[Point]) -> Vec<Point> {
 fn paint(cx: &mut Cx, r: Rect, orientation: Option<[f32; 4]>, path: &str) {
     let t = cx.theme;
     let target = orientation.map_or(IDENTITY, |q| normalised(q.map(f64::from)));
-    let (now, scale) = (cx.now, cx.motion_scale);
+    let (now, scale) = (cx.now, t.motion_scale);
     let mut held = cx.take(path, || Pose { shown: target, last: None });
     let st = &mut *held;
     if orientation.is_some() && t.motion_enabled {

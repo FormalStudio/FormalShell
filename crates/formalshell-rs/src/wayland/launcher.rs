@@ -227,7 +227,7 @@ impl App {
         }
         content.surface.raster_budget = Some(crate::surfaces::modal::SLICE);
         modal.layer = Some(content);
-        let shown = Shown::new(&self.store.theme.theme, modal, self.output_size(), self.motion_scale);
+        let shown = Shown::new(&self.store.theme.theme, modal, self.output_size());
         self.launch.win = Some(Window { shown, scan: None, pressed: None });
         crate::trace::mapped(crate::trace::Surface::Menu, crate::trace::State::Mapped);
     }
@@ -423,7 +423,6 @@ impl App {
         self.launcher_panel_sync();
         if self.launch.resolve {
             self.launch.resolve = false;
-            self.launcher.motion_scale = self.motion_scale;
             self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.kit);
             self.launcher_asks();
         }
@@ -1440,12 +1439,13 @@ impl App {
                 }
             }
             PointerEventKind::Axis { time, vertical, source, .. } => {
-                let ms = crate::motion::Kind::SpatialFast.ms(&self.store.theme.theme) * self.motion_scale;
+                let theme = &self.store.theme.theme;
+                let (ms, slow) = (crate::motion::Kind::SpatialFast.ms(theme), theme.motion_scale);
                 let travel = crate::scroll::travel(&vertical, source, time);
                 if w.shown.over_column(x, y) {
-                    self.launcher.scroll_actions(travel, ms);
+                    self.launcher.scroll_actions(travel, ms, slow);
                 } else {
-                    self.launcher.scroll(travel, ms);
+                    self.launcher.scroll(travel, ms, slow);
                 }
             }
         }
