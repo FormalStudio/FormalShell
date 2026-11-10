@@ -48,10 +48,9 @@ cd "$script_dir/.."
 # readable paths for the leg that coordinates with it.
 shot_dir=$(mktemp -d)
 iso_home=$(mktemp -d)
-# The settings file the shell reads, and the password PAM takes for the slot
-# users and the VM rig's guests (the lock, polkit and the greeter all ask).
+# The settings file the shell reads. rig.sh holds rig_password.
 settings_path="$iso_home/.config/formalshell/settings.json"
-rig_password=formalshell-test
+. "$script_dir/rig.sh"
 # Every drive sources this (hypr_exec_once), written once the binaries are
 # resolved. pw_load_module lists the PipeWire modules a run loaded here.
 drive_lib="$shot_dir/drive-lib.sh"

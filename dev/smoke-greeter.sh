@@ -26,6 +26,7 @@
 # (or a fresh boot) left running.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. dev/rig.sh
 
 runtime_dir=/run/formalshell-greeter
 session_log=/tmp/formalshell-greeter-session.log
@@ -121,7 +122,7 @@ fi
 "${greeter_env[@]}" wtype -s "$wtype_settle_ms" "$user"
 "${greeter_env[@]}" wtype -s "$wtype_settle_ms" -k Return
 sleep 3
-"${greeter_env[@]}" wtype -s "$wtype_settle_ms" "formalshell-test"
+"${greeter_env[@]}" wtype -s "$wtype_settle_ms" "$rig_password"
 "${greeter_env[@]}" wtype -s "$wtype_settle_ms" -k Return
 
 for _ in $(seq 1 30); do

@@ -45,7 +45,6 @@ fi
 spec=$rig_spec
 vm="fstestvm$FS_VM_SLOT"
 out="$repo_root/artifacts/seams"
-password=formalshell-test
 result=$rig_vm_result
 bins=$rig_greeter_bins
 
@@ -103,7 +102,7 @@ say "boot, from power-on"
 # At 20 ms a frame, since the locked login's bound is 100 ms of black.
 f record --boot --every-ms 20 --seconds 60 | tail -1
 lock_up 60
-f type "$password" --enter
+f type "$rig_password" --enter
 desktop_up 60
 f frames "$out/boot" | tail -1
 echo 20 > "$out/boot/every-ms"
@@ -113,7 +112,7 @@ f record --seconds 20 | tail -1
 f key meta_l-shift-e
 greeter_up 20
 f frames "$out/logout" | tail -1
-f type "$password" --enter
+f type "$rig_password" --enter
 desktop_up 60
 
 say "reboot, to the lock again"
@@ -127,7 +126,7 @@ sleep 1
 f key ret
 f frames "$out/reboot" | tail -1
 lock_up 30
-f type "$password" --enter
+f type "$rig_password" --enter
 desktop_up 60
 
 say "shutdown, to power-off"

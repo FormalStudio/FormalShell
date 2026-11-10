@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # The rig's plumbing, sourced by dev/remote.sh, dev/vm.sh, dev/seams.sh,
-# dev/check.sh, dev/lint.sh, dev/mac-vm.sh and dev/tarball.sh. Sourcing it
+# dev/check.sh, dev/lint.sh, dev/mac-vm.sh, dev/tarball.sh, dev/smoke.sh,
+# dev/smoke-greeter.sh and dev/keyring-prompter.sh. Sourcing it
 # runs nothing; a caller that uses a function sets `repo_root` first when it
 # needs one of the tree-relative ones.
 #
@@ -19,6 +20,9 @@ rig_guest_admin=kyan
 rig_vm_result=/var/tmp/formalshell-result
 rig_result_prefix=/tmp/formalshell-rig-result-
 rig_greeter_bins="formalshell formalshell-ipc formalshell-greeter"
+# The password PAM takes for the slot users and the VM rig's guests (the
+# owner's spec sets it): the lock, polkit, the greeter and the keyring ask.
+rig_password=formalshell-test
 # The service crates' checks: the first four on a private bus on the rig,
 # the others on real daemons in a VM rig guest. dev/lint.sh tests the rest.
 rig_session_checks="fs-tray fs-notifd fs-mpris fs-dbus"

@@ -9,6 +9,7 @@
 set -euo pipefail
 
 fail() { echo "keyring-prompter: $*" >&2; exit 1; }
+. "$(dirname "$0")/rig.sh"
 
 if [ "${1:-}" != --inner ]; then
   probe=$(realpath "${1:?usage: $0 <prompter_probe>}")
@@ -26,7 +27,7 @@ if [ "${1:-}" != --inner ]; then
   exit $?
 fi
 
-probe=$2 dir=$3 pw=formalshell-test
+probe=$2 dir=$3 pw=$rig_password
 locked() { busctl --user get-property org.freedesktop.secrets /org/freedesktop/secrets/collection/login org.freedesktop.Secret.Collection Locked; }
 daemons() { for p in $(pgrep -u "$(id -u)" -x gnome-keyring-d); do tr "\0" "\n" < /proc/$p/environ | grep -qx "HOME=$dir" && echo "$p"; done; true; }
 

@@ -112,13 +112,13 @@ case "$1" in
     grep -q 'prompt echo=false' <<<"$out" || fail "pam_probe: no hidden password prompt"
     grep -q 'outcome Failed' <<<"$out" || fail "pam_probe: the wrong password did not fail"
     echo "== pam_probe, right password"
-    out=$(echo formalshell-test | "$bin/examples/pam_probe" formalshell-lock "$user" 2>&1) || fail "pam_probe: the right password failed: $out"
+    out=$(echo "$rig_password" | "$bin/examples/pam_probe" formalshell-lock "$user" 2>&1) || fail "pam_probe: the right password failed: $out"
     echo "$out"
     grep -q 'outcome Success' <<<"$out" || fail "pam_probe: no Success"
     # pkexec asks the agent registered for the caller's logind session,
     # which an ssh login is.
     echo "== polkit_probe"
-    out=$(printf 'wrong-password\nformalshell-test\n' | "$bin/examples/polkit_probe" pkexec /usr/bin/true 2>&1) || fail "polkit_probe failed: $out"
+    out=$(printf 'wrong-password\n%s\n' "$rig_password" | "$bin/examples/polkit_probe" pkexec /usr/bin/true 2>&1) || fail "polkit_probe failed: $out"
     echo "$out"
     grep -q 'cancel rc=126' <<<"$out" || fail "polkit_probe: the cancelled request did not end in pkexec's 126"
     grep -q 'auth rc=0 failed=1' <<<"$out" || fail "polkit_probe: no wrong-then-right authentication"
