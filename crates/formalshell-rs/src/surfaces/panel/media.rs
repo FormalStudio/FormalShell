@@ -354,7 +354,7 @@ impl Panel for Media {
         if enabled && (vis.avail == Avail::Available || a.kind.tempo_driven()) {
             let style = vis.style(VISUALIZER_STYLE.get(&v.store.config));
             let tip = style.label();
-            info.push(El::custom(crate::ui::spectrum::Spectrum { style, columns: SPECTRUM_COLUMNS, live: vis.running }).on("spectrum").tip(tip).key("spectrum"));
+            info.push(El::custom(crate::ui::spectrum::Spectrum { style, columns: SPECTRUM_COLUMNS, feed: vis.running.then(|| v.store.visualizer_feed()) }).on("spectrum").tip(tip).key("spectrum"));
         }
         col.push(w::row(s.lg, info).fill());
 

@@ -110,17 +110,29 @@ pub fn frame() -> Frame {
     FRAME.lock().ok().and_then(|f| f.clone()).unwrap_or_else(Frame::baseline)
 }
 
-/// The frame to draw. A tempo-driven source passes seconds into the track
-/// and gets the beat frame at the looked-up bpm; every other source gets
-/// cava's.
-pub fn frame_for(tempo_at: Option<f64>, bpm: f64) -> Frame {
-    match tempo_at {
-        Some(t) => Frame {
-            mono: model::beat_frame(t, bpm, BAR_COUNT, 0),
-            left: model::beat_frame(t, bpm, BAR_COUNT, -1),
-            right: model::beat_frame(t, bpm, BAR_COUNT, 1),
-        },
-        None => frame(),
+/// Where the frame for the active source comes from, read off the store
+/// by [`crate::store::Store::visualizer_feed`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Feed {
+    Cava,
+    /// A tempo-driven source, whose audio never reaches cava: the beat at
+    /// its looked-up bpm, `position` seconds into the track at `at`.
+    Beat { position: f64, at: Instant, playing: bool, bpm: f64 },
+}
+
+impl Feed {
+    pub fn frame(self, now: Instant) -> Frame {
+        match self {
+            Feed::Cava => frame(),
+            Feed::Beat { position, at, playing, bpm } => {
+                let t = if playing { position + now.saturating_duration_since(at).as_secs_f64() } else { position };
+                Frame {
+                    mono: model::beat_frame(t, bpm, BAR_COUNT, 0),
+                    left: model::beat_frame(t, bpm, BAR_COUNT, -1),
+                    right: model::beat_frame(t, bpm, BAR_COUNT, 1),
+                }
+            }
+        }
     }
 }
 

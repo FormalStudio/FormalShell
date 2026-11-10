@@ -5,7 +5,7 @@
 use crate::ui::spectrum::styles;
 
 use super::registry::{Function, Reply, Target, Type, Value, text};
-use crate::services::visualizer::{self, Diff};
+use crate::services::visualizer::Diff;
 use crate::store;
 use crate::wayland::App;
 
@@ -53,7 +53,6 @@ fn list(_: &mut App, _: &[Value]) -> Reply {
 fn status(app: &mut App, _: &[Value]) -> Reply {
     let v = &app.store.visualizer;
     let configured = configured(app);
-    let tempo_at = app.store.media.active().filter(|a| a.kind.tempo_driven() && v.running).map(|a| a.position.as_secs_f64());
-    let frame = visualizer::frame_for(tempo_at, v.bpm);
+    let frame = app.store.visualizer_feed().frame(std::time::Instant::now());
     Ok(v.status(current(app), &configured, &frame))
 }

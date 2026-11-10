@@ -29,10 +29,8 @@ pub struct Visualizer {
     media_available: bool,
     tempo: bool,
     running: bool,
-    bpm: f64,
+    feed: visualizer::Feed,
     edge: Edge,
-    /// The pick's position and when it was read, for the tempo frame.
-    position: (f64, Instant, bool),
     shown_levels: Vec<f64>,
     last: Option<Instant>,
     /// Held while a bar showing the cell is on screen.
@@ -47,9 +45,8 @@ impl Default for Visualizer {
             media_available: false,
             tempo: false,
             running: false,
-            bpm: 0.0,
+            feed: visualizer::Feed::Cava,
             edge: Edge::Top,
-            position: (0.0, Instant::now(), false),
             shown_levels: model::baseline_levels(),
             last: None,
             spectrum: Want::held(Source::Spectrum, false),
@@ -84,7 +81,6 @@ impl Cell for Visualizer {
         let active = env.store.media.active();
         let media_available = active.is_some();
         let tempo = active.as_ref().is_some_and(|a| a.kind.tempo_driven());
-        let position = active.as_ref().map_or((0.0, Instant::now(), false), |a| (a.position.as_secs_f64(), Instant::now(), a.playing));
         let changed = self.avail != v.avail
             || self.media_available != media_available
             || self.tempo != tempo
@@ -94,8 +90,7 @@ impl Cell for Visualizer {
         self.media_available = media_available;
         self.tempo = tempo;
         self.running = v.running;
-        self.bpm = v.bpm;
-        self.position = position;
+        self.feed = env.store.visualizer_feed();
         self.edge = env.edge;
         self.vertical = env.edge.is_vertical();
         if !self.running {
@@ -154,11 +149,7 @@ impl Custom for Visualizer {
         let target = if !self.running {
             model::baseline_levels()
         } else {
-            let tempo_at = self.tempo.then(|| {
-                let (base, at, playing) = self.position;
-                if playing { base + now.saturating_duration_since(at).as_secs_f64() } else { base }
-            });
-            visualizer::frame_for(tempo_at, self.bpm).mono
+            self.feed.frame(now).mono
         };
         self.shown_levels = if self.running { model::smooth_levels(&self.shown_levels, &target, dt) } else { target };
         let levels = model::downsample(&self.shown_levels, CELL_BAR_COUNT);

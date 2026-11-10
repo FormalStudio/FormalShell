@@ -23,13 +23,13 @@ pub mod styles;
 
 use self::scene::{self as vis, PathEl, Shape, TextAlign};
 
-/// The spectrum in one style, `columns` wide, redrawn every frame while
-/// `live` and at rest otherwise.
+/// The spectrum in one style, `columns` wide, redrawn every frame off
+/// `feed` while it has one and at rest otherwise.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spectrum {
     pub style: styles::Style,
     pub columns: usize,
-    pub live: bool,
+    pub feed: Option<visualizer::Feed>,
 }
 
 struct Live {
@@ -50,7 +50,7 @@ impl Widget for Spectrum {
     }
 
     fn paint(&self, cx: &mut Cx, inner: Rect, path: &str) {
-        paint(cx, inner, self.style, self.columns, self.live, path);
+        paint(cx, inner, self.style, self.columns, self.feed, path);
     }
 }
 
@@ -79,7 +79,7 @@ fn path(els: &[PathEl], at: Affine) -> BezPath {
     p
 }
 
-fn paint(cx: &mut Cx, r: Rect, style: styles::Style, columns: usize, live: bool, key: &str) {
+fn paint(cx: &mut Cx, r: Rect, style: styles::Style, columns: usize, feed: Option<visualizer::Feed>, key: &str) {
     let t = cx.theme;
     let ink = styles::Ink {
         groove: t.colors.get(ColorRole::Muted),
@@ -91,7 +91,8 @@ fn paint(cx: &mut Cx, r: Rect, style: styles::Style, columns: usize, live: bool,
         gap: t.space.xxs,
         radius: t.radii.sm,
     };
-    let frame = if live { visualizer::frame() } else { visualizer::Frame::baseline() };
+    let live = feed.is_some();
+    let frame = feed.map_or_else(visualizer::Frame::baseline, |f| f.frame(cx.now));
     let now = cx.now;
     let mut held = cx.take(key, || Live {
         style: None,

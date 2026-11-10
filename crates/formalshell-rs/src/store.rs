@@ -52,6 +52,16 @@ macro_rules! slices {
         }
 
         impl Store {
+    /// Where the visualizer's frame comes from for the active source.
+    pub fn visualizer_feed(&self) -> visualizer::Feed {
+        match self.media.active() {
+            Some(a) if a.kind.tempo_driven() && self.visualizer.running => {
+                visualizer::Feed::Beat { position: a.position.as_secs_f64(), at: std::time::Instant::now(), playing: a.playing, bpm: self.visualizer.bpm }
+            }
+            _ => visualizer::Feed::Cava,
+        }
+    }
+
             fn apply_slice(&mut self, diff: Diff) -> Option<Topic> {
                 let store = self;
                 match diff {
