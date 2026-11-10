@@ -750,7 +750,9 @@ impl Host {
     /// store.
     pub fn start(&mut self, store: &Store, runtime: Option<&Runtime>) {
         self.wants.set(&self.module.wants(store));
-        self.module.start(&mut Effect::new(store, runtime));
+        let mut fx = Effect::new(store, runtime);
+        self.module.start(&mut fx);
+        fx.none("start");
         if let Some(key) = self.module.cursor_start() {
             self.cursor.key = Some(key);
         }
@@ -840,6 +842,7 @@ impl Host {
                 let f = ui::track_fraction(rect, inset, x);
                 let mut fx = Effect::new(store, runtime);
                 self.module.event(&Event { on, what: What::Fraction(f), button: Button::Left }, &mut fx);
+                fx.none("drag");
             }
         }
         let hit = at.and_then(|(x, y)| self.hit_at(x, y));
@@ -896,6 +899,7 @@ impl Host {
             if let Some(e) = Ui::event(&h, x, Button::Left) {
                 let mut fx = Effect::new(store, runtime);
                 self.module.event(&e, &mut fx);
+                fx.none("press");
             }
         }
     }
@@ -956,6 +960,7 @@ impl Host {
             self.body.scroll(&h.path, -dy * store.theme.theme.space.control_height);
             let mut fx = Effect::new(store, runtime);
             self.module.event(&Event { on, what: What::Scroll(dx, dy), button: Button::Left }, &mut fx);
+            fx.none("scroll");
             return;
         }
         if dy == 0.0 {
@@ -968,6 +973,7 @@ impl Host {
         {
             let mut fx = Effect::new(store, runtime);
             self.module.event(&Event { on, what: What::Wheel(if up { 1 } else { -1 }), button: Button::Left }, &mut fx);
+            fx.none("wheel");
             return;
         }
         let view = self.viewport.h as f64;

@@ -150,6 +150,12 @@ impl<'a> Effect<'a> {
     pub fn outs(self) -> Vec<Out> {
         self.outs
     }
+
+    /// The end of an event whose host has nowhere to run an out: none may
+    /// have been queued.
+    pub fn none(self, event: &str) {
+        debug_assert!(self.outs.is_empty(), "a panel queued outs on {event}, which drops them: {:?}", self.outs);
+    }
 }
 
 /// How the arrows move between a panel's stops.
