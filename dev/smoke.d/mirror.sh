@@ -62,7 +62,8 @@ snap() {
 }
 ls /dev/video* > "$mirror_dir/nodes-before.txt" 2>&1
 call menu summon mirror > /dev/null 2>&1
-sleep 3
+until_jq 10 "$mirror_dir/wait-nocamera.json" '.showing' call mirror status
+until_settled
 snap nocamera
 call menu close > /dev/null 2>&1
 sleep 1
@@ -84,7 +85,9 @@ sleep 1
 held > "$mirror_dir/held-idle.txt"
 
 call menu summon mirror > /dev/null 2>&1
-sleep 4
+until_jq 15 "$mirror_dir/wait-first.json" '.showing and .hasFrame' call mirror status
+# The live feed keeps the card committing: the scrim's fade is the open's end.
+until_settled menu-scrim menu-scrim-band
 snap first
 "$wtype_bin" -k Tab
 sleep 3
