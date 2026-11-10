@@ -480,8 +480,9 @@ impl App {
 
     /// A configured `@ipc:` call, answered in process.
     pub(super) fn run_call(&mut self, call: &IpcCall) {
-        let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
-        self.call_self(&call.target, &call.function, &args);
+        if let Err(why) = crate::ipc::call(self, call) {
+            eprintln!("Menu: {}.{}: error: {why}", call.target, call.function);
+        }
     }
 
     /// A launcher verb, run for the launcher's row of `subject`, or with no
@@ -571,7 +572,11 @@ impl App {
             Intent::NixRun(package) => self.console_run_once(&format!("nix run nixpkgs#{package}; read")),
             Intent::ClipsshImage(id, path) => self.clipssh_image(id, path),
             Intent::ClipsshSend(alias) => clipssh::command(clipssh::Cmd::Send(alias.clone())),
-            Intent::AppGpu(id) => self.call_self("monitor", "launch", &[id, ""]),
+            Intent::AppGpu(id) => {
+                if let Err(why) = crate::services::launch::on_gpu(&self.store, id, "") {
+                    eprintln!("Menu: launch {id} on the GPU: {why}");
+                }
+            }
             Intent::PackageInstall(id) => packages::install(&self.store, id),
             Intent::PackageUninstall(id) => packages::send(packages::Cmd::Uninstall(id.clone())),
             Intent::PowerSuspend => power::request(power::Action::Suspend),
@@ -603,30 +608,12 @@ impl App {
         }
     }
 
-    /// One call into this shell's own IPC targets, answered in process.
-    pub(super) fn call_self(&mut self, target: &str, function: &str, args: &[&str]) {
-        self.call_self_reply(target, function, args);
-    }
-
-    fn call_self_reply(&mut self, target: &str, function: &str, args: &[&str]) -> String {
-        let request = crate::ipc::wire::Request::Call {
-            target: target.into(),
-            function: function.into(),
-            args: args.iter().map(|a| (*a).to_owned()).collect(),
-        };
-        let reply = crate::ipc::dispatch(self, &request);
-        if reply.starts_with("error") {
-            eprintln!("Menu: {target}.{function}: {}", reply.trim());
-        }
-        reply
-    }
-
     fn lights_answer(&mut self, value: Option<String>, cancelled: bool) {
         let value = value.unwrap_or_default();
         if cancelled {
             return;
         }
-        if self.call_self_reply("lights", "color", &[&value]).starts_with("error") {
+        if crate::services::lights::colour(&self.store.lights, &value).is_err() {
             let body = format!("\"{value}\" is not a hex colour like ff8800");
             self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::Notify("Keyboard Lights".into(), body, fs_info::notifications::Urgency::Normal))));
         }

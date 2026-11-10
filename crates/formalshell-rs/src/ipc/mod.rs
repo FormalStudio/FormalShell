@@ -144,6 +144,11 @@ pub fn dispatch(app: &mut App, request: &Request) -> String {
     registry().answer(app, request)
 }
 
+/// A configured call run in process, the way a client's would be.
+pub fn call(app: &mut App, call: &IpcCall) -> registry::Reply {
+    registry().run(app, &call.target, &call.function, &call.args)
+}
+
 /// A configured `@ipc:` call checked against the targets. The call comes
 /// back with its arguments fitted to the function's, or the reason nothing
 /// would answer it: a launcher verb (`Intent`) given the wrong arguments

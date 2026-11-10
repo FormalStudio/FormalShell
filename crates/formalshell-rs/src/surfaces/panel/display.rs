@@ -15,7 +15,7 @@
 
 use fs_system::display::outputs::{self, Output};
 
-use super::{Effect, Nav, Panel, View};
+use super::{Effect, Nav, Out, Panel, View, quick};
 use crate::services::display::{self, Brightness};
 use crate::services::compositor::{self, Command};
 use crate::services::wants::Source;
@@ -219,7 +219,7 @@ impl Panel for Display {
                     set_brightness(fx, d, d.percent as f64 + (*n).signum() as f64 * STEP);
                 }
             }
-            ("hdr", What::Toggle(on)) => fx.ipc(&["hdr", "setOutput", arg, if *on { "true" } else { "false" }]),
+            ("hdr", What::Toggle(on)) => fx.push(Out::Quick(quick::Run::HdrOutput(arg.to_owned(), *on))),
             ("mirror", What::Toggle(on)) => set_mirror(store, &rows, *on),
             _ => {}
         }
@@ -231,7 +231,7 @@ impl Panel for Display {
         let (what, arg) = stop.split_once(':').unwrap_or((stop, ""));
         match what {
             "output" => toggle_output(&rows, arg),
-            "hdr" => fx.ipc(&["hdr", "setOutput", arg, if display::hdr_on(store, arg) { "false" } else { "true" }]),
+            "hdr" => fx.push(Out::Quick(quick::Run::HdrOutput(arg.to_owned(), !display::hdr_on(store, arg)))),
             "mirror" => set_mirror(store, &rows, outputs::mirrored_names(&rows).is_empty()),
             _ => {}
         }

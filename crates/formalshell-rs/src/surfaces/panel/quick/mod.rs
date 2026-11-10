@@ -132,6 +132,8 @@ pub enum Run {
     Caffeinate,
     Overnight,
     Hdr,
+    /// One output's HDR, from the display panel.
+    HdrOutput(String, bool),
     Keyboard,
     KeyboardEffect(String),
     IpadSwitch,

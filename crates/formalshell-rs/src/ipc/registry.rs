@@ -145,15 +145,29 @@ impl<C> Registry<C> {
     /// Why `args` would not reach `target.function`, in the words a log
     /// line reads well in.
     pub fn check(&self, target: &str, function: &str, args: &[String]) -> Result<(), String> {
+        self.bind(target, function, args).map(drop)
+    }
+
+    /// `target.function` run in process, refused in [`Registry::check`]'s
+    /// words.
+    pub fn run(&self, ctx: &mut C, target: &str, function: &str, args: &[String]) -> Reply {
+        let (f, values) = self.bind(target, function, args)?;
+        (f.call)(ctx, &values)
+    }
+
+    fn bind(&self, target: &str, function: &str, args: &[String]) -> Result<(&Function<C>, Vec<Value>), String> {
         let Some(t) = self.target(target) else { return Err(format!("no IPC target \"{target}\"")) };
         let Some(f) = t.function(function) else { return Err(format!("target {target} has no function \"{function}\"")) };
         if f.params.len() != args.len() {
             return Err(format!("{} takes {} arguments, given {}", f.definition(), f.params.len(), args.len()));
         }
-        match f.params.iter().zip(args).find(|((_, ty), arg)| ty.parse(arg).is_none()) {
-            Some(((name, ty), arg)) => Err(format!("{target}.{function}: {name} {arg:?} is not {}", ty.name())),
-            None => Ok(()),
-        }
+        let values = f
+            .params
+            .iter()
+            .zip(args)
+            .map(|((name, ty), arg)| ty.parse(arg).ok_or_else(|| format!("{target}.{function}: {name} {arg:?} is not {}", ty.name())))
+            .collect::<Result<_, _>>()?;
+        Ok((f, values))
     }
 
     /// How many arguments `target.function` takes, if it is one.

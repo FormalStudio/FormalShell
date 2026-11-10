@@ -24,8 +24,8 @@ fn effect(app: &mut App, a: &[Value]) -> Reply {
 }
 
 fn color(app: &mut App, a: &[Value]) -> Reply {
-    let hex = model::normalize_hex(Some(a[0].str()));
-    answer(app, !hex.is_empty(), a[0].str(), || Cmd::Colour(hex.clone()))
+    lights::colour(&app.store.lights, a[0].str())?;
+    ok()
 }
 
 fn source(app: &mut App, a: &[Value]) -> Reply {

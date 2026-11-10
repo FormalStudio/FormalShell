@@ -1918,12 +1918,6 @@ impl App {
             Out::Menu(key, anchor) => {
                 let _ = self.open_tray_menu(&key, anchor, true);
             }
-            Out::Ipc(argv) => {
-                if let [target, function, args @ ..] = argv.as_slice() {
-                    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                    self.call_self(target, function, &args);
-                }
-            }
             Out::Quick(run) => self.quick(run),
             Out::Launch(id, command) => {
                 if !command.is_empty() {
@@ -1981,6 +1975,7 @@ impl App {
                 Ok(())
             }
             Run::Hdr => self.hdr.toggle(&self.store),
+            Run::HdrOutput(output, on) => self.hdr.set(&self.store, output, *on),
             Run::Keyboard => lights::toggle(&self.store.lights),
             Run::KeyboardEffect(id) => lights::effect(&self.store.lights, id),
             Run::IpadSwitch => ipad::send(&self.store.ipad, |_| Ok(ipad::Cmd::Switch)),

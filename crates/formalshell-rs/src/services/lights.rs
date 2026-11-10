@@ -175,6 +175,12 @@ pub fn effect(state: &State, id: &str) -> Result<(), String> {
     checked(state, state.has_effect(id), id, || Cmd::Effect(id.to_owned()))
 }
 
+/// A hex colour as typed, with or without its `#`.
+pub fn colour(state: &State, hex: &str) -> Result<(), String> {
+    let normal = model::normalize_hex(Some(hex));
+    checked(state, !normal.is_empty(), hex, || Cmd::Colour(normal.clone()))
+}
+
 /// Every Aura zone's power states off, or back to what the boot unit sets.
 /// True when asusctl ran; false without it. The overnight service's door to
 /// the keyboard lights.

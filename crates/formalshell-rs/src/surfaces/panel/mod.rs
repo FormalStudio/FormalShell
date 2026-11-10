@@ -110,9 +110,6 @@ pub enum Out {
     /// A tray item's menu off this card, by id, centred on `anchor` along
     /// the line (the item's own button) or at the line's end.
     Menu(String, Option<f64>),
-    /// One IPC call (target, function, arguments) the shell runs on itself
-    /// through `ipc::dispatch`, the card left open.
-    Ipc(Vec<String>),
     /// Close, then run a bar cell's own click (an info tile whose cell
     /// opens no panel).
     Act(crate::surfaces::bar::cell::Action),
@@ -137,11 +134,6 @@ impl<'a> Effect<'a> {
 
     pub fn push(&mut self, out: Out) {
         self.outs.push(out);
-    }
-
-    /// Queues one IPC call, `argv` as `formalshell-ipc call` takes it.
-    pub fn ipc(&mut self, argv: &[&str]) {
-        self.push(Out::Ipc(argv.iter().map(|a| (*a).to_owned()).collect()));
     }
 
     /// Runs `f` on the service thread.
