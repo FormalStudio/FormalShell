@@ -254,7 +254,8 @@ pub struct Motion {
     /// The latest sample, None before the first.
     pub latest: Option<motion::Sample>,
     /// The orientation yaw, pitch and roll are measured from: the first
-    /// sample of a watch, or wherever the wearer last recentred.
+    /// sample of a watch, or wherever the wearer last recentred, always
+    /// read off the same bud as `latest`.
     pub reference: Option<motion::Quat>,
 }
 
@@ -262,7 +263,7 @@ impl Motion {
     /// The latest orientation turned back by the reference.
     pub fn relative(&self) -> Option<motion::Quat> {
         let (sample, reference) = self.latest.zip(self.reference)?;
-        Some(sample.orientation.relative_to(reference))
+        Some(sample.orientation.relative_to(reference, sample.bud))
     }
 
     pub fn euler_degrees(&self) -> Option<motion::EulerDegrees> {

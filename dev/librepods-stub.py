@@ -17,7 +17,7 @@ the fixture's own; an `on` with it false streams nothing, the daemon
 dropping the link instead, and stays logged for the leg to fail on.
 
 `motion:watch` keeps its connection and streams one JSON line per sample,
-`{"q":[w,x,y,z],"g":[x,y,z],"gyro":[x,y,z],"t":<ms>}`, at 25 Hz until the
+`{"q":[w,x,y,z],"g":[x,y,z],"gyro":[x,y,z],"t":<ms>,"bud":"left"}`, at 25 Hz until the
 client goes (FormalSnake/omarchy-pods branch formalshell). The script runs
 from the watch's own start: still for 1 s, a yaw turn of +40 degrees over
 1 s, a 6 s hold, back over 1 s, 1 s still, a 20 degree nod over 1 s, then
@@ -84,6 +84,7 @@ def motion_line(t):
         "g": [round(c * 1010) for c in g],
         "gyro": [0, 0, round(rate * 4)],
         "t": int(time.time() * 1000),
+        "bud": "left",
     }, separators=(",", ":")) + "\n"
 
 
