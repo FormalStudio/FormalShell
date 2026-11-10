@@ -615,7 +615,7 @@ impl App {
             let name = self.outputs.info(&output).and_then(|i| i.name).unwrap_or_default();
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
-            let surface = Surface::new("lock", Backend::Gpu, ls, &self.shm, self.started, self.store.display.scales.on(&output));
+            let surface = Surface::new("lock", Backend::Gpu, ls, &self.shm, self.store.display.scales.on(&output));
             if self.lock.login && self.lock.outs.is_empty() {
                 crate::trace::phase("login lock surface");
             }

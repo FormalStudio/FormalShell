@@ -242,7 +242,7 @@ pub fn main(args: &[String]) {
         shots(Path::new(dir), &doc, &env);
         return;
     }
-    let started = Instant::now();
+    let started = crate::trace::start();
     let conn = Connection::connect_to_env().expect("no Wayland compositor to connect to");
     let (globals, queue) = registry_queue_init::<Greeter>(&conn).expect("wl_registry");
     let qh = queue.handle();
@@ -559,7 +559,7 @@ impl Greeter {
             ls.set_exclusive_zone(-1);
             ls.set_keyboard_interactivity(if first { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None });
             ls.commit();
-            let surface = Surface::new("greeter", Backend::Gpu, ls, &self.shm, self.started, self.scales.on(&output));
+            let surface = Surface::new("greeter", Backend::Gpu, ls, &self.shm, self.scales.on(&output));
             self.outs.push(Out { output, surface, view: View::new(1, 1), backdrop: None, asked: (0, 0) });
         }
     }
@@ -573,7 +573,7 @@ impl Greeter {
         let now = Instant::now();
         for o in &self.outs {
             let layers = Layers { compositor: &self.compositor, shell: &self.layer_shell, qh: &self.qh };
-            let mut veil = Veil::new(&layers, &self.shm, &o.output, ("formalshell:greeter-veil", "greeter-veil"), self.scales.on(&o.output), 0.0, self.started);
+            let mut veil = Veil::new(&layers, &self.shm, &o.output, ("formalshell:greeter-veil", "greeter-veil"), self.scales.on(&o.output), 0.0);
             veil.fade(1.0, LEAVE_MS, now);
             self.veils.push(veil);
         }

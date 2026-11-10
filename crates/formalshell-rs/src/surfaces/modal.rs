@@ -44,7 +44,6 @@ pub struct Make<'a> {
     pub output: Option<&'a WlOutput>,
     /// The output's scale.
     pub scale: f64,
-    pub started: Instant,
     pub theme: &'a Theme,
     pub chrome: Chrome,
     pub motion_scale: f64,
@@ -76,12 +75,12 @@ impl Make<'_> {
                     surface.set_input_region(Some(region.wl_region()));
                 }
                 let viewport = self.pixels.viewporter.get_viewport(&surface, self.qh, Ignore);
-                let mut s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, self.shm, self.started, self.scale).with_viewport(viewport).under(card);
+                let mut s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, self.shm, self.scale).with_viewport(viewport).under(card);
                 s.raster_budget = Some(SLICE);
                 s
             })
             .collect();
-        Quads::new(name, parts, margin, self.started)
+        Quads::new(name, parts, margin)
     }
 }
 
@@ -126,7 +125,7 @@ impl Modal {
             let size = if edge.is_vertical() { (inset as u32, 0) } else { (0, inset as u32) };
             let ls = make.layer(namespace, layer, crate::wayland::edge_anchor(edge), size);
             ls.commit();
-            PixelSurface::new(names[1], ls, tone, make.pixels, make.qh, make.started)
+            PixelSurface::new(names[1], ls, tone, make.pixels, make.qh)
         });
         let ls = make.layer(namespace, layer, Anchor::all(), (0, 0));
         let i = inset as i32;
@@ -137,11 +136,11 @@ impl Modal {
             Edge::Left => ls.set_margin(0, 0, 0, i),
         }
         ls.commit();
-        let dim = PixelSurface::new(names[2], ls, tone, make.pixels, make.qh, make.started);
+        let dim = PixelSurface::new(names[2], ls, tone, make.pixels, make.qh);
         let ls = make.layer(namespace, layer, Anchor::all(), (0, 0));
         ls.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         ls.commit();
-        let surface = Surface::new(names[0], Backend::Gpu, ls, make.shm, make.started, make.scale);
+        let surface = Surface::new(names[0], Backend::Gpu, ls, make.shm, make.scale);
         let rest = Rect::new(0.0, inset, 0.0, inset);
         let size = if edge.is_vertical() { (output.1, output.0) } else { output };
         let spec = CardSpec {

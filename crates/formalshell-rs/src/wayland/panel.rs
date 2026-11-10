@@ -182,7 +182,7 @@ impl App {
         let keyboard = if module.takes_keyboard() { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
         layer.set_keyboard_interactivity(keyboard);
         layer.commit();
-        let surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
+        let surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.store.display.scales.primary());
         let mut host = Host::new(module, id, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
         host.from = from;
         let outs = host.start(&self.store, self.runtime.as_ref());

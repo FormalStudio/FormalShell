@@ -121,7 +121,7 @@ impl App {
         layer.set_exclusive_zone(0);
         layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         layer.commit();
-        let mut surface = Surface::new("overview", Backend::Cpu, layer, &self.shm, self.started, self.store.display.scales.on(&output));
+        let mut surface = Surface::new("overview", Backend::Cpu, layer, &self.shm, self.store.display.scales.on(&output));
         surface.wait_map = true;
         self.overview.win = Some((surface, Scene::clear(size.0 as i32, size.1 as i32), output));
         compositor::send(compositor::Command::RefreshWindows);

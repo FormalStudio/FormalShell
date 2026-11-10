@@ -176,7 +176,6 @@ pub struct Quads {
     /// to it.
     pub covered: IRect,
     name: &'static str,
-    started: Instant,
     steps: u64,
 }
 
@@ -198,7 +197,7 @@ fn halves(n: i32) -> (i32, i32) {
 }
 
 impl Quads {
-    pub fn new(name: &'static str, parts: Vec<Surface<Sub>>, margin: i32, started: Instant) -> Self {
+    pub fn new(name: &'static str, parts: Vec<Surface<Sub>>, margin: i32) -> Self {
         let parts = parts
             .into_iter()
             .map(|surface| {
@@ -209,7 +208,7 @@ impl Quads {
                 Quad { scene, nodes: (casts, shape), surface, drawn: None, pending: (0, 0), crop: Crop::default() }
             })
             .collect();
-        Self { parts, size: (0, 0), margin, hint: (0, 0), covered: IRect::default(), name, started, steps: 0 }
+        Self { parts, size: (0, 0), margin, hint: (0, 0), covered: IRect::default(), name, steps: 0 }
     }
 
     /// Every corner holds a look the card's current size fits in.
@@ -307,7 +306,6 @@ impl Quads {
             trace::commit(
                 format_args!("{}-look", self.name),
                 self.steps,
-                trace::since(self.started),
                 format_args!("rect={}x{}+{}+{} alpha={:.3}", frame.w, frame.h, frame.x, frame.y, alpha),
             );
         }

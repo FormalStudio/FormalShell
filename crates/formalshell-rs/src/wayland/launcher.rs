@@ -204,7 +204,7 @@ impl App {
             surface.set_input_region(Some(region.wl_region()));
         }
         let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-        let s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.started, self.store.display.scales.primary()).with_viewport(viewport).under(card);
+        let s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.store.display.scales.primary()).with_viewport(viewport).under(card);
         crate::surfaces::modal::Layer::new(s)
     }
 

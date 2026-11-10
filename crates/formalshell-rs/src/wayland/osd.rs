@@ -173,7 +173,7 @@ impl App {
         };
         let card = Card::new(theme, spec, self.motion_scale, self.cast);
         let layer = self.overlay("formalshell:osd", Layer::Overlay, Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT, (0, band as u32), -1);
-        let surface = Surface::new("osd", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
+        let surface = Surface::new("osd", Backend::Gpu, layer, &self.shm, self.store.display.scales.primary());
         let mut popup = Popup::new(surface, card);
         popup.set_open(Instant::now(), true);
         self.osd.pill = Some(popup);

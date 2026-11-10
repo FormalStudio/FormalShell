@@ -499,7 +499,7 @@ impl App {
             layer.set_exclusive_zone(bar.zone());
         }
         layer.commit();
-        let mut surface = Surface::new("bar", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.on(output));
+        let mut surface = Surface::new("bar", Backend::Gpu, layer, &self.shm, self.store.display.scales.on(output));
         surface.presize(bar.scene.size.w, bar.scene.size.h);
         let mut zones = Vec::new();
         if framed {
@@ -508,7 +508,7 @@ impl App {
                 let zone = if e == edge { t } else { ft };
                 let size = if e.is_vertical() { (1, 0) } else { (0, 1) };
                 let ls = self.overlay_on("formalshell:frame-zone", Layer::Overlay, edge_anchor(e), size, zone, Some(output));
-                let ps = PixelSurface::new("frame-zone", ls, 0.0, &self.pixels, &self.qh, self.started);
+                let ps = PixelSurface::new("frame-zone", ls, 0.0, &self.pixels, &self.qh);
                 zones.push((e, ps));
             }
         }
@@ -808,7 +808,7 @@ impl App {
         if self.join_preview.is_none() {
             let (w, h) = self.output_size();
             let layer = self.overlay("formalshell:debug-join", Layer::Overlay, Anchor::all(), (0, 0), -1);
-            let surface = Surface::new("debug-join", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
+            let surface = Surface::new("debug-join", Backend::Gpu, layer, &self.shm, self.store.display.scales.primary());
             self.join_preview = Some((surface, crate::scene::Scene::clear(w as i32, h as i32), Vec::new()));
         }
         let chrome = self.chrome();
@@ -851,7 +851,6 @@ impl App {
             qh: &self.qh,
             output: self.bar_wl(),
             scale: self.bar_wl().map_or_else(|| scales.primary(), |o| scales.on(o)),
-            started: self.started,
             theme: &self.store.theme.theme,
             chrome: self.chrome(),
             motion_scale: self.motion_scale,
@@ -872,7 +871,7 @@ impl App {
             layer.set_input_region(Some(region.wl_region()));
             layer.commit();
         }
-        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
+        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.store.display.scales.primary());
         surface.wait_map = true;
         surface
     }
@@ -887,7 +886,7 @@ impl App {
         }
         let scrim = Scrim::new(&self.store.theme.theme, self.motion_scale);
         let layer = self.overlay("formalshell:scrim", Layer::Top, Anchor::all(), (0, 0), -1);
-        let surface = PixelSurface::new("scrim", layer, scrim.tone(), &self.pixels, &self.qh, self.started);
+        let surface = PixelSurface::new("scrim", layer, scrim.tone(), &self.pixels, &self.qh);
         self.scrim = Some((scrim, surface));
     }
 
@@ -1064,7 +1063,7 @@ impl App {
                 if self.tip_card.is_none() {
                     let size = self.output_size();
                     let layer = self.overlay("formalshell:tooltip", Layer::Overlay, Anchor::all(), (0, 0), -1);
-                    let mut surface = Surface::new("tooltip", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
+                    let mut surface = Surface::new("tooltip", Backend::Gpu, layer, &self.shm, self.store.display.scales.primary());
                     surface.wait_map = true;
                     self.tip_card = Some(tooltip::Card::new(surface, (size.0 as i32, size.1 as i32), self.motion_scale));
                 }

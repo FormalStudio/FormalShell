@@ -316,7 +316,7 @@ impl App {
                 if self.bars.heads[i].catcher.is_none() {
                     let output = self.bars.heads[i].output.clone();
                     let layer = self.overlay_on("formalshell:catcher", Layer::Overlay, Anchor::all(), (0, 0), -1, Some(&output));
-                    self.bars.heads[i].catcher = Some(PixelSurface::new("catcher", layer, 0.0, &self.pixels, &self.qh, self.started));
+                    self.bars.heads[i].catcher = Some(PixelSurface::new("catcher", layer, 0.0, &self.pixels, &self.qh));
                     crate::trace::note(format_args!("catcher on {}", self.output_name(&output)));
                 }
             } else if self.bars.heads[i].catcher.take().is_some() {
@@ -514,7 +514,7 @@ impl App {
             let made = (animate && has == Some(false)).then(|| {
                 let layer = |ns| self.overlay_on(ns, Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
                 let (shards, grid) = (layer("formalshell:backdrop-shards"), layer("formalshell:backdrop-grid"));
-                Shards::new(shards, grid, &self.pixels, &self.shm, &self.qh, self.started)
+                Shards::new(shards, grid, &self.pixels, &self.shm, &self.qh)
             });
             let qh = &self.qh;
             let Some(b) = self.bars.heads[i].backdrop.as_mut() else { continue };

@@ -115,7 +115,7 @@ impl App {
             }
             let side = if right { Anchor::RIGHT } else { Anchor::LEFT };
             let ls = self.overlay("formalshell:notifications", layer, Anchor::TOP | Anchor::BOTTOM | side, (column.1, 0), -1);
-            let mut surface = Surface::new("toasts", Backend::Gpu, ls, &self.shm, self.started, self.store.display.scales.primary());
+            let mut surface = Surface::new("toasts", Backend::Gpu, ls, &self.shm, self.store.display.scales.primary());
             surface.wait_map = true;
             self.toasts = Some(Toasts::new(surface, (column.1 as i32, out_h as i32), column, layer, self.bar_wl().cloned()));
             self.toasts_dirty = true;

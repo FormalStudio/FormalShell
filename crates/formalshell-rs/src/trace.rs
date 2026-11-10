@@ -35,15 +35,10 @@ fn write(args: Arguments) {
     let _ = std::io::stderr().write_all(line.as_bytes());
 }
 
-/// Milliseconds since `started`, the `t=` of the lines below.
-pub fn since(started: Instant) -> u128 {
-    started.elapsed().as_millis()
-}
-
-/// `commit surface=<surface> n=<n> t=<t_ms>ms <rest>`, when `FS_TRACE` is set.
-pub fn commit(surface: impl Display, n: u64, t_ms: u128, rest: Arguments) {
+/// `commit surface=<surface> n=<n> t=<ms>ms <rest>`, when `FS_TRACE` is set.
+pub fn commit(surface: impl Display, n: u64, rest: Arguments) {
     if enabled() {
-        write(format_args!("commit surface={surface} n={n} t={t_ms}ms {rest}"));
+        write(format_args!("commit surface={surface} n={n} t={}ms {rest}", ms()));
     }
 }
 

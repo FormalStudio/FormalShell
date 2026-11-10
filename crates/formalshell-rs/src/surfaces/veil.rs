@@ -142,10 +142,9 @@ impl Veil<PixelSurface> {
         pixels: &Pixels,
         output: &WlOutput,
         opacity: f32,
-        started: Instant,
     ) -> Self {
         let layer = layers.make(output, "formalshell:veil");
-        Self::with(PixelSurface::new("veil", layer, 1.0, pixels, layers.qh, started), opacity)
+        Self::with(PixelSurface::new("veil", layer, 1.0, pixels, layers.qh), opacity)
     }
 
     pub fn configure(&mut self, width: i32, height: i32) {
@@ -183,10 +182,9 @@ impl Veil {
         (namespace, name): (&'static str, &'static str),
         scale: f64,
         opacity: f32,
-        started: Instant,
     ) -> Self {
         let layer = layers.make(output, namespace);
-        Self::with(Surface::new(name, Backend::Gpu, layer, shm, started, scale), opacity)
+        Self::with(Surface::new(name, Backend::Gpu, layer, shm, scale), opacity)
     }
 
     /// A committed picture whose output has since changed size: drawn on,

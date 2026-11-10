@@ -143,7 +143,7 @@ impl App {
             layer.set_exclusive_zone(-1);
             layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
             layer.commit();
-            let mut surface = Surface::new("switcher", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
+            let mut surface = Surface::new("switcher", Backend::Gpu, layer, &self.shm, self.store.display.scales.primary());
             surface.wait_map = true;
             let (w, h) = self.output_size();
             self.switcher.win = Some((surface, Scene::clear(w as i32, h as i32)));

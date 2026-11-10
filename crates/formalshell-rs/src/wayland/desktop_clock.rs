@@ -217,7 +217,7 @@ impl App {
             }
             if self.bars.heads[i].clock.is_none() {
                 let layer = self.overlay_on("formalshell:desktop-clock", Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
-                let surface = Surface::new("desktop-clock", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.on(&output));
+                let surface = Surface::new("desktop-clock", Backend::Gpu, layer, &self.shm, self.store.display.scales.on(&output));
                 self.bars.heads[i].clock = Some(Clock::new(surface, shards));
                 crate::trace::note(format_args!("desktop clock on {name}"));
             }

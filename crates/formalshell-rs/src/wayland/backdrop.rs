@@ -130,7 +130,7 @@ impl Backdrop {
         s.look = Some(look);
         // Anything else waits for the beat, which keeps the cap.
         if moved || (started && !s.pending) {
-            s.draw(device, logical, now, qh);
+            s.draw(device, logical, qh);
         }
         s.running
     }
@@ -147,7 +147,7 @@ impl Backdrop {
             s.t += now.duration_since(last).as_secs_f64() * 1000.0 / motion_scale.max(0.01);
         }
         if !s.pending {
-            s.draw(device, logical, now, qh);
+            s.draw(device, logical, qh);
         }
         true
     }
@@ -420,7 +420,6 @@ pub struct Shards {
     pub commits: u64,
     pub callbacks: u64,
     pub render_us: u128,
-    started: Instant,
     /// The beat driving it, while it runs.
     pub timer: Option<calloop::RegistrationToken>,
 }
@@ -428,7 +427,7 @@ pub struct Shards {
 impl Shards {
     /// `layer` and `grid` are made in that order on the Background level
     /// after the picture's own, which stacks them over it.
-    pub fn new<D: Dispatcher>(layer: LayerSurface, grid: LayerSurface, pixels: &Pixels, shm: &Shm, qh: &QueueHandle<D>, started: Instant) -> Self {
+    pub fn new<D: Dispatcher>(layer: LayerSurface, grid: LayerSurface, pixels: &Pixels, shm: &Shm, qh: &QueueHandle<D>) -> Self {
         let viewport = pixels.viewporter.get_viewport(layer.wl_surface(), qh, Ignore);
         let grid_viewport = pixels.viewporter.get_viewport(grid.wl_surface(), qh, Ignore);
         Self {
@@ -455,7 +454,6 @@ impl Shards {
             commits: 0,
             callbacks: 0,
             render_us: 0,
-            started,
             timer: None,
         }
     }
@@ -513,7 +511,7 @@ impl Shards {
     }
 
     /// The frame at the clock's `t`, committed with a callback asked for.
-    fn draw<D: Dispatcher>(&mut self, device: (i32, i32), logical: (i32, i32), now: Instant, qh: &QueueHandle<D>) {
+    fn draw<D: Dispatcher>(&mut self, device: (i32, i32), logical: (i32, i32), qh: &QueueHandle<D>) {
         let Some(look) = &self.look else { return };
         let (w, h) = device;
         let (Ok(bw), Ok(bh)) = (u16::try_from(w), u16::try_from(h)) else { return };
@@ -562,7 +560,6 @@ impl Shards {
         trace::commit(
             "shards",
             self.commits,
-            now.duration_since(self.started).as_millis(),
             format_args!(
                 "render_us={} damage=[{},{},{}x{}] buffer={}x{} clock={:.0} running={}",
                 render_us, rect.x, rect.y, rect.w, rect.h, w, h, self.t, self.running as u8,

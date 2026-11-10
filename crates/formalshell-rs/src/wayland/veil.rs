@@ -147,7 +147,7 @@ impl App {
 
     fn new_veil(&self, output: &WlOutput, opacity: f32) -> Veil<PixelSurface> {
         let layers = Layers { compositor: &self.compositor, shell: &self.layer_shell, qh: &self.qh };
-        Veil::pixel(&layers, &self.pixels, output, opacity, self.started)
+        Veil::pixel(&layers, &self.pixels, output, opacity)
     }
 
     fn veil_index(&self, surface: &WlSurface) -> Option<usize> {
@@ -211,7 +211,7 @@ impl App {
         self.veil.handover.clear();
         for (output, scene) in pictures {
             let layers = Layers { compositor: &self.compositor, shell: &self.layer_shell, qh: &self.qh };
-            let veil = Veil::new(&layers, &self.shm, &output, ("formalshell:veil", "unlock"), self.store.display.scales.on(&output), 1.0, self.started).holding(scene);
+            let veil = Veil::new(&layers, &self.shm, &output, ("formalshell:veil", "unlock"), self.store.display.scales.on(&output), 1.0).holding(scene);
             self.veil.handover.push((output, veil));
         }
         if self.veil.handover.is_empty() {

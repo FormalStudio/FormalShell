@@ -483,7 +483,6 @@ pub struct Surface<R: Role = LayerSurface> {
     mapped: bool,
     /// Whether the owner waits on `mapped` before it animates.
     pub wait_map: bool,
-    started: Instant,
     commits: u64,
     callbacks: u64,
     /// When the outstanding frame callback was asked for, and how long the
@@ -623,7 +622,7 @@ impl<R: Role> Surface<R> {
 
     /// A surface drawing its first frame at `scale`, until its preferred
     /// scale arrives.
-    pub fn new(name: &'static str, backend: Backend, layer: R, shm: &Shm, started: Instant, scale: f64) -> Self {
+    pub fn new(name: &'static str, backend: Backend, layer: R, shm: &Shm, scale: f64) -> Self {
         let mut renderer = backend.renderer();
         renderer.set_scale(scale);
         Self {
@@ -640,7 +639,6 @@ impl<R: Role> Surface<R> {
             frame_pending: false,
             mapped: false,
             wait_map: false,
-            started,
             commits: 0,
             callbacks: 0,
             asked: None,
@@ -828,7 +826,6 @@ impl<R: Role> Surface<R> {
         trace::commit(
             self.name,
             self.commits,
-            trace::since(self.started),
             format_args!("render_us=0 copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=clear frame_callbacks={} request={}", self.callbacks, request as u8),
         );
     }
@@ -856,7 +853,6 @@ impl<R: Role> Surface<R> {
         trace::commit(
             self.name,
             self.commits,
-            trace::since(self.started),
             format_args!("render_us=0 copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=pixel frame_callbacks={} request=1", self.callbacks),
         );
     }
@@ -1120,7 +1116,6 @@ impl<R: Role> Surface<R> {
         trace::commit(
             self.name,
             self.commits,
-            trace::since(self.started),
             format_args!(
                 "render_us={} copy_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} slices={}{scaled}",
                 render_us,
@@ -1296,13 +1291,12 @@ pub struct PixelSurface {
     multiplier: Option<u32>,
     frame_pending: bool,
     mapped: bool,
-    started: Instant,
     commits: u64,
     callbacks: u64,
 }
 
 impl PixelSurface {
-    pub fn new<D: Dispatcher>(name: &'static str, layer: LayerSurface, alpha: f64, pixels: &Pixels, qh: &QueueHandle<D>, started: Instant) -> Self {
+    pub fn new<D: Dispatcher>(name: &'static str, layer: LayerSurface, alpha: f64, pixels: &Pixels, qh: &QueueHandle<D>) -> Self {
         let surface = layer.wl_surface();
         let viewport = pixels.viewporter.get_viewport(surface, qh, Ignore);
         let fade = pixels.alpha.get_surface(surface, qh, Ignore);
@@ -1322,7 +1316,6 @@ impl PixelSurface {
             multiplier: None,
             frame_pending: false,
             mapped: false,
-            started,
             commits: 0,
             callbacks: 0,
         }
@@ -1391,7 +1384,6 @@ impl PixelSurface {
         trace::commit(
             self.name,
             self.commits,
-            trace::since(self.started),
             format_args!(
                 "render_us={} copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=pixel alpha={:.3} frame_callbacks={} request={}",
                 t0.elapsed().as_micros(),

@@ -111,7 +111,7 @@ impl App {
                 self.pickers.surfaces.push(PickerSurface {
                     output: s.name,
                     origin: (s.rect.x, s.rect.y),
-                    surface: Surface::new("capture", Backend::Gpu, ls, &self.shm, self.started, self.store.display.scales.on(&o)),
+                    surface: Surface::new("capture", Backend::Gpu, ls, &self.shm, self.store.display.scales.on(&o)),
                     sheet: Sheet::new(w, h),
                     dirty: true,
                 });
