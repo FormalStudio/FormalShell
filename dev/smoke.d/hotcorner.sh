@@ -37,7 +37,10 @@ leg_hotcorner_drive() {
   local script="$shot_dir/hotcorner-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-"$hyprctl_bin" -j layers > "$hotcorner_layers_path" 2>&1
+# A leg before this one may end on removing an output of its own, which
+# reaches the shell after hyprctl has answered: the corners settle on three
+# once the shell has handled it.
+until_jq 5 "$hotcorner_layers_path" '[.[] | .levels[]?[]? | select(.namespace == "formalshell:hotcorner")] | length == 3' "$hyprctl_bin" -j layers
 # Hyprland lays outputs out in logical pixels: the first one's width over
 # its scale.
 width=\$("$hyprctl_bin" -j monitors | "$jq_bin" '.[0] | .width / .scale | round')

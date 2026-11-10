@@ -140,7 +140,10 @@ impl App {
         for i in 0..self.hot.wins.len() {
             self.stop_dwell(i);
         }
-        self.hot.wins.clear();
+        // A corner that stays keeps what it knows: the pointer parked in it
+        // enters its new surface, and a corner that came up armed would fire
+        // again on that enter.
+        let kept: Vec<(WlOutput, Corner, Action, ArmState)> = self.hot.wins.drain(..).map(|w| (w.output.clone(), w.corner, w.action.clone(), w.arm)).collect();
         let now = self.corner_ms();
         for w in windows {
             let Some((output, _, _)) = outputs.iter().find(|(_, n, _)| *n == w.screen) else { continue };
@@ -159,8 +162,10 @@ impl App {
             layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             layer.commit();
             let viewport = self.pixels.viewporter.get_viewport(layer.wl_surface(), &self.qh, Ignore);
-            let ended = self.hot.ended_at.get(w.action.as_str()).copied().unwrap_or(0);
-            let state = arm::adopt(now, self.action_active(&w.action), ended);
+            let state = kept.iter().find(|(o, c, a, _)| o == output && *c == w.corner && *a == w.action).map_or_else(
+                || arm::adopt(now, self.action_active(&w.action), self.hot.ended_at.get(w.action.as_str()).copied().unwrap_or(0)),
+                |k| k.3,
+            );
             self.hot.wins.push(Win { output: output.clone(), corner: w.corner, action: w.action, layer, viewport, buffer: None, arm: state, dwell: None });
         }
     }
