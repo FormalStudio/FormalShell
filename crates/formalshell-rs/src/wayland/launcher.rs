@@ -88,18 +88,79 @@ impl Window {
     }
 }
 
+/// The launcher's window and what the host keeps for it across opens.
+pub struct State {
+    pub win: Option<Window>,
+    /// The rows want resolving before the next read or frame.
+    resolve: bool,
+    /// The index moved while the launcher was shut: resolve its root once
+    /// at the next idle frame, so the first open finds the text and rows
+    /// already laid out.
+    pub warm: bool,
+    /// The styles the launcher's last layout shaped in, for warming its
+    /// rows' words on the pool before the next open.
+    styles: Vec<crate::text::TextStyle>,
+    /// The launcher card's pool, buffers and canvas while it is shut.
+    kept: Option<crate::surface::Kept>,
+    /// The same for the launcher's content layer.
+    layer_kept: Option<crate::surface::Kept>,
+    /// Bumped on each close, so only the last close's timer releases.
+    kept_generation: u64,
+    /// The launcher's conditions and binds were asked for once its tree
+    /// first arrived, so the first open has results to draw on.
+    fresh_asked: bool,
+    /// The network the launcher's password step is for, and the identity
+    /// an enterprise one was given first (`wifi_pending`).
+    wifi_pending: Option<(String, String)>,
+    /// The Show password request still awaited, and the launcher session it
+    /// was asked in; `wifi_reveals` numbers the requests.
+    wifi_reveal: Option<(u64, u64)>,
+    wifi_reveals: u64,
+    buttons: Option<fs_menu::base::BaseInputs>,
+    /// The split pane's last picture request, so a frame asks once.
+    preview_asked: Option<(String, ((u32, u32), f64))>,
+    /// The file or folder the preview pane last asked a peek of, this open.
+    peek_asked: Option<String>,
+    /// The Install row whose `fspec info` was last asked for.
+    info_asked: Option<String>,
+    launches: Option<Vec<fs_menu::frecency::Record>>,
+}
+
+impl Default for State {
+    fn default() -> State {
+        State {
+            win: None,
+            resolve: true,
+            warm: false,
+            styles: Vec::new(),
+            kept: None,
+            layer_kept: None,
+            kept_generation: 0,
+            fresh_asked: false,
+            wifi_pending: None,
+            wifi_reveal: None,
+            wifi_reveals: 0,
+            buttons: None,
+            preview_asked: None,
+            peek_asked: None,
+            info_asked: None,
+            launches: None,
+        }
+    }
+}
+
 impl App {
     /// The launcher's window gone, its card's pool, buffers and canvas kept
     /// for the next open.
     fn drop_launch(&mut self) {
         self.capture_clear(crate::wayland::capture::Owner::Launcher);
         self.launcher.pane_frame = None;
-        if let Some(w) = self.launch.take() {
+        if let Some(w) = self.launch.win.take() {
             let modal = w.shown.modal;
             if let Some(layer) = modal.layer {
-                self.layer_kept = Some(layer.keep());
+                self.launch.layer_kept = Some(layer.keep());
             }
-            self.launch_kept = Some(modal.win.surface.keep());
+            self.launch.kept = Some(modal.win.surface.keep());
             self.release_kept_later();
         }
     }
@@ -109,12 +170,12 @@ impl App {
     /// gives their memory back.
     fn release_kept_later(&mut self) {
         let Some(handle) = &self.handle else { return };
-        self.kept_generation += 1;
-        let generation = self.kept_generation;
+        self.launch.kept_generation += 1;
+        let generation = self.launch.kept_generation;
         let _ = handle.insert_source(Timer::from_duration(KEPT_FOR), move |_, _, app| {
-            if app.kept_generation == generation && app.launch.is_none() {
-                app.launch_kept = None;
-                app.layer_kept = None;
+            if app.launch.kept_generation == generation && app.launch.win.is_none() {
+                app.launch.kept = None;
+                app.launch.layer_kept = None;
                 if let Some(runtime) = &app.runtime {
                     runtime.pool().submit(crate::trace::trim_heap);
                 }
@@ -127,12 +188,12 @@ impl App {
     /// shut; every later open takes over the last one's.
     pub(super) fn prefault_launcher(&mut self) {
         let Some(runtime) = &self.runtime else { return };
-        if self.launch_kept.is_some() || self.launch.is_some() {
+        if self.launch.kept.is_some() || self.launch.win.is_some() {
             return;
         }
         let (w, h) = self.output_size();
         let size = (w as i32, h as i32);
-        self.launch_kept = crate::surface::Kept::prefaulted(&self.shm, size, self.store.display.scales.primary(), runtime.pool());
+        self.launch.kept = crate::surface::Kept::prefaulted(&self.shm, size, self.store.display.scales.primary(), runtime.pool());
         self.release_kept_later();
     }
 
@@ -152,30 +213,30 @@ impl App {
 
     /// The window for an open, created fresh unless one is already up.
     fn show_launcher(&mut self) {
-        self.launcher_resolve = true;
-        if self.launch.as_ref().is_some_and(|w| w.shown.modal.open) {
+        self.launch.resolve = true;
+        if self.launch.win.as_ref().is_some_and(|w| w.shown.modal.open) {
             return;
         }
         self.drop_launch();
         let names = ["menu", "menu-scrim-band", "menu-scrim"];
         let mut modal = Modal::open(&self.modal_make(), names, "formalshell:menu", Layer::Overlay, None, Shown::DEFORM_AMOUNT, true);
-        if let Some(kept) = self.launch_kept.take() {
+        if let Some(kept) = self.launch.kept.take() {
             modal.win.surface.adopt(kept);
         }
         modal.win.surface.raster_budget = Some(crate::surfaces::modal::SLICE);
         let mut content = self.content_layer("menu-content", &modal.win.surface);
-        if let Some(kept) = self.layer_kept.take() {
+        if let Some(kept) = self.launch.layer_kept.take() {
             content.surface.adopt(kept);
         }
         content.surface.raster_budget = Some(crate::surfaces::modal::SLICE);
         modal.layer = Some(content);
         let shown = Shown::new(&self.store.theme.theme, modal, self.output_size(), self.motion_scale);
-        self.launch = Some(Window { shown, scan: None, pressed: None });
+        self.launch.win = Some(Window { shown, scan: None, pressed: None });
         self.log("menu mapped");
     }
 
     fn hide_launcher(&mut self) {
-        if let Some(w) = &mut self.launch {
+        if let Some(w) = &mut self.launch.win {
             w.shown.modal.close(Instant::now());
             self.log("menu closing");
         }
@@ -230,7 +291,7 @@ impl App {
         } else {
             self.panel_outs(super::Holder::Launcher, outs);
         }
-        self.launcher_resolve = true;
+        self.launch.resolve = true;
     }
 
     /// One level up: a settings page goes back to its tiles, anything else
@@ -261,7 +322,7 @@ impl App {
         use crate::surfaces::panel::host::{Driven, Key, drive};
         let Some(key) = crate::input::panel_key(event.keysym, event.utf8.clone(), repeat, self.mods.shift) else { return };
         let back = key == Key::Back;
-        let Some(w) = &self.launch else { return };
+        let Some(w) = &self.launch.win else { return };
         let Some(p) = self.launcher.panel.as_mut() else { return };
         let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
         let driven = drive(p.module.as_mut(), &mut p.cursor, w.shown.stops(), key, &mut fx);
@@ -269,7 +330,7 @@ impl App {
         match driven {
             Driven::Escape => return self.launcher_up(),
             Driven::Walked => {
-                if let Some(w) = &self.launch {
+                if let Some(w) = &self.launch.win {
                     w.shown.follow_panel(&mut self.launcher);
                 }
             }
@@ -303,7 +364,7 @@ impl App {
     /// An input step; a secret one is drawn masked and never filed.
     fn menu_input_as(&mut self, prompt: &str, token: &str, secret: bool) {
         self.launcher.open_input(prompt, token, secret);
-        self.launcher_resolve = true;
+        self.launch.resolve = true;
         self.show_launcher();
     }
 
@@ -312,7 +373,7 @@ impl App {
             return false;
         }
         self.launcher.set_query(&self.store, text);
-        self.launcher_resolve = true;
+        self.launch.resolve = true;
         true
     }
 
@@ -332,7 +393,7 @@ impl App {
             return Err("menu not open".into());
         }
         self.resolve_launcher();
-        self.launcher_resolve = true;
+        self.launch.resolve = true;
         if self.launcher.open_actions(&self.store, index) { Ok(()) } else { Err(format!("row {index} has no actions")) }
     }
 
@@ -362,8 +423,8 @@ impl App {
     /// frame would draw.
     pub fn resolve_launcher(&mut self) {
         self.launcher_panel_sync();
-        if self.launcher_resolve {
-            self.launcher_resolve = false;
+        if self.launch.resolve {
+            self.launch.resolve = false;
             self.launcher.motion_scale = self.motion_scale;
             self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.kit);
             self.launcher_asks();
@@ -378,7 +439,7 @@ impl App {
     }
 
     fn launcher_out(&mut self, out: Out) {
-        self.launcher_resolve = true;
+        self.launch.resolve = true;
         match out {
             Out::None => {}
             Out::Close => self.hide_launcher(),
@@ -399,7 +460,7 @@ impl App {
                     return self.run_call(&call);
                 }
                 self.hide_launcher();
-                if SCREEN_READERS.contains(&call.target.as_str()) && self.launch.is_some() {
+                if SCREEN_READERS.contains(&call.target.as_str()) && self.launch.win.is_some() {
                     self.launcher.after_unmap = Some(call);
                 } else {
                     self.run_call(&call);
@@ -457,9 +518,9 @@ impl App {
             Intent::WifiEnable => net::send(net::Cmd::Wifi(true)),
             Intent::WifiForget(ssid) => net::send(net::Cmd::Forget(ssid.clone())),
             Intent::WifiReveal(ssid) => {
-                self.wifi_reveals += 1;
-                let request = self.wifi_reveals;
-                self.wifi_reveal = Some((request, self.launcher.sessions));
+                self.launch.wifi_reveals += 1;
+                let request = self.launch.wifi_reveals;
+                self.launch.wifi_reveal = Some((request, self.launcher.sessions));
                 net::send(net::Cmd::Reveal(ssid.clone(), request));
             }
             Intent::WifiActivate(ssid) => self.wifi_activate(ssid),
@@ -605,7 +666,7 @@ impl App {
             } else {
                 (format!("Password for {ssid}"), WIFI_PASSWORD)
             };
-            self.wifi_pending = Some((ssid, String::new()));
+            self.launch.wifi_pending = Some((ssid, String::new()));
             self.menu_input_as(&prompt, token, token == WIFI_PASSWORD);
         } else {
             net::send(net::Cmd::Connect(ssid, net::Secret::Saved));
@@ -635,14 +696,14 @@ impl App {
     /// the clear, or why there is none. Dropped once the session it was
     /// asked in has closed.
     fn wifi_revealed(&mut self, r: crate::services::devices::network::Revealed) {
-        if !self.launcher.open || self.wifi_reveal != Some((r.request, self.launcher.sessions)) {
+        if !self.launcher.open || self.launch.wifi_reveal != Some((r.request, self.launcher.sessions)) {
             return;
         }
-        self.wifi_reveal = None;
+        self.launch.wifi_reveal = None;
         match r.secret {
             Ok(Some(psk)) => {
                 self.launcher.open_shown(&format!("Password for {}", r.ssid), WIFI_SHOWN, &psk);
-                self.launcher_resolve = true;
+                self.launch.resolve = true;
                 self.show_launcher();
             }
             Ok(None) => self.menu_input_as(&format!("No password saved for {}", r.ssid), WIFI_SHOWN, true),
@@ -653,13 +714,13 @@ impl App {
     /// The password step answered, then the launcher back on the Wi-Fi list.
     fn wifi_answer(&mut self, token: &str, value: Option<String>, cancelled: bool) {
         use crate::services::devices::network as net;
-        let Some((ssid, identity)) = self.wifi_pending.take() else { return };
+        let Some((ssid, identity)) = self.launch.wifi_pending.take() else { return };
         let value = value.unwrap_or_default();
         if cancelled || value.is_empty() {
             return;
         }
         if token == WIFI_IDENTITY {
-            self.wifi_pending = Some((ssid.clone(), value));
+            self.launch.wifi_pending = Some((ssid.clone(), value));
             self.menu_input_as(&format!("Password for {ssid}"), WIFI_PASSWORD, true);
             return;
         }
@@ -791,23 +852,23 @@ impl App {
         use crate::wayland::capture::Owner as Capture;
         let row = self.launcher.open.then(|| self.launcher.pane().cloned()).flatten();
         if !self.launcher.open {
-            self.peek_asked = None;
-            self.info_asked = None;
+            self.launch.peek_asked = None;
+            self.launch.info_asked = None;
         }
         let theme = &self.store.theme.theme;
         let (_, width, height) = self.launcher.pane_extent(theme);
         let size = (crate::surfaces::launcher::preview_box(theme, &mut self.kit, width, height), self.launcher_scale());
         if let Some(n) = row.as_ref().filter(|n| matches!(pane_kind(n), Some(PaneKind::File | PaneKind::Folder)))
-            && self.peek_asked.as_deref() != Some(n.path.as_str())
+            && self.launch.peek_asked.as_deref() != Some(n.path.as_str())
         {
-            self.peek_asked = Some(n.path.clone());
+            self.launch.peek_asked = Some(n.path.clone());
             index::ask(Ask::Peek(n.path.clone()));
         }
         // An Install row's details, asked once per row shown, and its
         // screenshot decoded at the pane's width once the file is cached.
         if let Some(n) = row.as_ref().filter(|n| matches!(pane_kind(n), Some(PaneKind::Package))) {
-            if self.info_asked.as_deref() != Some(n.path.as_str()) {
-                self.info_asked = Some(n.path.clone());
+            if self.launch.info_asked.as_deref() != Some(n.path.as_str()) {
+                self.launch.info_asked = Some(n.path.clone());
                 crate::services::packages::send(crate::services::packages::Cmd::Info(n.path.clone()));
             }
             let p = &self.store.packages;
@@ -815,8 +876,8 @@ impl App {
             if let Some(path) = shot {
                 let size = (crate::surfaces::launcher::shot_box(width), size.1);
                 let have = self.store.clipboard.preview.as_ref().is_some_and(|p| p.path == path && p.size == size);
-                if !have && self.preview_asked.as_ref() != Some(&(path.clone(), size)) {
-                    self.preview_asked = Some((path.clone(), size));
+                if !have && self.launch.preview_asked.as_ref() != Some(&(path.clone(), size)) {
+                    self.launch.preview_asked = Some((path.clone(), size));
                     crate::services::clipboard::command(crate::services::clipboard::Cmd::Preview(path, size));
                 }
             }
@@ -825,8 +886,8 @@ impl App {
         match row.as_ref().and_then(pane_picture) {
             Some(PanePicture::Decoded(path)) if height > 0.0 => {
                 let have = self.store.clipboard.preview.as_ref().is_some_and(|p| p.path == path && p.size == size);
-                if !have && self.preview_asked.as_ref() != Some(&(path.to_owned(), size)) {
-                    self.preview_asked = Some((path.to_owned(), size));
+                if !have && self.launch.preview_asked.as_ref() != Some(&(path.to_owned(), size)) {
+                    self.launch.preview_asked = Some((path.to_owned(), size));
                     crate::services::clipboard::command(crate::services::clipboard::Cmd::Preview(path.to_owned(), size));
                 }
             }
@@ -870,7 +931,7 @@ impl App {
     }
 
     pub fn mirror_showing(&self) -> bool {
-        self.launcher.open && self.launcher.on_mirror() && self.launch.as_ref().is_some_and(|w| w.shown.modal.open)
+        self.launcher.open && self.launcher.on_mirror() && self.launch.win.as_ref().is_some_and(|w| w.shown.modal.open)
     }
 
     pub fn mirror_cycle(&mut self, delta: i64) -> bool {
@@ -884,7 +945,7 @@ impl App {
 
     /// The launcher's window, while it is open.
     pub fn launcher_shown(&self) -> Option<&Shown> {
-        self.launch.as_ref().filter(|w| w.shown.modal.open).map(|w| &w.shown)
+        self.launch.win.as_ref().filter(|w| w.shown.modal.open).map(|w| &w.shown)
     }
 
     /// `mirror status`.
@@ -894,7 +955,7 @@ impl App {
         let current = if showing { self.launcher.mirror_current.as_str() } else { "" };
         let streaming = showing && mi.streaming.as_deref() == Some(current) && !current.is_empty();
         let rect = |r: crate::scene::IRect| r.to_json();
-        let feed = self.launch.as_ref().filter(|_| showing).and_then(|w| w.shown.feed);
+        let feed = self.launch.win.as_ref().filter(|_| showing).and_then(|w| w.shown.feed);
         serde_json::json!({
             "showing": showing,
             "open": showing,
@@ -941,8 +1002,8 @@ impl App {
 
     /// `menu refresh`: the base and the apps read again.
     pub fn menu_refresh(&mut self) {
-        self.menu_buttons = None;
-        self.menu_launches = None;
+        self.launch.buttons = None;
+        self.launch.launches = None;
         self.launcher_inputs();
     }
 
@@ -1027,7 +1088,7 @@ impl App {
         // it reads; a theme restyles the card it is in.
         let held = self.launcher.open
             && self.launcher.panel.as_ref().is_some_and(|p| p.module.reads().contains(&topic) || matches!(topic, Topic::Config | Topic::Plugins | Topic::Theme));
-        if held || (topic == Topic::Theme && self.launch.is_some()) {
+        if held || (topic == Topic::Theme && self.launch.win.is_some()) {
             self.launcher.dirty = true;
         }
     }
@@ -1035,9 +1096,9 @@ impl App {
     /// The store moved under an open launcher: the rows again.
     pub(crate) fn launcher_store_changed(&mut self) {
         if self.launcher.open {
-            self.launcher_resolve = true;
+            self.launch.resolve = true;
         } else {
-            self.launcher_warm = true;
+            self.launch.warm = true;
         }
     }
 
@@ -1046,7 +1107,7 @@ impl App {
     /// finds them in the shared cache instead of shaping on this thread.
     fn warm_launcher_text(&mut self) {
         let Some(runtime) = &self.runtime else { return };
-        let styles = if self.launcher_styles.is_empty() { warm_styles(&self.kit.look, &self.store.theme.theme.font_size) } else { self.launcher_styles.clone() };
+        let styles = if self.launch.styles.is_empty() { warm_styles(&self.kit.look, &self.store.theme.theme.font_size) } else { self.launch.styles.clone() };
         let words: Vec<String> = self
             .launcher
             .rows
@@ -1081,18 +1142,18 @@ impl App {
     /// The scale the launcher's pictures are made at: its card's, else the
     /// bar's output's, where it opens.
     fn launcher_scale(&self) -> f64 {
-        self.launch.as_ref().map_or_else(|| self.store.display.scales.primary(), |w| w.shown.modal.win.surface.scale())
+        self.launch.win.as_ref().map_or_else(|| self.store.display.scales.primary(), |w| w.shown.modal.win.surface.scale())
     }
 
     pub(super) fn present_launcher(&mut self, now: Instant) {
         self.launcher_answers();
-        if let Some(w) = &mut self.launch {
+        if let Some(w) = &mut self.launch.win {
             let want = self.launcher.open && w.shown.modal.open && self.launcher.level.as_deref() == Some("wifi");
             if want != w.scan.is_some() {
                 w.scan = want.then(|| crate::services::wants::Want::new(crate::services::wants::Source::WifiScan));
             }
         }
-        if self.launch.as_ref().is_some_and(|w| w.finished(now)) {
+        if self.launch.win.as_ref().is_some_and(|w| w.finished(now)) {
             self.drop_launch();
             self.sync_join();
             self.log("menu unmapped");
@@ -1115,14 +1176,14 @@ impl App {
             }
             return;
         }
-        if self.launch.is_none() {
-            if self.launcher_warm && !self.launcher.open {
-                self.launcher_warm = false;
+        if self.launch.win.is_none() {
+            if self.launch.warm && !self.launcher.open {
+                self.launch.warm = false;
                 self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.kit);
                 self.launcher_asks();
                 self.warm_launcher_text();
-                if !self.fresh_asked && !self.store.menu.nodes().is_empty() {
-                    self.fresh_asked = true;
+                if !self.launch.fresh_asked && !self.store.menu.nodes().is_empty() {
+                    self.launch.fresh_asked = true;
                     self.launcher.ask_fresh(&self.store);
                 }
             }
@@ -1134,7 +1195,7 @@ impl App {
         let resolved = t0.elapsed();
         let qh = self.qh.clone();
         let theme = &self.store.theme.theme;
-        let Some(w) = &mut self.launch else { return };
+        let Some(w) = &mut self.launch.win else { return };
         let moving = w.shown.content_animating(now) || self.launcher.rows_moving(now);
         let t1 = Instant::now();
         // A frame still being drawn in slices keeps the scene it started on.
@@ -1147,9 +1208,9 @@ impl App {
         }
         if !rastering && wants {
             w.shown.modal.sync_region(&self.compositor);
-            self.kit.seen = Some(std::mem::take(&mut self.launcher_styles));
+            self.kit.seen = Some(std::mem::take(&mut self.launch.styles));
             w.shown.layout(&mut self.launcher, &self.store, theme, &mut self.kit, now);
-            self.launcher_styles = self.kit.seen.take().unwrap_or_default();
+            self.launch.styles = self.kit.seen.take().unwrap_or_default();
             self.launcher.dirty = false;
         } else if !rastering {
             // Every turn, not only while the morph runs: its last step lands
@@ -1183,11 +1244,11 @@ impl App {
     }
 
     pub(super) fn launcher_part(&self, surface: &smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface) -> Option<Part> {
-        self.launch.as_ref()?.shown.modal.part(surface)
+        self.launch.win.as_ref()?.shown.modal.part(surface)
     }
 
     pub(super) fn launcher_frame(&mut self, part: Part, now: Instant) {
-        let Some(w) = &mut self.launch else { return };
+        let Some(w) = &mut self.launch.win else { return };
         if w.shown.modal.frame(part, now) {
             self.launcher.dirty = true;
             self.sync_join();
@@ -1195,7 +1256,7 @@ impl App {
     }
 
     pub(super) fn launcher_configure(&mut self, part: Part, width: i32, height: i32) {
-        let Some(w) = &mut self.launch else { return };
+        let Some(w) = &mut self.launch.win else { return };
         let first = part == Part::Card && !w.shown.modal.win.surface.configured;
         w.shown.modal.configure(part, width, height);
         if part == Part::Card {
@@ -1215,7 +1276,7 @@ impl App {
     /// One key while the launcher holds the keyboard. False when it is not
     /// up, so the key goes on to the panel.
     pub(super) fn launcher_key(&mut self, event: &KeyEvent, repeat: bool) -> bool {
-        if !self.launcher.open || self.launch.as_ref().is_none_or(|w| !w.shown.modal.open) {
+        if !self.launcher.open || self.launch.win.as_ref().is_none_or(|w| !w.shown.modal.open) {
             return false;
         }
         let key = crate::input::launcher_key(event.keysym, self.mods.shift);
@@ -1229,19 +1290,19 @@ impl App {
         if self.launcher.on_mirror() {
             self.launcher_mirror();
         }
-        self.launcher_resolve = true;
+        self.launch.resolve = true;
         self.launcher_out(out);
         true
     }
 
     /// The clipboard's text into the query, while the launcher is up.
     pub(super) fn launcher_paste(&mut self, text: &str) -> bool {
-        if !self.launcher.open || self.launch.as_ref().is_none_or(|w| !w.shown.modal.open) {
+        if !self.launcher.open || self.launch.win.as_ref().is_none_or(|w| !w.shown.modal.open) {
             return false;
         }
         self.resolve_launcher();
         self.launcher.paste(&self.store, text);
-        self.launcher_resolve = true;
+        self.launch.resolve = true;
         true
     }
 
@@ -1252,7 +1313,7 @@ impl App {
         if owner != Some(Target::Launcher(Part::Card)) {
             return false;
         }
-        let Some(w) = &mut self.launch else { return true };
+        let Some(w) = &mut self.launch.win else { return true };
         let (x, y) = e.position;
         let on = |w: &Window| w.shown.hit(x, y).and_then(|h| h.on).or_else(|| (!w.shown.modal.win.on_card(x, y)).then(|| "outside".into()));
         match e.kind {
@@ -1292,7 +1353,7 @@ impl App {
                     if let Some(i) = on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
                         self.resolve_launcher();
                         self.launcher.open_actions(&self.store, i);
-                        self.launcher_resolve = true;
+                        self.launch.resolve = true;
                     } else if on == "outside" {
                         self.menu_close();
                     }
@@ -1333,7 +1394,7 @@ impl App {
             if self.launcher.on_mirror() {
                 self.launcher_mirror();
             }
-            self.launcher_resolve = true;
+            self.launch.resolve = true;
             self.launcher_out(out);
             return;
         }
@@ -1351,7 +1412,7 @@ impl App {
                     let out = self.launcher.click(&self.store, i);
                     self.launcher_out(out);
                 }
-                self.launcher_resolve = true;
+                self.launch.resolve = true;
             }
         }
     }
@@ -1394,12 +1455,12 @@ impl App {
             },
             plugin_modes: index::plugin_modes(&self.store),
         };
-        if self.menu_buttons.as_ref() != Some(&inputs) || !self.store.config.loaded {
-            self.menu_buttons = Some(inputs.clone());
+        if self.launch.buttons.as_ref() != Some(&inputs) || !self.store.config.loaded {
+            self.launch.buttons = Some(inputs.clone());
             index::ask(Ask::Base(inputs));
         }
-        if self.menu_launches.as_ref() != Some(&self.store.state.data.picks) {
-            self.menu_launches = Some(self.store.state.data.picks.clone());
+        if self.launch.launches.as_ref() != Some(&self.store.state.data.picks) {
+            self.launch.launches = Some(self.store.state.data.picks.clone());
             index::ask(Ask::Apps(index::launches(&self.store.state.data.picks)));
         }
     }

@@ -341,7 +341,7 @@ impl Owner for Bar {
             crate::trace::thread_ticks();
             app.warm_faces();
             app.prefault_launcher();
-            app.launcher_warm = true;
+            app.launch.warm = true;
             app.sync_shards();
         }
     }
@@ -598,7 +598,7 @@ impl Owner for Launcher {
     }
 
     fn counts(&self, app: &App, out: &mut Vec<String>) {
-        out.extend(app.launch.as_ref().map(|w| w.shown.modal.win.surface.report()));
+        out.extend(app.launch.win.as_ref().map(|w| w.shown.modal.win.surface.report()));
     }
 }
 

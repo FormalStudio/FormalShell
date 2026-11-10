@@ -300,45 +300,13 @@ pub struct App {
     pub exit: bool,
     started: Instant,
     pub launcher: crate::surfaces::launcher::Model,
-    launch: Option<launcher::Window>,
-    launcher_resolve: bool,
-    /// The index moved while the launcher was shut: resolve its root once
-    /// at the next idle frame, so the first open finds the text and rows
-    /// already laid out.
-    launcher_warm: bool,
-    /// The styles the launcher's last layout shaped in, for warming its
-    /// rows' words on the pool before the next open.
-    launcher_styles: Vec<crate::text::TextStyle>,
+    launch: launcher::State,
     /// The launcher's faces are warmed once, after the bar is on screen.
     faces_warmed: bool,
     /// A modal card was up at the last present, which holds the backdrop's
     /// sculpture still.
     modal_up: bool,
-    /// The launcher card's pool, buffers and canvas while it is shut.
-    launch_kept: Option<crate::surface::Kept>,
-    /// The same for the launcher's content layer.
-    layer_kept: Option<crate::surface::Kept>,
-    /// Bumped on each close, so only the last close's timer releases.
-    kept_generation: u64,
-    /// The launcher's conditions and binds were asked for once its tree
-    /// first arrived, so the first open has results to draw on.
-    fresh_asked: bool,
-    /// The network the launcher's password step is for, and the identity
-    /// an enterprise one was given first (`wifi_pending`).
-    wifi_pending: Option<(String, String)>,
-    /// The Show password request still awaited, and the launcher session it
-    /// was asked in; `wifi_reveals` numbers the requests.
-    wifi_reveal: Option<(u64, u64)>,
-    wifi_reveals: u64,
     mods: crate::ui::field::Modifiers,
-    menu_buttons: Option<fs_menu::base::BaseInputs>,
-    /// The split pane's last picture request, so a frame asks once.
-    preview_asked: Option<(String, ((u32, u32), f64))>,
-    /// The file or folder the preview pane last asked a peek of, this open.
-    peek_asked: Option<String>,
-    /// The Install row whose `fspec info` was last asked for.
-    info_asked: Option<String>,
-    menu_launches: Option<Vec<fs_menu::frecency::Record>>,
     pub capture: capture_host::Capture,
     pickers: region::Pickers,
     desktop_clock: desktop_clock::State,
@@ -419,25 +387,10 @@ impl App {
             exit: false,
             started,
             launcher: Default::default(),
-            launch: None,
-            launcher_resolve: true,
-            launcher_warm: false,
-            launcher_styles: Vec::new(),
+            launch: Default::default(),
             faces_warmed: false,
             modal_up: false,
-            launch_kept: None,
-            layer_kept: None,
-            kept_generation: 0,
-            fresh_asked: false,
-            wifi_pending: None,
-            wifi_reveal: None,
-            wifi_reveals: 0,
             mods: Default::default(),
-            menu_buttons: None,
-            preview_asked: None,
-            peek_asked: None,
-            info_asked: None,
-            menu_launches: None,
             capture: Default::default(),
             hdr: Default::default(),
             pickers: Default::default(),
@@ -861,7 +814,7 @@ impl App {
     /// The modal card `role` names, while it is on screen.
     fn modal(&self, role: Role) -> Option<&Modal> {
         match role {
-            Role::Launcher => self.launch.as_ref().map(|w| &w.shown.modal),
+            Role::Launcher => self.launch.win.as_ref().map(|w| &w.shown.modal),
             Role::Atlas => self.atlas.win.as_ref().map(|w| &w.shown.modal),
             Role::Polkit => self.polkit.as_ref().map(|d| &d.modal),
             Role::Overlay => self.plugin_overlay.as_ref().map(|w| &w.modal),
@@ -871,7 +824,7 @@ impl App {
 
     fn modal_mut(&mut self, role: Role) -> Option<&mut Modal> {
         match role {
-            Role::Launcher => self.launch.as_mut().map(|w| &mut w.shown.modal),
+            Role::Launcher => self.launch.win.as_mut().map(|w| &mut w.shown.modal),
             Role::Atlas => self.atlas.win.as_mut().map(|w| &mut w.shown.modal),
             Role::Polkit => self.polkit.as_mut().map(|d| &mut d.modal),
             Role::Overlay => self.plugin_overlay.as_mut().map(|w| &mut w.modal),
