@@ -913,17 +913,41 @@ lyrics_ink_box() {
 
 # The lyrics pane's own crop inside a frame, past the header and short of the
 # card's far padding, as "cropGeometry bodyImage". The two columns split the
-# card's content evenly (MediaPanel's `contentRow._paneWidth`), so the card's
-# own midpoint falls in the gap between them whatever the card is wide;
-# `popupWidthWide` as an offset instead cut into the lyrics text, which reads
-# as a row starting at the crop's own edge and measures every fraction of it
-# against a truncated width. It ends 28px over the card's bottom, inside the
-# pane: the pane's own bottom rim sits in the 16px over it and read as a row.
+# card's content evenly, so the card's own midpoint falls in the gap between
+# them whatever the card is wide; `popupWidthWide` as an offset instead cut
+# into the lyrics text, which reads as a row starting at the crop's own edge
+# and measures every fraction of it against a truncated width. It ends 28px
+# over the card's bottom, inside the pane: the pane's own bottom rim sits in
+# the 16px over it and read as a row. Across, it runs between the pane's
+# side rims, read off the frame: each is a border column darker than the fill
+# beside a highlight column fading down its height, and either one inside the
+# crop lifts every row's brightest pixel and joins the rows into one band.
+# The fill those columns are told apart from is the card's, read outside the
+# rims, where no text is: inside, a pane full of lyrics moves any statistic
+# over its columns off the fill, and the walk inward ran on into the text.
 lyrics_pane_crop() {
-  local px py pw ph body top
+  local px py pw ph body top h left right
   read -r px py pw ph body < <(lyrics_pane_rect "$lyrics_bare_path" "$1" "$convert_bin")
   top=$(lyrics_px 100)
-  printf '%sx%s+%s+%s %s\n' "$((pw / 2 - $(lyrics_px 16)))" "$((ph - top - $(lyrics_px 28)))" "$((px + pw / 2))" "$((py + top))" "$body"
+  h=$((ph - top - $(lyrics_px 28)))
+  read -r left right < <("$convert_bin" "$body" -crop "$((pw / 2))x${h}+$((px + pw / 2))+$((py + top))" +repage \
+    -colorspace Gray -scale "$((pw / 2))x1!" -depth 8 txt:- 2>/dev/null | python3 -c '
+import re, sys
+cols = [int(m.group(1)) for m in (re.match(r"\d+,0: \((\d+)", l) for l in sys.stdin) if m]
+half = len(cols) // 2
+left = min(range(half), key=lambda x: cols[x])
+right = min(range(half, len(cols)), key=lambda x: cols[x])
+outside = sorted(cols[:left] + cols[right + 1:])
+fill = outside[len(outside) // 2]
+left += 1
+while left < right and abs(cols[left] - fill) > 2:
+    left += 1
+right -= 1
+while right > left and abs(cols[right] - fill) > 2:
+    right -= 1
+print(left, right)
+')
+  printf '%sx%s+%s+%s %s\n' "$((right - left + 1))" "$h" "$((px + pw / 2 + left))" "$((py + top))" "$body"
 }
 
 # One frame's wipe, as "fractionOfTheRow fractionOfTheSpan". The row is the
@@ -988,7 +1012,18 @@ lyrics_row_slice_mean() {
   fi
   sx=$(awk -v a="$ax" -v w="$aw" -v f="$from" 'BEGIN { printf "%d", a + w * f }')
   sw=$(awk -v w="$aw" -v f="$from" -v t="$to" 'BEGIN { d = int(w * (t - f)); print (d < 4) ? 4 : d }')
-  patch_mean "$body" "${sw}x${bh}+$((cx + sx))+$((cy + top))"
+  # The level is the mean of the slice's ink pixels alone, past the same 25%,
+  # not of the whole patch: the fixture's wrapped rows are one unbroken chunk
+  # packed edge to edge, and the row being sung is taller for its glow, so a
+  # patch mean ranks rows by how much ink and how much fill they hold and
+  # read an unsung wrapped row over the unsung end of the row above it.
+  "$convert_bin" "$body" -crop "${sw}x${bh}+$((cx + sx))+$((cy + top))" +repage \
+    -colorspace Gray -depth 8 txt:- 2>/dev/null | python3 -c '
+import re, sys
+ink = [int(m.group(1)) for m in (re.match(r"\d+,\d+: \((\d+)", l) for l in sys.stdin) if m]
+ink = [v for v in ink if v > 255 * 0.25]
+print(int(1000 * sum(ink) / len(ink) / 255 + 0.5) if ink else 0)
+'
 }
 
 lyrics_wipe_reading() {
@@ -1399,16 +1434,14 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   # chunk that could not break would run that ink to the viewport's own clip;
   # a broken one stops a `controlPaddingX` short of it. The band starts past
   # the header so the close button's own glyph is not the ink being measured.
-  local sx sy sw sh sbody pane_x pane_w band_y band_h ink iw ih ix iy
-  read -r sx sy sw sh sbody < <(lyrics_pane_rect "$lyrics_bare_path" "$shot_dir/lyrics-return-1.6.png" "$convert_bin")
-  pane_x=$((sx + $(lyrics_px 480)))
-  pane_w=$((sw - $(lyrics_px 480) - $(lyrics_px 12)))
-  band_y=$((sy + $(lyrics_px 100)))
-  band_h=$((sh - $(lyrics_px 100) - $(lyrics_px 28)))
+  local fit_crop sbody pane_w band_h ink iw ih ix iy
+  read -r fit_crop sbody < <(lyrics_pane_crop "$shot_dir/lyrics-return-1.6.png")
+  pane_w=${fit_crop%%x*}
+  band_h=${fit_crop#*x}; band_h=${band_h%%+*}
   if [ "$pane_w" -lt "$(lyrics_px 200)" ] || [ "$band_h" -lt "$(lyrics_px 80)" ]; then
-    fail "the settled return frame gave no lyrics pane to read: rect x=$sx y=$sy w=$sw h=$sh"
+    fail "the settled return frame gave no lyrics pane to read: crop $fit_crop"
   fi
-  ink=$("$convert_bin" "$sbody" -crop "${pane_w}x${band_h}+${pane_x}+${band_y}" +repage     -colorspace Gray -threshold 70% -format '%@' info: 2>/dev/null)
+  ink=$("$convert_bin" "$sbody" -crop "$fit_crop" +repage -colorspace Gray -threshold 70% -format '%@' info: 2>/dev/null)
   [ -n "$ink" ] || fail "no lit line found in the settled return frame's lyrics pane"
   iw=${ink%%x*}
   ih=${ink#*x}; ih=${ih%%+*}
@@ -1498,25 +1531,23 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   # the fit check above does, and one rect serves every frame since the card
   # does not move through either burst.
   [ -s "$lyrics_burst_index_path" ] || fail "no line-change burst frames were taken"
-  local burst_name burst_frame burst_body bx by bw bh
+  local burst_name burst_frame burst_body burst_crop burst_w burst_h
   burst_name=$(tail -1 "$lyrics_burst_index_path")
-  read -r bx by bw bh burst_body < <(lyrics_pane_rect "$lyrics_bare_path" "$shot_dir/lyrics-burst-${burst_name}.png" "$convert_bin")
-  local burst_lead burst_top burst_w burst_h burst_crop
-  burst_lead=$(lyrics_px 480)
-  burst_top=$(lyrics_px 100)
-  burst_w=$((bw - burst_lead - $(lyrics_px 12)))
-  burst_h=$((bh - burst_top - $(lyrics_px 28)))
-  burst_crop="${burst_w}x${burst_h}+$((bx + burst_lead))+$((by + burst_top))"
+  read -r burst_crop _ < <(lyrics_pane_crop "$shot_dir/lyrics-burst-${burst_name}.png")
+  burst_w=${burst_crop%%x*}
+  burst_h=${burst_crop#*x}; burst_h=${burst_h%%+*}
   if [ "$burst_w" -lt "$(lyrics_px 200)" ] || [ "$burst_h" -lt "$(lyrics_px 80)" ]; then
-    fail "the line-change burst gave no lyrics pane to read: rect x=$bx y=$by w=$bw h=$bh"
+    fail "the line-change burst gave no lyrics pane to read: crop $burst_crop"
   fi
   : > "$lyrics_burst_profile_path"
-  local burst_failures="" peak_row last_row ink_rows
+  local burst_failures="" peak_row last_row ink_rows lit_top
   while read -r burst_name; do
     burst_frame="$shot_dir/lyrics-burst-${burst_name}.png"
     [ -f "$burst_frame" ] || fail "line-change burst frame $burst_name was never taken"
-    read -r peak_row last_row ink_rows first_row < <(lyrics_ink_profile "$(lyrics_burst_body "$burst_frame")" "$burst_crop")
-    printf '%s %s %s %s %s\n' "$burst_name" "$peak_row" "$last_row" "$ink_rows" "$first_row" >> "$lyrics_burst_profile_path"
+    burst_body=$(lyrics_burst_body "$burst_frame")
+    read -r peak_row last_row ink_rows _ < <(lyrics_ink_profile "$burst_body" "$burst_crop")
+    lit_top=$(lyrics_row_bands "$burst_body" "$burst_crop" | tr ' ' '\n' | sort -t: -k3,3n | tail -1 | cut -d: -f1)
+    printf '%s %s %s %s %s\n' "$burst_name" "$peak_row" "$last_row" "$ink_rows" "${lit_top:--1}" >> "$lyrics_burst_profile_path"
     # Eight inked rows is a third of what any of these frames carries: it
     # separates a pane mid-change from one that has emptied out, and says
     # nothing about how many lines happen to be under the lit one, which the
@@ -1535,9 +1566,11 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   # five frames of a burst span a second and a half, well past the 500ms the
   # column's own travel takes, so a row still moving there is one whose own
   # box is still settling under it.
-  # The top of the ink rather than its brightest row: the unlit rows are
-  # drawn at 0.85 of their size, so which row is brightest swaps as the lit
-  # one's wipe advances while neither moves.
+  # The top of the row carrying the brightest pixel, which is the lit line's
+  # sung ink: not the brightest row of the squeezed column, since the unlit
+  # rows are drawn at 0.85 of their size and which row averages brightest
+  # swaps as the wipe advances, and not the top of all ink, since the line
+  # before the lit one fades under the profile's floor while neither moves.
   local burst_phase tail_peaks first_peak
   for burst_phase in a b; do
     tail_peaks=$(grep "^${burst_phase}-" "$lyrics_burst_profile_path" | tail -5 | awk '{ print $5 }')
