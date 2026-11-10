@@ -49,8 +49,6 @@ paths = [
   "crates/formalshell-rs/src/greeter/**",
   "crates/formalshell-rs/src/install.rs",
   "crates/fs-auth/src/polkit.rs",
-  "crates/fs-network/**",
-  "crates/fs-upower/**",
   "crates/fs-bluez/src/agent.rs",
   ".gitignore",
   "crates/*/examples/**",
@@ -585,8 +583,18 @@ paths = ["dev/settled-frames.py", "dev/pixels.py"]
 runs = ["--menu-rows"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/depth.rs", "packaging/formalshell-depth.py"]
+paths = ["crates/formalshell-rs/src/services/depth.rs"]
 runs = ["--lock --depth", "--desktop-clock"]
+
+# The daemon crates the shell links, on the VM rig's NetworkManager,
+# UPower and power-profiles-daemon.
+[[rule]]
+paths = ["crates/fs-network/**"]
+runs = ["--wifi", "--device-routes", "--quick-settings-devices", "--panel network"]
+
+[[rule]]
+paths = ["crates/fs-upower/**"]
+runs = ["--profiles-pill", "--quick-settings-devices", "--panel power"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/sleep.rs"]

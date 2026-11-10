@@ -53,6 +53,7 @@
 --desktop-clock
 --display
 --dump
+--backend gpu --dump
 --earbuds
 --emoji
 --flexoki
