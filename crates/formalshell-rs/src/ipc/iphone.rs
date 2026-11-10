@@ -2,10 +2,8 @@
 //! renders from, `installed: false` and nothing else when the bridge has
 //! never answered a line. The rest drive the service the way the panel does.
 
-use serde_json::{Value as Json, json};
-
 use super::registry::{Function, Reply, Target, Type, Value, ok};
-use crate::services::iphone::{self, Cmd, State};
+use crate::services::iphone::{self, Cmd};
 use crate::wayland::App;
 
 pub fn target() -> Target<App> {
@@ -22,55 +20,8 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn entry(n: &fs_devices::iphone::Notification) -> Json {
-    json!({
-        "id": n.id,
-        "bundleId": n.bundle_id,
-        "appName": n.app_name,
-        "title": n.title,
-        "subtitle": n.subtitle,
-        "body": n.body,
-        "deviceName": n.device_name,
-        "deviceHandle": n.device_handle,
-        "positiveAction": n.positive_action,
-        "negativeAction": n.negative_action,
-        "category": n.category,
-        "categoryCount": n.category_count,
-        "silent": n.silent,
-        "important": n.important,
-        "preexisting": n.preexisting,
-        "session": n.session,
-        "ts": fs_js::json_number(n.ts),
-    })
-}
-
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    let s: &State = &app.store.iphone;
-    if !s.installed {
-        return Ok(json!({ "installed": false }));
-    }
-    let ams = &app.store.media.ams;
-    let battery = s.battery;
-    Ok(
-        json!({
-            "installed": true,
-            "available": s.observer,
-            "connected": s.connected,
-            "bonded": s.bonded,
-            "bondAddress": s.bond_address.map(|a| a.to_string()).unwrap_or_default(),
-            "deviceName": s.device_name,
-            "batteryAvailable": battery.is_some(),
-            "battery": battery.map_or(json!(0), fs_js::json_number),
-            "unread": s.unread,
-            "inFocus": s.in_focus,
-            "pairingCode": s.pairing_code,
-            "advertising": s.advertising,
-            "lastError": crate::surfaces::panel::iphone::last_error(&app.store),
-            "mediaAvailable": ams.available,
-            "mediaTitle": ams.title,
-            "recent": s.recent.iter().map(entry).collect::<Vec<_>>(),
-        }),
-    )
+    Ok(app.store.iphone.status(&app.store.media.ams))
 }
 
 fn pair(app: &mut App, _: &[Value]) -> Reply {

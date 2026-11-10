@@ -15,7 +15,7 @@ use std::cell::Cell;
 use super::{Effect, Nav, Panel, View};
 use crate::services::ams;
 use crate::services::iphone::{self as service, Cmd};
-use crate::store::{Store, Topic};
+use crate::store::Topic;
 use crate::ui::{El, Event, Ink, Type, Variant, What, w};
 use crate::ui::el::Opt;
 
@@ -33,13 +33,6 @@ impl Default for Iphone {
     fn default() -> Self {
         Self { np_index: 1, np_on: Cell::new(false) }
     }
-}
-
-/// The service's error, else the Apple Media Service's own (the two share
-/// one line, as IphoneService.lastError does).
-pub fn last_error(store: &Store) -> String {
-    let s = &store.iphone;
-    if s.last_error.is_empty() { store.media.ams.error.clone() } else { s.last_error.clone() }
 }
 
 fn press(index: usize) {
@@ -78,7 +71,7 @@ impl Panel for Iphone {
         let stale_bond = no_phone && st.bonded;
         let now_playing = connected && ams.available && !ams.title.is_empty();
         let name = if st.device_name.is_empty() { "iPhone".to_owned() } else { st.device_name.clone() };
-        let error = last_error(v.store);
+        let error = v.store.iphone.last_error(&v.store.media.ams);
 
         let mut parts: Vec<El> = Vec::new();
         if not_installed {

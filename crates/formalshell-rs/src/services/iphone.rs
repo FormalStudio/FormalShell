@@ -25,7 +25,7 @@ use fs_info::notifications::{self as model, AddOpts, Patch, Phone};
 use fs_types::{BtAddress, NotificationId};
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::runtime::Ctx;
 use crate::services::config;
@@ -67,6 +67,63 @@ pub struct State {
     pub advertising: bool,
     pub last_error: String,
     pub in_focus: bool,
+}
+
+impl State {
+    /// The service's error, else the Apple Media Service's own (the two
+    /// share one line, as IphoneService.lastError does).
+    pub fn last_error<'a>(&'a self, ams: &'a ams::State) -> &'a str {
+        if self.last_error.is_empty() { &ams.error } else { &self.last_error }
+    }
+
+    /// The IPC `status` reply: exactly what the panel renders from,
+    /// `installed: false` and nothing else when the bridge has never
+    /// answered a line.
+    pub fn status(&self, ams: &ams::State) -> Value {
+        if !self.installed {
+            return json!({ "installed": false });
+        }
+        json!({
+            "installed": true,
+            "available": self.observer,
+            "connected": self.connected,
+            "bonded": self.bonded,
+            "bondAddress": self.bond_address.map(|a| a.to_string()).unwrap_or_default(),
+            "deviceName": self.device_name,
+            "batteryAvailable": self.battery.is_some(),
+            "battery": self.battery.map_or(json!(0), fs_js::json_number),
+            "unread": self.unread,
+            "inFocus": self.in_focus,
+            "pairingCode": self.pairing_code,
+            "advertising": self.advertising,
+            "lastError": self.last_error(ams),
+            "mediaAvailable": ams.available,
+            "mediaTitle": ams.title,
+            "recent": self.recent.iter().map(entry).collect::<Vec<_>>(),
+        })
+    }
+}
+
+fn entry(n: &Notification) -> Value {
+    json!({
+        "id": n.id,
+        "bundleId": n.bundle_id,
+        "appName": n.app_name,
+        "title": n.title,
+        "subtitle": n.subtitle,
+        "body": n.body,
+        "deviceName": n.device_name,
+        "deviceHandle": n.device_handle,
+        "positiveAction": n.positive_action,
+        "negativeAction": n.negative_action,
+        "category": n.category,
+        "categoryCount": n.category_count,
+        "silent": n.silent,
+        "important": n.important,
+        "preexisting": n.preexisting,
+        "session": n.session,
+        "ts": fs_js::json_number(n.ts),
+    })
 }
 
 /// What the panel and IPC ask of the service.

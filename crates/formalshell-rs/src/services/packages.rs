@@ -28,6 +28,7 @@ use async_io::Timer;
 use fs_activity::State as Run;
 use fs_menu::providers::{self as p, Info, Owner, Package};
 use futures_lite::{FutureExt, future};
+use serde_json::{Value, json};
 
 use super::{http, menu, proc, state};
 use crate::runtime::Ctx;
@@ -97,6 +98,15 @@ pub enum Change {
     Undo,
 }
 
+impl Change {
+    fn as_str(self) -> &'static str {
+        match self {
+            Change::Apply => "apply",
+            Change::Undo => "undo",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
     /// The last query answered and its packages or why there are none.
@@ -126,6 +136,47 @@ pub enum Diff {
 }
 
 impl State {
+    /// The IPC `status` reply; `fspec` is whether fspec is on PATH.
+    pub fn status(&self, fspec: bool) -> Value {
+        let search = self.search.as_ref().map(|(q, found)| match found {
+            Ok(v) => json!({"query": q, "ids": v.iter().map(|f| f.id.as_str()).collect::<Vec<_>>()}),
+            Err(why) => json!({"query": q, "error": why}),
+        });
+        let started: Vec<_> = self
+            .started
+            .iter()
+            .map(|s| {
+                let (op, error) = match &s.op {
+                    Ok(op) => (op.clone(), None),
+                    Err(why) => (None, Some(why.clone())),
+                };
+                json!({"id": s.id, "verb": s.verb.as_str(), "op": op, "error": error, "app": s.app})
+            })
+            .collect();
+        let owners: serde_json::Map<String, Value> = self.owners.iter().map(|(k, o)| (k.clone(), json!({"id": o.id, "removable": o.removable}))).collect();
+        let sw = &self.software;
+        let (behind, upstream, error) = match &sw.behind {
+            None => (None, None, None),
+            Some(Ok((n, up))) => (Some(*n), Some(up.clone()), None),
+            Some(Err(why)) => (None, None, Some(why.clone())),
+        };
+        let last = sw.last.as_ref().map(|(verb, name)| json!({"verb": verb.as_str(), "name": name}));
+        let failed = sw.failed.as_ref().map(|(change, why)| json!({"change": change.as_str(), "why": why}));
+        let software = json!({"checked": sw.behind.is_some(), "behind": behind, "upstream": upstream, "error": error, "last": last, "applying": sw.applying, "failed": failed});
+        let info: serde_json::Map<String, Value> = self
+            .info
+            .iter()
+            .map(|(id, i)| {
+                let v = match i {
+                    Ok(i) => json!({"name": i.name, "license": i.license, "developer": i.developer, "download": i.download, "installed": i.installed, "screenshot": i.screenshot}),
+                    Err(why) => json!({"error": why}),
+                };
+                (id.clone(), v)
+            })
+            .collect();
+        json!({"fspec": fspec, "search": search, "started": started, "owners": owners, "software": software, "info": info, "shots": self.shots})
+    }
+
     pub fn apply(&mut self, diff: Diff) -> bool {
         match diff {
             Diff::Search(q, found) => {
@@ -359,7 +410,7 @@ async fn applied() -> Vec<String> {
     if done.code != 0 {
         return Vec::new();
     }
-    let Ok(facts) = serde_json::from_str::<serde_json::Value>(&done.stdout) else { return Vec::new() };
+    let Ok(facts) = serde_json::from_str::<Value>(&done.stdout) else { return Vec::new() };
     ["system", "user"].iter().filter_map(|scope| facts["applied"][scope].as_str().map(str::to_owned)).collect()
 }
 
