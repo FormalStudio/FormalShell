@@ -321,7 +321,7 @@ pub fn subject_id(node: &Node) -> SubjectId {
     match (&node.kind, &node.entry) {
         (Kind::App, Some(e)) => SubjectId::App(e.id.clone()),
         (Kind::File | Kind::Folder, _) => SubjectId::File(node.path.clone()),
-        (Kind::Action, _) => match crate::providers::emoji_of(node) {
+        (Kind::Emoji, _) => match crate::providers::emoji_of(node) {
             Some(ch) => SubjectId::Emoji(ch.to_owned()),
             None => SubjectId::Node(node.id.clone()),
         },
@@ -451,7 +451,7 @@ fn builtins(s: &Subject) -> Vec<Action> {
             out.push(Action::new("open-file", "Open file", xdg_open(&n.path)));
             out.push(copy("copy-path", "Copy path", &n.path));
         }
-        Kind::Action => {
+        Kind::Action | Kind::Emoji => {
             let Some(action) = &n.action else { return out };
             let label = match n.verb.as_deref().filter(|v| !v.is_empty()) {
                 Some(v) => v,
@@ -649,7 +649,7 @@ pub fn primary_action(c: &ActionCtx) -> Option<KeyHint> {
         Kind::Image if c.picker_select => "Choose",
         Kind::Image => "Set wallpaper",
         Kind::App | Kind::Submenu | Kind::Provider | Kind::Link => "Open",
-        Kind::Action => "Run",
+        Kind::Action | Kind::Emoji => "Run",
         _ => return None,
     };
     Some(hint(KEY_ENTER, label))

@@ -36,11 +36,13 @@ pub enum Kind {
     Target,
     /// A workspace a window can move to.
     Workspace,
+    /// A row of the emoji grid, its ledger id in the node's `id`.
+    Emoji,
     Other(String),
 }
 
 impl Kind {
-    const NAMED: [(Kind, &'static str); 15] = [
+    const NAMED: [(Kind, &'static str); 16] = [
         (Kind::Submenu, "submenu"),
         (Kind::Link, "link"),
         (Kind::Provider, "provider"),
@@ -56,6 +58,7 @@ impl Kind {
         (Kind::Option, "option"),
         (Kind::Target, "target"),
         (Kind::Workspace, "workspace"),
+        (Kind::Emoji, "emoji"),
     ];
 
     pub fn as_str(&self) -> &str {

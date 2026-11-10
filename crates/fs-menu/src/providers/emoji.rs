@@ -38,7 +38,7 @@ const EMOJI_ROW: &str = "emoji.";
 
 /// The emoji an emoji row carries, off its id.
 pub fn emoji_of(node: &Node) -> Option<&str> {
-    node.id.strip_prefix(EMOJI_ROW)
+    node.id.strip_prefix(EMOJI_ROW).filter(|_| node.kind == Kind::Emoji)
 }
 
 struct Indexed {
@@ -175,7 +175,7 @@ fn emoji_row(e: &EmojiEntry, paste: bool) -> Node {
         verb: Some(if paste { "Paste" } else { "Copy" }.to_string()),
         action: Some(crate::actions::copy_run(&e.ch)),
         paste_after: paste,
-        ..Node::new(emoji_usage_id(e), crate::model::title_case(&e.name), Kind::Action)
+        ..Node::new(emoji_usage_id(e), crate::model::title_case(&e.name), Kind::Emoji)
     }
 }
 

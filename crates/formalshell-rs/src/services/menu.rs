@@ -845,22 +845,27 @@ pub fn set_recent_pinned(store: &store::Store, id: &str, pin: bool) {
 /// which orders the emoji grid and nothing else.
 pub fn record_pick(store: &store::Store, node: &Node, query: &str, now: f64) {
     use fs_menu::actions::SubjectId;
-    use super::state::{self, Field};
+    if let SubjectId::File(path) = fs_menu::actions::subject_id(node) {
+        ask(Ask::Stat(vec![path]));
+    }
+    let fields = pick_fields(store, node, query, now);
+    if !fields.is_empty() {
+        super::state::set(fields);
+    }
+}
+
+/// The state fields one pick of `node` under `query` writes.
+fn pick_fields(store: &store::Store, node: &Node, query: &str, now: f64) -> Vec<super::state::Field> {
+    use fs_menu::actions::SubjectId;
+    use super::state::Field;
     let subject = fs_menu::actions::subject_id(node);
+    let mut fields = Vec::new();
     if let SubjectId::Emoji(_) = subject {
-        let next = fs_menu::frecency::record(&store.state.data.emoji_uses, &node.id, now, None);
-        state::set(vec![Field::EmojiUses(next)]);
+        fields.push(Field::EmojiUses(fs_menu::frecency::record(&store.state.data.emoji_uses, &node.id, now, None)));
     }
     let id = subject.to_string();
-    let file = match &subject {
-        SubjectId::File(path) => Some(path.as_str()),
-        _ => None,
-    };
-    if file.is_none() && !resolves(store, &id) {
-        return;
-    }
-    if let Some(path) = file {
-        ask(Ask::Stat(vec![path.to_owned()]));
+    if !matches!(subject, SubjectId::File(_)) && !resolves(store, &id) {
+        return fields;
     }
     // Only an uninstalled app, once the apps scan has landed, and a
     // deleted file are pruned: a provider's rows (a network out of
@@ -873,16 +878,32 @@ pub fn record_pick(store: &store::Store, node: &Node, query: &str, now: f64) {
         SubjectId::Emoji(_) | SubjectId::Node(_) => false,
     };
     let held: Vec<Record> = store.state.data.picks.iter().filter(|r| !gone(&r.id)).cloned().collect();
-    let mut fields = vec![Field::Picks(fs_menu::frecency::record(&held, &id, now, None))];
+    fields.push(Field::Picks(fs_menu::frecency::record(&held, &id, now, None)));
     if !fs_menu::search::is_exact(node, query) && fs_menu::abbrev::key(query).is_some() && store.menu.nodes().contains_key(&node.id) {
         let book = fs_menu::abbrev::learn(&abbreviation_book(store), query, &id, now);
         fields.push(Field::Abbreviations(Some(book)));
     }
-    state::set(fields);
+    fields
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_a_real_emoji_row_moves_the_emoji_ledger() {
+        use super::super::state::Field;
+        let mut store = store::Store::default();
+        let index = providers::EmojiIndex::new(vec![providers::EmojiEntry { ch: "\u{1F600}".into(), name: "grinning face".into(), ..Default::default() }]);
+        let emoji = index.row_for("\u{1F600}", true).unwrap();
+        store.menu.emoji = Some(Arc::new(index));
+        let custom = Node::new("emoji.\u{1F600}", "Mine", Kind::Action);
+        store.menu.tree.nodes.insert(custom.id.clone(), custom.clone());
+        let has = |node: &Node, want: fn(&Field) -> bool| pick_fields(&store, node, "", 1.0).iter().any(want);
+        let uses = |f: &Field| matches!(f, Field::EmojiUses(_));
+        let picks = |f: &Field| matches!(f, Field::Picks(_));
+        assert!(has(&emoji, uses) && has(&emoji, picks));
+        assert!(has(&custom, picks) && !has(&custom, uses));
+    }
+
     use std::collections::HashSet;
 
     use fs_devices::bluetooth::Device as BluetoothDevice;

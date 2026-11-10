@@ -302,7 +302,7 @@ fn recent_holds_subjects_outside_the_tree() {
     let picks = [pick("file:/home/u/notes.txt", 9.0), pick("emoji:\u{1F62D}", 7.0), pick("file:/gone", 8.0), pick("clipboard", 5.0)];
     let outside = |id: &str| match id {
         "file:/home/u/notes.txt" => Some(fs_menu::providers::recent_subject("/home/u/notes.txt", false, "/home/u")),
-        "emoji:\u{1F62D}" => Some(Node::new("emoji.\u{1F62D}", "LOUDLY CRYING FACE", Kind::Action)),
+        "emoji:\u{1F62D}" => Some(Node::new("emoji.\u{1F62D}", "LOUDLY CRYING FACE", Kind::Emoji)),
         _ => None,
     };
     let rows = fs_menu::model::root_rest(&tree.nodes, &[], &picks, 1_000.0, 8, &HashMap::new(), outside);
