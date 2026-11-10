@@ -614,41 +614,19 @@ pub fn radio_search_rows(store: &store::Store, q: &str) -> Vec<Node> {
     }
 }
 
-pub fn wifi_network(r: &super::devices::network::Row) -> fs_menu::providers::WifiNetwork {
-    fs_menu::providers::WifiNetwork {
-        name: r.ssid.clone(),
-        known: r.known,
-        connected: r.connected,
-        secured: r.secured,
-        enterprise: r.enterprise,
-        in_range: r.in_range,
-        signal: r.signal.as_fraction(),
-        security: r.security.clone(),
-        addresses: r.addresses.clone(),
-    }
-}
-
 /// A network stepped into: its details off the live scan, a note once it
 /// is no longer listed.
 pub fn network_rows(store: &store::Store, ssid: &str, q: &str) -> Vec<Node> {
     let Some(row) = store.network.row(ssid) else { return vec![Node::note("wifi.details.gone", "No longer listed")] };
     let q = q.trim().to_lowercase();
-    fs_menu::providers::wifi_details(&wifi_network(row)).into_iter().filter(|n| q.is_empty() || n.label.to_lowercase().contains(&q)).collect()
+    fs_menu::providers::wifi_details(row).into_iter().filter(|n| q.is_empty() || n.label.to_lowercase().contains(&q)).collect()
 }
 
 /// The four device routes' rows, off the store.
 pub fn device_sources(store: &store::Store) -> Vec<(Provider, Vec<Node>)> {
     use fs_menu::providers as p;
     let n = &store.network;
-    let wifi = p::WifiState {
-        has_device: n.wifi_device.is_some(),
-        enabled: n.wifi_enabled,
-        networks: n.rows.iter().map(wifi_network).collect(),
-        action_ssid: n.action.as_ref().map(|(_, s)| s.clone()).unwrap_or_default(),
-        action_kind: n.action.as_ref().map(|(k, _)| k.as_str().to_owned()).unwrap_or_default(),
-        failure_ssid: n.failure.as_ref().map(|f| f.ssid.clone()).unwrap_or_default(),
-        failure_text: n.failure.as_ref().map(|f| f.text.clone()).unwrap_or_default(),
-    };
+    let wifi = p::WifiState { has_device: n.wifi_device.is_some(), enabled: n.wifi_enabled, networks: &n.rows, action: n.action.as_ref(), failure: n.failure.as_ref() };
     let b = &store.bluetooth;
     let bluetooth = p::BluetoothState { available: b.powered.is_some(), enabled: b.powered == Some(true), devices: b.devices.clone() };
     let audio: Vec<p::AudioDevice> =
@@ -855,6 +833,7 @@ mod tests {
     use fs_menu::actions::{IpcCall, Subject, actions_for};
     use fs_menu::base::ShareInputs;
     use fs_menu::clipboard::entry::{Entry as ClipEntry, EntryKind};
+    use fs_devices::network::wifi::Row as WifiRow;
     use fs_menu::providers::*;
     use serde_json::json;
 
@@ -877,7 +856,7 @@ mod tests {
 
     /// Every row a source can publish, with each verb its rows mint.
     fn sources() -> Vec<Node> {
-        let net = |name: &str, known: bool, connected: bool| WifiNetwork { name: name.into(), secured: true, in_range: true, known, connected, signal: 0.5, ..WifiNetwork::default() };
+        let net = |name: &str, known: bool, connected: bool| WifiRow { ssid: name.into(), secured: true, in_range: true, known, connected, signal: fs_types::Fraction::from_fraction(0.5), ..WifiRow::default() };
         let device = |address: &str, connected: bool| BluetoothDevice { address: address.parse().unwrap(), name: address.into(), paired: true, connected, ..BluetoothDevice::default() };
         let station = |uuid: &str| RadioStation { uuid: uuid.into(), name: uuid.into(), ..RadioStation::default() };
         let clip = vec![
@@ -885,7 +864,8 @@ mod tests {
             ClipEntry { id: "i".into(), kind: EntryKind::Image, path: Some("/tmp/a.png".into()), ..ClipEntry::default() },
         ];
         let package = |id: &str, installed: bool| Package { id: id.into(), name: id.into(), source: "zypper".into(), installed, installable: true, run: true, ..Package::default() };
-        let mut rows = wifi_rows(&WifiState { has_device: true, enabled: true, networks: vec![net("Home:5G", true, true), net("Cafe", false, false)], ..WifiState::default() });
+        let nets = [net("Home:5G", true, true), net("Cafe", false, false)];
+        let mut rows = wifi_rows(&WifiState { has_device: true, enabled: true, networks: &nets, ..WifiState::default() });
         rows.extend(wifi_rows(&WifiState { has_device: true, ..WifiState::default() }));
         rows.extend(bluetooth_rows(&BluetoothState { available: true, enabled: true, devices: vec![device("AA:BB:CC:DD:EE:01", true), device("AA:BB:CC:DD:EE:02", false)] }));
         rows.extend(bluetooth_rows(&BluetoothState { available: true, ..BluetoothState::default() }));

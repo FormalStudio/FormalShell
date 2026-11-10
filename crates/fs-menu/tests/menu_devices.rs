@@ -5,9 +5,10 @@ use std::collections::HashSet;
 use fs_devices::bluetooth::Device as BluetoothDevice;
 use fs_menu::node::{Kind, Node};
 use fs_menu::providers::{
-    AudioDevice, BluetoothState, RadioState, RadioStation, WifiNetwork, WifiState, audio_rows,
+    AudioDevice, BluetoothState, RadioState, RadioStation, WifiState, audio_rows,
     bluetooth_rows, id_part, radio_result_rows, radio_rows, wifi_details, wifi_rows,
 };
+use fs_devices::network::wifi::{ActionKind, Failure, Row as WifiNetwork};
 use fs_types::Fraction;
 
 #[test]
@@ -20,18 +21,16 @@ fn id_part_round_trips_and_has_no_dot() {
     }
 }
 
+fn signal(f: f64) -> Fraction {
+    Fraction::from_fraction(f)
+}
+
 fn net(name: &str) -> WifiNetwork {
-    WifiNetwork { name: name.into(), secured: true, in_range: true, signal: 0.5, ..WifiNetwork::default() }
+    WifiNetwork { ssid: name.into(), secured: true, in_range: true, signal: signal(0.5), ..WifiNetwork::default() }
 }
 
 fn wifi(networks: Vec<WifiNetwork>) -> Vec<Node> {
-    wifi_rows(&WifiState { has_device: true, enabled: true, networks, ..WifiState::default() })
-}
-
-fn wifi_with(networks: Vec<WifiNetwork>, f: impl FnOnce(&mut WifiState)) -> Vec<Node> {
-    let mut st = WifiState { has_device: true, enabled: true, networks, ..WifiState::default() };
-    f(&mut st);
-    wifi_rows(&st)
+    wifi_rows(&WifiState { has_device: true, enabled: true, networks: &networks, ..WifiState::default() })
 }
 
 fn desc_of<'a>(rows: &'a [Node], name: &str) -> &'a str {
@@ -67,9 +66,9 @@ fn wifi_no_networks_is_one_note() {
 #[test]
 fn wifi_rows_keep_the_sources_order() {
     let rows = wifi(vec![
-        WifiNetwork { known: true, connected: true, signal: 0.1, ..net("Live") },
-        WifiNetwork { known: true, signal: 0.2, ..net("Saved") },
-        WifiNetwork { signal: 0.9, ..net("Near") },
+        WifiNetwork { known: true, connected: true, signal: signal(0.1), ..net("Live") },
+        WifiNetwork { known: true, signal: signal(0.2), ..net("Saved") },
+        WifiNetwork { signal: signal(0.9), ..net("Near") },
     ]);
     assert_eq!(labels(&rows), ["Live", "Saved", "Near"]);
     let sections: Vec<_> = rows.iter().map(|r| r.section.as_deref()).collect();
@@ -78,7 +77,7 @@ fn wifi_rows_keep_the_sources_order() {
 
 #[test]
 fn wifi_saved_out_of_range_sits_under_known_networks() {
-    let away = |name| WifiNetwork { known: true, in_range: false, signal: 0.0, ..net(name) };
+    let away = |name| WifiNetwork { known: true, in_range: false, signal: signal(0.0), ..net(name) };
     let rows = wifi(vec![away("Hostel"), WifiNetwork { known: true, ..net("Home") }, net("Cafe"), away("Airport")]);
     let top: Vec<&str> = rows.iter().filter(|r| r.parent_id.is_none()).map(|r| r.label.as_str()).collect();
     assert_eq!(top, ["Home", "Cafe", "Known networks"]);
@@ -140,26 +139,18 @@ fn wifi_desc_for_unknown_networks() {
 
 #[test]
 fn wifi_desc_for_the_action_in_flight() {
-    let rows = wifi_with(
-        vec![WifiNetwork { known: true, ..net("A") }, WifiNetwork { known: true, ..net("B") }],
-        |st| {
-            st.action_ssid = "A".into();
-            st.action_kind = "forget".into();
-        },
-    );
+    let nets = [WifiNetwork { known: true, ..net("A") }, WifiNetwork { known: true, ..net("B") }];
+    let action = (ActionKind::Forget, "A".to_owned());
+    let rows = wifi_rows(&WifiState { has_device: true, enabled: true, networks: &nets, action: Some(&action), failure: None });
     assert_eq!(desc_of(&rows, "A"), "Forgetting");
     assert_eq!(desc_of(&rows, "B"), "");
 }
 
 #[test]
 fn wifi_failure_text_stays_on_its_own_row() {
-    let rows = wifi_with(
-        vec![WifiNetwork { known: true, ..net("A") }, WifiNetwork { known: true, ..net("B") }],
-        |st| {
-            st.failure_ssid = "A".into();
-            st.failure_text = "Wrong password".into();
-        },
-    );
+    let nets = [WifiNetwork { known: true, ..net("A") }, WifiNetwork { known: true, ..net("B") }];
+    let failure = Failure { ssid: "A".into(), text: "Wrong password".into(), secret: true };
+    let rows = wifi_rows(&WifiState { has_device: true, enabled: true, networks: &nets, action: None, failure: Some(&failure) });
     assert_eq!(desc_of(&rows, "A"), "Wrong password");
     assert_eq!(desc_of(&rows, "B"), "");
 }
@@ -344,7 +335,7 @@ fn a_network_details_its_security_signal_and_addresses_while_connected() {
     let live = WifiNetwork {
         known: true,
         connected: true,
-        signal: 0.72,
+        signal: signal(0.72),
         security: "WPA2 Personal".into(),
         addresses: vec!["10.0.0.5/24".into(), "10.0.1.5/16".into()],
         ..net("Home")

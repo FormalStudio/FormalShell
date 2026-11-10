@@ -99,8 +99,7 @@ impl Network {
             net::send(net::Cmd::Disconnect(ssid));
             return;
         }
-        let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
-        if retype || (row.secured && !row.known) {
+        if fs_devices::network::wifi::asks_secret(&row, n.failure.as_ref()) {
             self.open_prompt(&ssid, row.enterprise);
             return;
         }
@@ -160,15 +159,7 @@ impl Network {
         let key = row_key(&r.ssid);
         let mine = |ssid: &str| ssid == r.ssid;
         let status = match (&n.action, &n.failure) {
-            (Some((kind, ssid)), _) if mine(ssid) => Some((
-                match kind {
-                    net::ActionKind::Connect => "Connecting",
-                    net::ActionKind::Disconnect => "Disconnecting",
-                    net::ActionKind::Forget => "Forgetting",
-                }
-                .to_owned(),
-                false,
-            )),
+            (Some((kind, ssid)), _) if mine(ssid) => Some((kind.busy().to_owned(), false)),
             (_, Some(f)) if mine(&f.ssid) => Some((f.text.clone(), true)),
             _ => None,
         };

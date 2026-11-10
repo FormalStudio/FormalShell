@@ -12,8 +12,9 @@ use fs_menu::intent::Intent;
 use fs_menu::keybinds::rows as bind_rows;
 use fs_menu::model::build_tree;
 use fs_menu::node::{DesktopEntry, Entries, Kind, Node};
+use fs_devices::network::wifi::Row as WifiNetwork;
 use fs_menu::providers::{
-    AudioDevice, BluetoothState, ClipMode, EmojiEntry, EmojiIndex, Item, ItemKind, RadioState, RadioStation, WifiNetwork, WifiState, apps_provider,
+    AudioDevice, BluetoothState, ClipMode, EmojiEntry, EmojiIndex, Item, ItemKind, RadioState, RadioStation, WifiState, apps_provider,
     attach_children, audio_rows, bluetooth_rows, clipboard_provider, radio_rows, tile_rows, wifi_rows,
 };
 use fs_types::Bind;
@@ -158,8 +159,9 @@ fn toggle() {
 
 #[test]
 fn wifi_network() {
-    let net = |known| WifiNetwork { name: "Home".into(), known, secured: true, in_range: true, ..WifiNetwork::default() };
-    let st = WifiState { has_device: true, enabled: true, networks: vec![net(true)], ..WifiState::default() };
+    let net = |known| WifiNetwork { ssid: "Home".into(), known, secured: true, in_range: true, ..WifiNetwork::default() };
+    let saved_nets = [net(true)];
+    let st = WifiState { has_device: true, enabled: true, networks: &saved_nets, ..WifiState::default() };
     let saved = of(&wifi_rows(&st)[0]);
     assert_eq!(ids(&saved), ["run", "alternate", "show-password", "panel", "details"]);
     assert_eq!(saved[0].label, "Connect");
@@ -170,14 +172,16 @@ fn wifi_network() {
     assert_eq!(saved[3].run, Run::parse("@ipc:panel.open:network"));
     assert_eq!(saved[4].run, Run::Into("wifi.net.Home".into()));
     assert_eq!(into_action(&Subject::of(&wifi_rows(&st)[0])).unwrap().id, "details");
-    let st = WifiState { networks: vec![net(false)], ..st };
+    let stranger = [net(false)];
+    let st = WifiState { networks: &stranger, ..st };
     let row = &wifi_rows(&st)[0];
     assert_eq!(ids(&of(row)), ["run", "panel", "details"]);
     assert_eq!(second_action(&Subject::of(row)).unwrap().id, "panel");
     let open = WifiNetwork { secured: false, ..net(true) };
     let enterprise = WifiNetwork { enterprise: true, ..net(true) };
     for n in [open, enterprise] {
-        let st = WifiState { networks: vec![n], ..st.clone() };
+        let nets = [n];
+        let st = WifiState { networks: &nets, ..st };
         assert_eq!(ids(&of(&wifi_rows(&st)[0])), ["run", "alternate", "panel", "details"]);
     }
 }
@@ -360,8 +364,8 @@ fn a_declared_alternate_survives_the_provider() {
     let default = entries(json!({ "wifi": { "provider": "wifi" } }));
     let user = entries(json!({ "wifi.net.Home": { "alternate": "notify-send home", "alternateLabel": "Say hi" } }));
     let mut tree = build_tree(&default, &user);
-    let net = WifiNetwork { name: "Home".into(), known: true, secured: true, in_range: true, ..WifiNetwork::default() };
-    let st = WifiState { has_device: true, enabled: true, networks: vec![net], ..WifiState::default() };
+    let nets = [WifiNetwork { ssid: "Home".into(), known: true, secured: true, in_range: true, ..WifiNetwork::default() }];
+    let st = WifiState { has_device: true, enabled: true, networks: &nets, ..WifiState::default() };
     attach_children(&mut tree, "wifi", wifi_rows(&st));
     let row = &tree.nodes["wifi.net.Home"];
     let second = second_action(&Subject::of(row)).unwrap();

@@ -15,7 +15,8 @@ use std::time::Duration;
 
 use async_io::Timer;
 use fs_network::{ConnectError, DeviceKind, NetworkManager, Snapshot};
-use fs_types::{Fraction, Percent};
+pub use fs_devices::network::wifi::{ActionKind, Failure, Row};
+use fs_types::Percent;
 use futures_lite::{FutureExt, StreamExt, future};
 
 use super::action::ActionInFlight;
@@ -40,57 +41,12 @@ const SCAN_EVERY: Duration = Duration::from_secs(10);
 const RECONNECT_SETTLE: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Row {
-    /// Empty for a hidden network.
-    pub ssid: String,
-    pub known: bool,
-    pub connected: bool,
-    pub changing: bool,
-    pub secured: bool,
-    pub enterprise: bool,
-    /// An access point broadcasts it; false only for a saved network.
-    pub in_range: bool,
-    /// 0 to 1.
-    pub signal: Fraction,
-    /// `Security::label`'s name for its class.
-    pub security: String,
-    /// The device's addresses on it, `address/prefix`, while connected.
-    pub addresses: Vec<String>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Wired {
     pub name: String,
     pub connected: bool,
     /// The active connection's name.
     pub connection: Option<String>,
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ActionKind {
-    Connect,
-    Disconnect,
-    Forget,
-}
-
-impl ActionKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ActionKind::Connect => "connect",
-            ActionKind::Disconnect => "disconnect",
-            ActionKind::Forget => "forget",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Failure {
-    pub ssid: String,
-    pub text: String,
-    /// Fixed by typing the secret again rather than retrying.
-    pub secret: bool,
-}
-
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Network {

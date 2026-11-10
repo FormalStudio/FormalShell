@@ -693,8 +693,7 @@ impl App {
         if row.connected {
             return net::send(net::Cmd::Disconnect(ssid));
         }
-        let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
-        if retype || (row.secured && !row.known) {
+        if fs_devices::network::wifi::asks_secret(&row, n.failure.as_ref()) {
             let (prompt, token) = if row.enterprise {
                 (format!("Identity for {ssid}"), WIFI_IDENTITY)
             } else {

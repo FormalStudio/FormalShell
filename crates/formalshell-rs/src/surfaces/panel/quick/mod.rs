@@ -1408,8 +1408,7 @@ fn wifi_row(ssid: String, fx: &mut Effect) {
     if n.action.is_some() {
         return;
     }
-    let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
-    if retype || (row.secured && !row.known) {
+    if fs_devices::network::wifi::asks_secret(row, n.failure.as_ref()) {
         fx.push(Out::Panel(PanelId::Network, Some(format!("wifi:{ssid}"))));
         return;
     }
