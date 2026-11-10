@@ -276,12 +276,6 @@ impl crate::settings::Doc for Settings {
     }
 }
 
-impl Settings {
-    pub fn get(&self, path: &str) -> Option<&Value> {
-        lookup(&self.0, path)
-    }
-}
-
 /// The service-thread subscribers and the document last published to them.
 struct Hub {
     last: Option<Settings>,
@@ -579,9 +573,9 @@ mod tests {
         let early = hub.subscribe();
         assert!(early.try_recv().is_err());
         hub.publish(Settings(Arc::new(json!({"a": 1}))));
-        assert_eq!(early.try_recv().unwrap().get("a"), Some(&json!(1)));
+        assert_eq!(early.try_recv().unwrap().0.get("a"), Some(&json!(1)));
         let late = hub.subscribe();
-        assert_eq!(late.try_recv().unwrap().get("a"), Some(&json!(1)), "a late subscriber starts on the last publish");
+        assert_eq!(late.try_recv().unwrap().0.get("a"), Some(&json!(1)), "a late subscriber starts on the last publish");
         assert!(late.try_recv().is_err());
     }
 

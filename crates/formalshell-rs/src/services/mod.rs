@@ -151,7 +151,7 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
         Topic::Config => {
             lights_palette(store);
             lyrics::sync(&store.media, &store.config, &store.lyrics);
-            Some(notifications::Op::Dedupe(crate::settings::iphone_dedupe(c)).into())
+            Some(notifications::Op::Dedupe(crate::settings::iphone_dedupe(&store.config)).into())
         }
         Topic::Lyrics => {
             lyrics::sync(&store.media, &store.config, &store.lyrics);
