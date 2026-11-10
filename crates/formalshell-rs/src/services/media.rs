@@ -230,6 +230,67 @@ impl SourceKind {
     }
 }
 
+/// The source the active row names, with its handle.
+enum Current<'a> {
+    Radio,
+    Iphone,
+    Airplay,
+    Mpris(&'a Player),
+    Bluetooth(&'a Remote),
+    Stream(&'a StreamInfo),
+}
+
+impl Current<'_> {
+    fn play_pause(&self) {
+        match self {
+            Current::Radio => radio::send(radio::Cmd::Toggle),
+            Current::Iphone => {
+                ams::command(ams::Command::Toggle);
+            }
+            Current::Bluetooth(r) => bluetooth::player(&r.path, if r.playing { PlayerCommand::Pause } else { PlayerCommand::Play }),
+            Current::Mpris(p) if p.can_toggle => {
+                let id = p.id.clone();
+                mpris_send(move |c| async move { c.play_pause(&id).await });
+            }
+            Current::Mpris(_) | Current::Airplay | Current::Stream(_) => {}
+        }
+    }
+
+    fn next(&self) {
+        match self {
+            Current::Radio => radio::send(radio::Cmd::Next),
+            Current::Iphone => {
+                ams::command(ams::Command::Next);
+            }
+            Current::Bluetooth(r) => bluetooth::player(&r.path, PlayerCommand::Next),
+            Current::Mpris(p) if p.can_next => {
+                let id = p.id.clone();
+                mpris_send(move |c| async move { c.next(&id).await });
+            }
+            Current::Mpris(_) | Current::Airplay | Current::Stream(_) => {}
+        }
+    }
+
+    fn previous(&self) {
+        match self {
+            Current::Radio => radio::send(radio::Cmd::Previous),
+            Current::Iphone => {
+                ams::command(ams::Command::Prev);
+            }
+            Current::Bluetooth(r) => bluetooth::player(&r.path, PlayerCommand::Previous),
+            Current::Mpris(p) if p.can_previous => {
+                let id = p.id.clone();
+                mpris_send(move |c| async move { c.previous(&id).await });
+            }
+            Current::Mpris(_) | Current::Airplay | Current::Stream(_) => {}
+        }
+    }
+}
+
+fn stream_row_id(s: &StreamInfo) -> String {
+    format!("stream:{}", s.id)
+}
+
 /// What every bar and IPC read of "the active source" resolves to.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Active {
@@ -419,7 +480,7 @@ impl State {
         }
         let mpris: Vec<PlayerRow> = rows.iter().filter(|r| r.kind.as_deref() == Some(SourceKind::Mpris.as_str())).cloned().collect();
         for s in self.routing.streams.iter().filter(|s| self.stream_owner(s, &mpris).is_empty()) {
-            let mut r = row(&format!("stream:{}", s.id), SourceKind::Stream, &s.label, false);
+            let mut r = row(&stream_row_id(s), SourceKind::Stream, &s.label, false);
             r.auto = Some(false);
             rows.push(r);
         }
@@ -445,12 +506,35 @@ impl State {
 
     /// The streams the active source is playing through right now.
     fn routed_streams(&self) -> Vec<&StreamInfo> {
-        let id = self.active_id();
-        if let Some(n) = id.strip_prefix("stream:") {
-            return self.routing.streams.iter().filter(|s| s.id.to_string() == n).collect();
+        match self.current() {
+            None => Vec::new(),
+            Some((_, Current::Stream(s))) => vec![s],
+            Some((id, _)) => {
+                let mpris = self.mpris_rows();
+                self.routing.streams.iter().filter(|s| self.stream_owner(s, &mpris) == id).collect()
+            }
         }
-        let mpris = self.mpris_rows();
-        self.routing.streams.iter().filter(|s| !id.is_empty() && self.stream_owner(s, &mpris) == id).collect()
+    }
+
+    /// The active row resolved to the source behind it, by the kind the row
+    /// was listed with.
+    fn current(&self) -> Option<(String, Current<'_>)> {
+        let rows = self.rows();
+        let id = pick::pick_player_id(&rows, &self.selected);
+        let kind = rows.iter().find(|r| r.id == id).and_then(|r| r.kind.as_deref()).and_then(SourceKind::parse)?;
+        let source = match kind {
+            SourceKind::Radio => Current::Radio,
+            SourceKind::Iphone => Current::Iphone,
+            SourceKind::Airplay => Current::Airplay,
+            SourceKind::Mpris => Current::Mpris(self.mpris.iter().find(|p| p.id == id)?),
+            SourceKind::Bluetooth => Current::Bluetooth(self.remotes.iter().find(|r| r.id == id)?),
+            SourceKind::Stream => Current::Stream(self.routing.streams.iter().find(|s| stream_row_id(s) == id)?),
+        };
+        Some((id, source))
+    }
+
+    fn radio_active(&self) -> bool {
+        matches!(self.current(), Some((_, Current::Radio)))
     }
 
     /// Where the active source can be moved: every sink the graph has.
@@ -459,14 +543,14 @@ impl State {
     }
 
     pub fn can_route(&self) -> bool {
-        self.routing.sinks.len() > 1 && (self.active_id() == "radio" || !self.routed_streams().is_empty())
+        self.routing.sinks.len() > 1 && (self.radio_active() || !self.routed_streams().is_empty())
     }
 
     /// The sink name the active source is on: the radio's saved choice ("" is
     /// the default sink), otherwise wherever its first stream is linked.
     pub fn output_id(&self) -> String {
         let fallback = self.routing.default_sink.clone();
-        if self.active_id() == "radio" {
+        if self.radio_active() {
             return if self.radio.output.is_empty() { fallback } else { self.radio.output.clone() };
         }
         match self.routed_streams().first() {
@@ -480,7 +564,7 @@ impl State {
         if !self.routing.sinks.iter().any(|(id, _)| id == name) {
             return;
         }
-        if self.active_id() == "radio" {
+        if self.radio_active() {
             let sink = if name == self.routing.default_sink { "" } else { name };
             return radio::send(radio::Cmd::SetOutput(sink.to_owned()));
         }
@@ -502,14 +586,11 @@ impl State {
     }
 
     fn active_at(&self, now: Instant) -> Option<Active> {
-        let id = self.active_id();
-        if id.is_empty() {
-            return None;
-        }
+        let (id, source) = self.current()?;
         let label = self.players().into_iter().find(|r| r.id == id).map(|r| r.label).unwrap_or_default();
-        let base = Active { id: id.clone(), ..Active::default() };
-        Some(match id.as_str() {
-            "radio" => {
+        let base = Active { id, ..Active::default() };
+        Some(match source {
+            Current::Radio => {
                 let r = &self.radio;
                 let track = r.track_title();
                 let name = r.station.as_ref().map(|s| s.name.clone()).unwrap_or_default();
@@ -525,7 +606,7 @@ impl State {
                     ..base
                 }
             }
-            "iphone" => {
+            Current::Iphone => {
                 let a = &self.ams;
                 Active {
                     kind: SourceKind::Iphone,
@@ -543,7 +624,7 @@ impl State {
                     ..base
                 }
             }
-            "airplay" => {
+            Current::Airplay => {
                 let a = &self.airplay;
                 // The one cover file is rewritten per track, so the track
                 // names which picture this is.
@@ -554,57 +635,48 @@ impl State {
                 };
                 Active { kind: SourceKind::Airplay, identity: label, title: a.title.clone(), artist: a.artist.clone(), album: a.album.clone(), art_url, ..base }
             }
-            remote if remote.starts_with("bluez:") => {
-                let r = self.remotes.iter().find(|r| r.id == remote)?;
-                Active {
-                    kind: SourceKind::Bluetooth,
-                    identity: label,
-                    title: r.title.clone(),
-                    artist: r.artist.clone(),
-                    album: r.album.clone(),
-                    playing: r.playing,
-                    position: r.position_now(now),
-                    position_stale: r.position_stale,
-                    length: r.length,
-                    can_next: true,
-                    can_previous: true,
-                    volume: self.routed_streams().first().and_then(|s| s.volume).map(|v| pick::clamp_volume(v.as_f64())),
-                    ..base
-                }
-            }
-            stream if stream.starts_with("stream:") => {
-                let s = self.routing.streams.iter().find(|s| format!("stream:{}", s.id) == stream)?;
-                Active {
-                    kind: SourceKind::Stream,
-                    identity: label,
-                    title: if s.title.is_empty() { s.label.clone() } else { s.title.clone() },
-                    volume: s.volume.map(|v| pick::clamp_volume(v.as_f64())),
-                    ..base
-                }
-            }
-            _ => {
-                let p = self.mpris.iter().find(|p| p.id == id)?;
-                Active {
-                    kind: SourceKind::Mpris,
-                    identity: p.identity.clone(),
-                    title: p.title.clone(),
-                    artist: p.artist.clone(),
-                    album: p.album.clone(),
-                    art_url: p.art_url.clone(),
-                    playing: p.playing,
-                    position: p.position_now(now),
-                    length: p.length,
-                    can_seek: p.can_seek,
-                    can_raise: p.can_raise,
-                    can_next: p.can_next,
-                    can_previous: p.can_previous,
-                    shuffle: p.shuffle,
-                    loop_name: p.loop_status.map(loop_name),
-                    volume: p.volume.map(|v| pick::clamp_volume(v.get())),
-                    volume_fixed: !p.volume_writable,
-                    ..base
-                }
-            }
+            Current::Bluetooth(r) => Active {
+                kind: SourceKind::Bluetooth,
+                identity: label,
+                title: r.title.clone(),
+                artist: r.artist.clone(),
+                album: r.album.clone(),
+                playing: r.playing,
+                position: r.position_now(now),
+                position_stale: r.position_stale,
+                length: r.length,
+                can_next: true,
+                can_previous: true,
+                volume: self.routed_streams().first().and_then(|s| s.volume).map(|v| pick::clamp_volume(v.as_f64())),
+                ..base
+            },
+            Current::Stream(s) => Active {
+                kind: SourceKind::Stream,
+                identity: label,
+                title: if s.title.is_empty() { s.label.clone() } else { s.title.clone() },
+                volume: s.volume.map(|v| pick::clamp_volume(v.as_f64())),
+                ..base
+            },
+            Current::Mpris(p) => Active {
+                kind: SourceKind::Mpris,
+                identity: p.identity.clone(),
+                title: p.title.clone(),
+                artist: p.artist.clone(),
+                album: p.album.clone(),
+                art_url: p.art_url.clone(),
+                playing: p.playing,
+                position: p.position_now(now),
+                length: p.length,
+                can_seek: p.can_seek,
+                can_raise: p.can_raise,
+                can_next: p.can_next,
+                can_previous: p.can_previous,
+                shuffle: p.shuffle,
+                loop_name: p.loop_status.map(loop_name),
+                volume: p.volume.map(|v| pick::clamp_volume(v.get())),
+                volume_fixed: !p.volume_writable,
+                ..base
+            },
         })
     }
 
@@ -689,66 +761,27 @@ impl State {
     }
 
     fn mpris_active(&self) -> Option<&Player> {
-        let id = self.active_id();
-        self.mpris.iter().find(|p| p.id == id)
-    }
-
-    fn remote_active(&self) -> Option<&Remote> {
-        let id = self.active_id();
-        self.remotes.iter().find(|r| r.id == id)
+        match self.current()? {
+            (_, Current::Mpris(p)) => Some(p),
+            _ => None,
+        }
     }
 
     pub fn play_pause(&self) {
-        if let Some(r) = self.remote_active() {
-            return bluetooth::player(&r.path, if r.playing { PlayerCommand::Pause } else { PlayerCommand::Play });
-        }
-        match self.active_id().as_str() {
-            "radio" => radio::send(radio::Cmd::Toggle),
-            "iphone" => {
-                ams::command("toggle");
-            }
-            _ => {
-                if let Some(p) = self.mpris_active().filter(|p| p.can_toggle) {
-                    let id = p.id.clone();
-                    mpris_send(move |c| async move { c.play_pause(&id).await });
-                }
-            }
+        if let Some((_, source)) = self.current() {
+            source.play_pause();
         }
     }
 
     pub fn next(&self) {
-        if let Some(r) = self.remote_active() {
-            return bluetooth::player(&r.path, PlayerCommand::Next);
-        }
-        match self.active_id().as_str() {
-            "radio" => radio::send(radio::Cmd::Next),
-            "iphone" => {
-                ams::command("next");
-            }
-            _ => {
-                if let Some(p) = self.mpris_active().filter(|p| p.can_next) {
-                    let id = p.id.clone();
-                    mpris_send(move |c| async move { c.next(&id).await });
-                }
-            }
+        if let Some((_, source)) = self.current() {
+            source.next();
         }
     }
 
     pub fn previous(&self) {
-        if let Some(r) = self.remote_active() {
-            return bluetooth::player(&r.path, PlayerCommand::Previous);
-        }
-        match self.active_id().as_str() {
-            "radio" => radio::send(radio::Cmd::Previous),
-            "iphone" => {
-                ams::command("prev");
-            }
-            _ => {
-                if let Some(p) = self.mpris_active().filter(|p| p.can_previous) {
-                    let id = p.id.clone();
-                    mpris_send(move |c| async move { c.previous(&id).await });
-                }
-            }
+        if let Some((_, source)) = self.current() {
+            source.previous();
         }
     }
 
@@ -775,31 +808,29 @@ impl State {
     /// scale; the phone takes a step in whichever direction the request
     /// moves.
     pub fn set_volume(&self, v: Fraction) {
-        let Some(a) = self.active() else { return };
-        match a.kind {
-            SourceKind::Radio => radio::send(radio::Cmd::SetVolume(radio::Volume::from_track(v))),
-            SourceKind::Iphone => {
-                if let Some(now) = a.volume
-                    && v != now
-                {
-                    ams::command(if v > now { "volup" } else { "voldown" });
+        let Some((_, source)) = self.current() else { return };
+        let visual = Visual::from_f64(v.as_fraction());
+        match source {
+            Current::Radio => radio::send(radio::Cmd::SetVolume(radio::Volume::from_track(v))),
+            Current::Iphone => {
+                if self.ams.volume >= 0.0 {
+                    let now = pick::clamp_volume(self.ams.volume);
+                    if v != now {
+                        ams::command(if v > now { ams::Command::VolUp } else { ams::Command::VolDown });
+                    }
                 }
             }
-            SourceKind::Mpris if !a.volume_fixed => {
-                let volume = fs_mpris::Volume::new(v.as_fraction());
-                mpris_send(move |c| async move { c.set_volume(&a.id, volume).await })
-            },
-            SourceKind::Stream => {
-                if let Some(node) = a.id.strip_prefix("stream:").and_then(|n| n.parse().ok()) {
-                    audio::send(audio::Cmd::Volume(audio::Target::Node(node), Visual::from_f64(v.as_fraction())));
-                }
+            Current::Mpris(p) if p.volume_writable => {
+                let (id, volume) = (p.id.clone(), fs_mpris::Volume::new(v.as_fraction()));
+                mpris_send(move |c| async move { c.set_volume(&id, volume).await })
             }
-            SourceKind::Bluetooth => {
+            Current::Stream(s) => audio::send(audio::Cmd::Volume(audio::Target::Node(s.id), visual)),
+            Current::Bluetooth(_) => {
                 for s in self.routed_streams() {
-                    audio::send(audio::Cmd::Volume(audio::Target::Node(s.id), Visual::from_f64(v.as_fraction())));
+                    audio::send(audio::Cmd::Volume(audio::Target::Node(s.id), visual));
                 }
             }
-            SourceKind::Mpris | SourceKind::Airplay => {}
+            Current::Mpris(_) | Current::Airplay => {}
         }
     }
 

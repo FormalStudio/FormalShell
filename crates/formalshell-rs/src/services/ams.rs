@@ -145,7 +145,7 @@ impl State {
 /// Whether the phone link is up, set by the iPhone service.
 static CONNECTED: Mutex<bool> = Mutex::new(false);
 static GATE_TX: std::sync::OnceLock<async_channel::Sender<()>> = std::sync::OnceLock::new();
-static COMMAND_TX: std::sync::OnceLock<async_channel::Sender<String>> = std::sync::OnceLock::new();
+static COMMAND_TX: std::sync::OnceLock<async_channel::Sender<Command>> = std::sync::OnceLock::new();
 static COMMANDING: AtomicBool = AtomicBool::new(false);
 
 pub fn set_connected(on: bool) {
@@ -157,16 +157,37 @@ pub fn set_connected(on: bool) {
     }
 }
 
-/// One AMS transport command (play, pause, toggle, next, prev, volup,
-/// voldown). One is in flight at a time: a held key can fire several a
-/// second, and AMS answers over the same BLE write either way, so queuing
-/// would only ever lag behind what the phone is doing now.
-pub fn command(name: &str) -> bool {
+/// An AMS transport command, one of the bridge's `command` verbs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Command {
+    Toggle,
+    Next,
+    Prev,
+    VolUp,
+    VolDown,
+}
+
+impl Command {
+    fn verb(self) -> &'static str {
+        match self {
+            Command::Toggle => "toggle",
+            Command::Next => "next",
+            Command::Prev => "prev",
+            Command::VolUp => "volup",
+            Command::VolDown => "voldown",
+        }
+    }
+}
+
+/// One is in flight at a time: a held key can fire several a second, and
+/// AMS answers over the same BLE write either way, so queuing would only
+/// ever lag behind what the phone is doing now.
+pub fn command(cmd: Command) -> bool {
     if COMMANDING.swap(true, Ordering::AcqRel) {
         return false;
     }
     match COMMAND_TX.get() {
-        Some(tx) if tx.try_send(name.to_owned()).is_ok() => true,
+        Some(tx) if tx.try_send(cmd).is_ok() => true,
         _ => {
             COMMANDING.store(false, Ordering::Release);
             false
@@ -180,7 +201,7 @@ enum Ev {
     Line(Option<String>),
     Exit(i32),
     Retry,
-    Command(Option<String>),
+    Command(Option<Command>),
     Reply(Option<String>),
     ReadingWait,
 }
@@ -367,11 +388,11 @@ async fn run(ctx: Ctx) {
             }
             Ev::Line(None) => unreachable!("a closed stdout became an exit above"),
             Ev::Retry => retry_at = None,
-            Ev::Command(Some(name)) => {
+            Ev::Command(Some(cmd)) => {
                 let reply_tx = reply_tx.clone();
                 ctx.spawn(async move {
                     let out = crate::services::proc::command(AMS)
-                        .args(["command", &name])
+                        .args(["command", cmd.verb()])
                         .stdin(async_process::Stdio::null())
                         .stderr(async_process::Stdio::null())
                         .kill_on_drop(true)

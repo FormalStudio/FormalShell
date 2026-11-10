@@ -19,7 +19,7 @@ use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Type, Variant, What, w};
 use crate::ui::el::Opt;
 
-const TRANSPORT: [(&str, &str); 3] = [("skip-back", "prev"), ("", "toggle"), ("skip-forward", "next")];
+const TRANSPORT: [(&str, ams::Command); 3] = [("skip-back", ams::Command::Prev), ("", ams::Command::Toggle), ("skip-forward", ams::Command::Next)];
 
 pub struct Iphone {
     /// The transport option the cursor sits on.
@@ -44,7 +44,7 @@ pub fn last_error(store: &Store) -> String {
 
 fn press(index: usize) {
     if let Some((_, verb)) = TRANSPORT.get(index) {
-        ams::command(verb);
+        ams::command(*verb);
     }
 }
 
@@ -147,7 +147,7 @@ impl Panel for Iphone {
                 let toggle = if ams.playback == "playing" { "pause" } else { "play" };
                 let options = TRANSPORT
                     .iter()
-                    .map(|(glyph, verb)| Opt::new("").icon(if *verb == "toggle" { toggle } else { glyph }))
+                    .map(|(glyph, verb)| Opt::new("").icon(if *verb == ams::Command::Toggle { toggle } else { glyph }))
                     .collect();
                 let group = w::group(options, 0, false).ring(self.np_index);
                 lines.push(w::panel_text(s, group.hug().stop("np").on("np")));
