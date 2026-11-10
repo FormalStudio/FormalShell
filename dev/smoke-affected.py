@@ -86,6 +86,16 @@ def main():
             print("smoke-affected: %s names %s, which no leg in dev/smoke.d declares; skipped" % (where, " ".join(missing)))
         return not missing
 
+    # A glob no tracked file matches is a rule left behind by a rename or
+    # a deletion; it is named so the map follows the tree.
+    tracked = git("ls-files").split()
+    globs = [("none", g) for g in smoke_map["none"]["paths"]] + [("shared", g) for g in smoke_map["shared"]["paths"]]
+    globs += [("rule %d" % (n + 1), g) for n, rule in enumerate(smoke_map.get("rule", [])) for g in rule["paths"]]
+    for where, g in globs:
+        pattern = glob_re(g)
+        if not any(pattern.match(t) for t in tracked):
+            print("smoke-affected: %s names %s, which matches no tracked file" % (where, g))
+
     core = [run for run in smoke_map["core"] if known(run, "core")]
     rules = smoke_map.get("rule", [])
     for n, rule in enumerate(rules):
