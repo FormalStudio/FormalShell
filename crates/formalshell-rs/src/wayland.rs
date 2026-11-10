@@ -1,8 +1,8 @@
 //! The Wayland side: the bar's layer surface (gone while a fullscreen window
 //! covers its output), the frame's four exclusion zones, the cards hanging
-//! off the bar (a panel, a tray item's menu), the tooltip, the scrim,
-//! the pointer and the keyboard, and which owner a configure, a frame
-//! callback or an input event belongs to.
+//! off the bar (`panel.rs` and `tray_menu.rs` hold their controllers), the
+//! tooltip, the scrim, the pointer and the keyboard, and which owner a
+//! configure, a frame callback or an input event belongs to.
 
 /// The live bar's window, whichever head it is on.
 macro_rules! live {
@@ -27,6 +27,7 @@ mod hotcorners;
 pub(crate) mod launcher;
 pub mod lock;
 mod osd;
+mod panel;
 mod plugin_overlay;
 mod polkit;
 mod region;
@@ -39,6 +40,7 @@ pub mod overview;
 mod owner;
 pub mod switcher;
 mod toasts;
+mod tray_menu;
 mod veil;
 mod zen;
 
@@ -46,8 +48,8 @@ use std::time::Instant;
 
 use calloop::LoopHandle;
 use calloop::timer::{TimeoutAction, Timer};
-use fs_chrome::bar::panels::{Home, PanelId};
-use fs_types::{Edge, IRect, Region as BarRegion};
+use fs_chrome::bar::panels::PanelId;
+use fs_types::{Edge, IRect};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -80,13 +82,13 @@ use crate::surface::{Backend, PixelSurface, Pixels, Surface};
 use crate::surfaces;
 use crate::surfaces::bar::Bar;
 use crate::surfaces::bar::cell::{Action, TrayClick};
-use crate::surfaces::bar::cells::tray as tray_cell;
-use crate::surfaces::card::{Card, CardSpec, Join, Scrim, Sizing};
+use crate::surfaces::card::{Card, Join, Scrim};
 use crate::surfaces::card_window::CardWindow;
 use crate::surfaces::modal::Modal;
-use crate::surfaces::panel::{self, Name, Out, host::{Host, Opener, Place}, quick};
+use crate::surfaces::panel::{Name, host::Host, quick};
 use crate::surfaces::tooltip;
-use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
+use crate::surfaces::tray_menu::Hit;
+use tray_menu::Popout;
 
 pub(crate) fn edge_anchor(edge: Edge) -> Anchor {
     match edge {
@@ -94,29 +96,6 @@ pub(crate) fn edge_anchor(edge: Edge) -> Anchor {
         Edge::Bottom => Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
         Edge::Left => Anchor::LEFT | Anchor::TOP | Anchor::BOTTOM,
         Edge::Right => Anchor::RIGHT | Anchor::TOP | Anchor::BOTTOM,
-    }
-}
-
-/// A tray item's menu, hung off the strip or off the tray's own panel.
-pub struct Popout {
-    pub win: CardWindow,
-    /// The item's dbusmenu (`traymenu`).
-    menu: Option<Menu>,
-}
-
-impl Popout {
-    /// Lays its content out at the card's content rect this frame.
-    fn layout(&mut self, kit: &mut Kit) {
-        let card = &mut self.win.card;
-        let (rect, alpha) = card.content;
-        let clip = card.content_clip();
-        if let Some(menu) = &mut self.menu {
-            menu.layout(kit, &mut card.scene, rect, alpha, clip, self.win.surface.scale());
-        }
-    }
-
-    fn menu_hit(&self, x: f64, y: f64) -> Option<Hit> {
-        self.menu.as_ref()?.hit(x.floor() as i32, y.floor() as i32)
     }
 }
 
@@ -746,64 +725,6 @@ impl App {
         self.bar_wl().map(|o| self.output_name(o)).unwrap_or_default()
     }
 
-    /// The open panel `id`'s own [`panel::Panel::status`]; `None` when it
-    /// is not up.
-    pub fn panel_status(&self, id: PanelId) -> Option<serde_json::Value> {
-        Some(self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(id))?.module.status())
-    }
-
-    /// The open panel `id` as its module `T`, read without drawing it again.
-    pub fn panel_ref<T: panel::Panel>(&self, id: PanelId) -> Option<&T> {
-        let host = self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(id))?;
-        let module: &dyn std::any::Any = &*host.module;
-        module.downcast_ref::<T>()
-    }
-
-    /// The open panel `id` as its module `T`, for a verb only that panel
-    /// takes (`calendar select`); `None` when it is not up.
-    pub fn panel_mut<T: panel::Panel>(&mut self, id: PanelId) -> Option<&mut T> {
-        let host = self.panel.as_mut().filter(|p| p.is_open() && p.panel() == Some(id))?;
-        self.panel_dirty = true;
-        let module: &mut dyn std::any::Any = &mut *host.module;
-        module.downcast_mut::<T>()
-    }
-
-    /// The open panel; the gallery, the centre and a peek are no panel's.
-    pub fn panel_open(&self) -> Option<Name> {
-        self.panel
-            .as_ref()
-            .filter(|p| p.is_open())
-            .and_then(|p| match p.panel() {
-                Some(id) => Some(Name::Panel(id)),
-                None => p.id().starts_with(fs_chrome::plugins::PLUGIN_PREFIX).then_some(Name::Plugin(p.id())),
-            })
-            .or_else(|| self.launcher_panel().map(Name::Panel))
-    }
-
-    /// Whether `id` is the open panel.
-    pub fn shows(&self, id: PanelId) -> bool {
-        self.panel_open() == Some(Name::Panel(id))
-    }
-
-    pub fn gallery_open(&self) -> bool {
-        self.panel.as_ref().is_some_and(|p| p.is_open() && p.id() == "gallery")
-    }
-
-    /// The region whose chevron opened the quick settings card, while it
-    /// is open; the sidebar's chevron button stands for the right region's.
-    pub fn overflow_open(&self) -> Option<BarRegion> {
-        match self.quick_from()? {
-            quick::Origin::Chevron(r) => Some(r),
-            quick::Origin::Sidebar => Some(BarRegion::Right),
-            quick::Origin::Ipc => None,
-        }
-    }
-
-    /// What opened the quick settings card, while it is open.
-    fn quick_from(&self) -> Option<quick::Origin> {
-        self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(PanelId::QuickSettings)).map(|p| p.from)
-    }
-
     /// Marks the cell whose card is open.
     fn sync_bar_open(&mut self, now: Instant) {
         let panel = self.panel_open().and_then(Name::panel);
@@ -954,339 +875,6 @@ impl App {
         let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
         surface.wait_map = true;
         surface
-    }
-
-
-    /// A panel by name, hung at `anchor` along the line (its own cell's
-    /// centre) or at the line's end. A panel opened over another hands the
-    /// card over.
-    pub fn set_panel(&mut self, name: impl Into<Name>, open: bool, anchor: Option<f64>) {
-        self.set_panel_from(name.into(), open, anchor, quick::Origin::Ipc);
-    }
-
-    /// Where the control `from` names sits along the line.
-    fn opener_anchor(&self, from: quick::Origin) -> Option<f64> {
-        match from {
-            quick::Origin::Chevron(region) => live!(self).bar.chevron_anchor(region),
-            quick::Origin::Sidebar => live!(self).bar.sidebar_anchor(crate::surfaces::sidebar::Intent::Overflow),
-            quick::Origin::Ipc => None,
-        }
-    }
-
-    /// The quick settings card from `from`, under its chevron or the
-    /// sidebar's button, or shut. A chevron's click closes the card
-    /// whichever chevron opened it.
-    pub fn set_quick(&mut self, from: quick::Origin, open: bool) {
-        if !open {
-            self.set_panel(PanelId::QuickSettings, false, None);
-            return;
-        }
-        // Open from elsewhere, the card is made again for this opener's
-        // extras and place.
-        if self.quick_from().is_some_and(|f| f != from) {
-            self.close_panels();
-        }
-        let anchor = self.opener_anchor(from);
-        self.set_panel_from(Name::Panel(PanelId::QuickSettings), true, anchor, from);
-    }
-
-    fn set_panel_from(&mut self, name: Name, open: bool, anchor: Option<f64>, from: quick::Origin) {
-        if let Name::Panel(id) = name {
-            match id.home() {
-                Home::Card => {}
-                Home::Launcher => {
-                    if open {
-                        self.menu_panel(id);
-                    } else if self.launcher_panel() == Some(id) {
-                        self.menu_close();
-                    }
-                    return;
-                }
-                Home::Modal => {
-                    if open {
-                        self.atlas_show();
-                    } else {
-                        self.atlas_close();
-                    }
-                    return;
-                }
-            }
-        }
-        let now = Instant::now();
-        // A menu hangs off the popout under it and goes with it, or with
-        // whatever replaces it.
-        let kept = open && self.panel_open() == Some(name);
-        if !kept {
-            self.close_tray_menu();
-        }
-        if !open {
-            if self.panel_open() == Some(name) {
-                self.close_panels();
-            }
-            return;
-        }
-        if kept {
-            return;
-        }
-        self.atlas_close();
-        self.overlay_close();
-        let module: Option<Box<dyn panel::Panel>> = match name {
-            Name::Panel(id) => {
-                let bar = &live!(self).bar;
-                panel::build(id, panel::Args { tiles: bar.quick_extras(from.region()), edge: bar.edge() })
-            }
-            Name::Plugin(key) => Some(Box::new(panel::plugin::PluginPanel::new(key))),
-        };
-        let Some(module) = module else { return };
-        self.open_host(module, name.as_str(), from, anchor, now);
-    }
-
-    pub fn set_gallery(&mut self, open: bool) {
-        let now = Instant::now();
-        if !open {
-            if self.gallery_open() {
-                self.close_panels();
-            }
-            return;
-        }
-        if !self.gallery_open() {
-            self.open_host(Box::new(panel::gallery::Gallery::new()), "gallery", quick::Origin::Ipc, None, now);
-        }
-    }
-
-    /// `module` in the panel host as `name`, opened by `from`.
-    fn open_host(&mut self, module: Box<dyn panel::Panel>, name: &'static str, from: quick::Origin, anchor: Option<f64>, now: Instant) {
-        let place = self.chrome().place(anchor);
-        self.open_host_at(module, name, from, place, now);
-    }
-
-    fn open_host_at(&mut self, module: Box<dyn panel::Panel>, id: &'static str, from: quick::Origin, place: Place, now: Instant) {
-        if self.panel.as_ref().is_some_and(|p| p.id() == id && p.is_open()) {
-            return;
-        }
-        let layer = self.overlay("formalshell:panel", Layer::Overlay, Anchor::all(), (0, 0), -1);
-        let keyboard = if module.takes_keyboard() { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
-        layer.set_keyboard_interactivity(keyboard);
-        layer.commit();
-        let surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
-        let mut host = Host::new(module, id, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
-        host.from = from;
-        let outs = host.start(&self.store, self.runtime.as_ref());
-        match self.panel.take() {
-            Some(mut old) if old.is_open() => {
-                host.take_over(old.win.card.live());
-                old.hand_over();
-                self.outgoing = Some(old);
-            }
-            Some(old) => self.outgoing = Some(old),
-            None => {}
-        }
-        host.win.card.set_open(now, true);
-        self.panel = Some(host);
-        self.panel_outs(Holder::Host, outs);
-        self.tips.hide(None, now);
-        self.sync_bar_open(now);
-        crate::trace::mapped(crate::trace::Surface::Panel(Some(id)), crate::trace::State::Mapped);
-    }
-
-    /// The input region over a popout's resting rect, or its whole surface
-    /// while a menu is open.
-    fn set_popout_input(compositor: &CompositorState, p: &mut Popout) {
-        // A menu takes input everywhere on its surface: a click off the
-        // card dismisses it.
-        let size = p.win.card.scene.size;
-        let r = if p.menu.is_some() { IRect::new(0, 0, size.w, size.h) } else { p.win.card.rest_rect() };
-        p.win.sync_region(compositor, r, &[]);
-    }
-
-    /// A tray item's menu, hung off `anchor` along the line (its icon's
-    /// centre) or at the strip's end, and off the tray's panel when
-    /// `over_panel`, which it then stands clear of.
-    fn open_tray_menu(&mut self, key: &str, anchor: Option<f64>, over_panel: bool) -> Result<(), String> {
-        let Some(item) = self.store.tray.by_key(key).cloned() else { return Ok(()) };
-        if !item.has_menu {
-            return Err(format!("tray item '{}' has no menu", item.id));
-        }
-        let now = Instant::now();
-        self.drop_tray_menu();
-        self.tips.hide(None, now);
-        let owner_edge = self.panel.as_ref().filter(|h| over_panel && h.is_open()).map(|h| h.win.card.rest().y1);
-        if owner_edge.is_none() {
-            self.close_panels();
-        }
-        let chrome = self.chrome();
-        let theme = &self.store.theme.theme;
-        let edge = chrome.edge;
-        let vertical = edge.is_vertical();
-        let line_at = owner_edge.unwrap_or(chrome.line());
-        let (_, output_height) = self.output_size();
-        let pad = theme.space.screen_padding;
-        let cap = if vertical { output_height - pad * 2.0 } else { output_height - line_at - theme.space.bar_margin - pad };
-        let mut menu = Menu::new(theme, item.key.clone(), item.tooltip.clone());
-        menu.cap = cap.max(menu.width());
-        let width = menu.width();
-        let oriented = |h: f64| if vertical { (h, width) } else { (width, h) };
-        let anchor = anchor.unwrap_or(live!(self).bar.length() as f64);
-        menu.anchor = anchor;
-        let size = Sizing::Card { size: oriented(menu.cap), anchor, length: live!(self).bar.length() };
-        let mut card = Card::new(theme, CardSpec { role: fs_theme::style::Role::Menu, ..CardSpec::new(edge, line_at, size) }, self.motion_scale, self.cast);
-        card.resize(now, anchor, live!(self).bar.length(), pad, oriented(menu.height().min(menu.cap)));
-        menu.morph.jump(menu.height().min(menu.cap));
-        let surface = self.popout_surface(&card, Layer::Overlay);
-        let mut popout = Popout { win: CardWindow::new(card, surface), menu: Some(menu) };
-        Self::set_popout_input(&self.compositor, &mut popout);
-        self.tray_menu = Some(popout);
-        let (key, largest) = (item.key, self.store.display.scales.largest());
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| tray::open_menu(ctx, key, largest));
-        }
-        crate::trace::mapped(crate::trace::Surface::TrayMenu, crate::trace::State::Mapped);
-        Ok(())
-    }
-
-    /// Closes the menu through its exit, telling the item.
-    pub fn close_tray_menu(&mut self) {
-        let now = Instant::now();
-        let Some(p) = self.tray_menu.as_mut().filter(|p| p.win.card.is_open()) else { return };
-        p.win.card.set_open(now, false);
-        let key = p.menu.as_ref().map(|m| m.key.clone());
-        if let (Some(key), Some(rt)) = (key, &self.runtime) {
-            rt.service(move |ctx| tray::close_menu(ctx, key));
-        }
-    }
-
-    /// Takes the menu off screen at once, telling the item if it was up.
-    fn drop_tray_menu(&mut self) {
-        self.close_tray_menu();
-        self.tray_menu = None;
-    }
-
-    /// The menu's card at the height its rows ask for, capped to the room.
-    fn resize_menu(&mut self) {
-        let now = Instant::now();
-        let vertical = live!(self).bar.edge().is_vertical();
-        let length = live!(self).bar.length();
-        let pad = self.store.theme.theme.space.screen_padding;
-        if let Some(p) = &mut self.tray_menu {
-            let mapped = p.win.card.is_open() && p.win.surface.mapped();
-            if let Some(m) = &mut p.menu {
-                let (w, h) = (m.width(), m.height().min(m.cap));
-                // The first size lands at once; every later one morphs.
-                if mapped && m.morph.target() > 0.0 {
-                    let ms = crate::motion::Kind::Spatial.ms(&self.store.theme.theme) * self.motion_scale;
-                    m.morph.set(now, h, ms);
-                } else {
-                    m.morph.jump(h);
-                }
-                let hv = m.morph.value(now);
-                let anchor = m.anchor;
-                p.win.card.resize(now, anchor, length, pad, if vertical { (hv, w) } else { (w, hv) });
-            }
-            Self::set_popout_input(&self.compositor, p);
-        }
-    }
-
-    /// The menu's card on its way to the height its rows ask for, a frame at a time.
-    fn step_menu(&mut self, now: Instant) {
-        let vertical = live!(self).bar.edge().is_vertical();
-        let length = live!(self).bar.length();
-        let pad = self.store.theme.theme.space.screen_padding;
-        let Some(p) = &mut self.tray_menu else { return };
-        let Some(m) = &p.menu else { return };
-        if !m.morph.running(now) {
-            return;
-        }
-        let (w, h) = (m.width(), m.morph.value(now));
-        p.win.card.resize(now, m.anchor, length, pad, if vertical { (h, w) } else { (w, h) });
-    }
-
-    /// The tray changed: a menu waiting on its tree gets it, one whose item
-    /// went away shuts.
-    fn tray_changed(&mut self) {
-        let Some(p) = &mut self.tray_menu else { return };
-        let Some(menu) = &mut p.menu else { return };
-        if self.store.tray.by_key(&menu.key).is_none() {
-            self.close_tray_menu();
-            return;
-        }
-        if let Some(tree) = self.store.tray.menu.as_ref().filter(|m| m.key == menu.key) {
-            menu.set_tree(Some(&tree.root));
-        }
-        self.resize_menu();
-    }
-
-    fn menu_outcome(&mut self, outcome: Outcome) {
-        let Some(key) = self.tray_menu.as_ref().and_then(|p| p.menu.as_ref()).map(|m| m.key.clone()) else { return };
-        match outcome {
-            Outcome::None => {}
-            Outcome::Click(id) => {
-                if let Some(rt) = &self.runtime {
-                    rt.service(move |ctx| tray::menu_click(ctx, key, id));
-                }
-                self.close_tray_menu();
-            }
-            Outcome::Toggled(id, opened) => {
-                if let (true, Some(rt)) = (opened, &self.runtime) {
-                    let largest = self.store.display.scales.largest();
-                    rt.service(move |ctx| tray::menu_about_to_show(ctx, key, id, largest));
-                }
-                self.resize_menu();
-            }
-        }
-    }
-
-    fn open_menu_mut(&mut self) -> Option<&mut Menu> {
-        self.tray_menu.as_mut().filter(|p| p.win.card.is_open()).and_then(|p| p.menu.as_mut())
-    }
-
-    /// `tray activate`: the item's own Activate, as its cell's click does.
-    pub fn tray_activate(&self, id: &str) -> Result<(), String> {
-        let Some(item) = self.store.tray.by_id(id) else { return Err(format!("no tray item with id '{id}'")) };
-        let key = item.key.clone();
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| tray::activate(ctx, key));
-        }
-        Ok(())
-    }
-
-    /// `tray menu`: opens over the second bar while that is up, as a right
-    /// click on its cell does.
-    pub fn tray_menu(&mut self, id: &str) -> Result<(), String> {
-        let Some(key) = self.store.tray.by_id(id).map(|i| i.key.clone()) else {
-            return Err(format!("no tray item with id '{id}'"));
-        };
-        let over = self.shows(PanelId::TrayOverflow);
-        self.open_tray_menu(&key, None, over)
-    }
-
-    pub fn tray_menu_cursor(&mut self, delta: i32) -> Result<(), String> {
-        let m = self.open_menu_mut().ok_or("no tray menu open")?;
-        m.move_cursor(delta);
-        Ok(())
-    }
-
-    pub fn tray_menu_activate(&mut self) -> Result<(), String> {
-        let m = self.open_menu_mut().ok_or("no tray menu open")?;
-        let outcome = m.activate_cursor();
-        self.menu_outcome(outcome);
-        Ok(())
-    }
-
-    /// `tray status`'s `overflow` block: whether the second bar is up and how
-    /// many icons the strip kept.
-    pub fn tray_inline(&self) -> usize {
-        tray_cell::inline_count().min(self.store.tray.items.len())
-    }
-
-    pub fn close_panels(&mut self) {
-        self.close_tray_menu();
-        let now = Instant::now();
-        if let Some(p) = &mut self.panel {
-            p.close(now);
-        }
-        self.panel_dirty = true;
-        self.tips.hide(None, now);
-        self.sync_bar_open(now);
     }
 
     pub fn set_scrim(&mut self, now: Instant, open: bool) {
@@ -1680,133 +1268,6 @@ impl App {
             }
         }
     }
-
-    /// What a panel asked of the shell outside it, in the order it asked.
-    /// `holder` is whatever holds the card, and closes it its own way.
-    pub(crate) fn panel_outs(&mut self, holder: Holder, outs: Vec<Out>) {
-        for out in outs {
-            self.panel_out(holder, out);
-        }
-        self.panel_dirty = true;
-    }
-
-    /// The holder's card closed: the panel host's, or the launcher with it.
-    fn holder_close(&mut self, holder: Holder) {
-        match holder {
-            Holder::Host => self.close_panels(),
-            Holder::Launcher => self.menu_close(),
-        }
-    }
-
-    fn panel_out(&mut self, holder: Holder, out: Out) {
-        match out {
-            Out::Close => self.holder_close(holder),
-            Out::Summon(panel::ATLAS) => self.atlas_show(),
-            Out::Summon(route) => {
-                // The launcher keeps its window for the route it goes to.
-                let from = match holder {
-                    Holder::Host => {
-                        self.close_panels();
-                        None
-                    }
-                    Holder::Launcher => {
-                        let from = self.launcher_panel();
-                        self.launcher.close();
-                        from
-                    }
-                };
-                self.menu_open(Some(route));
-                if route == crate::surfaces::launcher::PICKER_ROUTE {
-                    self.launcher.picker.from = from;
-                }
-            }
-            Out::Panel(id, _) if holder == Holder::Launcher && id.home() == Home::Launcher => self.menu_panel(id),
-            Out::Panel(id, then) => {
-                // The card handing over is the one the new card goes back to.
-                let opener = match holder {
-                    Holder::Host => self.panel.as_ref().filter(|h| h.is_open()).and_then(|h| {
-                        Some(Opener { id: h.panel()?, from: h.from, title: h.title(&self.store, &self.store.theme.theme) })
-                    }),
-                    Holder::Launcher => {
-                        self.menu_close();
-                        None
-                    }
-                };
-                self.set_panel(id, true, None);
-                if holder == Holder::Host
-                    && let Some(h) = self.panel.as_mut().filter(|h| h.is_open() && h.panel() == Some(id))
-                {
-                    h.back = opener;
-                }
-                if let Some(stop) = then {
-                    self.panel_activate(id, stop);
-                }
-            }
-            Out::Back(id, from) => {
-                let anchor = self.opener_anchor(from);
-                self.set_panel_from(Name::Panel(id), true, anchor, from);
-            }
-            Out::Menu(key, anchor) => {
-                let _ = self.open_tray_menu(&key, anchor, true);
-            }
-            Out::Do(verb) => self.panel_verb(verb),
-            Out::Apply(diff) => {
-                self.apply(*diff);
-            }
-            Out::Launch(id, command) => {
-                if !command.is_empty() {
-                    crate::services::launch::spawn(&self.store, &id, &crate::services::launch::scoped(&command));
-                }
-            }
-            Out::Act(action) => {
-                let anchor = match holder {
-                    Holder::Host => self.panel.as_ref().and_then(|h| h.place.anchor),
-                    Holder::Launcher => None,
-                };
-                let anchor = anchor.unwrap_or(live!(self).bar.length() as f64);
-                self.holder_close(holder);
-                self.act(action, anchor);
-            }
-        }
-    }
-
-    /// A panel's call of the shell, through the functions its IPC verb
-    /// calls; a refusal is logged.
-    fn panel_verb(&mut self, verb: panel::Verb) {
-        use panel::Verb;
-        let done = match &verb {
-            Verb::Screenshot => capture_host::shot_pick(self, "smart", capture_host::Processing::Default).map(drop),
-            Verb::Lock => self.lock(),
-            Verb::Logout => {
-                self.logout();
-                Ok(())
-            }
-            Verb::Overview => {
-                self.overview_action(overview::Action::Open);
-                Ok(())
-            }
-            Verb::Caffeinate => {
-                self.set_caffeinated(!self.store.caffeinate.active);
-                Ok(())
-            }
-            Verb::Hdr => self.hdr.toggle(&self.store),
-            Verb::HdrOutput(output, on) => self.hdr.set(&self.store, output, *on),
-            Verb::RecordStop => capture_host::record::stop(self),
-        };
-        if let Err(e) = done {
-            eprintln!("panel: {verb:?}: {e}");
-        }
-    }
-
-    /// Enter on `stop` in the open panel `id`, as the keyboard would;
-    /// `false` when that panel is not up.
-    pub fn panel_activate(&mut self, id: PanelId, stop: crate::ui::On) -> bool {
-        let Some(h) = self.panel.as_mut().filter(|p| p.is_open() && p.panel() == Some(id)) else { return false };
-        let outs = h.activate(stop, &self.store, self.runtime.as_ref());
-        self.panel_outs(Holder::Host, outs);
-        true
-    }
-
 }
 
 impl crate::surface::ScaleHandler for App {

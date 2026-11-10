@@ -292,7 +292,7 @@ paths = ["crates/fs-dbus/**"]
 runs = ["--tray", "--tray-overflow", "--panel power", "--panel network", "--power", "--profiles-pill", "--wifi", "--quick-settings-devices"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formalshell-rs/src/surfaces/panel/tray.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/services/tray.rs", "crates/formalshell-rs/src/ipc/tray.rs", "crates/fs-tray/**"]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formalshell-rs/src/surfaces/panel/tray.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/wayland/tray_menu.rs", "crates/formalshell-rs/src/services/tray.rs", "crates/formalshell-rs/src/ipc/tray.rs", "crates/fs-tray/**"]
 runs = ["--tray", "--tray-overflow", "--tray --sidebar", "--tray-overflow --sidebar"]
 
 [[rule]]
@@ -372,6 +372,10 @@ runs = ["--switcher", "--switcher-keys", "--spaces", "--launcher-preview"]
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/mod.rs", "crates/formalshell-rs/src/ipc/panel.rs", "crates/fs-chrome/src/bar/panels.rs"]
 runs = ["--panel audio", "--panel-anchor", "--panel-at 1", "--panel-emerge", "--panel-handoff", "--panel-keys", "--deform"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/panel.rs"]
+runs = ["--panel audio", "--panel-anchor", "--panel-at 1", "--panel-emerge", "--panel-handoff", "--panel-keys", "--quick-settings", "--chevron", "--settings-ui", "--tray-overflow"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/audio.rs", "crates/formalshell-rs/src/services/devices/audio.rs", "crates/fs-audio/src/backend.rs", "crates/fs-audio/src/lib.rs", "crates/fs-system/src/audio.rs"]
