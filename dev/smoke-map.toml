@@ -125,7 +125,10 @@ paths = [
 # Launcher
 [[rule]]
 paths = [
-  "crates/formalshell-rs/src/surfaces/launcher.rs",
+  "crates/formalshell-rs/src/surfaces/launcher/mod.rs",
+  "crates/formalshell-rs/src/surfaces/launcher/rows.rs",
+  "crates/formalshell-rs/src/surfaces/launcher/preview.rs",
+  "crates/formalshell-rs/src/surfaces/launcher/settings.rs",
   "crates/formalshell-rs/src/wayland/launcher.rs",
   "crates/formalshell-rs/src/services/menu.rs",
   "crates/formalshell-rs/src/ipc/menu.rs",
@@ -444,6 +447,14 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/quick/**", "crates/formalshel
 runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power", "--quick-settings-devices", "--quick-settings-devices --light", "--chevron", "--ipad"]
 
 [[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/launcher/monitor.rs"]
+runs = ["--monitor", "--processes"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/launcher/mirror.rs"]
+runs = ["--mirror"]
+
+[[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalshell-rs/src/services/info/monitor.rs", "crates/formalshell-rs/src/ipc/monitor.rs", "crates/fs-system/src/monitor/**", "crates/formalshell-rs/src/services/proc.rs", "crates/formalshell-rs/src/services/info/procs.rs"]
 runs = ["--monitor", "--processes", "--gpu"]
 
@@ -460,7 +471,7 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/settings.rs"]
 runs = ["--settings-ui", "--settings-ui --light"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/launcher.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/panel/mod.rs", "crates/formalshell-rs/src/ipc/panel.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/launcher/mod.rs", "crates/formalshell-rs/src/surfaces/launcher/settings.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/panel/mod.rs", "crates/formalshell-rs/src/ipc/panel.rs"]
 runs = ["--settings-ui", "--bluez-player"]
 
 [[rule]]
@@ -521,7 +532,7 @@ paths = ["crates/formalshell-rs/src/services/launch.rs", "dev/smoke.d/launch.sh"
 runs = ["--launch", "--launcher-actions"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/appmenu.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/launcher/mod.rs", "crates/formalshell-rs/src/surfaces/launcher/rows.rs", "crates/formalshell-rs/src/surfaces/panel/appmenu.rs"]
 runs = ["--launch"]
 
 [[rule]]

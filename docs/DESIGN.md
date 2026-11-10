@@ -479,7 +479,7 @@ follows animated children rides their clock. Sizes follow content live on
 freezes its size first. That rule has
 one shape wherever a card's own width or height is the thing changing (the
 panel host's `morph` in `formalshell-rs/src/surfaces/panel/host.rs`, and the
-launcher's own in `formalshell-rs/src/surfaces/launcher.rs`, M57 D7): the
+launcher's own in `formalshell-rs/src/surfaces/launcher/mod.rs`, M57 D7): the
 target tracked while open, frozen on close, and armed off the surface being
 mapped rather than its enter having settled, so content landing a tick after
 the open (a Wi-Fi scan, a keyed row sync) retargets the running clock
@@ -874,7 +874,7 @@ of budding off the bar's line, so there is no
 let-go, no gap published to the line, and no shoulders either: the card
 is a plain rounded rectangle on all four sides.
 
-**Launcher** (`formalshell-rs/src/surfaces/launcher.rs`, launcher spec
+**Launcher** (`formalshell-rs/src/surfaces/launcher/mod.rs`, launcher spec
 §1 and §2): a `Menu`-wide card at 30% from the top. The field draws the
 query at `LAUNCHER.field_size` (21px sans, 400) with `lg` round it, no
 search icon and no close button, over a full-bleed rule; inside a mode

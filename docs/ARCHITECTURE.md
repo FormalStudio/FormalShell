@@ -318,7 +318,12 @@ is the whole output and paints the ring under its cells.
 
 | Module | Surface |
 |---|---|
-| `surfaces/launcher.rs` | the launcher: header, body (app grid and rows), footer, every route |
+| `surfaces/launcher/mod.rs` | the launcher: model, header, body, footer, every route |
+| `surfaces/launcher/rows.rs` | row builders, wallpaper picker tiles and the service-to-menu adapters |
+| `surfaces/launcher/monitor.rs` | the monitor view: history strip and process rows |
+| `surfaces/launcher/mirror.rs` | the camera mirror's feed |
+| `surfaces/launcher/preview.rs` | the preview pane |
+| `surfaces/launcher/settings.rs` | the embedded settings and info panels |
 | `surfaces/toasts.rs` | the toast stack, one overlay surface for as long as anything is up |
 | `surfaces/panel/center.rs` | the notification centre |
 | `surfaces/panel/quick/` | quick settings, the chevron's card (`quicksettings` target) |
