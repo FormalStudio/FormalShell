@@ -27,6 +27,17 @@ rig_password=formalshell-test
 # the others on real daemons in a VM rig guest. dev/lint.sh tests the rest.
 rig_session_checks="fs-tray fs-notifd fs-mpris fs-dbus"
 rig_vm_checks="fs-auth fs-audio fs-bluez fs-network fs-upower"
+# The slot users the owner's spec declares: hosts/g815/rig.star's RIG_USERS,
+# hosts/fstestmac/host.star's SLOTS, and the fstestvm guests in
+# hosts/fstestvm/host.star.
+rig_g815_slots=8
+rig_mac_slots=4
+rig_vm_slots=4
+
+# The port on g815 a VM rig guest's ssh is forwarded from
+# (hosts/fstestvm/host.star's `vm(... port = 2222 + n)`).
+# rig_vm_port <n>
+rig_vm_port() { echo $((2222 + $1)); }
 
 rig_is_session_check() { case " $rig_session_checks " in *" $1 "*) return 0 ;; esac; return 1; }
 rig_is_vm_check() { case " $rig_vm_checks " in *" $1 "*) return 0 ;; esac; return 1; }

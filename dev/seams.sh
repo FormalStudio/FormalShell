@@ -73,7 +73,7 @@ if [ -n "${FS_VM_RESULT:-}" ]; then
   say "linking this tree's build over the guest's package"
   f start | tail -1
   until_guest "ssh" 120 true
-  rig_guest_copy_result "$vm" "$((2222 + FS_VM_SLOT))"
+  rig_guest_copy_result "$vm" "$(rig_vm_port "$FS_VM_SLOT")"
   rig_guest_link_result "$vm" keep
   f stop | tail -1
 fi

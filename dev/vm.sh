@@ -43,8 +43,7 @@ usage() {
 }
 [ $# -gt 0 ] || usage
 
-# The count of fstestvm hosts hosts/fstestvm/host.star declares.
-slots="${FS_VM_SLOTS:-4}"
+slots="${FS_VM_SLOTS:-$rig_vm_slots}"
 spec=$rig_spec
 
 # Every leg's declarations (dev/smoke.sh --manifest); dev/remote.sh hands
@@ -108,7 +107,7 @@ case "$FS_VM_SLOT" in
 esac
 [ "$verb" = hold ] && exec "$@"
 vm="fstestvm$FS_VM_SLOT"
-port=$((2222 + FS_VM_SLOT))
+port=$(rig_vm_port "$FS_VM_SLOT")
 
 stop_vm() { fspec vm stop "$vm" --spec "$spec" >/dev/null 2>&1 || true; }
 # A slot someone left running is stopped first: a resume never joins a run.
@@ -129,10 +128,10 @@ artifacts="${FS_ARTIFACTS:-$repo_root/artifacts}"
 
 case "$verb" in
   shell)
-    ssh -t "${rig_ssh_opts[@]}" "$vm" "cd ~/formalshell; exec bash -l" || true
+    ssh -t "${rig_ssh_opts[@]}" "$vm" "cd ~/$rig_remote_dir; exec bash -l" || true
     ;;
   check)
-    guest_ssh "cd ~/formalshell && FS_CHECK_BIN=$rig_vm_result exec dev/check.sh $1"
+    guest_ssh "cd ~/$rig_remote_dir && FS_CHECK_BIN=$rig_vm_result exec dev/check.sh $1"
     ;;
   greeter)
     # The greeter's session script and the desktop's config run the guest's
@@ -141,23 +140,23 @@ case "$verb" in
     rig_guest_link_result "$vm"
     status=0
     out_file=$(mktemp)
-    guest_ssh "cd ~/formalshell && exec dev/smoke-greeter.sh" > "$out_file" 2>&1 || status=$?
+    guest_ssh "cd ~/$rig_remote_dir && exec dev/smoke-greeter.sh" > "$out_file" 2>&1 || status=$?
     cat "$out_file"
     artifacts="$artifacts/greeter"
     for remote in $(grep -oE '^SMOKE_GREETER_[A-Z]+ [^[:space:]]+' "$out_file" | awk '{print $2}'); do
-      rig_pull_one "$vm" "formalshell/$remote" "$artifacts" || status=1
+      rig_pull_one "$vm" "$rig_remote_dir/$remote" "$artifacts" || status=1
     done
     rm -f "$out_file"
     for remote in greeter-session.log greetd-journal.txt; do
-      guest_ssh "test -e formalshell/artifacts/greeter/$remote" || continue
-      rig_pull_one "$vm" "formalshell/artifacts/greeter/$remote" "$artifacts" || status=1
+      guest_ssh "test -e $rig_remote_dir/artifacts/greeter/$remote" || continue
+      rig_pull_one "$vm" "$rig_remote_dir/artifacts/greeter/$remote" "$artifacts" || status=1
     done
     exit "$status"
     ;;
   smoke)
     out_file=$(mktemp)
     status=0
-    guest_ssh "cd ~/formalshell && $(rig_forward_env FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_SMOKE_SCALE)FS_RESULT=$rig_vm_result exec ./dev/smoke.sh $*" > "$out_file" 2>&1 || status=$?
+    guest_ssh "cd ~/$rig_remote_dir && $(rig_forward_env FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_SMOKE_SCALE)FS_RESULT=$rig_vm_result exec ./dev/smoke.sh $*" > "$out_file" 2>&1 || status=$?
     cat "$out_file"
     rig_pull_smoke "$vm" "$vm" "$artifacts" "$status" "$out_file" "$@" || status=$?
     rm -f "$out_file"

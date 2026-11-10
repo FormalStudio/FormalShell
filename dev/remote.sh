@@ -67,12 +67,10 @@ fi
 export FS_RIG
 case "$FS_RIG" in
   g815)
-    # The count of slot users hosts/g815/rig.star declares.
-    slots="${FS_G815_SLOTS:-8}"
+    slots="${FS_G815_SLOTS:-$rig_g815_slots}"
     ;;
   mac)
-    # hosts/fstestmac/host.star's SLOTS.
-    slots=4
+    slots=$rig_mac_slots
     ;;
   *) echo "FS_RIG must be g815 or mac, got '$FS_RIG'" >&2; exit 1 ;;
 esac
