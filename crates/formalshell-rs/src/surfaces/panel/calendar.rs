@@ -27,7 +27,7 @@ use serde_json::json;
 
 use super::{Effect, Panel, View};
 use crate::services::info::kick;
-use crate::services::wants::{Source, Want};
+use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Size, Type, Weight, w};
 
@@ -35,7 +35,6 @@ const WEEKDAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
 pub struct Calendar {
-    _want: Option<Want>,
     open: bool,
     year: i32,
     month: u32,
@@ -58,7 +57,7 @@ fn key(index: usize) -> String {
 impl Calendar {
     pub fn new(open: bool) -> Self {
         let t = today();
-        Self { _want: open.then(|| Want::new(Source::Calendar)), open, year: t.year(), month: t.month(), selected: t, show_life: None, last_year_click: None, cursor: None }
+        Self { open, year: t.year(), month: t.month(), selected: t, show_life: None, last_year_click: None, cursor: None }
     }
 
     fn cells(&self) -> Vec<grid::Cell> {
@@ -98,6 +97,10 @@ impl Panel for Calendar {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Calendar, Topic::Clock, Topic::State, Topic::Config]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::Calendar]
     }
 
     fn columns(&self) -> usize {

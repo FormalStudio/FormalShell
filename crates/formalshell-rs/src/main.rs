@@ -91,7 +91,6 @@ fn main() {
         .expect("runtime channel");
     let runtime = Runtime::start(Publisher::new(sender), |ctx| {
         services::start(ctx);
-        ipc::start(ctx);
     });
     app.runtime = Some(runtime);
     trace::phase("runtime");

@@ -67,7 +67,7 @@ impl Speed {
 }
 
 /// False when a test is already running.
-pub fn speed_start(ctx: &Ctx) -> bool {
+pub(super) fn speed_start(ctx: &Ctx) -> bool {
     let started = INNER.with_borrow_mut(|i| {
         if i.speed.running() {
             return None;
@@ -91,7 +91,7 @@ pub fn speed_start(ctx: &Ctx) -> bool {
 }
 
 /// `_stopSpeedTest`: back to idle, results dropped.
-pub fn speed_stop() {
+pub(super) fn speed_stop() {
     let was = INNER.with_borrow_mut(|i| {
         i.speed_stop = None;
         let was = i.speed.phase != Phase::Idle;

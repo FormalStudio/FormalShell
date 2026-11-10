@@ -11,9 +11,7 @@
 //! adapter to change (it powering up) or for the panel to reopen or rescan,
 //! rather than retrying on a timer.
 
-use std::cell::RefCell;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
@@ -25,6 +23,7 @@ use super::action::ActionInFlight;
 use super::headsets::{self, Headset};
 use crate::runtime::Ctx;
 use crate::services::media::{self, Remote};
+use crate::services::wants::{self, Source};
 use crate::store;
 
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -87,10 +86,6 @@ impl Bluetooth {
         let connected = self.devices.iter().filter(|d| d.connected).count();
         serde_json::json!({"available": true, "enabled": powered, "connected": connected, "devices": rows})
     }
-}
-
-thread_local! {
-    static BLUEZ: RefCell<Option<fs_bluez::Bluez>> = const { RefCell::new(None) };
 }
 
 /// The adapter state's name.
@@ -164,37 +159,32 @@ fn earbuds_devices(state: &fs_bluez::state::State) -> Vec<fs_devices::bluetooth:
 /// No system bus, or no BlueZ client on it: no adapter and no headsets.
 fn absent(ctx: &Ctx) {
     ctx.publish(store::Diff::Bluetooth(Bluetooth { headsets: Some(Vec::new()), ..Bluetooth::default() }));
-    super::earbuds::bluetooth(Vec::new());
+    super::earbuds::send(super::earbuds::Cmd::Bluetooth(Vec::new()));
 }
 
-/// What the panel asks of the service.
+/// What the panels, the launcher and IPC ask of the service.
 #[derive(Clone, Debug)]
-pub enum Ask {
-    Open(bool),
+pub enum Cmd {
     Run(BtAddress, ActionKind),
     Rescan,
     Power(bool),
+    /// The default adapter's radio flipped (the cell's right click).
+    TogglePower,
+    /// The device's `Trusted` written as asked, with no row in flight.
+    Trust(BtAddress, bool),
     /// A media source's transport, to its `MediaPlayer1`.
     Player(String, fs_bluez::PlayerCommand),
 }
 
-static ASKS: LazyLock<(Sender<Ask>, Receiver<Ask>)> = LazyLock::new(async_channel::unbounded);
-static PANEL: AtomicBool = AtomicBool::new(false);
-
-/// The panel's hold on discovery, taken while it is open.
-pub fn panel(open: bool) {
-    if PANEL.swap(open, Ordering::Relaxed) != open {
-        let _ = ASKS.0.try_send(Ask::Open(open));
-    }
-}
+static CMDS: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
 
 /// Callable from any thread.
-pub fn ask(a: Ask) {
-    let _ = ASKS.0.try_send(a);
+pub fn send(c: Cmd) {
+    let _ = CMDS.0.try_send(c);
 }
 
 pub fn player(path: &str, command: fs_bluez::PlayerCommand) {
-    ask(Ask::Player(path.to_owned(), command));
+    send(Cmd::Player(path.to_owned(), command));
 }
 
 /// The devices' players as media sources. One whose position and state did
@@ -223,7 +213,9 @@ enum Done {
 
 enum Wake {
     State(fs_bluez::state::Event),
-    Ask(Ask),
+    Cmd(Cmd),
+    /// The panel's want on every device and discovery.
+    Open(bool),
     Done(Done),
     Gone,
 }
@@ -247,9 +239,9 @@ async fn run(ctx: Ctx) {
         }
     };
     ctx.spawn(monitor.run());
-    BLUEZ.with_borrow_mut(|b| *b = Some(bluez.clone()));
     let (done_tx, done_rx) = async_channel::unbounded::<Done>();
-    let mut open = PANEL.load(Ordering::Relaxed);
+    let wanted = wants::watch(Source::BluetoothDevices);
+    let mut open = false;
     bluez.watch_all(open);
     let mut flight = ActionInFlight::<(BtAddress, ActionKind), (BtAddress, &'static str)>::default();
     let mut arming = false;
@@ -304,13 +296,14 @@ async fn run(ctx: Ctx) {
             }
             let buds = earbuds_devices(&snap);
             if last_buds.as_ref() != Some(&buds) {
-                super::earbuds::bluetooth(buds.clone());
+                super::earbuds::send(super::earbuds::Cmd::Bluetooth(buds.clone()));
                 last_buds = Some(buds);
             }
         }
         refresh = true;
         let wake = async { events.recv().await.map_or(Wake::Gone, Wake::State) }
-            .or(async { ASKS.1.recv().await.map_or(Wake::Gone, Wake::Ask) })
+            .or(async { CMDS.1.recv().await.map_or(Wake::Gone, Wake::Cmd) })
+            .or(async { wanted.recv().await.map_or(Wake::Gone, Wake::Open) })
             .or(async { done_rx.recv().await.map_or(Wake::Gone, Wake::Done) })
             .await;
         match wake {
@@ -343,7 +336,8 @@ async fn run(ctx: Ctx) {
             Wake::Done(Done::Action(generation, result)) => {
                 flight.end(generation, |(address, _)| result.map(|text| (address, text)));
             }
-            Wake::Ask(Ask::Open(on)) => {
+            Wake::Open(on) if on == open => {}
+            Wake::Open(on) => {
                 open = on;
                 if on {
                     refused = false;
@@ -358,19 +352,36 @@ async fn run(ctx: Ctx) {
             }
             // StartDiscovery on a discovering adapter is a no-op, so a
             // rescan stops it and lets the loop above arm it again.
-            Wake::Ask(Ask::Rescan) => {
+            Wake::Cmd(Cmd::Rescan) => {
                 refused = false;
                 generation += 1;
                 on_adapter(&bluez, &ctx, |b, path| async move {
                     let _ = b.stop_discovery(&path).await;
                 })
             }
-            Wake::Ask(Ask::Power(on)) => on_adapter(&bluez, &ctx, |b, path| async move {
+            Wake::Cmd(Cmd::Power(on)) => on_adapter(&bluez, &ctx, |b, path| async move {
                 if let Err(err) = b.set_powered(&path, on).await {
                     eprintln!("bluetooth: {err}");
                 }
             }),
-            Wake::Ask(Ask::Player(path, command)) => {
+            Wake::Cmd(Cmd::TogglePower) => {
+                let Some(adapter) = bluez.state().default_adapter().cloned() else { continue };
+                let b = bluez.clone();
+                ctx.spawn(async move {
+                    if let Err(err) = b.set_powered(&adapter.path, !adapter.powered).await {
+                        eprintln!("bluetooth: {err}");
+                    }
+                });
+            }
+            Wake::Cmd(Cmd::Trust(address, trusted)) => {
+                let b = bluez.clone();
+                ctx.spawn(async move {
+                    if let Err(err) = b.set_trusted(address, trusted).await {
+                        eprintln!("bluetooth: {err}");
+                    }
+                });
+            }
+            Wake::Cmd(Cmd::Player(path, command)) => {
                 let b = bluez.clone();
                 ctx.spawn(async move {
                     if let Err(err) = b.player_command(&path, command).await {
@@ -378,7 +389,7 @@ async fn run(ctx: Ctx) {
                     }
                 });
             }
-            Wake::Ask(Ask::Run(address, kind)) => {
+            Wake::Cmd(Cmd::Run(address, kind)) => {
                 let Some(generation) = flight.begin((address, kind)) else { continue };
                 let (b, tx) = (bluez.clone(), done_tx.clone());
                 ctx.spawn(async move {
@@ -456,28 +467,6 @@ async fn pair(b: &fs_bluez::Bluez, address: BtAddress) -> fs_bluez::Result<()> {
         future::pending().await
     };
     b.pair(address).or(answer).await
-}
-
-/// The bluetooth cell's right click: the default adapter's radio flipped.
-pub fn toggle_power(ctx: &Ctx) {
-    let Some(bluez) = BLUEZ.with_borrow(|b| b.clone()) else { return };
-    ctx.spawn(async move {
-        let Some(adapter) = bluez.state().default_adapter().cloned() else { return };
-        if let Err(err) = bluez.set_powered(&adapter.path, !adapter.powered).await {
-            eprintln!("bluetooth: {err}");
-        }
-    });
-}
-
-/// The device's `Trusted` property written as asked, with no panel row
-/// marked in flight.
-pub fn set_trust(ctx: &Ctx, address: BtAddress, trusted: bool) {
-    let Some(bluez) = BLUEZ.with_borrow(|b| b.clone()) else { return };
-    ctx.spawn(async move {
-        if let Err(err) = bluez.set_trusted(address, trusted).await {
-            eprintln!("bluetooth: {err}");
-        }
-    });
 }
 
 #[cfg(test)]

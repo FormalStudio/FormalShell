@@ -91,6 +91,7 @@ const SERVICES: &[fn(&Ctx)] = &[
     wallpaper::start,
     agents::start,
     appicon::start,
+    iphone::start,
     wants::start,
     plugins::start,
     nightlight::start,

@@ -10,19 +10,11 @@ use fs_system::display::priority;
 use fs_system::monitor::format::pct;
 
 use super::{Effect, Panel, View};
-use crate::services::wants::{Source, Want};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, w};
 
-pub struct Monitor {
-    _want: Want,
-}
-
-impl Monitor {
-    pub fn new() -> Self {
-        Self { _want: Want::new(Source::Monitor) }
-    }
-}
+pub struct Monitor;
 
 struct Metric {
     label: String,
@@ -70,6 +62,10 @@ impl Panel for Monitor {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Monitor, Topic::Compositor, Topic::Config]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::Monitor]
     }
 
     fn body(&self, v: &View) -> El {

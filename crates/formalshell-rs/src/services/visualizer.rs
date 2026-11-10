@@ -2,7 +2,8 @@
 //! spectrum cell and the media panel's band.
 //!
 //! The process runs only while a track is playing, motion is on and
-//! something wants the levels (a bar showing the cell, or the open panel):
+//! something wants the levels (`Source::Spectrum`: a bar showing the cell,
+//! or the open panel with its band):
 //! paused music is a dead process. The iPhone's audio plays on the phone, so
 //! cava would hear nothing of it; its frame is drawn off the track's tempo
 //! instead (the one exception CLAUDE.md names), and only the bpm lookup
@@ -24,6 +25,7 @@ use futures_lite::{FutureExt, StreamExt};
 use fs_media::visualizer::model::{self, BAR_COUNT, MAX_LEVEL};
 
 use super::http;
+use super::wants::{self, Source};
 use crate::runtime::Ctx;
 use crate::services::proc::Avail;
 use crate::store;
@@ -128,26 +130,24 @@ fn set_frame(frame: Frame) {
     }
 }
 
-/// Everything the run gate reads, kept by whoever knows it: the UI thread
-/// sets what the media pick, the config and the open surfaces say.
+/// What the run gate reads besides the want, kept by whoever knows it: the
+/// UI thread sets what the media pick and the config say.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Gate {
     playing: bool,
     tempo: bool,
     motion: bool,
-    bars: usize,
-    panel: bool,
     /// The artist and title the bpm is looked up for, while tempo driven.
     track: Option<(String, String)>,
 }
 
 impl Gate {
     fn wanted(&self) -> bool {
-        self.playing && self.motion && (self.bars > 0 || self.panel)
+        self.playing && self.motion
     }
 }
 
-static GATE: Mutex<Gate> = Mutex::new(Gate { playing: false, tempo: false, motion: true, bars: 0, panel: false, track: None });
+static GATE: Mutex<Gate> = Mutex::new(Gate { playing: false, tempo: false, motion: true, track: None });
 static GATE_TX: OnceLock<async_channel::Sender<Gate>> = OnceLock::new();
 
 fn update(f: impl FnOnce(&mut Gate)) {
@@ -173,16 +173,6 @@ pub fn set_media(playing: bool, tempo: bool, artist: &str, title: &str) {
 
 pub fn set_motion(on: bool) {
     update(|g| g.motion = on);
-}
-
-/// A bar window showing the cell came on screen (+1) or left it (-1).
-pub fn bar_visible(delta: isize) {
-    update(|g| g.bars = g.bars.saturating_add_signed(delta));
-}
-
-/// The media panel is open with its spectrum band on.
-pub fn set_panel(open: bool) {
-    update(|g| g.panel = open);
 }
 
 /// FS_CAVA_SOURCE names a node to read instead of the default sink's
@@ -238,6 +228,7 @@ impl Cava {
 
 enum Event {
     Gate(Option<Gate>),
+    Held(Option<bool>),
     Line(Option<String>),
 }
 
@@ -302,12 +293,14 @@ async fn run(ctx: Ctx) {
 
     let bpm = Bpm { cache: Rc::default(), current: Rc::default() };
     let mut gate = GATE.lock().map(|g| g.clone()).unwrap_or_default();
+    let spectrum = wants::watch(Source::Spectrum);
+    let mut held = false;
     let mut cava: Option<Cava> = None;
     let mut exited = false;
     let mut running = false;
     let mut track: Option<(String, String)> = None;
     loop {
-        let wanted = gate.wanted();
+        let wanted = held && gate.wanted();
         let want_cava = avail == Avail::Available && wanted && !gate.tempo && !exited;
         match (want_cava, cava.is_some()) {
             (true, false) => match Cava::spawn(&conf) {
@@ -336,20 +329,25 @@ async fn run(ctx: Ctx) {
             bpm.track(&ctx, wanted_track);
         }
 
+        let next_gate = async { Event::Gate(rx.recv().await.ok()) };
+        let next_held = async { Event::Held(spectrum.recv().await.ok()) };
         let event = match cava.as_mut() {
             Some(c) => {
-                let next_gate = async { Event::Gate(rx.recv().await.ok()) };
                 let next_line = async { Event::Line(c.lines.next().await.and_then(Result::ok)) };
-                next_gate.or(next_line).await
+                next_gate.or(next_held).or(next_line).await
             }
-            None => Event::Gate(rx.recv().await.ok()),
+            None => next_gate.or(next_held).await,
         };
         match event {
             Event::Gate(Some(next)) => {
                 gate = next;
                 exited = false;
             }
-            Event::Gate(None) => return,
+            Event::Held(Some(next)) => {
+                held = next;
+                exited = false;
+            }
+            Event::Gate(None) | Event::Held(None) => return,
             Event::Line(Some(line)) => {
                 if let Some(c) = cava.as_mut() {
                     c.frame(&line);

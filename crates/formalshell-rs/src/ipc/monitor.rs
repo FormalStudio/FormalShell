@@ -13,12 +13,6 @@ use crate::services::launch;
 use crate::services::wants::{self, Source};
 use crate::wayland::App;
 
-/// One sample lands at startup, before
-/// any caller can connect, so the first reply is not an empty one.
-pub fn warm() {
-    wants::pulse(Source::Monitor);
-}
-
 fn status(app: &mut App, _: &[Value]) -> Reply {
     wants::pulse(Source::Monitor);
     Ok(app.store.monitor.status(now_ms()))
@@ -63,7 +57,10 @@ fn launch(app: &mut App, args: &[Value]) -> Reply {
     text(reply)
 }
 
+/// Registering pulses the poll, so one sample lands at startup before any
+/// caller can connect and the first reply is not an empty one.
 pub fn target() -> Target<App> {
+    wants::pulse(Source::Monitor);
     Target {
         name: "monitor",
         functions: vec![

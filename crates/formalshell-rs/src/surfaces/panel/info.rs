@@ -13,22 +13,13 @@ use fs_info::about;
 
 use super::{Effect, Panel, View};
 use crate::services::compositor;
-use crate::services::wants::{Source, Want};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Size, Type, Weight, What, w};
 
 const MANUAL: &str = "https://github.com/FormalStudio/FormalShell/blob/main/docs/USAGE.md";
 
-pub struct Info {
-    _about: Want,
-    _monitor: Want,
-}
-
-impl Info {
-    pub fn new() -> Self {
-        Self { _about: Want::new(Source::About), _monitor: Want::new(Source::Monitor) }
-    }
-}
+pub struct Info;
 
 /// A value, or why there is none: still reading, or not reported.
 enum Fact {
@@ -74,6 +65,10 @@ impl Panel for Info {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::About, Topic::Monitor]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::About, Source::Monitor]
     }
 
     fn body(&self, v: &View) -> El {

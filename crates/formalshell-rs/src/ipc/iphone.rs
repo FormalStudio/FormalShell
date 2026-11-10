@@ -6,7 +6,6 @@ use serde_json::{Value as Json, json};
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::iphone::{self, Cmd, State};
-use crate::services::wants::{self, Source};
 use crate::wayland::App;
 
 pub fn target() -> Target<App> {
@@ -46,7 +45,6 @@ fn entry(n: &fs_devices::iphone::Notification) -> Json {
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    wants::pulse(Source::Iphone);
     let s: &State = &app.store.iphone;
     if !s.installed {
         return Ok(json!({ "installed": false }));
@@ -76,7 +74,6 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 }
 
 fn pair(app: &mut App, _: &[Value]) -> Reply {
-    wants::pulse(Source::Iphone);
     if !app.store.iphone.installed {
         return Err("no bridge on PATH".into());
     }
@@ -94,7 +91,6 @@ fn invoke(app: &mut App, args: &[Value]) -> Reply {
     if action != "positive" && action != "negative" {
         return Err("action must be 'positive' or 'negative'".into());
     }
-    wants::pulse(Source::Iphone);
     let id = number(args[0].str());
     match id.filter(|id| iphone::actionable(&app.store.iphone, *id)) {
         Some(id) => {
@@ -106,7 +102,6 @@ fn invoke(app: &mut App, args: &[Value]) -> Reply {
 }
 
 fn dismiss(app: &mut App, args: &[Value]) -> Reply {
-    wants::pulse(Source::Iphone);
     let state = &app.store.iphone;
     let found = number(args[0].str()).and_then(|id| state.recent.iter().find(|e| e.id == id).map(|e| (id, e.negative_action.is_empty())));
     match found.filter(|(id, bare)| *bare || iphone::actionable(state, *id)) {
@@ -119,13 +114,11 @@ fn dismiss(app: &mut App, args: &[Value]) -> Reply {
 }
 
 fn clear(_: &mut App, _: &[Value]) -> Reply {
-    wants::pulse(Source::Iphone);
     iphone::command(Cmd::Clear);
     ok()
 }
 
 fn mark_read(_: &mut App, _: &[Value]) -> Reply {
-    wants::pulse(Source::Iphone);
     iphone::command(Cmd::MarkRead);
     ok()
 }

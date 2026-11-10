@@ -18,7 +18,7 @@ use fs_system::display::outputs::{self, Output};
 use super::{Effect, Panel, View};
 use crate::services::display::{self, Brightness};
 use crate::services::compositor::{self, Command};
-use crate::services::wants::{Source, Want};
+use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::services::compositor::OutputsState;
 use crate::ui::{El, Event, Ink, Type, Weight, What, w};
@@ -26,15 +26,7 @@ use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 /// The brightness step, the wheel's and the keyboard's.
 const STEP: f64 = 5.0;
 
-pub struct Display {
-    _want: Want,
-}
-
-impl Display {
-    pub fn new() -> Self {
-        Self { _want: Want::new(Source::Display) }
-    }
-}
+pub struct Display;
 
 fn sorted(store: &Store) -> Vec<Output> {
     outputs::sort_outputs(&store.compositor.outputs)
@@ -148,6 +140,10 @@ impl Panel for Display {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::Display, Topic::State, Topic::Config]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::Display]
     }
 
     fn body(&self, v: &View) -> El {

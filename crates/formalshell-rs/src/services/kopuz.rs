@@ -16,8 +16,8 @@
 //! only when its title and artist read the same as MPRIS's (`media::State::
 //! kopuz`), since the GUI can be playing against another daemon.
 
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::RefCell;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use fs_dbus::Backoff;
@@ -25,6 +25,7 @@ use fs_kopuz::{Client, Event, Table, TrackInfo, client, timed};
 use futures_lite::future;
 
 use crate::runtime::Ctx;
+use crate::services::wants::{self, Source, Want};
 use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(1);
@@ -87,18 +88,27 @@ impl State {
     }
 }
 
-static WANT: OnceLock<async_channel::Sender<bool>> = OnceLock::new();
-static WANTED: AtomicBool = AtomicBool::new(false);
+thread_local! {
+    static HELD: RefCell<Option<Want>> = const { RefCell::new(None) };
+}
 
-/// The UI thread's side, after every media change: whether the active
-/// player is Kopuz.
+/// The UI thread's side, after every media change: the daemon is wanted
+/// while the active player is Kopuz.
 pub fn sync(media: &super::media::State) {
     let want = fs_kopuz::is_player_bus(&media.active_id());
-    if WANTED.swap(want, Ordering::Relaxed) != want
-        && let Some(tx) = WANT.get()
-    {
-        let _ = tx.try_send(want);
-    }
+    HELD.with_borrow_mut(|held| {
+        if want != held.is_some() {
+            *held = want.then(|| Want::new(Source::Kopuz));
+        }
+    });
+}
+
+static ACTIONS: LazyLock<(async_channel::Sender<Action>, async_channel::Receiver<Action>)> = LazyLock::new(async_channel::unbounded);
+
+/// Callable from any thread. A favourite comes back through
+/// `LibraryInvalidated`, so nothing is published for it.
+pub fn send(action: Action) {
+    let _ = ACTIONS.0.try_send(action);
 }
 
 fn publish(ctx: &Ctx, state: &State) {
@@ -113,9 +123,7 @@ async fn dont_recommend(client: &Client) -> bool {
     matches!(timed(client.sources()).await, Some(Ok(list)) if list.active().is_some_and(|s| s.capabilities.dont_recommend))
 }
 
-/// Runs `action` against the daemon, on the service thread. A favourite
-/// comes back through `LibraryInvalidated`, so nothing is published here.
-pub fn act(ctx: &Ctx, action: Action) {
+fn act(ctx: &Ctx, action: Action) {
     ctx.spawn(async move {
         let Some(client) = client() else { return eprintln!("kopuz: no socket for {action:?}") };
         let result = match &action {
@@ -189,9 +197,14 @@ pub fn start(ctx: &Ctx) {
 }
 
 async fn run(ctx: Ctx) {
-    let (tx, rx) = async_channel::unbounded::<bool>();
-    let _ = WANT.set(tx);
-    let mut want = WANTED.load(Ordering::Relaxed);
+    let actions = ctx.clone();
+    ctx.spawn(async move {
+        while let Ok(action) = ACTIONS.1.recv().await {
+            act(&actions, action);
+        }
+    });
+    let rx = wants::watch(Source::Kopuz);
+    let mut want = false;
     loop {
         if want {
             // The player going (or another one picked) drops the stream.

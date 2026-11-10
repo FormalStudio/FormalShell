@@ -17,6 +17,7 @@ use fs_theme::tokens::WEIGHTS;
 use crate::scene::IRect;
 use crate::services::proc::Avail;
 use crate::services::visualizer;
+use crate::services::wants::{Source, Want};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Cell, Custom, Env, View};
 use crate::paint::{Ink, Kit, Look, Painter};
@@ -35,7 +36,8 @@ pub struct Visualizer {
     position: (f64, Instant, bool),
     shown_levels: Vec<f64>,
     last: Option<Instant>,
-    registered: bool,
+    /// Held while a bar showing the cell is on screen.
+    spectrum: Want,
     vertical: bool,
 }
 
@@ -51,16 +53,8 @@ impl Default for Visualizer {
             position: (0.0, Instant::now(), false),
             shown_levels: model::baseline_levels(),
             last: None,
-            registered: false,
+            spectrum: Want::held(Source::Spectrum, false),
             vertical: false,
-        }
-    }
-}
-
-impl Drop for Visualizer {
-    fn drop(&mut self) {
-        if self.registered {
-            visualizer::bar_visible(-1);
         }
     }
 }
@@ -120,10 +114,7 @@ impl Cell for Visualizer {
     }
 
     fn visible(&mut self, on: bool) {
-        if on != self.registered {
-            visualizer::bar_visible(if on { 1 } else { -1 });
-            self.registered = on;
-        }
+        self.spectrum.hold(on);
     }
 
     fn custom(&mut self) -> Option<&mut dyn Custom> {

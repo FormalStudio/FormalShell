@@ -6,7 +6,6 @@
 
 use std::cell::RefCell;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_channel::{Receiver, Sender};
 use fs_audio::{Command, Graph, Node, Visual};
@@ -14,6 +13,7 @@ use fs_media::media::StreamKeys;
 use futures_lite::FutureExt;
 
 use crate::runtime::Ctx;
+use crate::services::wants::{self, Source};
 use crate::store;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -147,7 +147,7 @@ fn lists(graph: &Graph) -> Lists {
     }
 }
 
-fn snapshot(graph: &Graph) -> Audio {
+fn snapshot(graph: &Graph, listed: bool) -> Audio {
     let node = graph.default_sink();
     let sink = node.and_then(|n| n.audio.as_ref());
     let source = graph.default_source().and_then(|n| n.audio.as_ref());
@@ -159,7 +159,7 @@ fn snapshot(graph: &Graph) -> Audio {
         source_muted: source.is_some_and(|a| a.muted),
         source_volume: source.map(|a| a.volume()),
         capturing: graph.capturing(),
-        lists: PANEL.load(Ordering::Relaxed).then(|| lists(graph)),
+        lists: listed.then(|| lists(graph)),
         devices: graph
             .nodes
             .values()
@@ -171,30 +171,34 @@ fn snapshot(graph: &Graph) -> Audio {
     }
 }
 
-static PANEL: AtomicBool = AtomicBool::new(false);
-/// The media panel is open, or a stream is the picked source.
-static ROUTING: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
-static POKE: LazyLock<(Sender<()>, Receiver<()>)> = LazyLock::new(async_channel::unbounded);
-static WRITES: LazyLock<(Sender<Command>, Receiver<Command>)> = LazyLock::new(async_channel::unbounded);
-
-/// One of the two reasons to keep the routing lists published: `slot` 0 is
-/// the media panel being open, 1 a stream being the picked source.
-pub fn routing_wanted(slot: usize, on: bool) {
-    if ROUTING[slot].swap(on, Ordering::Relaxed) != on {
-        let _ = POKE.0.try_send(());
-    }
+/// A node a write names: the default sink or source, or a row the lists
+/// or the routing published.
+#[derive(Clone, Copy, Debug)]
+pub enum Target {
+    Sink,
+    Source,
+    Node(u32),
 }
 
-/// A write from the UI thread, carried out on the service thread.
-pub fn write(c: Command) {
-    let _ = WRITES.0.try_send(c);
+/// A write to the graph.
+#[derive(Clone, Debug)]
+pub enum Cmd {
+    /// The default sink and source are held to 0..1, since overdrive is the
+    /// audio panel's, per stream; a node takes what it is given.
+    Volume(Target, Visual),
+    /// A listed node's mute, set outright.
+    Mute(u32, bool),
+    ToggleMute(Target),
+    /// The default sink (false) or source (true), by node name.
+    Default { source: bool, name: String },
+    MoveStream { stream: u32, sink: String },
 }
 
-/// The panel open or closed: its lists are published only while it is.
-pub fn panel(open: bool) {
-    if PANEL.swap(open, Ordering::Relaxed) != open {
-        let _ = POKE.0.try_send(());
-    }
+static CMDS: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
+
+/// Callable from any thread; carried out on the service thread.
+pub fn send(c: Cmd) {
+    let _ = CMDS.0.try_send(c);
 }
 
 /// The graph as the service thread last saw it, `None` with no PipeWire
@@ -203,13 +207,33 @@ pub fn with_graph<R>(f: impl FnOnce(&Graph) -> R) -> Option<R> {
     CLIENT.with_borrow(|c| c.as_ref().map(|c| f(&c.graph)))
 }
 
-/// A write from the panel, on the service thread.
-pub fn command(c: Command) {
-    CLIENT.with_borrow(|client| {
-        if let Some(client) = client {
-            client.handle.send(c);
-        }
-    });
+/// Held to 0..1: overdrive is the audio panel's, per stream.
+fn full_at_most(volume: Visual) -> Visual {
+    Visual::new(volume.get().clamp(0.0, 1.0))
+}
+
+fn apply(c: &Client, cmd: Cmd) {
+    let node = |target| match target {
+        Target::Sink => c.graph.default_sink(),
+        Target::Source => c.graph.default_source(),
+        Target::Node(id) => c.graph.nodes.get(&id),
+    };
+    let command = match cmd {
+        Cmd::Volume(Target::Node(node), volume) => Command::SetVolume { node, volume },
+        Cmd::Volume(target, volume) => match node(target).filter(|n| n.audio.is_some()) {
+            Some(n) => Command::SetVolume { node: n.id, volume: full_at_most(volume) },
+            None => return,
+        },
+        Cmd::Mute(node, muted) => Command::SetMuted { node, muted },
+        Cmd::ToggleMute(target) => match node(target).and_then(|n| Some((n.id, n.audio.as_ref()?))) {
+            Some((node, a)) => Command::SetMuted { node, muted: !a.muted },
+            None => return,
+        },
+        Cmd::Default { source: false, name } => Command::SetDefaultSink(Some(name)),
+        Cmd::Default { source: true, name } => Command::SetDefaultSource(Some(name)),
+        Cmd::MoveStream { stream, sink } => Command::MoveStream { stream, sink },
+    };
+    c.handle.send(command);
 }
 
 fn publish(ctx: &Ctx, audio: Audio) {
@@ -229,14 +253,28 @@ async fn run(ctx: Ctx) {
         }
     };
     CLIENT.with_borrow_mut(|c| *c = Some(Client { handle, graph: Graph::default() }));
+    let lists_wanted = wants::watch(Source::AudioLists);
+    let routing_wanted = wants::watch(Source::AudioRouting);
+    let (mut listed, mut routed_streams) = (false, false);
     let mut sent = Routing::default();
     let mut capturing = false;
     loop {
         let event = async { events.recv().await.ok().map(Some) }
-            .or(async { POKE.1.recv().await.ok().map(|_| None) })
             .or(async {
-                let write = WRITES.1.recv().await.ok()?;
-                command(write);
+                listed = lists_wanted.recv().await.ok()?;
+                Some(None)
+            })
+            .or(async {
+                routed_streams = routing_wanted.recv().await.ok()?;
+                Some(None)
+            })
+            .or(async {
+                let cmd = CMDS.1.recv().await.ok()?;
+                CLIENT.with_borrow(|c| {
+                    if let Some(c) = c {
+                        apply(c, cmd);
+                    }
+                });
                 Some(None)
             })
             .await;
@@ -250,12 +288,12 @@ async fn run(ctx: Ctx) {
             while let Ok(more) = events.try_recv() {
                 c.graph.apply(more);
             }
-            Some((snapshot(&c.graph), routing(&c.graph, ROUTING.iter().any(|r| r.load(Ordering::Relaxed)))))
+            Some((snapshot(&c.graph, listed), routing(&c.graph, routed_streams)))
         });
         if let Some((audio, routed)) = audio {
             if audio.capturing != capturing {
                 capturing = audio.capturing;
-                super::earbuds::mic(capturing);
+                super::earbuds::send(super::earbuds::Cmd::Mic(capturing));
             }
             publish(&ctx, audio);
             if routed != sent {
@@ -264,37 +302,6 @@ async fn run(ctx: Ctx) {
             }
         }
     }
-}
-
-fn with_node(source: bool, f: impl FnOnce(&fs_audio::Audio, u32, &fs_audio::AudioState)) {
-    CLIENT.with_borrow(|c| {
-        let Some(c) = c else { return };
-        let node = if source { c.graph.default_source() } else { c.graph.default_sink() };
-        if let Some((id, audio)) = node.and_then(|n| Some((n.id, n.audio.as_ref()?))) {
-            f(&c.handle, id, audio);
-        }
-    });
-}
-
-/// Held to 0..1: overdrive is the audio panel's, per stream.
-fn full_at_most(volume: Visual) -> Visual {
-    Visual::new(volume.get().clamp(0.0, 1.0))
-}
-
-pub fn set_volume(_: &Ctx, volume: Visual) {
-    with_node(false, |h, node, _| h.send(Command::SetVolume { node, volume: full_at_most(volume) }));
-}
-
-pub fn set_source_volume(_: &Ctx, volume: Visual) {
-    with_node(true, |h, node, _| h.send(Command::SetVolume { node, volume: full_at_most(volume) }));
-}
-
-pub fn toggle_mute(_: &Ctx) {
-    with_node(false, |h, node, a| h.send(Command::SetMuted { node, muted: !a.muted }));
-}
-
-pub fn toggle_source_mute(_: &Ctx) {
-    with_node(true, |h, node, a| h.send(Command::SetMuted { node, muted: !a.muted }));
 }
 
 #[cfg(test)]

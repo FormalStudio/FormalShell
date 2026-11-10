@@ -596,7 +596,7 @@ fn end_pairing(ctx: &Ctx, session: &mut Session) {
         && session.state.bonded
         && let Some(address) = session.state.bond_address
     {
-        crate::services::devices::bluetooth::set_trust(ctx, address, true);
+        crate::services::devices::bluetooth::send(crate::services::devices::bluetooth::Cmd::Trust(address, true));
     }
     session.state.advertising = false;
     session.state.pairing_code.clear();
@@ -608,7 +608,13 @@ fn publish(ctx: &Ctx, state: &State) {
     ctx.publish(store::Diff::Iphone(state.clone()));
 }
 
-pub async fn run(ctx: Ctx) {
+/// The phone's notifications reach the centre with no cell or panel open,
+/// so the bridge child lives as long as the shell.
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let inbox = async_channel::unbounded::<Msg>();
     let worker_inbox = inbox.0.clone();
     ctx.spawn(async move {

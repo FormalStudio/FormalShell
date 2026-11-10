@@ -475,7 +475,7 @@ impl Owner for Cards {
         if let Some(p) = app.panel.take_if(|p| p.finished(now)) {
             app.dropped.push(p.win.surface.layer.wl_surface().clone());
             app.sync_join();
-            app.sync_open(now);
+            app.sync_bar_open(now);
             app.log("panel unmapped");
         }
         if let Some(p) = app.outgoing.take_if(|p| p.finished(now)) {

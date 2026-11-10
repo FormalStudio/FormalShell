@@ -73,7 +73,6 @@ use futures_lite::AsyncWriteExt;
 
 pub use wire::Request;
 
-use crate::runtime::Ctx;
 use crate::wayland::App;
 use registry::{Registry, Target};
 
@@ -143,12 +142,11 @@ pub fn dispatch(app: &mut App, request: &Request) -> String {
     registry().answer(app, request)
 }
 
-pub fn start(_: &Ctx) {
-    monitor::warm();
-}
-
 /// Binds the socket and serves it on the UI loop.
 pub fn listen(handle: &LoopHandle<'static, App>) {
+    // Registered before the first request, since a target's registration
+    // may start what its first reply reads.
+    registry();
     let path = wire::socket_path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);

@@ -5,20 +5,18 @@
 use fs_chrome::bar::panels::PanelId;
 
 use crate::services::iphone::State;
-use crate::services::wants::{Source, Want};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
 use crate::paint::Look;
 
 pub struct Iphone {
-    _want: Want,
     state: State,
     label: bool,
 }
 
 impl Default for Iphone {
     fn default() -> Self {
-        Self { _want: Want::new(Source::Iphone), state: State::default(), label: true }
+        Self { state: State::default(), label: true }
     }
 }
 

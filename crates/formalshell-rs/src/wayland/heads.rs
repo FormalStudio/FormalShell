@@ -303,7 +303,7 @@ impl App {
             self.close_bar_cards();
             self.panel_dirty = true;
             self.sync_join();
-            self.sync_open(Instant::now());
+            self.sync_bar_open(Instant::now());
         }
         self.promote(i)
     }

@@ -10,19 +10,11 @@ use super::{Effect, Panel, View};
 use crate::services::compositor;
 use crate::services::info::github::{Poll, Row};
 use crate::services::info::kick;
-use crate::services::wants::{Source, Want};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, Event, w};
 
-pub struct Github {
-    _want: Want,
-}
-
-impl Github {
-    pub fn new() -> Self {
-        Self { _want: Want::new(Source::Github) }
-    }
-}
+pub struct Github;
 
 fn open(url: &str, fx: &mut Effect) {
     compositor::spawn(&["xdg-open".to_owned(), url.to_owned()]);
@@ -36,6 +28,10 @@ impl Panel for Github {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Github]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::Github]
     }
 
     fn opened(&mut self) {

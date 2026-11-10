@@ -27,19 +27,40 @@ use async_io::Timer;
 use futures_lite::FutureExt;
 
 use super::config::Settings;
-use super::wants::{COUNT, Source};
+use super::wants::Source;
 
 static KICKS: LazyLock<Vec<(async_channel::Sender<()>, async_channel::Receiver<()>)>> =
-    LazyLock::new(|| (0..COUNT).map(|_| async_channel::bounded(1)).collect());
+    LazyLock::new(|| Source::ALL.iter().map(|_| async_channel::bounded(1)).collect());
 
 /// Asks a running poll to go again now (a cell's right click).
 pub fn kick(source: Source) {
     let _ = KICKS[source as usize].0.try_send(());
 }
 
+/// A poll's reasons to go again early: a [`kick`], and for a source that
+/// reads the network, a link coming back.
+pub struct Kick {
+    asked: async_channel::Receiver<()>,
+    online: Option<async_channel::Receiver<()>>,
+}
+
+impl Kick {
+    pub async fn recv(&self) -> Result<(), async_channel::RecvError> {
+        match &self.online {
+            Some(online) => self.asked.recv().or(online.recv()).await,
+            None => self.asked.recv().await,
+        }
+    }
+
+    /// One pending reason, taken.
+    pub fn try_recv(&self) -> Result<(), async_channel::TryRecvError> {
+        self.asked.try_recv().or_else(|e| self.online.as_ref().map_or(Err(e), |o| o.try_recv()))
+    }
+}
+
 /// The poll's end of [`kick`].
-pub fn kicked(source: Source) -> async_channel::Receiver<()> {
-    KICKS[source as usize].1.clone()
+pub fn kicked(source: Source) -> Kick {
+    Kick { asked: KICKS[source as usize].1.clone(), online: source.online().then(super::devices::network::reconnects) }
 }
 
 /// Waits out `interval`, cutting it short when the keys a poll reads

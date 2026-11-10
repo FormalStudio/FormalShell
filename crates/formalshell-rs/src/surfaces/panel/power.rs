@@ -22,8 +22,8 @@ use fs_upower::{DeviceState, Profile};
 use super::{Effect, Panel, View};
 use diagram::{Flow, FlowNode, FlowPort};
 use crate::services::devices;
-use crate::services::wants::{Source, Want};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::el::Opt;
 use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 
@@ -120,18 +120,10 @@ pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El 
     w::panel_control(s, w::panel_heading_with(s, "Power profile", PROFILES[active].label()), w::group(options, active, true).squares().ring(ring).on("profile").stop("profile"))
 }
 
+#[derive(Default)]
 pub struct Power {
     /// Where the group's ring sits: the active profile on a fresh open.
     cursor: Cell<Option<usize>>,
-    _flow: Want,
-    _monitor: Want,
-    _iphone: Want,
-}
-
-impl Power {
-    pub fn new() -> Self {
-        Self { cursor: Cell::new(None), _flow: Want::new(Source::PowerFlow), _monitor: Want::new(Source::Monitor), _iphone: Want::new(Source::Iphone) }
-    }
 }
 
 fn active(v: &View) -> usize {
@@ -184,6 +176,10 @@ impl Panel for Power {
         &[Topic::Power, Topic::Profiles, Topic::PowerFlow, Topic::Monitor, Topic::Iphone, Topic::Config]
     }
 
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::PowerFlow, Source::Monitor]
+    }
+
     fn opened(&mut self) {
         self.cursor.set(None);
     }
@@ -230,16 +226,16 @@ impl Panel for Power {
         w::column(0.0, parts)
     }
 
-    fn event(&mut self, ev: &Event, fx: &mut Effect) {
+    fn event(&mut self, ev: &Event, _: &mut Effect) {
         if let ("profile", What::Pick(i)) = (ev.on.as_str(), &ev.what) {
-            self.apply(*i, fx);
+            self.apply(*i);
         }
     }
 
-    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+    fn activate(&mut self, stop: &str, _: &mut Effect) {
         if stop == "profile" {
             let at = self.cursor.get().unwrap_or(0);
-            self.apply(at, fx);
+            self.apply(at);
         }
     }
 
@@ -256,9 +252,9 @@ impl Panel for Power {
 }
 
 impl Power {
-    fn apply(&self, index: usize, fx: &Effect) {
+    fn apply(&self, index: usize) {
         let Some(profile) = PROFILES.get(index).copied() else { return };
         self.cursor.set(Some(index));
-        fx.service(move |ctx| devices::power::set_profile(ctx, profile));
+        devices::power::send(devices::power::Cmd::Profile(profile));
     }
 }

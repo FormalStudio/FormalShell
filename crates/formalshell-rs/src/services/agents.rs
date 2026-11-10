@@ -4,6 +4,7 @@
 //! worst state across all hosts. An unreachable host or a reply of the wrong
 //! shape carries no state: nothing here makes a badge up.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -14,6 +15,7 @@ use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 
 use crate::runtime::Ctx;
+use crate::services::wants::{self, Source, Want};
 use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(2);
@@ -47,15 +49,19 @@ impl State {
 }
 
 static WATCH: OnceLock<async_channel::Sender<Watch>> = OnceLock::new();
-static SHOWN: OnceLock<async_channel::Sender<bool>> = OnceLock::new();
+thread_local! {
+    static SHOWN: RefCell<Option<Want>> = const { RefCell::new(None) };
+}
 
 /// Whether a Spaces chip is on screen at all: false under a fullscreen
 /// window, the screensaver or the lock. Nothing polls while no badge can be
-/// seen.
+/// seen. Called on the UI thread.
 pub fn shown(on: bool) {
-    if let Some(tx) = SHOWN.get() {
-        let _ = tx.try_send(on);
-    }
+    SHOWN.with_borrow_mut(|shown| {
+        if on != shown.is_some() {
+            *shown = on.then(|| Want::new(Source::AgentBadges));
+        }
+    });
 }
 
 /// The T3 Code windows and hosts to watch; called whenever they change.
@@ -185,11 +191,10 @@ async fn run(ctx: Ctx) {
             }
         }
     });
-    let (stx, srx) = async_channel::unbounded();
-    let _ = SHOWN.set(stx);
+    let shown = wants::watch(Source::AgentBadges);
     let forward = tx.clone();
     ctx.spawn(async move {
-        while let Ok(on) = srx.recv().await {
+        while let Ok(on) = shown.recv().await {
             if forward.send(Event::Shown(on)).await.is_err() {
                 return;
             }

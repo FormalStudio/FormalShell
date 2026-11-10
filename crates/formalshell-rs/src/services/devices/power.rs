@@ -7,13 +7,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use async_channel::{Receiver, Sender};
 use async_io::Timer;
 use async_lock::OnceCell;
-use futures_lite::FutureExt;
 
 use fs_system::dualsense::{self, Supply};
 use fs_types::Percent;
@@ -76,11 +73,12 @@ fn power(snapshot: Snapshot) -> Power {
     }
 }
 
-/// UPower's devices, the DualSense's lights and power-profiles-daemon.
+/// UPower's devices and power-profiles-daemon; the DualSense's lights are
+/// a poll of their own ([`lights`]).
 pub fn start(ctx: &Ctx) {
     ctx.spawn(run(ctx.clone()));
-    ctx.spawn(lights(ctx.clone()));
     ctx.spawn(run_profiles(ctx.clone()));
+    ctx.spawn(commands());
 }
 
 async fn run(ctx: Ctx) {
@@ -114,16 +112,6 @@ pub struct Lights {
 
 const LIGHTS_POLL: Duration = Duration::from_secs(30);
 
-static PANEL: AtomicBool = AtomicBool::new(false);
-static POKE: LazyLock<(Sender<()>, Receiver<()>)> = LazyLock::new(async_channel::unbounded);
-
-/// The DualSense panel open or closed.
-pub fn panel(open: bool) {
-    if PANEL.swap(open, Ordering::Relaxed) != open {
-        let _ = POKE.0.try_send(());
-    }
-}
-
 fn first_dir(dir: &str, matches: impl Fn(&str) -> bool) -> Option<PathBuf> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
         .ok()?
@@ -146,20 +134,13 @@ fn read_lights() -> Lights {
     Lights { lightbar: dualsense::parse_lightbar(rgb.as_deref()), player_leds: Some(dualsense::parse_player_leds(Some(&pips))) }
 }
 
-async fn lights(ctx: Ctx) {
+/// `Source::PadLights`: the panel's open reads at once, then every
+/// [`LIGHTS_POLL`].
+pub async fn lights(ctx: Ctx) {
     loop {
-        if PANEL.load(Ordering::Relaxed) {
-            let lights = ctx.pool().run(read_lights).await.unwrap_or_default();
-            ctx.publish(store::Diff::PadLights(lights));
-            async { POKE.1.recv().await.ok() }
-                .or(async {
-                    Timer::after(LIGHTS_POLL).await;
-                    Some(())
-                })
-                .await;
-        } else if POKE.1.recv().await.is_err() {
-            return;
-        }
+        let lights = ctx.pool().run(read_lights).await.unwrap_or_default();
+        ctx.publish(store::Diff::PadLights(lights));
+        Timer::after(LIGHTS_POLL).await;
     }
 }
 
@@ -185,17 +166,33 @@ async fn run_profiles(ctx: Ctx) {
     }
 }
 
-/// The profile group's pick; a daemon that refuses leaves the live
-/// property, and with it the group, where it was.
-pub fn set_profile(ctx: &Ctx, profile: Profile) {
-    ctx.spawn(async move {
-        let set = match profiles().await {
-            Ok(profiles) => profiles.set_active(profile).await,
-            Err(err) => Err(err),
-        };
-        if let Err(err) = set {
-            eprintln!("power profile: {}: {err}", profile.to_wire());
+/// What the panels ask of the service.
+pub enum Cmd {
+    /// The profile group's pick; a daemon that refuses leaves the live
+    /// property, and with it the group, where it was.
+    Profile(Profile),
+}
+
+static CMDS: LazyLock<(async_channel::Sender<Cmd>, async_channel::Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
+
+/// Callable from any thread.
+pub fn send(c: Cmd) {
+    let _ = CMDS.0.try_send(c);
+}
+
+async fn commands() {
+    while let Ok(cmd) = CMDS.1.recv().await {
+        match cmd {
+            Cmd::Profile(profile) => {
+                let set = match profiles().await {
+                    Ok(profiles) => profiles.set_active(profile).await,
+                    Err(err) => Err(err),
+                };
+                if let Err(err) = set {
+                    eprintln!("power profile: {}: {err}", profile.to_wire());
+                }
+            }
         }
-    });
+    }
 }
 

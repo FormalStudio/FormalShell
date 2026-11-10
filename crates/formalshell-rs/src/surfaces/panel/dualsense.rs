@@ -10,7 +10,8 @@ use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 
 use super::{Panel, View};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::el::Kind;
 use crate::ui::{El, w};
 
@@ -28,6 +29,10 @@ impl Panel for Dualsense {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Power, Topic::PadLights]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::PadLights]
     }
 
     fn body(&self, v: &View) -> El {

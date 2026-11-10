@@ -13,19 +13,11 @@ use super::{Effect, Panel, View};
 use crate::services::info::monitor::now_ms;
 use crate::services::info::usage::{Claude, Codex, State};
 use crate::services::info::kick;
-use crate::services::wants::{Source, Want};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, w};
 
-pub struct Usage {
-    _want: Want,
-}
-
-impl Usage {
-    pub fn new() -> Self {
-        Self { _want: Want::new(Source::Usage) }
-    }
-}
+pub struct Usage;
 
 fn claude_rows(u: &State) -> &[UsageRow] {
     if u.claude_enabled && u.claude == Claude::Ok { u.claude_rows.as_slice() } else { &[] }
@@ -72,6 +64,10 @@ impl Panel for Usage {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Usage]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::Usage]
     }
 
     fn actions(&self, _: &View) -> Vec<El> {

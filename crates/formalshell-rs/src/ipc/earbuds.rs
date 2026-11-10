@@ -46,7 +46,7 @@ fn select(app: &mut App, args: &[Value]) -> Reply {
 }
 
 fn recenter(_: &mut App, _: &[Value]) -> Reply {
-    earbuds::recenter();
+    earbuds::send(earbuds::Cmd::Recenter);
     ok()
 }
 
@@ -54,7 +54,7 @@ fn set(app: &mut App, args: &[Value]) -> Reply {
     match app.store.earbuds.plan(args[0].str(), args[1].str()) {
         Ok(op) => {
             if let Some(op) = op {
-                earbuds::write(op);
+                earbuds::send(earbuds::Cmd::Op(op));
             }
             ok()
         }

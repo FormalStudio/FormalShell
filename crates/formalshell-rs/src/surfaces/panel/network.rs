@@ -8,8 +8,8 @@
 //! and Pond's dim footer rows hold sharing, the saved password and the
 //! speed test.
 //!
-//! The panel holds the scanner while it is open; its close ends a running
-//! speed test (`network::Hold`).
+//! The panel wants the scanner while it is open; its close ends a running
+//! speed test (`Source::WifiScan`).
 
 use fs_devices::network::speedtest;
 use crate::ui::field;
@@ -18,7 +18,8 @@ use fs_types::Fraction;
 use super::{Edit, Effect, Panel, View};
 use crate::services::clipboard;
 use crate::services::devices::network as net;
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Variant, What, w};
 
 /// The mask the passphrase field draws.
@@ -32,7 +33,6 @@ enum Field {
 
 #[derive(Default)]
 pub struct Network {
-    hold: Option<net::Hold>,
     /// The SSID whose prompt is open.
     prompt: Option<String>,
     identity: field::Field,
@@ -77,7 +77,7 @@ impl Network {
         let Some(row) = n.row(ssid).cloned() else { return };
         let ssid = ssid.to_owned();
         if row.connected {
-            fx.service(move |ctx| net::disconnect(ctx, ssid));
+            net::send(net::Cmd::Disconnect(ssid));
             return;
         }
         let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
@@ -85,7 +85,7 @@ impl Network {
             self.open_prompt(&ssid, row.enterprise);
             return;
         }
-        fx.service(move |ctx| net::connect(ctx, ssid, net::Secret::Saved));
+        net::send(net::Cmd::Connect(ssid, net::Secret::Saved));
     }
 
     /// `_submitPassword`.
@@ -105,7 +105,7 @@ impl Network {
         } else {
             net::Secret::Psk(self.password.text().to_owned())
         };
-        fx.service(move |ctx| net::connect(ctx, ssid, secret));
+        net::send(net::Cmd::Connect(ssid, secret));
     }
 
     fn forget(&self, ssid: &str, fx: &mut Effect) {
@@ -114,20 +114,18 @@ impl Network {
             return;
         }
         let ssid = ssid.to_owned();
-        fx.service(move |ctx| net::forget(ctx, ssid));
+        net::send(net::Cmd::Forget(ssid));
     }
 
     fn wired(name: &str, fx: &mut Effect) {
         let connected = Self::state(fx).wired_rows.iter().any(|d| d.name == name && d.connected);
         let name = name.to_owned();
-        fx.service(move |ctx| net::wired_toggle(ctx, name, connected));
+        net::send(net::Cmd::Wired { interface: name, connected });
     }
 
     fn speed(fx: &mut Effect) {
         if !Self::state(fx).speed.running() {
-            fx.service(|ctx| {
-                net::speed_start(ctx);
-            });
+            net::send(net::Cmd::SpeedTest);
         }
     }
 
@@ -277,6 +275,10 @@ impl Panel for Network {
         &[Topic::Network]
     }
 
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::WifiScan]
+    }
+
     fn actions(&self, v: &View) -> Vec<El> {
         let n = &v.store.network;
         vec![
@@ -322,12 +324,7 @@ impl Panel for Network {
         w::column(s.panel_gap, parts)
     }
 
-    fn opened(&mut self) {
-        self.hold = Some(net::Hold::new());
-    }
-
     fn closed(&mut self) {
-        self.hold = None;
         self.known_open = false;
         self.cancel_prompt();
     }
@@ -375,12 +372,12 @@ impl Panel for Network {
         match (ev.on.as_str(), &ev.what) {
             ("radio", What::Toggle(on)) => {
                 let on = *on;
-                fx.service(move |ctx| net::set_wifi(ctx, on));
+                net::send(net::Cmd::Wifi(on));
             }
-            ("rescan", What::Click) => fx.service(net::rescan),
+            ("rescan", What::Click) => net::send(net::Cmd::Rescan),
             ("speedtest", What::Click) => Self::speed(fx),
-            ("share", What::Click) => fx.service(net::qr_toggle),
-            ("password", What::Click) => fx.service(net::reveal_toggle),
+            ("share", What::Click) => net::send(net::Cmd::ToggleQr),
+            ("password", What::Click) => net::send(net::Cmd::TogglePassword),
             ("known", What::Click) => self.known_open = !self.known_open,
             (on, What::Click) => {
                 if let Some(ssid) = on.strip_prefix("row:") {
@@ -399,9 +396,9 @@ impl Panel for Network {
         if stop == "speedtest" {
             Self::speed(fx);
         } else if stop == "share" {
-            fx.service(net::qr_toggle);
+            net::send(net::Cmd::ToggleQr);
         } else if stop == "password" {
-            fx.service(net::reveal_toggle);
+            net::send(net::Cmd::TogglePassword);
         } else if stop == "known" {
             self.known_open = !self.known_open;
         } else if let Some(ssid) = stop.strip_prefix("wifi:") {

@@ -28,7 +28,7 @@ use fs_theme::icons;
 use fs_types::Fraction;
 
 use super::{Effect, Panel, View};
-use crate::services::devices::audio;
+use crate::services::wants::Source;
 use crate::services::{kopuz, motion_art};
 use crate::services::media::{Active, SourceKind};
 use crate::services::proc::Avail;
@@ -50,7 +50,6 @@ pub struct Media {
     /// Whether the cursor sits on a stop Left and Right step rather than walk,
     /// read off the last body.
     stepping: Cell<bool>,
-    spectrum: Cell<bool>,
     open: bool,
     /// The cursor sat on a lyric row after the last key.
     in_lyrics: bool,
@@ -61,15 +60,13 @@ pub struct Media {
 
 impl Default for Media {
     fn default() -> Self {
-        Self { menu: "", transport: 1, stepping: Cell::new(false), spectrum: Cell::new(false), open: true, in_lyrics: false, sections: Default::default() }
+        Self { menu: "", transport: 1, stepping: Cell::new(false), open: true, in_lyrics: false, sections: Default::default() }
     }
 }
 
 impl Drop for Media {
     fn drop(&mut self) {
         motion_art::want(motion_art::PANEL, None);
-        visualizer::set_panel(false);
-        audio::routing_wanted(0, false);
     }
 }
 
@@ -147,7 +144,7 @@ fn press(fx: &Effect, id: &str) {
         _ => None,
     };
     if let Some(action) = action {
-        fx.service(move |ctx| kopuz::act(ctx, action));
+        kopuz::send(action);
         return;
     }
     match id {
@@ -237,6 +234,16 @@ impl Panel for Media {
         &[Topic::Media, Topic::Visualizer, Topic::Config, Topic::Lyrics]
     }
 
+    /// The routing lists every output a source can move to; the band wants
+    /// cava while the setting shows it.
+    fn wants(&self, store: &store::Store) -> Vec<Source> {
+        let mut wants = vec![Source::AudioRouting];
+        if VISUALIZER.get(&store.config) {
+            wants.push(Source::Spectrum);
+        }
+        wants
+    }
+
     fn width(&self, v: &View) -> Option<f64> {
         let s = &v.theme.space;
         Some(if v.store.lyrics.synced() { s.popup_width_menu_split } else { s.popup_width_wide })
@@ -259,16 +266,10 @@ impl Panel for Media {
     fn closed(&mut self) {
         self.open = false;
         motion_art::want(motion_art::PANEL, None);
-        visualizer::set_panel(false);
-        audio::routing_wanted(0, false);
     }
 
     fn start(&mut self, fx: &mut Effect) {
         set_follow(fx, true);
-        audio::routing_wanted(0, true);
-        let on = VISUALIZER.get(&fx.store.config);
-        self.spectrum.set(on);
-        visualizer::set_panel(on);
     }
 
     fn cursor_start(&self) -> Option<String> {
@@ -280,10 +281,6 @@ impl Panel for Media {
         let m = &v.store.media;
         self.stepping.set(matches!(v.cursor, Some("transport" | "progress" | "volume")));
         let enabled = spectrum_enabled(v);
-        if self.open && enabled != self.spectrum.get() {
-            self.spectrum.set(enabled);
-            visualizer::set_panel(enabled);
-        }
         let Some(a) = m.active() else {
             motion_art::want(motion_art::PANEL, None);
             self.sections.borrow_mut().clear();

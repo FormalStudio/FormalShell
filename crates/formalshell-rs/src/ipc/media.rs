@@ -157,10 +157,7 @@ fn lyrics(app: &mut App, _: &[Value]) -> Reply {
 /// `kopuz.actions`).
 fn kopuz_act(app: &mut App, pick: impl FnOnce(&kopuz::State) -> Result<kopuz::Action, String>) -> Reply {
     let Some(k) = app.store.media.kopuz() else { return Err("no kopuz track".into()) };
-    let action = pick(k)?;
-    if let Some(rt) = &app.runtime {
-        rt.service(move |ctx| kopuz::act(ctx, action));
-    }
+    kopuz::send(pick(k)?);
     ok()
 }
 

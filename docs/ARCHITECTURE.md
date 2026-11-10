@@ -32,8 +32,9 @@ step:
 2. The Wayland connection and the `calloop` event loop, with `wayland::App`
    as its state.
 3. `runtime::Runtime::start`, which starts the service thread and runs
-   `services::start` and `ipc::start` on it.
-4. `ipc::listen`, which binds the IPC socket as a source on the UI loop.
+   `services::start` on it.
+4. `ipc::listen`, which registers the IPC targets and binds the socket as a
+   source on the UI loop.
 
 ### Threads
 
@@ -77,9 +78,13 @@ pool job (fs-pool) ─────────Diff──▶ Publisher ───�
   see the store; what they need from settings.json is handed to them.
 - `src/surfaces/mod.rs`: `changed` routes a topic to the surfaces that read
   that slice.
-- `services::wants`: polls that run only while a bar cell holds a `Want` for
-  them. The first holder starts the source's task, the last release stops
-  it, so a bar naming none of these cells costs nothing.
+- `services::wants`: work that runs only while something holds a `Want`
+  on its `Source`: a bar cell, an open panel (`Panel::wants`, taken by
+  whatever holds the card) or a service's own pick. A poll's first holder
+  starts its task and the last release stops it after a grace period; every
+  other source is a demand its service reads through `wants::watch`,
+  switched the moment the count crosses zero. Each device service takes its
+  writes through one any-thread `send(Cmd)`.
 
 ## Rendering
 
@@ -339,8 +344,11 @@ Each module under `src/services/` names its source in its header. Grouped:
   (wlsunset), `lights` (asusd), `overnight`, `caffeinate`.
 - Readings (`services/info/`): calendar, weather and geoclue, GitHub,
   Tailscale, AI usage, flake updates, the system monitor, the process
-  table, the power flow, the iPhone bridge. Each runs only while a cell or
-  panel wants it, and a failure is a state the cell words honestly.
+  table, the power flow. Each runs only while a cell or panel wants it, the
+  ones reading the network go again on a reconnect, and a failure is a
+  state the cell words honestly. The iPhone bridge (`services/iphone.rs`)
+  runs for the whole session, since the phone's notifications reach the
+  centre with nothing open.
 - Media: `media` (one active pick across MPRIS via `fs-mpris`, the radio's
   mpv, the phone's AMS and AirPlay), `cover`, `motion_art`, `lyrics`,
   `visualizer` (one shared `cava`), `radio`, `airplay` (UxPlay), `ams`.

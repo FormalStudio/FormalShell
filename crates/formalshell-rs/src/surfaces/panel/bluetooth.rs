@@ -12,8 +12,9 @@ use fs_devices::bluetooth::{self as model, Device};
 use fs_types::BtAddress;
 
 use super::{Effect, Panel, View};
-use crate::services::devices::bluetooth::{ActionKind, Ask, Bluetooth as Bt, ask};
-use crate::store::Topic;
+use crate::services::devices::bluetooth::{ActionKind, Bluetooth as Bt, Cmd, send};
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Variant, What, w};
 
 #[derive(Default)]
@@ -86,7 +87,7 @@ fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
 }
 
 fn run(address: BtAddress, kind: ActionKind) {
-    ask(Ask::Run(address, kind));
+    send(Cmd::Run(address, kind));
 }
 
 fn activate(bt: &Bt, address: &str) {
@@ -132,6 +133,10 @@ impl Panel for Bluetooth {
         &[Topic::Bluetooth]
     }
 
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::BluetoothDevices]
+    }
+
     fn actions(&self, v: &View) -> Vec<El> {
         let bt = &v.store.bluetooth;
         let on = bt.powered == Some(true);
@@ -169,8 +174,8 @@ impl Panel for Bluetooth {
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
         let bt = &fx.store.bluetooth;
         match (ev.on.as_str(), &ev.what) {
-            ("power", What::Toggle(on)) => ask(Ask::Power(*on)),
-            ("rescan", What::Click) => ask(Ask::Rescan),
+            ("power", What::Toggle(on)) => send(Cmd::Power(*on)),
+            ("rescan", What::Click) => send(Cmd::Rescan),
             (on, What::Click) => {
                 if let Some(a) = on.strip_prefix("row:") {
                     activate(bt, a);

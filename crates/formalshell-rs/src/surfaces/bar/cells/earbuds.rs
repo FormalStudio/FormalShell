@@ -1,13 +1,13 @@
 //! A headphones icon and the active device's worst bud
 //! level (the case left out), gone from the strip until a bud has reported
-//! one. The cell holds the earbuds service for as long as it exists, which
+//! one. The cell wants the earbuds service for as long as it exists, which
 //! is what keeps every backend idle on a strip without it.
 
 use fs_chrome::bar::panels::PanelId;
 use fs_devices::earbuds::{battery_summary, worst_level};
 use fs_types::Percent;
 
-use crate::services::devices::earbuds;
+use crate::services::wants::{Source, Want};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
 use crate::paint::Look;
@@ -21,18 +21,12 @@ struct Read {
 
 pub struct Earbuds {
     r: Read,
+    _want: Want,
 }
 
 impl Earbuds {
     pub fn new() -> Self {
-        earbuds::acquire();
-        Self { r: Read::default() }
-    }
-}
-
-impl Drop for Earbuds {
-    fn drop(&mut self) {
-        earbuds::release();
+        Self { r: Read::default(), _want: Want::new(Source::Earbuds) }
     }
 }
 

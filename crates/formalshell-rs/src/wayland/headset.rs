@@ -27,7 +27,7 @@ use smithay_client_toolkit::seat::pointer::PointerEventKind;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Target};
-use crate::services::devices::earbuds;
+use crate::services::wants::{Source, Want};
 use crate::services::compositor;
 use crate::surfaces::card::{Card, CardSpec, Sizing, popover_theme};
 use crate::surfaces::headset;
@@ -57,7 +57,7 @@ pub(super) struct Shown {
     pressed: bool,
     /// The earbuds service and the Escape bind are held on this card's
     /// account.
-    held: bool,
+    held: Option<Want>,
 }
 
 /// The earbuds service held past the card for a device whose picture set
@@ -66,18 +66,12 @@ pub(super) struct Shown {
 struct Learning {
     address: BtAddress,
     until: Instant,
+    _want: Want,
 }
 
 impl Learning {
     fn new(address: BtAddress, until: Instant) -> Self {
-        earbuds::acquire();
-        Self { address, until }
-    }
-}
-
-impl Drop for Learning {
-    fn drop(&mut self) {
-        earbuds::release();
+        Self { address, until, _want: Want::new(Source::Earbuds) }
     }
 }
 
@@ -104,15 +98,14 @@ impl Headset {
 
 impl Shown {
     fn hold(&mut self) {
-        if !std::mem::replace(&mut self.held, true) {
-            earbuds::acquire();
+        if self.held.is_none() {
+            self.held = Some(Want::new(Source::Earbuds));
             compositor::escape_bind(ESCAPE, Some(&dismiss_argv()));
         }
     }
 
     fn release(&mut self) {
-        if std::mem::take(&mut self.held) {
-            earbuds::release();
+        if self.held.take().is_some() {
             compositor::escape_bind(ESCAPE, None);
         }
     }
@@ -209,7 +202,7 @@ impl App {
             hold_until: Some(now + HOLD),
             entered: false,
             pressed: false,
-            held: false,
+            held: None,
         };
         shown.hold();
         self.headset.card = Some(shown);

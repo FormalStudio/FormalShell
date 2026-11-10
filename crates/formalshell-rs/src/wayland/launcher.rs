@@ -48,7 +48,7 @@ const LIGHTS_COLOR: &str = "lights-color";
 pub struct Window {
     pub shown: Shown,
     /// The Wi-Fi route keeps the scanner awake while it is the level.
-    scan: Option<crate::services::devices::network::Hold>,
+    scan: Option<crate::services::wants::Want>,
     /// What a button went down on, and the button.
     pressed: Option<(String, u32)>,
 }
@@ -183,6 +183,7 @@ impl App {
     fn launcher_panel_start(&mut self) {
         if let Some(p) = self.launcher.panel.as_mut().filter(|p| !p.started) {
             p.started = true;
+            p.wants.set(&p.module.wants(&self.store));
             let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
             p.module.start(&mut fx);
         }
@@ -549,19 +550,14 @@ impl App {
         use crate::services::devices::{bluetooth, network as net};
         use crate::services::radio::{self, Cmd};
         let value = value.to_owned();
-        let service = |f: Box<dyn FnOnce(&crate::runtime::Ctx) + Send>| {
-            if let Some(rt) = &self.runtime {
-                rt.service(f);
-            }
-        };
         match (group, verb) {
-            ("wifi", "enable") => service(Box::new(|ctx| net::set_wifi(ctx, true))),
-            ("wifi", "forget") => service(Box::new(move |ctx| net::forget(ctx, value))),
+            ("wifi", "enable") => net::send(net::Cmd::Wifi(true)),
+            ("wifi", "forget") => net::send(net::Cmd::Forget(value)),
             ("wifi", "reveal") => {
                 self.wifi_reveals += 1;
                 let request = self.wifi_reveals;
                 self.wifi_reveal = Some((request, self.launcher.sessions));
-                service(Box::new(move |ctx| net::reveal(ctx, value, request)));
+                net::send(net::Cmd::Reveal(value, request));
             }
             ("wifi", "activate") => {
                 let n = &self.store.network;
@@ -570,7 +566,7 @@ impl App {
                     return;
                 }
                 if row.connected {
-                    return service(Box::new(move |ctx| net::disconnect(ctx, value)));
+                    return net::send(net::Cmd::Disconnect(value));
                 }
                 // A secured network nobody knows, or one whose last attempt
                 // failed on the secret, asks for it: a wrong password is
@@ -585,28 +581,24 @@ impl App {
                     self.wifi_pending = Some((value, String::new()));
                     self.menu_input_as(&prompt, token, token == WIFI_PASSWORD);
                 } else {
-                    service(Box::new(move |ctx| net::connect(ctx, value, net::Secret::Saved)));
+                    net::send(net::Cmd::Connect(value, net::Secret::Saved));
                 }
             }
-            ("bluetooth", "power") if value == "on" => bluetooth::ask(bluetooth::Ask::Power(true)),
+            ("bluetooth", "power") if value == "on" => bluetooth::send(bluetooth::Cmd::Power(true)),
             ("bluetooth", "forget") => {
                 if let Some(address) = fs_types::BtAddress::parse(&value) {
-                    bluetooth::ask(bluetooth::Ask::Run(address, bluetooth::ActionKind::Forget));
+                    bluetooth::send(bluetooth::Cmd::Run(address, bluetooth::ActionKind::Forget));
                 }
             }
             ("bluetooth", "toggle") => {
                 let Some(address) = fs_types::BtAddress::parse(&value) else { return };
                 let Some(d) = self.store.bluetooth.devices.iter().find(|d| d.address == address) else { return };
                 let kind = if d.connected { bluetooth::ActionKind::Disconnect } else { bluetooth::ActionKind::Connect };
-                bluetooth::ask(bluetooth::Ask::Run(address, kind));
+                bluetooth::send(bluetooth::Cmd::Run(address, kind));
             }
             ("audio", "sink" | "source") => {
-                let c = if verb == "sink" {
-                    fs_audio::Command::SetDefaultSink(Some(value))
-                } else {
-                    fs_audio::Command::SetDefaultSource(Some(value))
-                };
-                service(Box::new(move |_| crate::services::devices::audio::command(c)));
+                use crate::services::devices::audio;
+                audio::send(audio::Cmd::Default { source: verb == "source", name: value });
             }
             ("radio", _) => {
                 let r = &self.store.media.radio;
@@ -685,9 +677,7 @@ impl App {
         } else {
             net::Secret::Psk(value)
         };
-        if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| net::connect(ctx, ssid, secret));
-        }
+        net::send(net::Cmd::Connect(ssid, secret));
         self.menu_open(Some("wifi"));
     }
 
@@ -1110,7 +1100,7 @@ impl App {
         if let Some(w) = &mut self.launch {
             let want = self.launcher.open && w.shown.modal.open && self.launcher.level.as_deref() == Some("wifi");
             if want != w.scan.is_some() {
-                w.scan = want.then(crate::services::devices::network::Hold::new);
+                w.scan = want.then(|| crate::services::wants::Want::new(crate::services::wants::Source::WifiScan));
             }
         }
         if self.launch.as_ref().is_some_and(|w| w.finished(now)) {

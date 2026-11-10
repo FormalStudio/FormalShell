@@ -744,7 +744,7 @@ impl App {
         if topic.is_none() {
             self.panel_dirty |= self.panel.is_some();
         }
-        self.sync_open(now);
+        self.sync_bar_open(now);
         self.refresh_spares(topic, now);
         self.update_backdrops();
         if matches!(topic, None | Some(Topic::Compositor | Topic::Wallpaper | Topic::Theme | Topic::Config | Topic::Display | Topic::State)) {
@@ -830,14 +830,11 @@ impl App {
         self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(PanelId::QuickSettings)).map(|p| p.from)
     }
 
-    fn sync_open(&mut self, now: Instant) {
+    /// Marks the cell whose card is open.
+    fn sync_bar_open(&mut self, now: Instant) {
         let panel = self.panel_open().and_then(Name::panel);
         let overflow = self.overflow_open();
         live!(self).bar.set_open(&self.kit, panel, overflow, now);
-        devices::earbuds::panel(panel == Some(PanelId::Earbuds));
-        devices::bluetooth::panel(panel == Some(PanelId::Bluetooth));
-        devices::audio::panel(panel == Some(PanelId::Audio));
-        devices::power::panel(panel == Some(PanelId::Dualsense));
     }
 
     /// The modal card `role` names, while it is on screen.
@@ -1114,7 +1111,7 @@ impl App {
         self.panel = Some(host);
         self.panel_dirty = true;
         self.tips.hide(None, now);
-        self.sync_open(now);
+        self.sync_bar_open(now);
         self.log(&format!("panel {id} mapped"));
     }
 
@@ -1314,7 +1311,7 @@ impl App {
         }
         self.panel_dirty = true;
         self.tips.hide(None, now);
-        self.sync_open(now);
+        self.sync_bar_open(now);
     }
 
     pub fn set_scrim(&mut self, now: Instant, open: bool) {
@@ -1384,12 +1381,6 @@ impl App {
 
     /// What an input on a cell asks for. `anchor` is that cell's centre
     /// along the line.
-    fn service(&self, f: impl FnOnce(&crate::runtime::Ctx) + Send + 'static) {
-        if let Some(rt) = &self.runtime {
-            rt.service(f);
-        }
-    }
-
     fn act(&mut self, action: Action, anchor: f64) {
         match action {
             Action::None => {}
@@ -1405,11 +1396,11 @@ impl App {
             Action::Workspace(id) => compositor::focus_workspace(&id),
             Action::WorkspaceAt(idx) => compositor::focus_workspace_at(idx),
             Action::Window(id) => compositor::focus_window(&id),
-            Action::Volume(v) => self.service(move |ctx| devices::audio::set_volume(ctx, v)),
-            Action::ToggleMute => self.service(devices::audio::toggle_mute),
-            Action::ToggleSourceMute => self.service(devices::audio::toggle_source_mute),
-            Action::ToggleWifi => self.service(devices::network::toggle_wifi),
-            Action::ToggleBluetooth => self.service(devices::bluetooth::toggle_power),
+            Action::Volume(v) => devices::audio::send(devices::audio::Cmd::Volume(devices::audio::Target::Sink, v)),
+            Action::ToggleMute => devices::audio::send(devices::audio::Cmd::ToggleMute(devices::audio::Target::Sink)),
+            Action::ToggleSourceMute => devices::audio::send(devices::audio::Cmd::ToggleMute(devices::audio::Target::Source)),
+            Action::ToggleWifi => devices::network::send(devices::network::Cmd::ToggleWifi),
+            Action::ToggleBluetooth => devices::bluetooth::send(devices::bluetooth::Cmd::TogglePower),
             Action::BatteryPercent(on) => crate::surfaces::bar::cells::battery::show_percent(on),
             Action::Tray { key, click: TrayClick::Menu, offset } => {
                 let _ = self.open_tray_menu(&key, Some(anchor + offset), false);

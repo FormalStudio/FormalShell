@@ -4,7 +4,6 @@
 use fs_chrome::bar::panels::PanelId;
 
 use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
-use crate::runtime::Ctx;
 use crate::services::devices::network::{self as net, Network, Secret};
 use crate::wayland::App;
 
@@ -32,11 +31,6 @@ fn state(app: &App) -> &Network {
     &app.store.network
 }
 
-fn run(app: &App, f: impl FnOnce(&Ctx) + Send + 'static) {
-    if let Some(rt) = &app.runtime {
-        rt.service(f);
-    }
-}
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
     // The panel's "Known networks" disclosure, null while the panel is closed.
@@ -64,16 +58,16 @@ fn connect(app: &mut App, a: &[Value]) -> Reply {
     let Some(row) = n.row(&ssid) else { return unknown(&ssid) };
     if psk.is_empty() {
         if row.connected {
-            run(app, move |ctx| net::disconnect(ctx, ssid));
+            net::send(net::Cmd::Disconnect(ssid));
             return ok();
         }
         let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
         if retype || (row.secured && !row.known) {
             return Err(format!("'{ssid}' needs a password"));
         }
-        run(app, move |ctx| net::connect(ctx, ssid, Secret::Saved));
+        net::send(net::Cmd::Connect(ssid, Secret::Saved));
     } else {
-        run(app, move |ctx| net::connect(ctx, ssid, Secret::Psk(psk)));
+        net::send(net::Cmd::Connect(ssid, Secret::Psk(psk)));
     }
     ok()
 }
@@ -88,7 +82,7 @@ fn connect_eap(app: &mut App, a: &[Value]) -> Reply {
         return unknown(&ssid);
     }
     let secret = Secret::Eap { identity: a[1].str().to_owned(), password: a[2].str().to_owned() };
-    run(app, move |ctx| net::connect(ctx, ssid, secret));
+    net::send(net::Cmd::Connect(ssid, secret));
     ok()
 }
 
@@ -101,13 +95,13 @@ fn forget(app: &mut App, a: &[Value]) -> Reply {
     if n.row(&ssid).is_none() {
         return unknown(&ssid);
     }
-    run(app, move |ctx| net::forget(ctx, ssid));
+    net::send(net::Cmd::Forget(ssid));
     ok()
 }
 
-fn wifi(app: &mut App, a: &[Value]) -> Reply {
+fn wifi(_: &mut App, a: &[Value]) -> Reply {
     let on = a[0].bool();
-    run(app, move |ctx| net::set_wifi(ctx, on));
+    net::send(net::Cmd::Wifi(on));
     ok()
 }
 
@@ -115,9 +109,7 @@ fn speedtest(app: &mut App, _: &[Value]) -> Reply {
     if state(app).speed.running() {
         return Err("speed test already running".into());
     }
-    run(app, |ctx| {
-        net::speed_start(ctx);
-    });
+    net::send(net::Cmd::SpeedTest);
     ok()
 }
 

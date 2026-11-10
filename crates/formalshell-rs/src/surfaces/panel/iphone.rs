@@ -15,7 +15,6 @@ use std::cell::Cell;
 use super::{Effect, Panel, View};
 use crate::services::ams;
 use crate::services::iphone::{self as service, Cmd};
-use crate::services::wants::{Source, Want};
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Type, Variant, What, w};
 use crate::ui::el::Opt;
@@ -23,7 +22,6 @@ use crate::ui::el::Opt;
 const TRANSPORT: [(&str, &str); 3] = [("skip-back", "prev"), ("", "toggle"), ("skip-forward", "next")];
 
 pub struct Iphone {
-    _want: Want,
     /// The transport option the cursor sits on.
     np_index: usize,
     /// Whether the cursor is on the transport group, read off the last
@@ -33,7 +31,7 @@ pub struct Iphone {
 
 impl Default for Iphone {
     fn default() -> Self {
-        Self { _want: Want::new(Source::Iphone), np_index: 1, np_on: Cell::new(false) }
+        Self { np_index: 1, np_on: Cell::new(false) }
     }
 }
 

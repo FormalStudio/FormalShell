@@ -10,11 +10,12 @@
 //! to 0..1.5 with a notch at 1.0. The lists come from fs-audio's graph,
 //! published only while the panel is open.
 
-use fs_audio::{Command, Visual};
+use fs_audio::Visual;
 use fs_system::audio::{clamp_device, clamp_stream};
 
 use super::{Effect, Panel, View};
-use crate::services::devices::audio::{self, Lists, Row};
+use crate::services::devices::audio::{self, Cmd, Lists, Row, Target};
+use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, What, w};
 
@@ -24,16 +25,12 @@ const STEP: f64 = 0.05;
 #[derive(Default)]
 pub struct Audio;
 
-fn send(fx: &Effect, c: Command) {
-    fx.service(move |_| audio::command(c));
+fn set_volume(node: u32, v: f64) {
+    audio::send(Cmd::Volume(Target::Node(node), Visual::from_f64(v)));
 }
 
-fn set_volume(fx: &Effect, node: u32, v: f64) {
-    send(fx, Command::SetVolume { node, volume: Visual::from_f64(v) });
-}
-
-fn set_muted(fx: &Effect, node: u32, muted: bool) {
-    send(fx, Command::SetMuted { node, muted });
+fn set_muted(node: u32, muted: bool) {
+    audio::send(Cmd::Mute(node, muted));
 }
 
 fn lists(store: &Store) -> Option<&Lists> {
@@ -70,9 +67,8 @@ fn mixer_row(s: &fs_theme::tokens::Space, glyph: Option<&str>, label: &str, volu
 }
 
 impl Audio {
-    fn make_default(fx: &Effect, input: bool, r: &Row) {
-        let name = r.name.clone();
-        send(fx, if input { Command::SetDefaultSource(Some(name)) } else { Command::SetDefaultSink(Some(name)) });
+    fn make_default(input: bool, r: &Row) {
+        audio::send(Cmd::Default { source: input, name: r.name.clone() });
     }
 
     fn mute(fx: &Effect, stop: &str) {
@@ -81,17 +77,17 @@ impl Audio {
         match stop {
             "output-slider" => {
                 if let Some(id) = l.sink {
-                    set_muted(fx, id, !a.muted);
+                    set_muted(id, !a.muted);
                 }
             }
             "input-slider" => {
                 if let Some(r) = &l.source {
-                    set_muted(fx, r.id, !r.muted);
+                    set_muted(r.id, !r.muted);
                 }
             }
             _ => {
                 if let Some(("stream", r)) = by_key(l, stop) {
-                    set_muted(fx, r.id, !r.muted);
+                    set_muted(r.id, !r.muted);
                 }
             }
         }
@@ -105,6 +101,10 @@ impl Panel for Audio {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Audio]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::AudioLists]
     }
 
     fn body(&self, v: &View) -> El {
@@ -183,19 +183,19 @@ impl Panel for Audio {
                     "output-slider" => {
                         if let Some(id) = l.sink {
                             let to = if let What::Fraction(f) = ev.what { f } else { step(a.volume.unwrap_or_default()) };
-                            set_volume(fx, id, clamp_device(to));
+                            set_volume(id, clamp_device(to));
                         }
                     }
                     "input-slider" => {
                         if let Some(r) = &l.source {
                             let to = if let What::Fraction(f) = ev.what { f } else { step(r.volume) };
-                            set_volume(fx, r.id, clamp_device(to));
+                            set_volume(r.id, clamp_device(to));
                         }
                     }
                     _ => {
                         if let Some(("stream", r)) = by_key(&l, key) {
                             let to = if let What::Fraction(f) = ev.what { f * 1.5 } else { step(r.volume) };
-                            set_volume(fx, r.id, clamp_stream(to));
+                            set_volume(r.id, clamp_stream(to));
                         }
                     }
                 }
@@ -213,8 +213,8 @@ impl Panel for Audio {
             return;
         };
         match by_key(&l, stop) {
-            Some(("output", r)) => Self::make_default(fx, false, r),
-            Some(("input", r)) => Self::make_default(fx, true, r),
+            Some(("output", r)) => Self::make_default(false, r),
+            Some(("input", r)) => Self::make_default(true, r),
             _ => Self::mute(fx, stop),
         }
     }
@@ -225,17 +225,17 @@ impl Panel for Audio {
         match stop {
             "output-slider" => {
                 if let (Some(id), Some(v)) = (l.sink, fx.store.audio.volume) {
-                    set_volume(fx, id, clamp_device(v.as_f64() + d));
+                    set_volume(id, clamp_device(v.as_f64() + d));
                 }
             }
             "input-slider" => {
                 if let Some(r) = &l.source {
-                    set_volume(fx, r.id, clamp_device(r.volume.as_f64() + d));
+                    set_volume(r.id, clamp_device(r.volume.as_f64() + d));
                 }
             }
             _ => {
                 if let Some(("stream", r)) = by_key(&l, stop) {
-                    set_volume(fx, r.id, clamp_stream(r.volume.as_f64() + d));
+                    set_volume(r.id, clamp_stream(r.volume.as_f64() + d));
                 }
             }
         }

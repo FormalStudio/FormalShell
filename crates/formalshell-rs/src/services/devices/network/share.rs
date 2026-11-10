@@ -98,7 +98,7 @@ async fn read(nm: &NetworkManager, t: Target) -> Read {
 }
 
 /// SHOW or HIDE on the password row.
-pub fn reveal_toggle(ctx: &Ctx) {
+pub(super) fn reveal_toggle(ctx: &Ctx) {
     let read = INNER.with_borrow_mut(|i| {
         if i.reveal != Reveal::Idle {
             i.reveal = Reveal::Idle;
@@ -115,7 +115,7 @@ pub fn reveal_toggle(ctx: &Ctx) {
 }
 
 /// The share row expanding or collapsing.
-pub fn qr_toggle(ctx: &Ctx) {
+pub(super) fn qr_toggle(ctx: &Ctx) {
     let open = INNER.with_borrow_mut(|i| {
         if i.qr != Qr::Closed {
             i.qr = Qr::Closed;

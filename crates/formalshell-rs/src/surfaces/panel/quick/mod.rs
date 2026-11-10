@@ -9,7 +9,7 @@ pub mod piece;
 
 use std::cell::RefCell;
 
-use fs_audio::{Command, Visual};
+use fs_audio::Visual;
 use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
 use fs_chrome::bar::panels::PanelId;
 use fs_types::{BtAddress, Edge, Region};
@@ -21,11 +21,12 @@ use serde_json::{Value as Json, json};
 
 use super::{Effect, Panel, View};
 use crate::motion::{Animated, Kind as Clock};
-use crate::services::devices::bluetooth::{ActionKind as BtAction, Ask as BtAsk};
+use crate::services::devices::bluetooth::{ActionKind as BtAction, Cmd as BtCmd};
 use crate::services::devices::{self, audio, bluetooth as bt, network as net};
 use crate::services::power::{self, Action};
 use crate::runtime::now_ms;
 use crate::services::ipad::Link;
+use crate::services::wants::Source;
 use crate::services::{display, theme};
 use crate::store::{Store, Topic};
 use crate::surfaces::activity;
@@ -738,9 +739,6 @@ pub struct QuickSettings {
     /// Each section's usable stops as last drawn, for Tab.
     sections: RefCell<Vec<Vec<String>>>,
     menu: RefCell<MenuState>,
-    /// NetworkManager scans while Wi-Fi's menu is open, as the network
-    /// panel has it scan while it is.
-    scan: RefCell<Option<net::Hold>>,
     /// The entries the card shows as info tiles (§7), as the bar that
     /// opened it resolved them, and that bar's edge, which their cells read.
     entries: Vec<Entry>,
@@ -759,7 +757,6 @@ impl Default for QuickSettings {
             start: None,
             sections: RefCell::new(Vec::new()),
             menu: RefCell::new(MenuState::default()),
-            scan: RefCell::new(None),
             entries: Vec::new(),
             edge: Edge::Top,
             extras: RefCell::new(Vec::new()),
@@ -857,6 +854,12 @@ impl Panel for QuickSettings {
         ]
     }
 
+    /// NetworkManager scans while Wi-Fi's menu is open, as the network
+    /// panel has it scan while it is.
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        if self.menu.borrow().want.as_deref() == Some("wifi") { vec![Source::WifiScan] } else { Vec::new() }
+    }
+
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let mut state = self.menu.borrow_mut();
@@ -867,10 +870,6 @@ impl Panel for QuickSettings {
         let toggles: Vec<&Tile> = all.iter().filter(|t| matches!(t.kind, Kind::Toggle | Kind::Split)).collect();
         let tail: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::Background).collect();
         let extras = self.extras_now(v.store, v.raster);
-        let scanning = state.want.as_deref() == Some("wifi");
-        if scanning != self.scan.borrow().is_some() {
-            *self.scan.borrow_mut() = scanning.then(net::Hold::new);
-        }
         let open = frame.id.as_deref().and_then(|id| menu(v.store, id, state.armed.as_deref()));
         // A menu whose devices went (a sink unplugged to one) closes.
         if frame.id.is_some() && open.is_none() {
@@ -1008,7 +1007,6 @@ impl Panel for QuickSettings {
 
     fn closed(&mut self) {
         *self.menu.get_mut() = MenuState::default();
-        *self.scan.get_mut() = None;
         self.extras.get_mut().clear();
         self.drawn.get_mut().clear();
     }
@@ -1161,7 +1159,7 @@ impl QuickSettings {
             return self.toggle_menu(owner, fx.store);
         }
         if let Some(owner) = id.strip_suffix(":icon") {
-            return mute(owner, fx);
+            return mute(owner);
         }
         if id == "m:settings" {
             let shown = self.menu.get_mut().want.clone();
@@ -1189,12 +1187,12 @@ impl QuickSettings {
             "settings" => fx.panel = Some(PanelId::Settings),
             "lock" => fx.call = Some(("lock", "lock")),
             "power" | BACKGROUND => self.toggle_menu(tile.id, fx.store),
-            "volume" | "microphone" => mute(tile.id, fx),
+            "volume" | "microphone" => mute(tile.id),
             "wired" => {
                 let n = &fx.store.network;
                 if let Some(r) = n.wired_rows.iter().find(|r| r.connected).or(n.wired_rows.first()) {
                     let (name, connected) = (r.name.clone(), r.connected);
-                    fx.service(move |ctx| net::wired_toggle(ctx, name, connected));
+                    net::send(net::Cmd::Wired { interface: name, connected });
                 }
             }
             "wifi" => fx.ipc(&["network", "wifi", if tile.on { "false" } else { "true" }]),
@@ -1228,12 +1226,12 @@ impl QuickSettings {
         let Some((owner, what)) = rest.split_once(':') else { return };
         let what = what.to_owned();
         match owner {
-            "volume" => fx.service(move |_| audio::command(Command::SetDefaultSink(Some(what)))),
-            "microphone" => fx.service(move |_| audio::command(Command::SetDefaultSource(Some(what)))),
+            "volume" => audio::send(audio::Cmd::Default { source: false, name: what }),
+            "microphone" => audio::send(audio::Cmd::Default { source: true, name: what }),
             "wired" => {
                 if let Some(r) = fx.store.network.wired_rows.iter().find(|r| r.name == what) {
                     let connected = r.connected;
-                    fx.service(move |ctx| net::wired_toggle(ctx, what, connected));
+                    net::send(net::Cmd::Wired { interface: what, connected });
                 }
             }
             "wifi" => wifi_row(what, fx),
@@ -1243,7 +1241,7 @@ impl QuickSettings {
                     && let Some(address) = BtAddress::parse(&what)
                     && let Some(d) = b.devices.iter().find(|d| d.address == address && d.paired)
                 {
-                    bt::ask(BtAsk::Run(address, if d.connected { BtAction::Disconnect } else { BtAction::Connect }));
+                    bt::send(BtCmd::Run(address, if d.connected { BtAction::Disconnect } else { BtAction::Connect }));
                 }
             }
             "power-mode" => {
@@ -1251,7 +1249,7 @@ impl QuickSettings {
                 if p != Profile::Balanced {
                     self.last_profile = p;
                 }
-                fx.service(move |ctx| devices::power::set_profile(ctx, p));
+                devices::power::send(devices::power::Cmd::Profile(p));
             }
             "keyboard" => fx.ipc(&["lights", "effect", &what]),
             "ipad" if what == "reconnect" => fx.ipc(&["ipad", "reconnect"]),
@@ -1293,11 +1291,11 @@ impl QuickSettings {
         match key {
             "volume" => {
                 let v = Visual::from_f64(at(a.volume.map_or(0.0, Visual::as_f64)));
-                fx.service(move |ctx| audio::set_volume(ctx, v));
+                audio::send(audio::Cmd::Volume(audio::Target::Sink, v));
             }
             "microphone" => {
                 let v = Visual::from_f64(at(a.source_volume.map_or(0.0, Visual::as_f64)));
-                fx.service(move |ctx| audio::set_source_volume(ctx, v));
+                audio::send(audio::Cmd::Volume(audio::Target::Source, v));
             }
             "brightness" => {
                 let screens = store.display.devices();
@@ -1328,7 +1326,7 @@ impl QuickSettings {
             self.last_profile = p.active;
             Profile::Balanced
         };
-        fx.service(move |ctx| devices::power::set_profile(ctx, next));
+        devices::power::send(devices::power::Cmd::Profile(next));
     }
 }
 
@@ -1348,7 +1346,7 @@ fn wifi_row(ssid: String, fx: &mut Effect) {
         fx.then = Some(format!("wifi:{ssid}"));
         return;
     }
-    fx.service(move |ctx| net::connect(ctx, ssid, net::Secret::Saved));
+    net::send(net::Cmd::Connect(ssid, net::Secret::Saved));
 }
 
 /// Enter or a click on one of Background's rows: what can be stopped
@@ -1373,10 +1371,10 @@ fn background_row(what: &str, fx: &mut Effect) {
 }
 
 /// A slider's icon (or Enter on its track): mute its device.
-fn mute(id: &str, fx: &mut Effect) {
+fn mute(id: &str) {
     match id {
-        "volume" => fx.service(audio::toggle_mute),
-        "microphone" => fx.service(audio::toggle_source_mute),
+        "volume" => audio::send(audio::Cmd::ToggleMute(audio::Target::Sink)),
+        "microphone" => audio::send(audio::Cmd::ToggleMute(audio::Target::Source)),
         _ => {}
     }
 }

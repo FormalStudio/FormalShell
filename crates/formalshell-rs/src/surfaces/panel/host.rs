@@ -29,6 +29,7 @@ use crate::motion::{Animated, Kind as Clock};
 use crate::runtime::Runtime;
 use crate::scene::{IRect, NodeId, Paint};
 use crate::scroll::{Touchpad, Travel};
+use crate::services::wants::Holding;
 use crate::store::Store;
 use crate::surface::Surface;
 use crate::surfaces::bar::cell::Button;
@@ -279,6 +280,8 @@ impl Effect<'_> {
 
 pub struct Host {
     pub module: Box<dyn Panel>,
+    /// The module's wants, held from its start until the card closes.
+    wants: Holding,
     pub win: CardWindow,
     head: Ui,
     body: Ui,
@@ -346,6 +349,7 @@ impl Host {
         let keyboard = module.takes_keyboard();
         Self {
             module,
+            wants: Holding::default(),
             win: CardWindow::new(card, surface),
             head: Ui::new(Some(rule)),
             body: Ui::new(Some(rule)),
@@ -444,6 +448,7 @@ impl Host {
         }
         self.open = false;
         self.module.closed();
+        self.wants.set(&[]);
         self.cursor.active = false;
         self.handoff = None;
         self.win.card.set_bypass(false);
@@ -456,6 +461,7 @@ impl Host {
     pub fn hand_over(&mut self) {
         self.open = false;
         self.module.closed();
+        self.wants.set(&[]);
         self.cursor.active = false;
         self.win.card.set_joined(false);
         self.win.set_keyboard(KeyboardInteractivity::None);
@@ -605,6 +611,9 @@ impl Host {
             self.win.card.tick(now);
         }
         self.draw(store, theme, kit, now);
+        if self.open {
+            self.wants.set(&self.module.wants(store));
+        }
         crate::trace::slow("panel", t0.elapsed(), format_args!("{} size_us={} total_us={}", self.name, sized.as_micros(), t0.elapsed().as_micros()));
     }
 
@@ -783,6 +792,7 @@ impl Host {
     /// asked again, since a panel may only know it once it has read the
     /// store.
     pub fn start(&mut self, store: &Store, runtime: Option<&Runtime>) {
+        self.wants.set(&self.module.wants(store));
         self.module.start(&mut Effect::new(store, runtime));
         if let Some(key) = self.module.cursor_start() {
             self.cursor.key = Some(key);

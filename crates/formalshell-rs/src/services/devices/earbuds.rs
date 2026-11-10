@@ -4,9 +4,11 @@
 //! what the bar cell and the `earbuds` IPC read; one task per backend owns
 //! its source.
 //!
-//! Nothing runs while nobody holds the service: the earbuds cell holds it
-//! for as long as it is on the strip and the earbuds panel while it is open.
-//! A file-watch backend (airpods) reads on acquire, a process backend
+//! Nothing runs while nobody wants it (`Source::Earbuds`): the earbuds cell
+//! holds it for as long as it is on the strip, the headset card while it is
+//! up and the earbuds panel while it is open, and the panel alone wants the
+//! AirPods' sensor streams (`Source::EarbudsSensors`). A file-watch backend
+//! (airpods) reads on the first want, a process backend
 //! (nothing) keeps one `watch` child per connected device, and the poll
 //! backends (soundcore, samsung) run their CLI every 30 seconds and on every
 //! change to the connected Bluetooth set, one command at a time.
@@ -21,7 +23,6 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
@@ -33,9 +34,10 @@ use fs_types::BtAddress;
 use fs_devices::earbuds::motion::{Quat, Sample, parse_sample};
 use fs_devices::earbuds::{self as model, Device, HeartSample, Motion, Value, airpods, nothing, samsung, soundcore};
 use futures_lite::io::{BufReader, Lines};
-use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, StreamExt, future};
+use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, FutureExt, StreamExt, future};
 
 use crate::runtime::Ctx;
+use crate::services::wants::{self, Source};
 use crate::services::watch::Watch;
 use crate::store;
 
@@ -262,61 +264,24 @@ fn status_path() -> PathBuf {
     crate::paths::state().join("librepods").join("status.json")
 }
 
-enum Msg {
-    Hold(bool),
-    Panel(bool),
+/// What the panel, IPC and the other device services ask of the backends.
+pub enum Cmd {
+    /// BlueZ's devices as the backends read them (the smoke override applied).
     Bluetooth(Vec<BtDevice>),
     Op(Op),
+    /// Something started or stopped recording off a source
+    /// ([`fs_audio::Graph::capturing`]).
     Mic(bool),
+    /// Takes the AirPods' current head orientation as the zero of yaw, pitch
+    /// and roll.
     Recenter,
 }
 
-static CHANNEL: LazyLock<(Sender<Msg>, Receiver<Msg>)> = LazyLock::new(async_channel::unbounded);
+static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
 
-fn send(msg: Msg) {
-    let _ = CHANNEL.0.try_send(msg);
-}
-
-/// A consumer arrived (the cell built, the panel opened). Callable from
-/// any thread.
-pub fn acquire() {
-    send(Msg::Hold(true));
-}
-
-pub fn release() {
-    send(Msg::Hold(false));
-}
-
-static PANEL: AtomicBool = AtomicBool::new(false);
-
-/// The earbuds panel's hold, taken while it is open. It also runs the
-/// AirPods heart rate stream, which nothing else reads.
-pub fn panel(open: bool) {
-    if PANEL.swap(open, Ordering::Relaxed) != open {
-        send(Msg::Hold(open));
-        send(Msg::Panel(open));
-    }
-}
-
-/// BlueZ's devices as the backends read them (the smoke override applied).
-pub fn bluetooth(devices: Vec<BtDevice>) {
-    send(Msg::Bluetooth(devices));
-}
-
-pub fn write(op: Op) {
-    send(Msg::Op(op));
-}
-
-/// Something started or stopped recording off a source
-/// ([`fs_audio::Graph::capturing`]).
-pub fn mic(capturing: bool) {
-    send(Msg::Mic(capturing));
-}
-
-/// Takes the AirPods' current head orientation as the zero of yaw, pitch
-/// and roll.
-pub fn recenter() {
-    send(Msg::Recenter);
+/// Callable from any thread.
+pub fn send(cmd: Cmd) {
+    let _ = CHANNEL.0.try_send(cmd);
 }
 
 fn publish(ctx: &Ctx, name: &'static str, backend: Backend) {
@@ -343,51 +308,49 @@ pub fn start(ctx: &Ctx) {
     ctx.spawn(run_poll(ctx.clone(), Poller::Soundcore, scq_rx, epoch.clone()));
     ctx.spawn(run_poll(ctx.clone(), Poller::Samsung, sam_rx, epoch.clone()));
     ctx.spawn(async move {
-        let mut holds = 0usize;
+        enum Wake {
+            Cmd(Cmd),
+            Watched(bool),
+            Sensors(bool),
+        }
         let rx = CHANNEL.1.clone();
-        while let Ok(first) = rx.recv().await {
-            // A bar rebuild drops its cells and builds new ones in one go:
-            // a release and an acquire in the same burst are no change.
-            let mut batch = vec![first];
-            while let Ok(more) = rx.try_recv() {
-                batch.push(more);
-            }
-            let was = holds > 0;
-            for msg in &batch {
-                match msg {
-                    Msg::Hold(true) => holds += 1,
-                    Msg::Hold(false) => holds = holds.saturating_sub(1),
-                    _ => {}
+        let watched = wants::watch(Source::Earbuds);
+        let sensors = wants::watch(Source::EarbudsSensors);
+        let (mut held, mut panel) = (false, false);
+        loop {
+            let wake = async { rx.recv().await.ok().map(Wake::Cmd) }
+                .or(async { watched.recv().await.ok().map(Wake::Watched) })
+                .or(async { sensors.recv().await.ok().map(Wake::Sensors) })
+                .await;
+            let Some(wake) = wake else { return };
+            match wake {
+                Wake::Watched(on) if on != held => {
+                    held = on;
+                    if !held {
+                        epoch.set(epoch.get() + 1);
+                    }
+                    let _ = air_tx.try_send(Event::Hold(held));
+                    let _ = not_tx.try_send(NEvent::Hold(held));
+                    let _ = scq_tx.try_send(Event::Hold(held));
+                    let _ = sam_tx.try_send(Event::Hold(held));
                 }
-            }
-            let held = holds > 0;
-            if held != was {
-                if !held {
-                    epoch.set(epoch.get() + 1);
+                Wake::Sensors(on) if on != panel => {
+                    panel = on;
+                    let _ = air_tx.try_send(Event::Panel(on));
                 }
-                let _ = air_tx.try_send(Event::Hold(held));
-                let _ = not_tx.try_send(NEvent::Hold(held));
-                let _ = scq_tx.try_send(Event::Hold(held));
-                let _ = sam_tx.try_send(Event::Hold(held));
-            }
-            for msg in batch {
-                match msg {
-                Msg::Hold(_) => {}
-                Msg::Panel(open) => {
-                    let _ = air_tx.try_send(Event::Panel(open));
-                }
-                Msg::Mic(on) => {
+                Wake::Watched(_) | Wake::Sensors(_) => {}
+                Wake::Cmd(Cmd::Mic(on)) => {
                     let _ = air_tx.try_send(Event::Mic(on));
                 }
-                Msg::Recenter => {
+                Wake::Cmd(Cmd::Recenter) => {
                     let _ = air_tx.try_send(Event::Recenter);
                 }
-                Msg::Bluetooth(devices) => {
+                Wake::Cmd(Cmd::Bluetooth(devices)) => {
                     let _ = not_tx.try_send(NEvent::Bluetooth(devices.clone()));
                     let _ = scq_tx.try_send(Event::Bluetooth(devices.clone()));
                     let _ = sam_tx.try_send(Event::Bluetooth(devices));
                 }
-                Msg::Op(op) => match &op {
+                Wake::Cmd(Cmd::Op(op)) => match &op {
                     Op::Airpods(_) => {
                         let _ = air_tx.try_send(Event::Op(op));
                     }
@@ -401,7 +364,6 @@ pub fn start(ctx: &Ctx) {
                         let _ = sam_tx.try_send(Event::Op(op));
                     }
                 },
-                }
             }
         }
     });
@@ -1051,12 +1013,12 @@ struct Nothing {
 }
 
 /// The Nothing backend over `nothingctl`. Discovery is `list --json`, run on
-/// acquire and whenever the connected Bluetooth set changes; each device it
-/// reports connected gets one `watch -d <addr>` child while held. A device
-/// nothingctl refuses over its model (exit 3) is left alone until BlueZ sees
-/// it disconnect and connect again; any other exit is retried every 2 s for
-/// the first 90 s after a connect, then on a backoff from 5 s doubling to 5
-/// minutes.
+/// the first want and whenever the connected Bluetooth set changes; each
+/// device it reports connected gets one `watch -d <addr>` child while held.
+/// A device nothingctl refuses over its model (exit 3) is left alone until
+/// BlueZ sees it disconnect and connect again; any other exit is retried
+/// every 2 s for the first 90 s after a connect, then on a backoff from 5 s
+/// doubling to 5 minutes.
 async fn run_nothing(ctx: Ctx, rx: Receiver<NEvent>, tx: Sender<NEvent>) {
     let mut s = Nothing { available: true, ..Nothing::default() };
     loop {

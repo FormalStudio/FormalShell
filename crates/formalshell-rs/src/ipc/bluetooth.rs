@@ -18,9 +18,7 @@ fn toggle(app: &mut App, _: &[Value]) -> Reply {
     if app.store.bluetooth.powered.is_none() {
         return Err(NO_ADAPTER.into());
     }
-    if let Some(rt) = &app.runtime {
-        rt.service(bluetooth::toggle_power);
-    }
+    bluetooth::send(bluetooth::Cmd::TogglePower);
     ok()
 }
 
@@ -33,7 +31,7 @@ fn power(app: &mut App, a: &[Value]) -> Reply {
     if app.store.bluetooth.powered.is_none() {
         return Err(NO_ADAPTER.into());
     }
-    bluetooth::ask(bluetooth::Ask::Power(on));
+    bluetooth::send(bluetooth::Cmd::Power(on));
     ok()
 }
 
@@ -50,9 +48,7 @@ fn write_trust(app: &mut App, address: &str, want: bool) -> Reply {
         return Err(format!("device '{address}' is not paired"));
     }
     let found = device.address;
-    if let Some(rt) = &app.runtime {
-        rt.service(move |ctx| bluetooth::set_trust(ctx, found, want));
-    }
+    bluetooth::send(bluetooth::Cmd::Trust(found, want));
     ok()
 }
 

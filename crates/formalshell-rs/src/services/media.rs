@@ -26,6 +26,7 @@ use fs_bluez::PlayerCommand;
 
 use super::devices::audio::{self, Routing, StreamInfo};
 use super::devices::bluetooth;
+use super::wants::{Source, Want};
 use super::{airplay, ams, kopuz, radio, visualizer};
 use crate::runtime::Ctx;
 use crate::store;
@@ -270,6 +271,9 @@ pub struct State {
     pub selected: String,
     /// The sinks and playback streams, published while something wants them.
     pub routing: Routing,
+    /// Held while a stream is the picked source: its volume and output
+    /// come off the routing.
+    stream_routing: Option<Want>,
     /// Decoded art by url and slot size; `None` is art that failed to load.
     covers: Vec<(String, u32, Option<crate::scene::Bitmap>)>,
     /// The animated cover's latest frame by `motion_art` album key, one
@@ -366,7 +370,7 @@ impl State {
 
     pub fn select(&mut self, id: &str) {
         self.selected = id.to_owned();
-        audio::routing_wanted(1, id.starts_with("stream:"));
+        self.stream_routing = id.starts_with("stream:").then(|| Want::new(Source::AudioRouting));
         self.sync_gate();
     }
 
@@ -481,7 +485,7 @@ impl State {
             return radio::send(radio::Cmd::SetOutput(sink.to_owned()));
         }
         for s in self.routed_streams() {
-            audio::write(fs_audio::Command::MoveStream { stream: s.id, sink: name.to_owned() });
+            audio::send(audio::Cmd::MoveStream { stream: s.id, sink: name.to_owned() });
         }
     }
 
@@ -789,12 +793,12 @@ impl State {
             },
             SourceKind::Stream => {
                 if let Some(node) = a.id.strip_prefix("stream:").and_then(|n| n.parse().ok()) {
-                    audio::write(fs_audio::Command::SetVolume { node, volume: Visual::from_f64(v.as_fraction()) });
+                    audio::send(audio::Cmd::Volume(audio::Target::Node(node), Visual::from_f64(v.as_fraction())));
                 }
             }
             SourceKind::Bluetooth => {
                 for s in self.routed_streams() {
-                    audio::write(fs_audio::Command::SetVolume { node: s.id, volume: Visual::from_f64(v.as_fraction()) });
+                    audio::send(audio::Cmd::Volume(audio::Target::Node(s.id), Visual::from_f64(v.as_fraction())));
                 }
             }
             SourceKind::Mpris | SourceKind::Airplay => {}

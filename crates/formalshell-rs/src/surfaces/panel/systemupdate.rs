@@ -10,19 +10,11 @@ use fs_info::system_update::{self, PollState};
 
 use super::{Effect, Panel, View};
 use crate::services::info::kick;
-use crate::services::wants::{Source, Want};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Variant, w};
 
-pub struct SystemUpdate {
-    _want: Want,
-}
-
-impl SystemUpdate {
-    pub fn new() -> Self {
-        Self { _want: Want::new(Source::SystemUpdate) }
-    }
-}
+pub struct SystemUpdate;
 
 fn flake_dir<'a>(v: &'a View) -> &'a str {
     v.store.config.str("systemUpdate.flakeDir").unwrap_or("")
@@ -39,6 +31,10 @@ impl Panel for SystemUpdate {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::SystemUpdate, Topic::Config]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::SystemUpdate]
     }
 
     fn actions(&self, v: &View) -> Vec<El> {

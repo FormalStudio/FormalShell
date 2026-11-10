@@ -17,9 +17,9 @@
 //! synced track has the automatic hold on: what the player's stream (or the
 //! default sink) declares between the decoder and the ear.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 
 use super::devices::audio;
 use super::http;
+use super::wants::{self, Source as Demand, Want};
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -202,11 +203,14 @@ impl Settings {
 
 static ASK: OnceLock<async_channel::Sender<Ask>> = OnceLock::new();
 static LAST: Mutex<Option<Ask>> = Mutex::new(None);
-/// What the latency read needs from the UI thread: the active player's row,
-/// and whether a synced track with the automatic hold wants it at all.
+/// What the latency read needs from the UI thread: the active player's row.
 static PLAYER: Mutex<Option<PlayerRow>> = Mutex::new(None);
-static LATENCY_WANTED: AtomicBool = AtomicBool::new(false);
 static LATENCY_POKE: OnceLock<async_channel::Sender<()>> = OnceLock::new();
+
+thread_local! {
+    /// Held while a synced track with the automatic hold wants the read.
+    static LATENCY: RefCell<Option<Want>> = const { RefCell::new(None) };
+}
 
 /// The UI thread's side, after every media or config change: a lookup when
 /// the track (or the switch) changed, and the latency read's inputs.
@@ -237,9 +241,13 @@ pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: 
     let row = a.as_ref().and_then(|a| media.players_rows().into_iter().find(|r| r.id == a.id));
     let auto = Settings::read(config).auto;
     let wanted = auto && lyrics.synced();
-    let was = LATENCY_WANTED.swap(wanted, Ordering::Relaxed);
+    LATENCY.with_borrow_mut(|held| {
+        if wanted != held.is_some() {
+            *held = wanted.then(|| Want::new(Demand::LyricsLatency));
+        }
+    });
     let moved = PLAYER.lock().map(|mut p| std::mem::replace(&mut *p, row.clone()) != row).unwrap_or(false);
-    if wanted && (!was || moved)
+    if wanted && moved
         && let Some(tx) = LATENCY_POKE.get()
     {
         let _ = tx.try_send(());
@@ -524,27 +532,42 @@ fn read_latency(ctx: &Ctx) {
 }
 
 async fn latency(ctx: Ctx) {
+    enum Wake {
+        Poke,
+        Wanted(bool),
+        Tick,
+        Gone,
+    }
     let (tx, rx) = async_channel::unbounded();
     let _ = LATENCY_POKE.set(tx);
+    let wanted = wants::watch(Demand::LyricsLatency);
+    let mut held = false;
     loop {
         // A synced track re-reads every ten seconds, since a Bluetooth sink
         // revises its own transport delay mid-stream; a poke (a newly synced
         // track, another player) reads once things settle. With nothing
-        // synced there is no timer at all, only the poke that starts one.
-        let poked = if LATENCY_WANTED.load(Ordering::Relaxed) {
-            future::or(async { rx.recv().await.is_ok() }, async {
-                async_io::Timer::after(Duration::from_secs(10)).await;
-                false
-            })
-            .await
-        } else {
-            rx.recv().await.is_ok()
+        // synced there is no timer at all, only the want that starts one.
+        let ticking = held;
+        let tick = async move {
+            if !ticking {
+                future::pending::<()>().await;
+            }
+            async_io::Timer::after(Duration::from_secs(10)).await;
+            Wake::Tick
         };
-        if poked {
+        let poke = async { rx.recv().await.map_or(Wake::Gone, |()| Wake::Poke) };
+        let want = async { wanted.recv().await.map_or(Wake::Gone, Wake::Wanted) };
+        let settle = match future::or(poke, future::or(want, tick)).await {
+            Wake::Gone => return,
+            Wake::Poke => true,
+            Wake::Wanted(on) => !std::mem::replace(&mut held, on) && on,
+            Wake::Tick => false,
+        };
+        if settle {
             async_io::Timer::after(Duration::from_millis(300)).await;
             while rx.try_recv().is_ok() {}
         }
-        if LATENCY_WANTED.load(Ordering::Relaxed) {
+        if held {
             read_latency(&ctx);
         }
     }

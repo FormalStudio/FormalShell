@@ -12,19 +12,11 @@ use fs_devices::tailscale as model;
 use super::{Effect, Panel, View};
 use crate::services::info::tailscale::{Action, Poll};
 use crate::services::info::{kick, tailscale};
-use crate::services::wants::{Source, Want};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, Event, w};
 
-pub struct Tailscale {
-    _want: Want,
-}
-
-impl Tailscale {
-    pub fn new() -> Self {
-        Self { _want: Want::new(Source::Tailscale) }
-    }
-}
+pub struct Tailscale;
 
 fn toggle(fx: &Effect) {
     let t = &fx.store.tailscale;
@@ -53,6 +45,10 @@ impl Panel for Tailscale {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Tailscale]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::Tailscale]
     }
 
     fn actions(&self, v: &View) -> Vec<El> {

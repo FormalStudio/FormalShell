@@ -165,10 +165,7 @@ impl App {
                 let here = p.popup.hit(at.0, at.1);
                 let Some(on) = p.pressed.take().filter(|on| Some(on) == here.as_ref()) else { return };
                 let Some((profile, ..)) = on.strip_prefix("profile:").and_then(|i| i.parse::<usize>().ok()).and_then(|i| PROFILES.get(i)) else { return };
-                let profile = *profile;
-                if let Some(rt) = &self.runtime {
-                    rt.service(move |ctx| devices::power::set_profile(ctx, profile));
-                }
+                devices::power::send(devices::power::Cmd::Profile(*profile));
             }
             PointerEventKind::Leave { .. } => p.pressed = None,
             _ => {}

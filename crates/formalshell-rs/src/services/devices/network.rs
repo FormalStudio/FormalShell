@@ -10,8 +10,7 @@
 //! settled 15s in reads "Timed out".
 
 use std::cell::RefCell;
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use async_io::Timer;
@@ -21,15 +20,16 @@ use futures_lite::{FutureExt, StreamExt, future};
 
 use super::action::ActionInFlight;
 use crate::runtime::Ctx;
-use crate::services::info;
-use crate::services::wants::Source;
+use crate::services::wants::{self, Source};
 use crate::store;
 
 mod share;
 mod speed;
 
-pub use share::{Qr, Reveal, qr_toggle, reveal_toggle};
-pub use speed::{Phase, Speed, speed_start, speed_stop};
+pub use share::{Qr, Reveal};
+use share::{qr_toggle, reveal_toggle};
+pub use speed::{Phase, Speed};
+use speed::{speed_start, speed_stop};
 
 /// How long a panel action may stay unsettled.
 const ACTION_TIMEOUT: Duration = Duration::from_secs(15);
@@ -234,6 +234,7 @@ fn publish() {
 }
 
 pub fn start(ctx: &Ctx) {
+    ctx.spawn(commands(ctx.clone()));
     ctx.spawn(run(ctx.clone()));
 }
 
@@ -273,9 +274,7 @@ async fn run(ctx: Ctx) {
             Some(None) => return,
             None => {
                 settling = None;
-                for source in [Source::Weather, Source::Github, Source::Tailscale, Source::SystemUpdate] {
-                    info::kick(source);
-                }
+                reconnected();
                 continue;
             }
         };
@@ -370,9 +369,59 @@ pub enum Secret {
     Eap { identity: String, password: String },
 }
 
-/// What a connect attempt asks of the service. Secrets ride the closure to
-/// NetworkManager's D-Bus API and are never logged or kept.
-pub fn connect(ctx: &Ctx, ssid: String, secret: Secret) {
+/// What the panels, the launcher and IPC ask of the service.
+pub enum Cmd {
+    /// Secrets ride the command to NetworkManager's D-Bus API and are never
+    /// logged or kept.
+    Connect(String, Secret),
+    Disconnect(String),
+    Forget(String),
+    /// A saved passphrase read back for the launcher, answering `request`.
+    Reveal(String, u64),
+    /// A wired row's click: down while it is up, else up on the profile
+    /// NetworkManager picks.
+    Wired { interface: String, connected: bool },
+    /// NetworkManager's radio switch, set outright.
+    Wifi(bool),
+    /// The network cell's right click: `Networking.wifiEnabled` flipped.
+    ToggleWifi,
+    /// `RequestScan` on every Wi-Fi device NetworkManager has.
+    Rescan,
+    /// Starts the speed test unless one runs.
+    SpeedTest,
+    /// The panel's share QR and saved password rows.
+    ToggleQr,
+    TogglePassword,
+}
+
+static CMDS: LazyLock<(async_channel::Sender<Cmd>, async_channel::Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
+
+/// Callable from any thread.
+pub fn send(c: Cmd) {
+    let _ = CMDS.0.try_send(c);
+}
+
+async fn commands(ctx: Ctx) {
+    while let Ok(c) = CMDS.1.recv().await {
+        match c {
+            Cmd::Connect(ssid, secret) => connect(&ctx, ssid, secret),
+            Cmd::Disconnect(ssid) => disconnect(&ctx, ssid),
+            Cmd::Forget(ssid) => forget(&ctx, ssid),
+            Cmd::Reveal(ssid, request) => reveal(&ctx, ssid, request),
+            Cmd::Wired { interface, connected } => wired_toggle(&ctx, interface, connected),
+            Cmd::Wifi(on) => set_wifi(&ctx, on),
+            Cmd::ToggleWifi => toggle_wifi(&ctx),
+            Cmd::Rescan => rescan(&ctx),
+            Cmd::SpeedTest => {
+                speed_start(&ctx);
+            }
+            Cmd::ToggleQr => qr_toggle(&ctx),
+            Cmd::TogglePassword => reveal_toggle(&ctx),
+        }
+    }
+}
+
+fn connect(ctx: &Ctx, ssid: String, secret: Secret) {
     let Some(nm) = nm() else { return };
     if !begin(ctx, ActionKind::Connect, &ssid) {
         return;
@@ -388,7 +437,7 @@ pub fn connect(ctx: &Ctx, ssid: String, secret: Secret) {
     });
 }
 
-pub fn disconnect(ctx: &Ctx, ssid: String) {
+fn disconnect(ctx: &Ctx, ssid: String) {
     let Some(nm) = nm() else { return };
     if !begin(ctx, ActionKind::Disconnect, &ssid) {
         return;
@@ -412,7 +461,7 @@ pub struct Revealed {
     pub secret: Result<Option<String>, String>,
 }
 
-pub fn reveal(ctx: &Ctx, ssid: String, request: u64) {
+fn reveal(ctx: &Ctx, ssid: String, request: u64) {
     let Some(nm) = nm() else { return };
     let ctx = ctx.clone();
     ctx.clone().spawn(async move {
@@ -424,7 +473,7 @@ pub fn reveal(ctx: &Ctx, ssid: String, request: u64) {
     });
 }
 
-pub fn forget(ctx: &Ctx, ssid: String) {
+fn forget(ctx: &Ctx, ssid: String) {
     let Some(nm) = nm() else { return };
     if !begin(ctx, ActionKind::Forget, &ssid) {
         return;
@@ -449,9 +498,7 @@ pub fn forget(ctx: &Ctx, ssid: String) {
     });
 }
 
-/// A wired row's click: down while it is up, else up on the profile
-/// NetworkManager picks.
-pub fn wired_toggle(ctx: &Ctx, interface: String, connected: bool) {
+fn wired_toggle(ctx: &Ctx, interface: String, connected: bool) {
     let Some(nm) = nm() else { return };
     ctx.spawn(async move {
         let done = if connected { nm.disconnect_wired(&interface).await } else { nm.connect_wired(&interface).await };
@@ -468,8 +515,7 @@ fn clear(kind: ActionKind, ssid: &str) {
     publish();
 }
 
-/// NetworkManager's radio switch, set outright.
-pub fn set_wifi(ctx: &Ctx, on: bool) {
+fn set_wifi(ctx: &Ctx, on: bool) {
     let Some(nm) = nm() else { return };
     ctx.spawn(async move {
         if let Err(err) = nm.set_wifi_enabled(on).await {
@@ -478,8 +524,7 @@ pub fn set_wifi(ctx: &Ctx, on: bool) {
     });
 }
 
-/// `RequestScan` on every Wi-Fi device NetworkManager has.
-pub fn rescan(ctx: &Ctx) {
+fn rescan(ctx: &Ctx) {
     let Some(nm) = nm() else { return };
     ctx.spawn(async move {
         if let Err(err) = nm.request_scan().await {
@@ -488,8 +533,7 @@ pub fn rescan(ctx: &Ctx) {
     });
 }
 
-/// The network cell's right click: `Networking.wifiEnabled` flipped.
-pub fn toggle_wifi(ctx: &Ctx) {
+fn toggle_wifi(ctx: &Ctx) {
     let Some(nm) = nm() else { return };
     ctx.spawn(async move {
         let result = match nm.snapshot().await {
@@ -502,41 +546,13 @@ pub fn toggle_wifi(ctx: &Ctx) {
     });
 }
 
-// ---- Holds: the open panel keeps the scanner running, and its close ends
-// the speed test (WifiService.holdScan, NetworkPanel.onIsOpenChanged).
-
-static HOLDS: AtomicUsize = AtomicUsize::new(0);
-static POKE: OnceLock<async_channel::Sender<()>> = OnceLock::new();
-
-fn poke() {
-    if let Some(tx) = POKE.get() {
-        let _ = tx.try_send(());
-    }
-}
-
-/// Held by the network panel for as long as it is open.
-pub struct Hold;
-
-impl Hold {
-    pub fn new() -> Self {
-        HOLDS.fetch_add(1, Ordering::SeqCst);
-        poke();
-        Self
-    }
-}
-
-impl Drop for Hold {
-    fn drop(&mut self) {
-        HOLDS.fetch_sub(1, Ordering::SeqCst);
-        poke();
-    }
-}
+// ---- The scan: whatever shows Wi-Fi rows wants it (`Source::WifiScan`),
+// and its last holder going ends the speed test (WifiService.holdScan,
+// NetworkPanel.onIsOpenChanged).
 
 async fn holds(ctx: Ctx) {
-    let (tx, rx) = async_channel::unbounded();
-    let _ = POKE.set(tx);
-    loop {
-        let held = HOLDS.load(Ordering::SeqCst) > 0;
+    let held = wants::watch(Source::WifiScan);
+    while let Ok(held) = held.recv().await {
         let scanning = INNER.with_borrow(|i| i.scan_stop.is_some());
         if held && !scanning {
             let (stop, stopped) = async_channel::bounded::<()>(1);
@@ -562,9 +578,24 @@ async fn holds(ctx: Ctx) {
             speed_stop();
             publish();
         }
-        if rx.recv().await.is_err() {
-            return;
-        }
+    }
+}
+
+static RECONNECTS: Mutex<Vec<async_channel::Sender<()>>> = Mutex::new(Vec::new());
+
+/// Fires once a link that was down has been up long enough for DHCP and
+/// DNS, for a poll that went stale offline.
+pub fn reconnects() -> async_channel::Receiver<()> {
+    let (tx, rx) = async_channel::bounded(1);
+    if let Ok(mut subscribers) = RECONNECTS.lock() {
+        subscribers.push(tx);
+    }
+    rx
+}
+
+fn reconnected() {
+    if let Ok(mut subscribers) = RECONNECTS.lock() {
+        subscribers.retain(|tx| !matches!(tx.try_send(()), Err(async_channel::TrySendError::Closed(_))));
     }
 }
 

@@ -53,6 +53,7 @@ use fs_theme::tokens::Space;
 use fs_types::Edge;
 
 use crate::runtime::Runtime;
+use crate::services::wants::Source;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event};
 
@@ -138,6 +139,11 @@ pub trait Panel {
     fn title(&self, v: &View) -> String;
     /// The store slices whose change redraws this panel.
     fn reads(&self) -> &'static [Topic];
+    /// What runs only while the card shows, asked as it opens and again
+    /// whenever it lays out; whatever holds the card takes them.
+    fn wants(&self, _store: &Store) -> Vec<Source> {
+        Vec::new()
+    }
     /// A width of its own, past the table's class: one that moves (media's
     /// split, the gallery's output) or a card the table has no row for.
     fn width(&self, _v: &View) -> Option<f64> {
@@ -380,24 +386,24 @@ pub fn build(id: PanelId, args: Args) -> Option<Box<dyn Panel>> {
         PanelId::Calendar => Box::new(calendar::Calendar::new(true)),
         PanelId::Iphone => Box::new(iphone::Iphone::default()),
         PanelId::Media => Box::new(media::Media::default()),
-        PanelId::Weather => Box::new(weather::Weather::default()),
+        PanelId::Weather => Box::new(weather::Weather),
         PanelId::Network => Box::new(network::Network::default()),
         PanelId::Bluetooth => Box::new(bluetooth::Bluetooth),
         PanelId::Dualsense => Box::new(dualsense::Dualsense),
         PanelId::Earbuds => Box::new(earbuds::Earbuds::default()),
-        PanelId::Display => Box::new(display::Display::new()),
-        PanelId::Github => Box::new(github::Github::new()),
-        PanelId::Monitor => Box::new(monitor::Monitor::new()),
-        PanelId::Power => Box::new(power::Power::new()),
+        PanelId::Display => Box::new(display::Display),
+        PanelId::Github => Box::new(github::Github),
+        PanelId::Monitor => Box::new(monitor::Monitor),
+        PanelId::Power => Box::new(power::Power::default()),
         PanelId::QuickSettings => Box::new(quick::QuickSettings::new(args.tiles, args.edge)),
-        PanelId::Info => Box::new(info::Info::new()),
+        PanelId::Info => Box::new(info::Info),
         PanelId::Settings => Box::<settings::Settings>::default(),
         PanelId::SettingsAppearance | PanelId::SettingsBar | PanelId::SettingsDesktop | PanelId::SettingsSystem => {
             Box::new(settings_page::SettingsPage::new(id)?)
         }
-        PanelId::SystemUpdate => Box::new(systemupdate::SystemUpdate::new()),
-        PanelId::Tailscale => Box::new(tailscale::Tailscale::new()),
-        PanelId::Usage => Box::new(usage::Usage::new()),
+        PanelId::SystemUpdate => Box::new(systemupdate::SystemUpdate),
+        PanelId::Tailscale => Box::new(tailscale::Tailscale),
+        PanelId::Usage => Box::new(usage::Usage),
         PanelId::TrayOverflow => Box::new(tray::Tray::default()),
         PanelId::Radio => return None,
     })

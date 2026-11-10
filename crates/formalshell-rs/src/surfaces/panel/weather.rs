@@ -9,19 +9,12 @@ use fs_info::weather as openmeteo;
 
 use super::{Effect, Panel, View};
 use crate::services::info::kick;
-use crate::services::wants::{Source, Want};
-use crate::store::Topic;
+use crate::services::wants::Source;
+use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Type, w};
 
-pub struct Weather {
-    _want: Want,
-}
-
-impl Default for Weather {
-    fn default() -> Self {
-        Self { _want: Want::new(Source::Weather) }
-    }
-}
+#[derive(Default)]
+pub struct Weather;
 
 /// `Math.round`: halves go up, and a zero is never signed.
 fn round(n: f64) -> f64 {
@@ -41,6 +34,10 @@ impl Panel for Weather {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Weather, Topic::Clock]
+    }
+
+    fn wants(&self, _: &Store) -> Vec<Source> {
+        vec![Source::Weather]
     }
 
     fn opened(&mut self) {

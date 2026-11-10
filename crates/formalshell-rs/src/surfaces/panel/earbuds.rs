@@ -16,7 +16,8 @@
 //! group they move its ring and Enter presses the button under it; on a
 //! range they step by the control's `step`. Every write goes through
 //! `Earbuds::plan`, the same allow-list the `earbuds set` IPC uses (M77).
-//! The panel holds the service while it is open (`wayland.rs`'s sync_open).
+//! The panel wants the backends' watch and the AirPods' sensor streams
+//! while it is open.
 
 mod head;
 mod heart;
@@ -31,6 +32,7 @@ use super::{Effect, Panel, View};
 use head::Head;
 use heart::Heart;
 use crate::services::devices::earbuds;
+use crate::services::wants::Source;
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
 use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
@@ -108,7 +110,7 @@ fn set(fx: &Effect, key: &str, raw: String) {
         return;
     }
     match fx.store.earbuds.plan(key, &raw) {
-        Ok(Some(op)) => earbuds::write(op),
+        Ok(Some(op)) => earbuds::send(earbuds::Cmd::Op(op)),
         Ok(None) => {}
         Err(reason) => eprintln!("earbuds: {key}: {reason}"),
     }
@@ -471,6 +473,10 @@ impl Panel for Earbuds {
         &[Topic::Earbuds]
     }
 
+    fn wants(&self, _: &store::Store) -> Vec<Source> {
+        vec![Source::Earbuds, Source::EarbudsSensors]
+    }
+
     fn opened(&mut self) {
         self.rings.clear();
         self.menu.clear();
@@ -543,7 +549,7 @@ impl Panel for Earbuds {
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
         if ev.on == RECENTER {
-            earbuds::recenter();
+            earbuds::send(earbuds::Cmd::Recenter);
             return;
         }
         let Some((verb, key)) = ev.on.split_once(':') else { return };
@@ -585,7 +591,7 @@ impl Panel for Earbuds {
             return;
         }
         if stop == RECENTER {
-            earbuds::recenter();
+            earbuds::send(earbuds::Cmd::Recenter);
             return;
         }
         if let Some(rest) = stop.strip_prefix("opt:") {
