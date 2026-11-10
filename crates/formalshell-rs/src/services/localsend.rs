@@ -126,7 +126,7 @@ pub fn start(ctx: &Ctx) {
 
 async fn run(ctx: Ctx) {
     let host = proc::capture(&proc::argv(&["hostname"]), Duration::from_secs(5)).await.stdout.trim().to_owned();
-    let installed = proc::capture(&proc::argv(&["sh", "-c", "command -v localsend-cli >/dev/null 2>&1"]), Duration::from_secs(5)).await.code == 0;
+    let installed = proc::on_path("localsend-cli");
     let mut s = State { installed, ..State::default() };
     let (tx, rx) = async_channel::unbounded::<Wake>();
     let mut recv: Option<async_process::Child> = None;

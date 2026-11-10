@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::paths::{LOGIN_LOCK_MARKER, SHELL_DIR};
+use crate::services::proc::on_path;
 
 const REPO: &str = "FormalStudio/FormalShell";
 /// First line of every Hyprland file the installer owns.
@@ -639,10 +640,6 @@ fn with_sudo(cmd: &Command) -> Command {
 
 fn systemctl(args: &[&str]) -> bool {
     Command::new("systemctl").arg("--user").args(args).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success())
-}
-
-fn on_path(name: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file()))
 }
 
 fn am_root() -> bool {

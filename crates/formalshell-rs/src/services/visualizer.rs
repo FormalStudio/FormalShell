@@ -277,18 +277,8 @@ async fn run(ctx: Ctx) {
     }
     let dir = crate::paths::shell_runtime();
     let conf = dir.join("cava.conf");
-    let probe = async {
-        std::fs::create_dir_all(&dir).ok()?;
-        std::fs::write(&conf, conf_text()).ok()?;
-        let status = crate::services::proc::command("sh")
-            .args(["-c", "command -v cava >/dev/null 2>&1"])
-            .stdin(async_process::Stdio::null())
-            .status()
-            .await
-            .ok()?;
-        status.success().then_some(())
-    };
-    let avail = if probe.await.is_some() { Avail::Available } else { Avail::Missing };
+    let written = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&conf, conf_text())).is_ok();
+    let avail = if written && crate::services::proc::on_path("cava") { Avail::Available } else { Avail::Missing };
     ctx.publish(store::Diff::Visualizer(Diff::Avail(avail)));
 
     let bpm = Bpm { cache: Rc::default(), current: Rc::default() };

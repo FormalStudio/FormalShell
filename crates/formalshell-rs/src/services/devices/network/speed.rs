@@ -183,7 +183,7 @@ async fn phase(iface: &str, up: bool) -> bool {
 async fn speed_run() {
     let iface = sh("ip route get 1.1.1.1 2>/dev/null").await.and_then(|(_, out)| speedtest::parse_iface(&out));
     let Some(iface) = iface else { return speed_abort("NO NETWORK") };
-    if !sh("command -v curl >/dev/null 2>&1").await.is_some_and(|(ok, _)| ok) {
+    if !crate::services::proc::on_path("curl") {
         return speed_abort("NO CURL");
     }
     speed_set(|s| s.phase = Phase::Down);

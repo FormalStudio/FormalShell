@@ -72,8 +72,7 @@ pub fn start(ctx: &Ctx) {
 }
 
 async fn run(ctx: Ctx) {
-    let probe = proc::capture(&proc::argv(&["sh", "-c", "command -v ttfx >/dev/null 2>&1"]), std::time::Duration::from_secs(10)).await;
-    publish(&ctx, Diff::Ttfx(if probe.code == 0 { Avail::Available } else { Avail::Missing }));
+    publish(&ctx, Diff::Ttfx(if proc::on_path("ttfx") { Avail::Available } else { Avail::Missing }));
 }
 
 /// The bundled banner: the package's copy, else the repo's own.

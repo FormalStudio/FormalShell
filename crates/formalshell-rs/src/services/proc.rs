@@ -32,6 +32,15 @@ impl Avail {
     }
 }
 
+/// Whether `name` would run: a path that is a file, or a bare name found
+/// in one of PATH's directories.
+pub fn on_path(name: &str) -> bool {
+    if name.contains('/') {
+        return std::path::Path::new(name).is_file();
+    }
+    std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file()))
+}
+
 pub struct Done {
     pub code: i32,
     pub stdout: String,

@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use super::idle;
 use crate::runtime::Ctx;
 use crate::services::config;
+use crate::services::proc::on_path;
 use crate::store;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -158,10 +159,6 @@ pub fn now_ms() -> u64 {
 
 /// Whether `name` is an executable on PATH, for the offload tools the
 /// GPU cell asks about.
-pub fn on_path(name: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
-}
-
 /// What a tick compares itself to.
 #[derive(Default)]
 struct Prev {

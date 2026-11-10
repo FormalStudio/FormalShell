@@ -29,6 +29,7 @@ use zbus::{MatchRule, MessageStream};
 use crate::runtime::{Ctx, Runtime, now_ms};
 use crate::services::appicon::{applications_dirs, scan_launchable};
 use crate::services::notifications::{self, Op};
+use crate::services::proc::on_path;
 use crate::services::{compositor, launch};
 use crate::store::{self, Store};
 
@@ -210,10 +211,6 @@ fn fspec_dir() -> PathBuf {
         Some(d) => d.join("fspec/activity"),
         None => std::env::temp_dir().join(format!("fspec-{}", unsafe { libc::getuid() })).join("activity"),
     }
-}
-
-fn on_path(name: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file()))
 }
 
 fn is_socket(name: &std::ffi::OsStr) -> bool {

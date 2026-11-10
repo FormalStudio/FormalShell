@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 use crate::runtime::Ctx;
 use crate::services::config;
 use crate::services::notifications;
-use crate::services::proc::MISSING;
+use crate::services::proc::{MISSING, on_path};
 use crate::services::ams;
 use crate::store;
 
@@ -384,10 +384,6 @@ impl Session {
         self.arrivals.retain(|a| a.at >= horizon);
         self.state.in_focus = iphone::in_focus(&self.arrivals, now_ms(), focus_window());
     }
-}
-
-fn on_path(name: &str) -> bool {
-    super::info::monitor::on_path(name)
 }
 
 fn hostname() -> String {

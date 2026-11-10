@@ -60,6 +60,7 @@ use crate::scene::Bitmap;
 use crate::services::wallpaper::DepthCut;
 use crate::runtime::Msg;
 use crate::services::session::Event as Logind;
+use crate::services::proc::on_path;
 use crate::services::{clipboard, compositor, cover, power};
 use crate::surface::{Backend, Surface};
 use crate::store::Topic;
@@ -393,13 +394,6 @@ fn take_splash() -> Option<Bitmap> {
 
 fn via_logind(app: &App) -> bool {
     command(app).first().is_some_and(|b| b.rsplit('/').next() == Some("loginctl"))
-}
-
-fn on_path(name: &str) -> bool {
-    if name.contains('/') {
-        return std::path::Path::new(name).is_file();
-    }
-    std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(name).is_file()))
 }
 
 impl App {

@@ -114,11 +114,7 @@ async fn run(ctx: Ctx) {
     // Neither file's directory exists on its own; it is made before uxplay
     // runs and before the watches are placed in it.
     let dir_ready = std::fs::create_dir_all(&dir).is_ok();
-    let installed = crate::services::proc::command("sh")
-        .args(["-c", "command -v uxplay >/dev/null 2>&1"])
-        .status()
-        .await
-        .is_ok_and(|s| s.success());
+    let installed = crate::services::proc::on_path("uxplay");
     let host = hostname();
 
     let (tx, files) = async_channel::unbounded::<File>();
