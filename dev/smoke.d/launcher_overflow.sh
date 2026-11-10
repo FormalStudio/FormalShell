@@ -23,7 +23,7 @@
 # well inside the output, the column 45% of it, photographed there.
 leg_launcher_overflow_flag="--launcher-overflow"
 leg_launcher_overflow_order=34
-leg_launcher_overflow_claims="outputs launcher=shared theme.mode=shared"
+leg_launcher_overflow_claims="outputs=shared launcher=shared theme.mode=shared"
 leg_launcher_overflow_needs="jq wtype python3"
 
 launcher_overflow_output="HEADLESS-OVERFLOW"

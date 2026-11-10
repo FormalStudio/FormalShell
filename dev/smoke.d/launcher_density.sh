@@ -24,7 +24,7 @@ launcher_density_log="$shot_dir/launcher-density.log"
 launcher_density_status="$shot_dir/launcher-density-status.json"
 
 leg_launcher_density_scale1="its own output at 1.25 beside the session's at 1, the bar's"
-leg_launcher_density_claims="outputs"
+leg_launcher_density_claims="outputs=shared"
 
 leg_launcher_density_fixture() {
   settings_pin '.menu.appGrid = true | .motion.morph = false'
