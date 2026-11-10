@@ -15,7 +15,7 @@ use super::notifications::{self, Op};
 use crate::runtime::Ctx;
 use crate::store;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Suspend,
     Reboot,
@@ -23,13 +23,19 @@ pub enum Action {
 }
 
 impl Action {
-    pub fn parse(verb: &str) -> Option<Self> {
-        match verb {
-            "suspend" => Some(Self::Suspend),
-            "reboot" => Some(Self::Reboot),
-            "poweroff" => Some(Self::PowerOff),
-            _ => None,
+    pub const ALL: [Self; 3] = [Self::Suspend, Self::Reboot, Self::PowerOff];
+
+    /// The verb a control or an IPC call names it by.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Suspend => "suspend",
+            Self::Reboot => "reboot",
+            Self::PowerOff => "poweroff",
         }
+    }
+
+    pub fn parse(verb: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.id() == verb)
     }
 
     pub(crate) fn method(self) -> &'static str {

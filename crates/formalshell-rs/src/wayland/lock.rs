@@ -60,11 +60,12 @@ use crate::scene::Bitmap;
 use crate::services::wallpaper::DepthCut;
 use crate::runtime::Msg;
 use crate::services::session::Event as Logind;
-use crate::services::{clipboard, compositor, power};
+use crate::services::{clipboard, compositor, cover, power};
 use crate::surface::{Backend, Surface};
 use crate::store::Topic;
 use crate::surfaces::dissolve::{self, Dissolve};
-use crate::surfaces::lock::{self as view, Button, Buttons, Control, Cursor, NowPlaying, Shared, TKey, View};
+use crate::surfaces::lock::{self as view, Button, Buttons, Control, Cursor, NowPlaying, Shared, TKey};
+use crate::surfaces::login::{self, View};
 
 /// What finishes off the UI thread and comes back to the lock.
 pub enum LockMsg {
@@ -591,13 +592,13 @@ impl App {
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
         let home = std::env::var("HOME").unwrap_or_default();
         let path = crate::settings::avatar_path(&self.store.config, &home);
-        let size = crate::surfaces::login::avatar_size(&self.store.theme.theme);
+        let size = login::picture_size(&self.store.theme.theme);
         self.lock.avatar.clear();
         self.lock.shards.clear();
         for scale in self.store.display.scales.all() {
             let (path, tx) = (path.clone(), tx.clone());
             rt.pool().submit(move || {
-                let _ = tx.send(LockMsg::Avatar(view::avatar(&path, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale))));
+                let _ = tx.send(LockMsg::Avatar(cover::avatar(&path, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale))));
             });
         }
         self.load_lock_backdrops();
@@ -910,7 +911,7 @@ impl App {
 
     /// Shutdown and Reboot, and Other user on the boot's lock.
     fn lock_buttons(&self) -> Vec<Button> {
-        let mut buttons = vec![Button::PowerOff, Button::Reboot];
+        let mut buttons = vec![Button::SHUTDOWN, Button::REBOOT];
         if self.lock.login {
             buttons.push(Button::OtherUser);
         }
@@ -965,8 +966,7 @@ impl App {
         let Some(rt) = &self.runtime else { return };
         eprintln!("lock: {} confirmed", b.id());
         match b {
-            Button::PowerOff | Button::Reboot => {
-                let action = if b == Button::PowerOff { power::Action::PowerOff } else { power::Action::Reboot };
+            Button::Power(action) => {
                 rt.service(move |ctx| {
                     let ui = ctx.publisher().clone();
                     ctx.spawn(async move {
@@ -1025,11 +1025,11 @@ impl App {
             return;
         }
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
-        let size = self.store.theme.theme.space.control_height * 2.0;
+        let size = login::picture_size(&self.store.theme.theme);
         for scale in self.store.display.scales.all() {
             let (url, tx) = (url.clone(), tx.clone());
             rt.pool().submit(move || {
-                let art = view::cover(&url, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale));
+                let art = cover::read_local(&url).and_then(|bytes| cover::decode(&bytes, crate::scene::pixels_at(size, scale), 0.0)).map(|b| b.at(scale));
                 let _ = tx.send(LockMsg::Art(url, art));
             });
         }
@@ -1165,7 +1165,7 @@ impl App {
                 o.surface.present_pixel((o.view.scene.size.w, o.view.scene.size.h), &self.pixels.black, &qh);
             } else {
                 let picture = self.lock.splash.first().map(|b| b.clone().at(k));
-                o.view.draw_splash(picture.as_ref());
+                view::draw_splash(&mut o.view, picture.as_ref());
                 o.surface.present(&mut o.view.scene, true, &qh);
             }
             // A callback still out holds the frame: the splash goes with
@@ -1246,22 +1246,13 @@ impl App {
         let dark = self.lock.departing && !self.lock.depart.running(now);
         let has_wallpaper = !self.store.desktop().is_empty();
         let shared = Shared {
-            now: Local::now(),
-            name: crate::services::users::name(),
-            prompt: view::Prompt::password(self.lock.password.text().chars().count(), self.lock.password.caret_chars(), self.lock.checking),
             error: &self.lock.error,
             has_wallpaper,
-            backdrop: None,
-            foreground: None,
-            shards: None,
             picture: self.store.wallpaper.latest().filter(|p| has_wallpaper && p.path == self.store.desktop()),
-            avatar: None,
-            media: None,
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),
             blanked,
             wake: (self.lock.wake.value(now) * self.lock.depart.value(now)).clamp(0.0, 1.0) as f32,
-            buttons: Buttons::default(),
-            cursor: None,
+            ..Shared::new(crate::services::users::name(), view::prompt(self.lock.password.text(), self.lock.password.caret_chars(), self.lock.checking))
         };
         let active = self.lock_media();
         let mpris = active.as_ref().and_then(|a| self.store.media.mpris.iter().find(|p| p.id == a.id));
@@ -1352,12 +1343,13 @@ impl App {
                 continue;
             }
             o.view.ui.motion_scale = self.motion_scale;
-            let moving = o.view.draw(&shared, theme, &mut self.kit, now) || entering;
+            let (moving, report) = view::draw(&mut o.view, &shared, theme, &mut self.kit, now);
+            let moving = moving || entering;
             if std::mem::replace(&mut o.saver, false) {
                 o.view.scene.touch(size);
             }
-            if !o.name.is_empty() && !blanked {
-                self.lock.reports.insert(o.name.clone(), o.view.report.clone());
+            if let Some(report) = report.filter(|_| !o.name.is_empty() && !blanked) {
+                self.lock.reports.insert(o.name.clone(), report);
             }
             let commits = o.surface.commits();
             o.surface.present(&mut o.view.scene, moving || (self.lock.departing && !o.dark_landed), &qh);

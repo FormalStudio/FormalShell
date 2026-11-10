@@ -81,6 +81,17 @@ async fn run(ctx: Ctx) {
 }
 
 async fn fetch(ctx: &Ctx, url: &str) -> Option<Vec<u8>> {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        let req = http::Request::get(url, 10).follow(50).connect_timeout(4).max_filesize(MAX_BYTES);
+        return http::get(&req).await.map(|r| r.body).filter(|b| !b.is_empty());
+    }
+    let url = url.to_owned();
+    ctx.pool().run(move || read_local(&url)).await.flatten()
+}
+
+/// The bytes of art that needs no network: a `data:` URL, or a file named
+/// by a `file://` URL or a bare path. Blocks on the file.
+pub fn read_local(url: &str) -> Option<Vec<u8>> {
     if let Some(rest) = url.strip_prefix("data:") {
         let (meta, body) = rest.split_once(',')?;
         return if meta.ends_with(";base64") {
@@ -89,13 +100,8 @@ async fn fetch(ctx: &Ctx, url: &str) -> Option<Vec<u8>> {
             Some(percent_decode(body).into_bytes())
         };
     }
-    if url.starts_with("http://") || url.starts_with("https://") {
-        let req = http::Request::get(url, 10).follow(50).connect_timeout(4).max_filesize(MAX_BYTES);
-        return http::get(&req).await.map(|r| r.body).filter(|b| !b.is_empty());
-    }
     let file = url.strip_prefix("file://").unwrap_or(url);
-    let path = percent_decode(file.split_once('?').map_or(file, |(p, _)| p));
-    ctx.pool().run(move || std::fs::read(path).ok()).await.flatten()
+    std::fs::read(percent_decode(file.split_once('?').map_or(file, |(p, _)| p))).ok()
 }
 
 pub fn percent_decode(s: &str) -> String {
@@ -131,6 +137,12 @@ pub fn decode(bytes: &[u8], size: u32, radius: f64) -> Option<Bitmap> {
     round_corners(&mut out, radius);
     let size = u16::try_from(size).ok()?;
     Some(Bitmap::from_rgba(size, size, out.into_raw()))
+}
+
+/// The picture at `path` (read by its bytes: `~/.face` has no extension)
+/// cut into a `size` disc. None when there is no readable picture.
+pub fn avatar(path: &str, size: u32) -> Option<Bitmap> {
+    decode(&std::fs::read(path).ok()?, size, f64::from(size) / 2.0)
 }
 
 pub fn round_corners(img: &mut RgbaImage, radius: f64) {

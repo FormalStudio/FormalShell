@@ -60,8 +60,8 @@ use crate::ui::field::{self, Field};
 use zeroize::Zeroizing;
 
 use crate::render::Renderer;
-use crate::scene::{Bitmap, IRect};
-use crate::services::{config, theme, wallpaper};
+use crate::scene::{Bitmap, IRect, Scene};
+use crate::services::{config, cover, power, theme, wallpaper};
 use crate::settings;
 use crate::surface::{Backend, Surface};
 use crate::paint::Kit;
@@ -71,7 +71,7 @@ use crate::ui::{Ui, What};
 use greetd::{Conversation, Phase, Request, Response, Step};
 use sessions::Session;
 use crate::services::users::{self as accounts, User};
-use crate::surfaces::login::{self, Card, Controls, Menu, View};
+use crate::surfaces::login::{self, Backdrop, Card, Controls, Menu, Prompt, Under, View};
 
 /// AuthPrompt's `unavailableText` with no socket to talk to.
 const NO_SOCKET: &str = "No greetd socket to talk to";
@@ -185,28 +185,17 @@ fn wallpaper_source(doc: &Value, env: &theme::Env) -> Option<String> {
 /// carries the contrast, so there is no scrim.
 fn decode(path: &str, size: (i32, i32)) -> Option<Decoded> {
     let p = wallpaper::render(path, size.0 as u32, size.1 as u32, None, None)?;
-    let rgba = p.bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect();
-    Some(Decoded { size, bitmap: Bitmap::from_rgba(p.width as u16, p.height as u16, rgba) })
+    Some(Decoded { size, bitmap: Bitmap::from_rgba(p.width as u16, p.height as u16, login::rgba(&p.bgra)) })
 }
 
 /// The avatar the card draws for `login`, at each of `scales`.
 fn avatar(theme: &Theme, state: &Path, login: &str, scales: &[f64]) -> Vec<Bitmap> {
-    let size = login::avatar_size(theme);
+    let size = login::picture_size(theme);
     let Some(path) = users::avatar_path(state, login) else { return Vec::new() };
     scales
         .iter()
-        .filter_map(|&k| lock::avatar(&path, crate::scene::pixels_at(size, k)).map(|b| b.at(k)))
+        .filter_map(|&k| cover::avatar(&path, crate::scene::pixels_at(size, k)).map(|b| b.at(k)))
         .collect()
-}
-
-/// Which power action a control fires, by logind method.
-fn power(on: &str) -> Option<&'static str> {
-    match on {
-        "suspend" => Some("Suspend"),
-        "reboot" => Some("Reboot"),
-        "poweroff" => Some("PowerOff"),
-        _ => None,
-    }
 }
 
 /// The socket on a thread of its own: one request out, one response back.
@@ -425,9 +414,10 @@ impl Greeter {
 
     /// A card control, clicked.
     fn activate(&mut self, on: &str, what: What) {
-        if let Some(method) = power(on) {
+        if let Some(action) = power::Action::parse(on) {
             let _ = std::thread::Builder::new().name("fs-power".into()).spawn(move || {
-                if let Err(e) = futures_lite::future::block_on(crate::services::power::call(method)) {
+                let method = action.method();
+                if let Err(e) = futures_lite::future::block_on(power::call(method)) {
                     eprintln!("greeter: {method}: {e}");
                 }
             });
@@ -648,41 +638,41 @@ impl Greeter {
             }
             let k = o.surface.scale();
             card.avatar = crate::scene::nearest(&self.avatar, k);
-            let moving = o.view.draw(&card, o.backdrop.as_ref(), &self.theme, &mut self.kit, now);
+            let moving = o.view.draw(&card, &backdrop(o.backdrop.as_ref()), (1.0, 0.0), &self.theme, &mut self.kit, now).animating;
             o.surface.set_opacity(opacity);
             o.surface.present(&mut o.view.scene, moving || (self.shown.is_some() && opacity < 1.0), &self.qh);
         }
     }
 }
 
+/// The wallpaper at this output's size, or at its last one while the new
+/// size decodes, with no scrim: the card carries the contrast.
+fn backdrop(picture: Option<&Bitmap>) -> Backdrop<'_> {
+    Backdrop::plain(picture.map_or(Under::Flat { scrim: 0.0 }, Under::Picture))
+}
+
 /// The card's conversation half, as it stands; the caller fills in who and
 /// which session.
 fn card<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available: bool, typed_user: bool) -> Card<'a> {
-    let masked = convo.masked();
-    let text = if masked { "\u{2022}".repeat(field.text().chars().count()) } else { field.text().to_owned() };
-    let checking = convo.phase == Phase::Waiting && !convo.user.is_empty();
-    let placeholder = match convo.phase {
-        Phase::Inactive if typed_user => "Username",
-        Phase::Waiting | Phase::Launched if checking => "Signing in\u{2026}",
-        _ => "Password",
-    };
+    let placeholder = if convo.phase == Phase::Inactive && typed_user { "Username" } else { "Password" };
     // PAM's own "Password:" says what the placeholder already does.
     let label = match convo.phase {
         Phase::Asking if !convo.message.trim_end().trim_end_matches(':').eq_ignore_ascii_case("password") => convo.label(),
         _ => "",
     };
+    let prompt = Prompt {
+        label,
+        unavailable: if available { "" } else { NO_SOCKET },
+        enabled: available && convo.input_enabled(),
+        ..Prompt::new(field.text(), convo.masked(), field.caret_chars(), placeholder)
+    };
+    let checking = convo.phase == Phase::Waiting && !convo.user.is_empty();
     Card {
         now: Local::now(),
         name: "",
         avatar: None,
-        text,
-        placeholder,
-        label,
+        prompt: if checking { prompt.checking("Signing in\u{2026}") } else { prompt },
         error: &convo.error,
-        unavailable: if available { "" } else { NO_SOCKET },
-        enabled: available && convo.input_enabled(),
-        busy: checking,
-        caret: field.caret_chars(),
         below: None,
         under_field: None,
     }
@@ -727,17 +717,12 @@ fn shots(dir: &Path, doc: &Value, env: &theme::Env) {
             below: Some(controls.el(&theme)),
             ..card(convo, &Field::new(Zeroizing::new(typed.to_owned())), available, false)
         };
-        view.draw(&c, backdrop.as_ref().map(|d| &d.bitmap), &theme, &mut kit, Instant::now());
-        let mut r = Renderer::new(w as u16, h as u16);
-        r.render(&view.scene, IRect::new(0, 0, w, h));
-        let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
-        let path = dir.join(format!("greeter-{name}.png"));
-        image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
-        println!("SHOT {}", path.display());
+        view.draw(&c, &self::backdrop(backdrop.as_ref().map(|d| &d.bitmap)), (1.0, 0.0), &theme, &mut kit, Instant::now());
+        save(dir, name, &view.scene);
     }
     // The lock screen's card beside the greeter's, locked and playing.
     for (name, playing) in [("lock", false), ("lock-media", true)] {
-        let mut view = lock::View::new(w, h);
+        let mut view = View::new(w, h);
         let media = playing.then(|| lock::NowPlaying {
             title: "Teardrop",
             artist: "Massive Attack",
@@ -749,31 +734,27 @@ fn shots(dir: &Path, doc: &Value, env: &theme::Env) {
             art: None,
         });
         let shared = lock::Shared {
-            now: Local::now(),
-            name: "Kyan De Sutter",
-            prompt: lock::Prompt::password(0, (0, 0), false),
-            error: "",
             has_wallpaper: backdrop.is_some(),
             backdrop: backdrop.as_ref().map(|d| &d.bitmap),
-            foreground: None,
-            shards: None,
-            picture: None,
             avatar: crate::scene::nearest(&pic, 1.0),
             media,
-            enter: (1.0, 0.0),
-            blanked: false,
-            wake: 1.0,
-            buttons: lock::Buttons { shown: vec![lock::Button::PowerOff, lock::Button::Reboot], armed: None },
-            cursor: None,
+            buttons: lock::Buttons { shown: vec![lock::Button::SHUTDOWN, lock::Button::REBOOT], armed: None },
+            ..lock::Shared::new("Kyan De Sutter", lock::prompt("", (0, 0), false))
         };
-        view.draw(&shared, &theme, &mut kit, Instant::now());
-        let mut r = Renderer::new(w as u16, h as u16);
-        r.render(&view.scene, IRect::new(0, 0, w, h));
-        let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
-        let path = dir.join(format!("greeter-{name}.png"));
-        image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
-        println!("SHOT {}", path.display());
+        lock::draw(&mut view, &shared, &theme, &mut kit, Instant::now());
+        save(dir, name, &view.scene);
     }
+}
+
+/// `scene` rendered whole to `greeter-<name>.png` in `dir`.
+fn save(dir: &Path, name: &str, scene: &Scene) {
+    let (w, h) = (scene.size.w, scene.size.h);
+    let mut r = Renderer::new(w as u16, h as u16);
+    r.render(scene, IRect::new(0, 0, w, h));
+    let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
+    let path = dir.join(format!("greeter-{name}.png"));
+    image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
+    println!("SHOT {}", path.display());
 }
 
 impl crate::surface::ScaleHandler for Greeter {

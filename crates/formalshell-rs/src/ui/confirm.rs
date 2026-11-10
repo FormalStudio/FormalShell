@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn every_surface_asks_in_its_own_words() {
         use crate::surfaces::lock::Button;
-        let lock: Vec<String> = [Button::PowerOff, Button::Reboot, Button::OtherUser].into_iter().map(|b| ask(b.label())).collect();
+        let lock: Vec<String> = [Button::SHUTDOWN, Button::REBOOT, Button::OtherUser].into_iter().map(|b| ask(b.label())).collect();
         assert_eq!(lock, ["Confirm Shutdown?", "Confirm Reboot?", "Confirm Other user?"]);
         let quick: Vec<String> = crate::surfaces::panel::quick::POWER.iter().filter(|p| !p.noun.is_empty()).map(|p| ask(p.noun)).collect();
         assert_eq!(quick, ["Confirm restart?", "Confirm power off?", "Confirm log out?"]);

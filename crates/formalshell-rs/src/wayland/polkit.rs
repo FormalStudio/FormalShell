@@ -104,7 +104,7 @@ impl App {
                     let scale = self.polkit.as_ref().map_or_else(|| self.store.display.scales.primary(), |d| d.modal.win.surface.scale());
                     let px = crate::scene::pixels_at((self.store.theme.theme.space.lg * 2.0).round(), scale);
                     rt.pool().submit(move || {
-                        let _ = tx.send(LockMsg::PolkitAvatar(crate::surfaces::lock::avatar(&path, px).map(|b| b.at(scale))));
+                        let _ = tx.send(LockMsg::PolkitAvatar(crate::services::cover::avatar(&path, px).map(|b| b.at(scale))));
                     });
                 }
             }

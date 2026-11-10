@@ -2,8 +2,10 @@
 //! its leading side over whatever that state adds (the greeter's session
 //! and power controls, the lock's now playing), the user's picture, name
 //! and password field on its trailing side. The wallpaper carries the rest
-//! of the screen.
+//! of the screen: one [`View`] per output draws both, over the
+//! [`Backdrop`] each hands it.
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::{DateTime, Local};
@@ -16,6 +18,7 @@ use vello_cpu::kurbo::Rect;
 use fs_theme::tokens::WEIGHTS;
 
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
+use crate::services::power;
 use crate::paint::{Kit, Painter};
 use crate::text::{ShapedText, TextStyle};
 use crate::ui::{self, El, Ink, Size, Type, Ui, w};
@@ -27,22 +30,43 @@ pub enum Menu {
     Users,
 }
 
+/// The password field and what sits over it.
+#[derive(Clone)]
+pub struct Prompt<'a> {
+    /// What the field shows: a secret's dots, or a username as typed.
+    pub text: String,
+    pub placeholder: &'a str,
+    /// A question that is not the password (an OTP prompt); empty draws none.
+    pub label: &'a str,
+    /// Non-empty replaces the field with this message.
+    pub unavailable: &'a str,
+    pub enabled: bool,
+    /// A check is out: the field breathes on the pulse clock until it answers.
+    pub busy: bool,
+    /// The caret and the selection's other end, as char counts.
+    pub caret: (usize, usize),
+}
+
+impl<'a> Prompt<'a> {
+    /// The field showing `typed`, one dot a character when `masked`.
+    pub fn new(typed: &str, masked: bool, caret: (usize, usize), placeholder: &'a str) -> Self {
+        let text = if masked { "\u{2022}".repeat(typed.chars().count()) } else { typed.to_owned() };
+        Self { text, placeholder, label: "", unavailable: "", enabled: true, busy: false, caret }
+    }
+
+    /// While a check is out: the field closed, saying `busy` until it answers.
+    pub fn checking(self, busy: &'a str) -> Self {
+        Self { placeholder: busy, enabled: false, busy: true, ..self }
+    }
+}
+
 /// What the card shows, the same on every output.
 pub struct Card<'a> {
     pub now: DateTime<Local>,
     pub name: &'a str,
     pub avatar: Option<&'a Bitmap>,
-    /// What the field shows: dots, or a username as typed.
-    pub text: String,
-    pub placeholder: &'a str,
-    /// A question that is not the password (an OTP prompt); empty draws none.
-    pub label: &'a str,
+    pub prompt: Prompt<'a>,
     pub error: &'a str,
-    /// Non-empty replaces the field with this message.
-    pub unavailable: &'a str,
-    pub enabled: bool,
-    pub busy: bool,
-    pub caret: (usize, usize),
     /// Under the clock: the greeter's controls or the lock's now playing.
     pub below: Option<El>,
     /// Under the field: the lock's buttons.
@@ -78,7 +102,7 @@ impl Card<'_> {
         let s = &theme.space;
         let field_w = s.popup_width_narrow;
 
-        let size = avatar_size(theme);
+        let size = picture_size(theme);
         let picture = match self.avatar {
             Some(b) => w::picture(Some(b.clone()), size),
             None => w::icon("user").size(Type::DisplayLarge).ink(Ink::Muted).width(Size::Px(size)).height(size),
@@ -87,14 +111,15 @@ impl Card<'_> {
         if !self.name.is_empty() {
             trailing.push(w::label(self.name).size(Type::Subtitle).centred());
         }
-        if !self.label.is_empty() {
-            trailing.push(w::caption(self.label).centred());
+        let pr = &self.prompt;
+        if !pr.label.is_empty() {
+            trailing.push(w::caption(pr.label).centred());
         }
-        if self.unavailable.is_empty() {
+        if pr.unavailable.is_empty() {
             let error = (!self.error.is_empty()).then_some(self.error);
-            trailing.push(w::input(&self.text, self.placeholder, self.enabled, error).caret(self.caret).width(Size::Px(field_w)).enabled(self.enabled).pulse(self.busy));
+            trailing.push(w::input(&pr.text, pr.placeholder, pr.enabled, error).caret(pr.caret).width(Size::Px(field_w)).enabled(pr.enabled).pulse(pr.busy));
         } else {
-            trailing.push(w::text(self.unavailable).size(Type::BodySmall).ink(Ink::Muted).width(Size::Px(field_w)).centred());
+            trailing.push(w::text(pr.unavailable).size(Type::BodySmall).ink(Ink::Muted).width(Size::Px(field_w)).centred());
         }
         if let Some(el) = &self.under_field {
             trailing.push(el.clone());
@@ -131,9 +156,24 @@ pub fn width(theme: &Theme) -> f64 {
     leading_width(theme) + theme.space.popup_width_narrow + gap(theme)
 }
 
-/// The picture's side, which the lock and the greeter decode avatars at.
-pub fn avatar_size(theme: &Theme) -> f64 {
+/// The side of the card's pictures, the avatar and the lock's cover, which
+/// they are decoded at.
+pub fn picture_size(theme: &Theme) -> f64 {
     (theme.space.control_height * 2.0).round()
+}
+
+/// The icon a power action's button carries, on the greeter and the lock.
+pub fn power_icon(action: power::Action) -> &'static str {
+    match action {
+        power::Action::Suspend => "moon",
+        power::Action::Reboot => "rotate-cw",
+        power::Action::PowerOff => "power",
+    }
+}
+
+/// A decoded wallpaper's BGRA as a bitmap's RGBA, opaque.
+pub fn rgba(bgra: &[u8]) -> Vec<u8> {
+    bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect()
 }
 
 /// Where the card sits on a `size` screen, `rise` px below its rest, and
@@ -220,7 +260,7 @@ impl Controls<'_> {
             let chip = w::trigger(s, "users", name, self.menu == Menu::Users).on("users");
             chips.push(if self.menu == Menu::Users { chip.float(list()) } else { chip });
         }
-        let power = [("moon", "suspend"), ("rotate-cw", "reboot"), ("power", "poweroff")].map(|(glyph, on)| w::icon_button(glyph).on(on)).to_vec();
+        let power = power::Action::ALL.map(|a| w::icon_button(power_icon(a)).on(a.id())).to_vec();
         let mut col = Vec::new();
         if !chips.is_empty() {
             col.push(w::row(s.sm, chips));
@@ -230,16 +270,76 @@ impl Controls<'_> {
     }
 }
 
-/// One greeter output.
+/// What the card stands on, over black.
+pub struct Backdrop<'a> {
+    pub under: Under<'a>,
+    /// The desktop's sculpture held still, stretched over the whole output.
+    pub shards: Option<&'a Bitmap>,
+    /// The backdrop's pixels where the wallpaper's subject stands, the rest
+    /// clear: drawn over the clock.
+    pub foreground: Option<&'a Bitmap>,
+    /// The blank and wake crossfade: 0 is black, 1 the whole screen.
+    pub wake: f32,
+}
+
+pub enum Under<'a> {
+    /// A picture at the output's own pixels, or stretched over it.
+    Picture(&'a Bitmap),
+    /// A wallpaper still decoding: dark, never the theme's background.
+    Dark,
+    /// The theme's background, under a black scrim at this opacity.
+    Flat { scrim: f32 },
+}
+
+impl<'a> Backdrop<'a> {
+    /// `under` alone, awake.
+    pub fn plain(under: Under<'a>) -> Self {
+        Self { under, shards: None, foreground: None, wake: 1.0 }
+    }
+}
+
+/// The picture, the sculpture and the grid over the black under them.
+pub fn paint_backdrop(p: &mut Painter, b: &Backdrop, theme: &Theme, (w, h): (i32, i32)) {
+    let full = IRect::new(0, 0, w, h);
+    match b.under {
+        Under::Picture(pic) if (pic.pixmap.width() as i32, pic.pixmap.height() as i32) == (w, h) => p.image(pic, (0, 0), b.wake),
+        Under::Picture(pic) => p.shape(full, Paint::Picture { image: pic.clone(), alpha: b.wake, radius: 0.0 }),
+        Under::Dark => {}
+        Under::Flat { scrim } => {
+            let bg = theme.colors.get(ColorRole::Background);
+            p.rect(full, bg.with_alpha(bg.a * b.wake), 0.0);
+            if scrim > 0.0 {
+                p.rect(full, Rgba { r: 0.0, g: 0.0, b: 0.0, a: scrim }, 0.0);
+            }
+        }
+    }
+    if let Some(s) = b.shards {
+        p.shape(full, Paint::Picture { image: s.clone(), alpha: b.wake, radius: 0.0 });
+    }
+    paint_grid(p, theme, (w, h), b.wake);
+}
+
+/// One output's login screen, the greeter's or the lock's.
 pub struct View {
     pub scene: Scene,
     pub ui: Ui,
     nodes: Vec<NodeId>,
+    over_clock: Option<OverClock>,
+}
+
+/// What a draw laid out.
+pub struct Drawn {
+    /// Something on the card is still moving.
+    pub animating: bool,
+    /// The card's rect at rest.
+    pub card: IRect,
+    /// Where the foreground covers the clock.
+    pub depth: Option<IRect>,
 }
 
 impl View {
     pub fn new(width: i32, height: i32) -> Self {
-        Self { scene: Scene::new(width, height), ui: Ui::new(None), nodes: Vec::new() }
+        Self { scene: Scene::new(width, height), ui: Ui::new(None), nodes: Vec::new(), over_clock: None }
     }
 
     pub fn resize(&mut self, width: i32, height: i32) {
@@ -249,30 +349,139 @@ impl View {
         }
     }
 
-    /// True while something on the card is still moving.
-    pub fn draw(&mut self, c: &Card, backdrop: Option<&Bitmap>, theme: &Theme, kit: &mut Kit, now: Instant) -> bool {
+    /// The card over `b`, `enter` its opacity and how far it still has to
+    /// rise.
+    pub fn draw(&mut self, c: &Card, b: &Backdrop, enter: (f32, f64), theme: &Theme, kit: &mut Kit, now: Instant) -> Drawn {
         let (w, h) = (self.scene.size.w, self.scene.size.h);
-        let full = IRect::new(0, 0, w, h);
+        let fade = enter.0 * b.wake;
+        let rise = enter.1.round();
         let clock = c.clock(theme, kit);
         let body = c.body(&clock, theme);
-        let (card, inner) = place(&body, (w, h), 0.0, theme, kit);
+        let (card, inner) = place(&body, (w, h), rise, theme, kit);
+        let rest = IRect::new(card.x, card.y - rise as i32, card.w, card.h);
+
         let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
-        p.rect(full, Rgba::BLACK, 0.0);
-        match backdrop {
-            Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), 1.0),
-            // Made at the output's own scale, or at its last one while the
-            // new size decodes.
-            Some(b) => p.shape(full, Paint::Picture { image: b.clone(), alpha: 1.0, radius: 0.0 }),
-            None => p.rect(full, theme.colors.get(ColorRole::Background), 0.0),
+        // Black under everything, the screen faded in over it: a light
+        // theme's `background` under a part-faded backdrop is a white flash
+        // in a dark room on every blank and wake.
+        p.rect(IRect::new(0, 0, w, h), Rgba::BLACK, 0.0);
+        paint_backdrop(&mut p, b, theme, (w, h));
+        paint(&mut p, card, theme, fade);
+        let clock_rect = c.paint_clock(&mut p, &clock, inner, theme, kit, fade);
+        let front = b.foreground.and_then(|fg| over_clock(&mut self.over_clock, fg, clock_rect, card, theme, (w, h)));
+        if let Some((rect, front, over)) = &front {
+            p.shape(*rect, Paint::Picture { image: front.clone(), alpha: b.wake, radius: 0.0 });
+            p.shape(*rect, Paint::Picture { image: over.clone(), alpha: fade, radius: 0.0 });
         }
-        paint_grid(&mut p, theme, (w, h), 1.0);
-        paint(&mut p, card, theme, 1.0);
-        c.paint_clock(&mut p, &clock, inner, theme, kit, 1.0);
         let last = p.last();
         p.finish();
         self.ui.anchor = last;
-        self.ui.draw(&body, inner, None, 1.0, theme, kit, &mut self.scene, now).animating
+        let animating = self.ui.draw(&body, inner, None, fade, theme, kit, &mut self.scene, now).animating;
+        Drawn { animating, card: rest, depth: front.map(|(r, _, _)| r) }
     }
+
+    /// Nothing but black, and a picture at its place: the lock blanked, or
+    /// the boot lock's splash before any text is shaped.
+    pub fn bare(&mut self, picture: Option<(&Bitmap, (i32, i32))>) {
+        let (w, h) = (self.scene.size.w, self.scene.size.h);
+        let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
+        p.rect(IRect::new(0, 0, w, h), Rgba::BLACK, 0.0);
+        if let Some((b, at)) = picture {
+            p.image(b, at, 1.0);
+        }
+        p.finish();
+        self.ui.hide(&mut self.scene);
+    }
+}
+
+/// The foreground's crop over the clock and the card's own pixels over the
+/// same box, both cut by the subject's mask, with what they were cut from.
+#[derive(Clone)]
+struct OverClock {
+    pixels: IRect,
+    card_rect: IRect,
+    card: fs_theme::style::BoxStyle<Rgba>,
+    from: Arc<vello_cpu::Pixmap>,
+    front: Bitmap,
+    over: Bitmap,
+}
+
+/// The foreground's pixels under `rect` of a screen `size`, the card's
+/// pixels over the same box at the subject's coverage, and the box: the
+/// subject reads as the card shows it, not as bare wallpaper. Cut again
+/// only when the box, the card or the foreground moved, so a settled lock
+/// hands the scene the same pictures every frame.
+fn over_clock(cache: &mut Option<OverClock>, fg: &Bitmap, rect: IRect, card_rect: IRect, theme: &Theme, size: (i32, i32)) -> Option<(IRect, Bitmap, Bitmap)> {
+    let rect = rect.intersect(&IRect::new(0, 0, size.0, size.1));
+    let (fw, fh) = (i32::from(fg.pixmap.width()), i32::from(fg.pixmap.height()));
+    if rect.is_empty() || card_rect.is_empty() || ((fw, fh) != size && !fills_size((fw, fh), size)) {
+        return None;
+    }
+    let k = f64::from(fw) / f64::from(size.0.max(1));
+    let at = |v: i32| (f64::from(v) * k).round() as i32;
+    let px = IRect::new(at(rect.x), at(rect.y), at(rect.right()) - at(rect.x), at(rect.bottom()) - at(rect.y))
+        .intersect(&IRect::new(0, 0, fw, fh));
+    if px.is_empty() {
+        return None;
+    }
+    let card = theme.box_style(Role::Card, Some("dialog"));
+    let hit = matches!(&*cache, Some(c) if c.pixels == px && c.card_rect == card_rect && c.card == card && Arc::ptr_eq(&c.from, &fg.pixmap));
+    if !hit {
+        let data = fg.pixmap.data_as_u8_slice();
+        let mut front = Vec::with_capacity((px.w * px.h * 4) as usize);
+        for y in px.y..px.bottom() {
+            let from = ((y * fw + px.x) * 4) as usize;
+            front.extend_from_slice(&data[from..from + (px.w * 4) as usize]);
+        }
+        // The card alone, drawn the way the lock draws it, at the
+        // foreground's pixel size.
+        let mut scene = Scene::new(card_rect.w, card_rect.h);
+        let mut nodes = Vec::new();
+        let mut p = Painter::new(&mut scene, &mut nodes, None);
+        paint(&mut p, IRect::new(0, 0, card_rect.w, card_rect.h), theme, 1.0);
+        p.finish();
+        let mut r = crate::render::Renderer::new(card_rect.w as u16, card_rect.h as u16);
+        r.set_scale(k);
+        r.render(&scene, IRect::new(0, 0, card_rect.w, card_rect.h));
+        let (cw, ch) = r.pixels();
+        let canvas = r.canvas().data_as_u8_slice();
+        let (ox, oy) = (px.x - at(card_rect.x), px.y - at(card_rect.y));
+        let mut over = vec![0u8; front.len()];
+        for y in 0..px.h {
+            for x in 0..px.w {
+                let (cx, cy) = (ox + x, oy + y);
+                if cx < 0 || cy < 0 || cx >= cw || cy >= ch {
+                    continue;
+                }
+                let i = ((y * px.w + x) * 4) as usize;
+                let mask = u32::from(front[i + 3]);
+                let c = ((cy * cw + cx) * 4) as usize;
+                for n in 0..4 {
+                    over[i + n] = ((u32::from(canvas[c + n]) * mask + 127) / 255) as u8;
+                }
+            }
+        }
+        *cache = Some(OverClock {
+            pixels: px,
+            card_rect,
+            card,
+            from: fg.pixmap.clone(),
+            front: Bitmap::from_premultiplied(px.w as u16, px.h as u16, front),
+            over: Bitmap::from_premultiplied(px.w as u16, px.h as u16, over),
+        });
+    }
+    cache.as_ref().map(|c| (rect, c.front.clone(), c.over.clone()))
+}
+
+/// A picture larger than `size` at its aspect, give or take the rounding
+/// of a scaled size: the output's own pixels under a fractional scale.
+pub fn fills(b: &Bitmap, size: (i32, i32)) -> bool {
+    fills_size((i32::from(b.pixmap.width()), i32::from(b.pixmap.height())), size)
+}
+
+pub fn fills_size((bw, bh): (i32, i32), (w, h): (i32, i32)) -> bool {
+    let (bw, bh, w, h) = (i64::from(bw), i64::from(bh), i64::from(w), i64::from(h));
+    bw > w && (bw * h - bh * w).abs() <= bw.max(bh)
 }
 
 /// How far the clock's ink rises past its line box, and the slot that
@@ -287,3 +496,38 @@ fn clock_slot(clock: &ShapedText) -> (i32, i32) {
     (-top, bottom - top)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_foreground_covers_the_clock_as_the_card_shows_it_and_is_cut_once() {
+        use crate::render::Renderer;
+        let theme = Theme::default();
+        let mut kit = Kit::new(&theme);
+        let (w, h) = (900, 700);
+        let red = Bitmap::from_rgba(w as u16, h as u16, [255, 0, 0, 255].repeat((w * h) as usize));
+        let card = Card { now: Local::now(), name: "", avatar: None, prompt: Prompt::new("", true, (0, 0), "Password"), error: "", below: None, under_field: None };
+        let backdrop = |fg| Backdrop { foreground: fg, ..Backdrop::plain(Under::Picture(&red)) };
+        let mut view = View::new(w, h);
+        assert_eq!(view.draw(&card, &backdrop(None), (1.0, 0.0), &theme, &mut kit, Instant::now()).depth, None);
+        assert!(view.draw(&card, &backdrop(Some(&red)), (1.0, 0.0), &theme, &mut kit, Instant::now()).depth.is_some());
+        let OverClock { pixels: cut, front: crop, .. } = view.over_clock.clone().unwrap();
+        assert!(cut.w > 0 && cut.h > 0 && cut.w < w);
+        let mut r = Renderer::new(w as u16, h as u16);
+        r.render(&view.scene, IRect::new(0, 0, w, h));
+        let at = |x: i32, y: i32| {
+            let p = r.canvas().data()[(y * w + x) as usize];
+            [i32::from(p.r), i32::from(p.g), i32::from(p.b)]
+        };
+        // The subject over the whole screen: inside the clock's box reads
+        // exactly as the card over it just above the box, digits hidden.
+        let (inside, above) = (at(cut.x + cut.w / 2, cut.y + cut.h / 2), at(cut.x + cut.w / 2, cut.y - 3));
+        assert!(inside.iter().zip(above).all(|(a, b)| (a - b).abs() <= 2), "a step at the clock's edge: {inside:?} {above:?}");
+        assert_ne!(inside, [255, 0, 0], "the card's fill is missing over the subject");
+        let ink = (cut.y..cut.bottom()).flat_map(|y| (cut.x..cut.right()).map(move |x| (x, y))).filter(|&(x, y)| at(x, y).iter().zip(above).any(|(a, b)| (a - b).abs() > 2)).count();
+        assert_eq!(ink, 0, "clock ink showing through the subject");
+        view.draw(&card, &backdrop(Some(&red)), (1.0, 0.0), &theme, &mut kit, Instant::now());
+        assert!(Arc::ptr_eq(&view.over_clock.as_ref().unwrap().front.pixmap, &crop.pixmap), "a settled lock cut the crop again");
+    }
+}
