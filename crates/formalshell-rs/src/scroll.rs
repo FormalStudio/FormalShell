@@ -373,6 +373,33 @@ impl Touchpad {
     }
 
     /// A wheel, a key or a new view takes over: no coast and no stretch.
+    /// One axis frame over a scroll area at `offset`, `max` from its end:
+    /// the offset it lands on and whether it glides there, None for a frame
+    /// that asks nothing. A wheel's notches step `step` each and stop on
+    /// either end; a touchpad's travel lands at once and stretches past an
+    /// end until the fingers lift, springing back over `release_ms` or
+    /// coasting on.
+    #[allow(clippy::too_many_arguments)]
+    pub fn travel(&mut self, travel: Travel, offset: f64, max: f64, step: f64, view: f64, release_ms: f64, slow: f64) -> Option<(f64, bool)> {
+        let now = Instant::now();
+        Some(match travel {
+            Travel::Notches(n) => {
+                self.settle();
+                ((offset + n * step).clamp(0.0, max), true)
+            }
+            Travel::Pixels { px, finger: true, time } => (self.drag(now, time, offset, max, px, view), false),
+            Travel::Pixels { px, finger: false, .. } => {
+                self.settle();
+                ((offset + px).clamp(0.0, max), false)
+            }
+            Travel::Lift(time) => {
+                self.release(now, time, offset, max, release_ms, slow);
+                (offset, false)
+            }
+            Travel::None => return None,
+        })
+    }
+
     pub fn settle(&mut self) {
         self.pull = 0.0;
         self.coast = None;

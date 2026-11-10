@@ -953,10 +953,10 @@ impl Host {
     /// touchpad's.
     #[allow(clippy::too_many_arguments)]
     pub fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, travel: Travel, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
-        let now = Instant::now();
-        if let Travel::Lift(time) = travel {
-            let max = (self.content_h - self.viewport.h as f64).max(0.0);
-            self.touch.release(now, time, self.scroll.target(), max, Clock::SpatialFast.ms(&store.theme.theme) * self.scale, self.scale);
+        let (view, ms) = (self.viewport.h as f64, Clock::SpatialFast.ms(&store.theme.theme) * self.scale);
+        if let Travel::Lift(_) = travel {
+            let max = (self.content_h - view).max(0.0);
+            self.touch.travel(travel, self.scroll.target(), max, crate::scroll::BODY_NOTCH, view, ms, self.scale);
             return Vec::new();
         }
         let point = IRect::new(x.floor() as i32, y.floor() as i32, 1, 1);
@@ -981,26 +981,20 @@ impl Host {
             self.module.event(&Event { on, what: What::Wheel(if up { 1 } else { -1 }), button: Button::Left }, &mut fx);
             return fx.outs();
         }
-        let view = self.viewport.h as f64;
         let max = (self.content_h - view).max(0.0);
         if max <= 0.0 {
             return Vec::new();
         }
-        if let Travel::Pixels { px, finger, time } = travel {
-            let base = self.scroll.target();
-            let next = if finger {
-                self.touch.drag(now, time, base, max, px, view)
+        // The body moves a whole notch a wheel frame, whatever the frame's
+        // own size.
+        let travel = if matches!(travel, Travel::Pixels { .. }) { travel } else { Travel::Notches(if up { -1.0 } else { 1.0 }) };
+        if let Some((next, glide)) = self.touch.travel(travel, self.scroll.target(), max, crate::scroll::BODY_NOTCH, view, ms, self.scale) {
+            if glide {
+                self.scroll.set(Instant::now(), next, ms);
             } else {
-                self.touch.settle();
-                (base + px).clamp(0.0, max)
-            };
-            self.scroll.jump(next);
-            return Vec::new();
+                self.scroll.jump(next);
+            }
         }
-        self.touch.settle();
-        let base = self.scroll.target();
-        let next = (base + if up { -crate::scroll::BODY_NOTCH } else { crate::scroll::BODY_NOTCH }).clamp(0.0, max);
-        self.scroll.set(now, next, Clock::SpatialFast.ms(&store.theme.theme) * self.scale);
         Vec::new()
     }
 }

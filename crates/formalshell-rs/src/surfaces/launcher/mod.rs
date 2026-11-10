@@ -373,32 +373,6 @@ impl Column {
     }
 }
 
-/// One axis frame over a scroll area at `offset`, `max` from its end: the
-/// offset it lands on and whether it glides there, None for a frame that
-/// asks nothing. A wheel's notches step `step` each and stop on either
-/// end; a touchpad's travel lands at once and stretches past an end until
-/// the fingers lift, springing back over `release_ms` or coasting on.
-#[allow(clippy::too_many_arguments)]
-fn travel_to(touch: &mut Touchpad, travel: Travel, offset: f64, max: f64, step: f64, view: f64, release_ms: f64, slow: f64) -> Option<(f64, bool)> {
-    let now = Instant::now();
-    Some(match travel {
-        Travel::Notches(n) => {
-            touch.settle();
-            ((offset + n * step).clamp(0.0, max), true)
-        }
-        Travel::Pixels { px, finger: true, time } => (touch.drag(now, time, offset, max, px, view), false),
-        Travel::Pixels { px, finger: false, .. } => {
-            touch.settle();
-            ((offset + px).clamp(0.0, max), false)
-        }
-        Travel::Lift(time) => {
-            touch.release(now, time, offset, max, release_ms, slow);
-            (offset, false)
-        }
-        Travel::None => return None,
-    })
-}
-
 /// The drawn offset headed for `target`: a wheel's notch glides there on
 /// `effectsFast`, a key's follow travels on `spatialFast`, a touchpad's
 /// travel and a coast's frames land at once.
@@ -1290,7 +1264,7 @@ impl Model {
     /// fingers lift, springing back over `release_ms` or coasting on.
     pub fn scroll(&mut self, travel: Travel, release_ms: f64) {
         let (step, max) = (self.wheel_step(), self.max_scroll());
-        let Some((next, glide)) = travel_to(&mut self.touch, travel, self.scroll, max, step, self.body_h, release_ms, self.motion_scale) else {
+        let Some((next, glide)) = self.touch.travel(travel, self.scroll, max, step, self.body_h, release_ms, self.motion_scale) else {
             return;
         };
         self.travels = false;
@@ -1308,7 +1282,7 @@ impl Model {
         let slow = self.motion_scale;
         let Some(c) = &mut self.column else { return };
         let max = c.max_scroll();
-        let Some((next, glide)) = travel_to(&mut c.touch, travel, c.scroll, max, c.row_h, c.view_h, release_ms, slow) else {
+        let Some((next, glide)) = c.touch.travel(travel, c.scroll, max, c.row_h, c.view_h, release_ms, slow) else {
             return;
         };
         c.scroll = next;
