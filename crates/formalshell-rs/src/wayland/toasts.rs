@@ -7,11 +7,12 @@ use std::time::Instant;
 use fs_chrome::bar::panels::PanelId;
 use fs_types::Insets;
 use fs_info::notifications::PositionSpec;
+use smithay_client_toolkit::reexports::client::protocol::wl_pointer;
+use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 
-use super::App;
+use super::{App, Press, Target};
 use crate::motion::Kind;
-use crate::scroll::Travel;
 use crate::runtime::now_ms;
 use crate::services::notifications::Op;
 use crate::store::Topic;
@@ -239,22 +240,40 @@ impl App {
         }
     }
 
-    pub(crate) fn release_toasts(&mut self, x: f64, y: f64) {
-        let Some(t) = &mut self.toasts else { return };
-        let act = t.release(x, y);
+    /// The stack takes its whole gesture: a press and release on a card,
+    /// and an axis frame, where a finger's horizontal travel swipes the
+    /// card under it and a wheel does nothing. Its hover goes on to the
+    /// shared handling.
+    pub(super) fn toasts_pointer(&mut self, e: &PointerEvent, target: Option<Target>) -> bool {
+        let (x, y) = e.position;
+        let act = match e.kind {
+            PointerEventKind::Press { .. } if target == Some(Target::Toasts) => {
+                if let Some(t) = &mut self.toasts {
+                    t.press(x, y);
+                }
+                self.pressed = Some((Target::Toasts, Press::Whole));
+                return true;
+            }
+            PointerEventKind::Release { .. } if matches!(self.pressed, Some((Target::Toasts, _))) => {
+                self.pressed = None;
+                let Some(t) = &mut self.toasts else { return true };
+                t.release(x, y)
+            }
+            PointerEventKind::Axis { time, horizontal, vertical, source } if target == Some(Target::Toasts) => {
+                let finger = source == Some(wl_pointer::AxisSource::Finger);
+                let lift = ((horizontal.stop || vertical.stop) && finger).then_some(time);
+                let ms = Kind::Spatial.ms(&self.store.theme.theme) * self.motion_scale;
+                let Some(t) = &mut self.toasts else { return true };
+                let (moved, act) = t.swipe(x, y, crate::scroll::travel(&horizontal, source, time), lift, ms, Instant::now());
+                if moved {
+                    self.toasts_dirty = true;
+                }
+                act
+            }
+            _ => return false,
+        };
         self.toast_act(act);
-    }
-
-    /// One axis frame over the stack: a finger's horizontal travel swipes
-    /// the card under it, and a wheel does nothing here.
-    pub(crate) fn swipe_toasts(&mut self, x: f64, y: f64, along: Travel, lift: Option<u32>) {
-        let ms = Kind::Spatial.ms(&self.store.theme.theme) * self.motion_scale;
-        let Some(t) = &mut self.toasts else { return };
-        let (moved, act) = t.swipe(x, y, along, lift, ms, Instant::now());
-        if moved {
-            self.toasts_dirty = true;
-        }
-        self.toast_act(act);
+        true
     }
 
     fn toast_act(&mut self, act: Act) {

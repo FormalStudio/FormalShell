@@ -12,17 +12,20 @@ use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
 
-use super::{App, Holder, Target, heads, screensaver::SaverInput};
+use super::{App, Holder, Press, Target, heads, overview, screensaver::SaverInput};
 use crate::store::Topic;
 use crate::surfaces;
 use crate::surfaces::modal::Part;
+use crate::surfaces::bar::cell::Button;
 use crate::surfaces::panel::host::Key;
+use crate::surfaces::sidebar::minimap;
+use crate::surfaces::tray_menu::Hit;
 
 /// One window owner's part in the lifecycle. Its state lives on `App`
 /// beside what it draws with, so every hook takes the whole of it.
 pub(super) trait Owner: Sync {
-    /// The surface is one of this owner's.
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool;
+    /// What the surface is, when it is one of this owner's.
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target>;
     fn configure(&self, _: &mut App, _: &WlSurface, _: (i32, i32)) {}
     fn frame(&self, _: &mut App, _: &WlSurface, _: Instant) {}
     fn closed(&self, _: &mut App, _: &WlSurface) {}
@@ -127,6 +130,7 @@ pub(super) static INPUT: &[&dyn Owner] = &[
     &Bar,
     &Headset,
     &Cards,
+    &Toasts,
 ];
 
 /// A store change to every owner reading it, in the present order.
@@ -155,14 +159,20 @@ pub(super) const DEVICES: &[Topic] = &[
 /// The owner of `surface`. A surface has one owner, so the walk's order
 /// decides nothing here.
 pub(super) fn of(app: &App, surface: &WlSurface) -> Option<&'static dyn Owner> {
-    LIFECYCLE.iter().copied().find(|o| o.owns(app, surface))
+    LIFECYCLE.iter().copied().find(|o| o.owns(app, surface).is_some())
+}
+
+/// Whose surface a pointer event landed on, a dropped panel surface's
+/// included.
+pub(super) fn target(app: &App, surface: &WlSurface) -> Option<Target> {
+    LIFECYCLE.iter().find_map(|o| o.owns(app, surface)).or_else(|| Outgoing.owns(app, surface))
 }
 
 struct Heads;
 
 impl Owner for Heads {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.head_part(surface).is_some()
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.head_part(surface).map(|(i, part)| Target::Head(i, part))
     }
 
     /// A press on another output's catcher closes what a click outside
@@ -242,8 +252,8 @@ impl Owner for Heads {
 struct Bar;
 
 impl Owner for Bar {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        live!(app).surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        live!(app).surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface).then_some(Target::Bar)
     }
 
     /// Every slice but the launcher's own inputs and the inboxes other
@@ -269,6 +279,62 @@ impl Owner for Bar {
     /// The sidebar's map while it holds the keyboard.
     fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
         app.sidebar_key(event)
+    }
+
+    /// A press and release on a cell clicks it, the sidebar's map drags
+    /// between the two, and a wheel over a cell is that cell's. Its hover
+    /// goes on to the shared handling.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        let (x, y) = e.position;
+        let held = matches!(app.pressed, Some((Target::Bar, _)));
+        match e.kind {
+            PointerEventKind::Motion { .. } if held => {
+                let moved = live!(app).bar.sidebar_motion((x, y));
+                if moved != minimap::Moved::Still {
+                    live!(app).dirty = true;
+                }
+                if moved == minimap::Moved::Overview {
+                    app.overview_action(overview::Action::Open);
+                }
+                Pointer::Pass
+            }
+            PointerEventKind::Press { .. } if target == Some(Target::Bar) => {
+                app.pressed = live!(app).bar.hit(x, y).map(|i| (Target::Bar, Press::Slot(i)));
+                if let Some((_, Press::Slot(i))) = app.pressed
+                    && live!(app).bar.sidebar_press(i, (x, y))
+                {
+                    live!(app).dirty = true;
+                }
+                Pointer::Taken
+            }
+            PointerEventKind::Release { button, .. } if held => {
+                let Some((_, Press::Slot(i))) = app.pressed.take() else { return Pointer::Taken };
+                if let Some(commands) = live!(app).bar.sidebar_release((x, y)) {
+                    app.minimap_drop(commands);
+                } else if live!(app).bar.clickable(i) {
+                    let action = live!(app).bar.click(i, crate::input::button(button), x, y, &app.store);
+                    let anchor = live!(app).bar.slot_anchor(i);
+                    app.act(action, anchor);
+                }
+                Pointer::Taken
+            }
+            PointerEventKind::Axis { vertical, horizontal, .. } if target == Some(Target::Bar) => {
+                let (v, h) = (crate::scroll::notches(&vertical), crate::scroll::notches(&horizontal));
+                if (v != 0.0 || h != 0.0)
+                    && let Some(i) = live!(app).bar.hit(x, y)
+                {
+                    let action = live!(app).bar.wheel(i, v, h, &app.store);
+                    let anchor = live!(app).bar.slot_anchor(i);
+                    app.act(action, anchor);
+                    if live!(app).bar.sidebar().is_some() {
+                        live!(app).dirty = true;
+                        app.request_paint();
+                    }
+                }
+                Pointer::Taken
+            }
+            _ => Pointer::Pass,
+        }
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, (width, height): (i32, i32)) {
@@ -365,10 +431,14 @@ impl Owner for Bar {
 struct Cards;
 
 impl Owner for Cards {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.panel.as_ref().is_some_and(|p| p.win.owns(surface))
-            || app.tray_menu.as_ref().is_some_and(|p| p.win.owns(surface))
-            || app.outgoing.as_ref().is_some_and(|p| p.win.owns(surface))
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        if app.panel.as_ref().is_some_and(|p| p.win.owns(surface)) {
+            Some(Target::Panel)
+        } else if app.tray_menu.as_ref().is_some_and(|p| p.win.owns(surface)) {
+            Some(Target::Menu)
+        } else {
+            app.outgoing.as_ref().is_some_and(|p| p.win.owns(surface)).then_some(Target::Outgoing)
+        }
     }
 
     /// A theme restyles every card window on screen, a tray change reaches
@@ -428,6 +498,82 @@ impl Owner for Cards {
         let outs = h.paste(text.to_owned(), &app.store, app.runtime.as_ref());
         app.panel_outs(Holder::Host, outs);
         true
+    }
+
+    /// The panel takes its whole gesture; a tray item's menu its rows and
+    /// close button, a press outside its card closing it. Their hover goes
+    /// on to the shared handling.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        let (x, y) = e.position;
+        match (e.kind.clone(), target) {
+            (PointerEventKind::Press { .. }, Some(Target::Panel)) => {
+                if let Some(h) = &mut app.panel {
+                    h.press(x, y, &app.store, app.runtime.as_ref());
+                }
+                app.pressed = Some((Target::Panel, Press::Whole));
+                app.panel_dirty = true;
+                Pointer::Taken
+            }
+            (PointerEventKind::Press { .. }, Some(Target::Menu)) => match app.tray_menu.as_ref().and_then(|p| p.menu_hit(x, y)) {
+                Some(hit) => {
+                    app.pressed = Some((Target::Menu, Press::Menu(hit)));
+                    Pointer::Taken
+                }
+                None if app.tray_menu.as_ref().is_some_and(|p| !p.win.on_card(x, y)) => {
+                    app.close_tray_menu();
+                    Pointer::Taken
+                }
+                None => {
+                    app.pressed = None;
+                    Pointer::Taken
+                }
+            },
+            (PointerEventKind::Release { button, .. }, _) => match app.pressed {
+                Some((Target::Panel, _)) => {
+                    app.pressed = None;
+                    let button = crate::input::button(button);
+                    let outs = app.panel.as_mut().map_or(Vec::new(), |h| h.release(x, y, button, &app.store, app.runtime.as_ref()));
+                    app.panel_outs(Holder::Host, outs);
+                    Pointer::Taken
+                }
+                Some((Target::Menu, Press::Menu(hit))) => {
+                    app.pressed = None;
+                    if crate::input::button(button) != Button::Left {
+                        return Pointer::Taken;
+                    }
+                    let outcome = match (app.tray_menu.as_mut().and_then(|p| p.menu.as_mut()), hit) {
+                        (Some(_), Hit::Close) => {
+                            app.close_tray_menu();
+                            return Pointer::Taken;
+                        }
+                        (Some(m), Hit::Row(i)) => m.activate(i),
+                        (None, _) => return Pointer::Taken,
+                    };
+                    app.menu_outcome(outcome);
+                    Pointer::Taken
+                }
+                _ => Pointer::Pass,
+            },
+            (PointerEventKind::Axis { time, vertical, horizontal, source }, Some(Target::Panel)) => {
+                let (dx, dy) = (crate::scroll::notches(&horizontal), crate::scroll::notches(&vertical));
+                let travel = crate::scroll::travel(&vertical, source, time);
+                if let Some(h) = app.panel.as_mut().filter(|_| dx != 0.0 || dy != 0.0 || travel != crate::scroll::Travel::None) {
+                    h.scroll(x, y, dx, dy, travel, &app.store, app.runtime.as_ref());
+                }
+                app.panel_dirty = true;
+                Pointer::Taken
+            }
+            (PointerEventKind::Axis { vertical, horizontal, .. }, Some(Target::Menu)) => {
+                let v = crate::scroll::notches(&vertical);
+                if (v != 0.0 || crate::scroll::notches(&horizontal) != 0.0)
+                    && let Some(m) = app.open_menu_mut()
+                {
+                    m.scroll_notches(v);
+                }
+                Pointer::Taken
+            }
+            _ => Pointer::Pass,
+        }
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, _: (i32, i32)) {
@@ -545,8 +691,8 @@ impl Owner for Cards {
 struct Launcher;
 
 impl Owner for Launcher {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.launcher_part(surface).is_some()
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.launcher_part(surface).map(Target::Launcher)
     }
 
     fn reads(&self, app: &App, topic: Topic) -> bool {
@@ -605,8 +751,8 @@ impl Owner for Launcher {
 struct Atlas;
 
 impl Owner for Atlas {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.atlas_part(surface).is_some()
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.atlas_part(surface).map(Target::Atlas)
     }
 
     /// Its inbox, the radio it plays, and the theme.
@@ -662,8 +808,8 @@ impl Owner for Atlas {
 struct Switcher;
 
 impl Owner for Switcher {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.switcher.owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.switcher.owns(surface).then_some(Target::Switcher)
     }
 
     /// The focused window whether or not it is up; while it is, every
@@ -723,8 +869,8 @@ impl Owner for Switcher {
 struct Overview;
 
 impl Owner for Overview {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.overview.owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.overview.owns(surface).then_some(Target::Overview)
     }
 
     /// Every change while it is open.
@@ -781,8 +927,8 @@ impl Owner for Overview {
 struct Saver;
 
 impl Owner for Saver {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.saver_index(surface).is_some()
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.saver_index(surface).map(|_| Target::Saver)
     }
 
     /// Its runs' frames, the idle state, the media guard and its settings.
@@ -849,8 +995,8 @@ impl Owner for Saver {
 struct Tooltip;
 
 impl Owner for Tooltip {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.tip_card.as_ref().is_some_and(|c| c.surface.layer.wl_surface() == surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.tip_card.as_ref().is_some_and(|c| c.surface.layer.wl_surface() == surface).then_some(Target::Tooltip)
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {
@@ -888,8 +1034,8 @@ impl Owner for Tooltip {
 struct Toasts;
 
 impl Owner for Toasts {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.toasts.as_ref().is_some_and(|t| t.surface.layer.wl_surface() == surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.toasts.as_ref().is_some_and(|t| t.surface.layer.wl_surface() == surface).then_some(Target::Toasts)
     }
 
     fn reads(&self, _: &App, topic: Topic) -> bool {
@@ -902,6 +1048,10 @@ impl Owner for Toasts {
             app.toast_cast = None;
         }
         app.toasts_dirty = true;
+    }
+
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        if app.toasts_pointer(e, target) { Pointer::Taken } else { Pointer::Pass }
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {
@@ -947,8 +1097,8 @@ impl Owner for Toasts {
 struct Osd;
 
 impl Owner for Osd {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.osd_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.osd_owns(surface).then_some(Target::Osd)
     }
 
     /// The default sink's volume and mute, which it shows when they move.
@@ -989,8 +1139,8 @@ impl Owner for Osd {
 struct Headset;
 
 impl Owner for Headset {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.headset_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.headset_owns(surface).then_some(Target::Headset)
     }
 
     fn reads(&self, _: &App, topic: Topic) -> bool {
@@ -1042,8 +1192,8 @@ impl Owner for Headset {
 struct Profiles;
 
 impl Owner for Profiles {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.profiles_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.profiles_owns(surface).then_some(Target::Profiles)
     }
 
     /// The launcher's card covers the pill, so the pill takes the card's
@@ -1095,8 +1245,8 @@ impl Owner for Profiles {
 struct JoinPreview;
 
 impl Owner for JoinPreview {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.join_preview.as_ref().is_some_and(|(s, _, _)| s.layer.wl_surface() == surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.join_preview.as_ref().is_some_and(|(s, _, _)| s.layer.wl_surface() == surface).then_some(Target::Preview)
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {
@@ -1129,8 +1279,8 @@ impl Owner for JoinPreview {
 struct Zones;
 
 impl Owner for Zones {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        live!(app).zones.iter().any(|(_, z)| z.layer.wl_surface() == surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        live!(app).zones.iter().position(|(_, z)| z.layer.wl_surface() == surface).map(Target::Zone)
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
@@ -1160,8 +1310,8 @@ impl Owner for Zones {
 struct Scrim;
 
 impl Owner for Scrim {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.scrim.as_ref().is_some_and(|(_, s)| s.layer.wl_surface() == surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.scrim.as_ref().is_some_and(|(_, s)| s.layer.wl_surface() == surface).then_some(Target::Scrim)
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, (width, height): (i32, i32)) {
@@ -1202,8 +1352,8 @@ impl Owner for Scrim {
 struct Region;
 
 impl Owner for Region {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.picker_owner(surface).is_some()
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.picker_owner(surface).map(Target::Picker)
     }
 
     fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
@@ -1257,8 +1407,8 @@ impl Owner for Region {
 struct Polkit;
 
 impl Owner for Polkit {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.polkit_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.polkit_owns(surface).then_some(Target::Polkit)
     }
 
     fn reads(&self, _: &App, topic: Topic) -> bool {
@@ -1300,8 +1450,8 @@ impl Owner for Polkit {
 struct Overlay;
 
 impl Owner for Overlay {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.overlay_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.overlay_owns(surface).then_some(Target::Overlay)
     }
 
     /// What its plugin prints, the plugin list and the theme.
@@ -1347,8 +1497,8 @@ impl Owner for Overlay {
 struct Lock;
 
 impl Owner for Lock {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.lock_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.lock_owns(surface).then_some(Target::Lock)
     }
 
     /// Every change while a session lock is up, since what it shows reads
@@ -1396,8 +1546,8 @@ impl Owner for Lock {
 struct Veil;
 
 impl Owner for Veil {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.veil_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.veil_owns(surface).then_some(Target::Veil)
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
@@ -1433,8 +1583,8 @@ impl Owner for Veil {
 struct Caffeinate;
 
 impl Owner for Caffeinate {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.caffeinate_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.caffeinate_owns(surface).then_some(Target::Caffeinate)
     }
 
     fn reads(&self, _: &App, topic: Topic) -> bool {
@@ -1457,8 +1607,8 @@ impl Owner for Caffeinate {
 struct Outgoing;
 
 impl Owner for Outgoing {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.dropped.contains(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.dropped.contains(surface).then_some(Target::Outgoing)
     }
 
     /// A pointer entering a surface the saver and the corners passed on has
@@ -1474,8 +1624,8 @@ impl Owner for Outgoing {
 struct HotCorners;
 
 impl Owner for HotCorners {
-    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
-        app.hot_corner_owns(surface)
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.hot_corner_owns(surface).then_some(Target::HotCorner)
     }
 
     fn pointer(&self, app: &mut App, e: &PointerEvent, _: Option<Target>) -> Pointer {
