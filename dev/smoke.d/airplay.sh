@@ -109,32 +109,21 @@ EOF
 leg_airplay_assert() {
   if [ ! -s "$airplay_status_connected_path" ]; then fail "no airplay status reply while connected"; fi
   cat "$airplay_status_connected_path"; echo
-  if ! grep -qF '"active":true' "$airplay_status_connected_path" \
-      || ! grep -qF "\"client\":\"$airplay_client_name\"" "$airplay_status_connected_path" \
-      || ! grep -qF "\"title\":\"$airplay_title\"" "$airplay_status_connected_path" \
-      || ! grep -qF '"hasCover":true' "$airplay_status_connected_path"; then
-    fail "airplay status did not report a connected client with metadata and cover art: $(cat "$airplay_status_connected_path")"
-  fi
+  expect_jq "$airplay_status_connected_path" '.active == true and .client == "'"$airplay_client_name"'" and .title == "'"$airplay_title"'" and .hasCover == true' \
+    "airplay status did not report a connected client with metadata and cover art"
 
   if [ ! -s "$airplay_media_connected_path" ]; then fail "no media status reply while airplay was active"; fi
   cat "$airplay_media_connected_path"; echo
-  if ! grep -qF '"kind":"airplay"' "$airplay_media_connected_path"; then
-    fail "MediaService did not pick up the airplay source: $(cat "$airplay_media_connected_path")"
-  fi
+  expect_jq "$airplay_media_connected_path" '.kind == "airplay"' "MediaService did not pick up the airplay source"
 
   if [ ! -s "$airplay_status_disconnected_path" ]; then fail "no airplay status reply after disconnect"; fi
   cat "$airplay_status_disconnected_path"; echo
-  if ! grep -qF '"active":false' "$airplay_status_disconnected_path" \
-      || ! grep -qF '"client":""' "$airplay_status_disconnected_path" \
-      || ! grep -qF '"hasCover":false' "$airplay_status_disconnected_path"; then
-    fail "airplay status still reports the client after the shim's disconnect: $(cat "$airplay_status_disconnected_path")"
-  fi
+  expect_jq "$airplay_status_disconnected_path" '.active == false and .client == "" and .hasCover == false' \
+    "airplay status still reports the client after the shim's disconnect"
 
   if [ ! -s "$airplay_media_disconnected_path" ]; then fail "no media status reply after disconnect"; fi
   cat "$airplay_media_disconnected_path"; echo
-  if grep -qF '"kind":"airplay"' "$airplay_media_disconnected_path"; then
-    fail "MediaService still carries the airplay source after disconnect: $(cat "$airplay_media_disconnected_path")"
-  fi
+  expect_jq "$airplay_media_disconnected_path" '.kind != "airplay"' "MediaService still carries the airplay source after disconnect"
 
   for f in "$airplay_active_png" "$airplay_panel_png" "$airplay_gone_png"; do
     if [ ! -f "$f" ]; then fail "no airplay screenshot produced at $f"; fi

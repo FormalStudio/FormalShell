@@ -83,40 +83,34 @@ leg_keybinds_assert() {
   # Both are real answers elsewhere; here they would mean the route never got
   # hyprland's bind table, which is the one thing this leg exists to prove.
   for row in keybinds.nobinds keybinds.failed; do
-    if grep -qF "\"id\":\"$row\"" "$keybinds_query1_path"; then
-      fail "keybinds route answered $row: hyprland's bind table was not what it read"
-    fi
+    expect_jq "$keybinds_query1_path" 'all(.[]; .id != "'"$row"'")' \
+      "keybinds route answered $row: hyprland's bind table was not what it read"
   done
   # Case-insensitive on the chord: hyprland reports a bind's key back the way
   # the config spelled it, and the leg's claim is the bind, not its casing.
-  if ! grep -qiF '"label":"SUPER+SHIFT+slash' "$keybinds_query1_path" \
-    || ! grep -qF '"desc":"exec hyprctl version"' "$keybinds_query1_path"; then
-    fail "keybinds route did not parse the fixture's first bind: $(cat "$keybinds_query1_path")"
-  fi
-  if ! grep -qF '"desc":"killactive"' "$keybinds_query1_path" \
-    || ! grep -qF '"desc":"workspace 1"' "$keybinds_query1_path"; then
-    fail "keybinds route lost a described bind: $(cat "$keybinds_query1_path")"
-  fi
+  expect_jq "$keybinds_query1_path" \
+    'any(.[]; .label | ascii_downcase | startswith("super+shift+slash")) and any(.[]; .desc == "exec hyprctl version")' \
+    "keybinds route did not parse the fixture's first bind"
+  expect_jq "$keybinds_query1_path" \
+    'any(.[]; .desc == "killactive") and any(.[]; .desc == "workspace 1")' \
+    "keybinds route lost a described bind"
   # Survives hyprland's own config parser and the round trip out of it.
-  if ! grep -qF '"desc":"exec notify-send {braces} // not-a-comment"' "$keybinds_query1_path"; then
-    fail "the fixture's brace-and-slash argument did not survive intact: $(cat "$keybinds_query1_path")"
-  fi
-  if grep -qiF 'SUPER+Z' "$keybinds_query1_path"; then
-    fail "a commented-out bind rendered as a live keybind row: $(cat "$keybinds_query1_path")"
-  fi
-  rows=$(grep -o '"kind":"note"' "$keybinds_query1_path" | wc -l | tr -d ' ' || true)
+  expect_jq "$keybinds_query1_path" \
+    'any(.[]; .desc == "exec notify-send {braces} // not-a-comment")' \
+    "the fixture's brace-and-slash argument did not survive intact"
+  expect_jq "$keybinds_query1_path" \
+    'tostring | ascii_downcase | contains("super+z") | not' \
+    "a commented-out bind rendered as a live keybind row"
+  rows=$("$jq_bin" -r '[.[] | select(.kind == "note")] | length' "$keybinds_query1_path" 2>/dev/null || true)
   if [ "$rows" != "5" ]; then
     fail "keybinds route returned $rows rows, expected the fixture's 5 live binds"
   fi
   cat "$keybinds_query2_path"; echo
-  if ! grep -qiF '"label":"SUPER+T' "$keybinds_query2_path" \
-    || ! grep -qF '"desc":"Open a Terminal"' "$keybinds_query2_path"; then
-    fail "':k SUPER+T' did not rank the fixture's own chord with its action: $(cat "$keybinds_query2_path")"
-  fi
-  if ! grep -qF '"isOpen":true' "$keybinds_menu_status_path" \
-    || ! grep -qF '"level":"keybinds"' "$keybinds_menu_status_path"; then
-    fail "menu did not summon to the keybinds route: $(cat "$keybinds_menu_status_path")"
-  fi
+  expect_jq "$keybinds_query2_path" \
+    'any(.[]; .label | ascii_downcase | startswith("super+t")) and any(.[]; .desc == "Open a Terminal")' \
+    "':k SUPER+T' did not rank the fixture's own chord with its action"
+  expect_jq "$keybinds_menu_status_path" '.isOpen == true and .level == "keybinds"' \
+    "menu did not summon to the keybinds route" '{isOpen, level}'
   [ -f "$keybinds_menu_png" ] || fail "no keybinds screenshot produced at $keybinds_menu_png"
   echo "SMOKE_KEYBINDS $keybinds_menu_png ($rows parsed rows)"
 }

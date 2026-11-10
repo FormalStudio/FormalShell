@@ -104,7 +104,7 @@ sleep 1
 "$wl_copy_bin" "clipboard smoke three"
 sleep 1
 $ipc call clipboard list > "$clip_list2_path" 2>&1
-copy_id=\$(grep -o '"id":"[^"]*"' "$clip_list2_path" | sed -n '2p' | cut -d'"' -f4)
+copy_id=\$("$jq_bin" -r '.[1].id // empty' "$clip_list2_path" 2>/dev/null)
 $ipc call clipboard copy "\$copy_id" > "$clip_copy_path" 2>&1
 sleep 1
 "$wl_paste_bin" --no-newline > "$clip_paste_path" 2>&1
@@ -168,19 +168,17 @@ leg_clipboard_assert() {
   # `wl-paste --watch` children only start when something first reads
   # ClipboardService, which a poll would paper over.
   cat "$clip_warmup_path"; echo
-  if ! grep -qF 'clipboard smoke warmup' "$clip_warmup_path"; then
-    fail "a copy made before anything read the ledger was never captured: $(cat "$clip_warmup_path" 2>/dev/null)"
-  fi
+  expect_jq "$clip_warmup_path" 'any(.[]; (.text // "") | contains("clipboard smoke warmup"))' \
+    "a copy made before anything read the ledger was never captured"
   cat "$clip_list1_path"; echo
   cat "$clip_list2_path"; echo
-  if ! grep -qF 'clipboard smoke three' "$clip_list1_path"; then
-    fail "the clipboard ledger never captured the fixture strings: $(cat "$clip_list1_path")"
-  fi
+  expect_jq "$clip_list1_path" 'any(.[]; (.text // "") | contains("clipboard smoke three"))' \
+    "the clipboard ledger never captured the fixture strings"
   # The count has to stay 3 across the re-copy: a fourth entry would mean
   # the dedup-to-front path inserted a duplicate instead of moving the
   # existing "clipboard smoke three" entry.
-  count1=$(grep -o '"id":' "$clip_list1_path" | wc -l | tr -d ' ')
-  count2=$(grep -o '"id":' "$clip_list2_path" | wc -l | tr -d ' ')
+  count1=$("$jq_bin" -r 'length' "$clip_list1_path" 2>/dev/null)
+  count2=$("$jq_bin" -r 'length' "$clip_list2_path" 2>/dev/null)
   if [ "$count1" != "3" ] || [ "$count2" != "3" ]; then
     fail "clipboard list item count drifted (before=$count1 after-recopy=$count2, want 3/3)"
   fi
@@ -227,16 +225,15 @@ leg_clipboard_assert() {
     fail "no clipboard list produced after the burst"
   fi
   cat "$clip_burst_path"; echo
-  burst_rows=$(grep -o 'burst-[a-t]' "$clip_burst_path" | wc -l | tr -d ' ')
+  burst_rows=$("$jq_bin" -r '[.[] | (.text // "") | scan("burst-[a-t]")] | length' "$clip_burst_path" 2>/dev/null)
   if [ "$burst_rows" != "1" ]; then
     fail "a 20-copy burst left $burst_rows ledger rows, want 1"
   fi
-  if ! grep -qF 'burst-t' "$clip_burst_path"; then
-    fail "the burst row is not the value the clipboard settled on: $(cat "$clip_burst_path")"
-  fi
+  expect_jq "$clip_burst_path" 'any(.[]; (.text // "") | contains("burst-t"))' \
+    "the burst row is not the value the clipboard settled on"
   # The uri-list copy, dumped before any image/png was ever copied.
   cat "$clip_uri_list_path"; echo
-  uri_store=$(grep -o '"path":"[^"]*"' "$clip_uri_list_path" | head -n 1 | cut -d'"' -f4)
+  uri_store=$("$jq_bin" -r '[.[] | .path | strings] | first // empty' "$clip_uri_list_path" 2>/dev/null)
   if [ -z "$uri_store" ] || [ ! -s "$uri_store" ]; then
     fail "a text/uri-list copy of one jpeg never reached the ledger as an image: $(cat "$clip_uri_list_path" 2>/dev/null)"
   fi
@@ -244,21 +241,18 @@ leg_clipboard_assert() {
     fail "the uri-list capture at $uri_store is not a png"
   fi
   # The image entry is what the split pane's preview frame is read against.
-  if ! grep -qF '"kind":"image"' "$clip_list3_path"; then
-    fail "the image fixture never reached the ledger: $(cat "$clip_list3_path")"
-  fi
+  expect_jq "$clip_list3_path" 'any(.[]; .kind == "image")' \
+    "the image fixture never reached the ledger" '[.[].kind]'
   cat "$clip_list3_path"; echo
-  if ! grep -qF '<b>clipboard smoke markup</b>' "$clip_list3_path"; then
-    fail "the markup capture never reached the ledger: $(cat "$clip_list3_path")"
-  fi
+  expect_jq "$clip_list3_path" 'any(.[]; (.text // "") | contains("<b>clipboard smoke markup</b>"))' \
+    "the markup capture never reached the ledger"
   if [ ! -f "$clip_route_png" ]; then
     fail "no clipboard-route screenshot produced"
   fi
   echo "SMOKE_CLIPBOARD_ROUTE $clip_route_png"
   cat "$clip_emoji_list_path"; echo
-  if ! grep -qF '😂' "$clip_emoji_list_path"; then
-    fail "the emoji-only capture never reached the ledger: $(cat "$clip_emoji_list_path" 2>/dev/null)"
-  fi
+  expect_jq "$clip_emoji_list_path" 'any(.[]; (.text // "") | contains("😂"))' \
+    "the emoji-only capture never reached the ledger"
   if [ ! -f "$clip_emoji_png" ]; then
     fail "no clipboard-emoji screenshot produced"
   fi

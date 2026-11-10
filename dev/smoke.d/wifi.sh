@@ -84,38 +84,19 @@ $ipc call panel open network > /dev/null 2>&1
 # with returns "unknown ssid" from the IPC, which arms nothing.
 for ssid in FORMALTEST FORMALTEST-EAP; do
   $ipc call network status > "$wifi_reset_status_path" 2>&1
-  if grep -qF "\"name\":\"\$ssid\",\"known\":true" "$wifi_reset_status_path"; then
+  if "$jq_bin" -e --arg s "\$ssid" 'any(.networks[]; .name == \$s and .known == true)' "$wifi_reset_status_path" > /dev/null 2>&1; then
     $ipc call network forget "\$ssid" > /dev/null 2>&1
-    SECONDS=0
-    while [ "\$SECONDS" -lt 15 ]; do
-      $ipc call network status > "$wifi_reset_status_path" 2>&1
-      if grep -qE "\"name\":\"\$ssid\",\"known\":false,\"connected\":false,\"stateChanging\":false" "$wifi_reset_status_path"; then
-        break
-      fi
-      sleep 1
-    done
+    until_jq 15 "$wifi_reset_status_path" "any(.networks[]; .name == \"\$ssid\" and .known == false and .connected == false and .stateChanging == false)" call network status
   fi
 done
 
 sudo nmcli connection delete FORMALGHOST > /dev/null 2>&1 || true
 
-SECONDS=0
-while [ "\$SECONDS" -lt 25 ]; do
-  $ipc call network status > "$wifi_scan_status_path" 2>&1
-  if grep -qF '"name":"FORMALTEST"' "$wifi_scan_status_path" && grep -qF '"name":"FORMALTEST-EAP"' "$wifi_scan_status_path"; then
-    break
-  fi
-  sleep 1
-done
+until_jq 25 "$wifi_scan_status_path" 'any(.networks[]; .name == "FORMALTEST") and any(.networks[]; .name == "FORMALTEST-EAP")' call network status
 
 sudo nmcli connection add type wifi ifname wlan0 con-name FORMALGHOST ssid FORMALGHOST \\
   connection.autoconnect no wifi-sec.key-mgmt wpa-psk wifi-sec.psk formalghost-psk > "$wifi_ghost_add_path" 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 10 ]; do
-  $ipc call network status > "$wifi_ghost_closed_status_path" 2>&1
-  grep -qF '"name":"FORMALGHOST","known":true' "$wifi_ghost_closed_status_path" && break
-  sleep 1
-done
+until_jq 10 "$wifi_ghost_closed_status_path" 'any(.networks[]; .name == "FORMALGHOST" and .known == true)' call network status
 # Reopened so the disclosure starts closed and the card settles on the new list.
 $ipc call panel close > /dev/null 2>&1
 sleep 1
@@ -130,45 +111,19 @@ sleep 2
 $ipc call network status > "$wifi_ghost_open_status_path" 2>&1
 "$grim_bin" "$wifi_ghost_open_path" > /dev/null 2>&1
 sudo nmcli connection delete FORMALGHOST > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 10 ]; do
-  $ipc call network status > "$wifi_ghost_gone_status_path" 2>&1
-  grep -qF '"name":"FORMALGHOST"' "$wifi_ghost_gone_status_path" || break
-  sleep 1
-done
+until_jq 10 "$wifi_ghost_gone_status_path" 'all(.networks[]; .name != "FORMALGHOST")' call network status
 
 $ipc call network connect FORMALTEST wrong-formaltest-psk > /dev/null 2>&1
 # connect() replies as soon as the IPC call returns, well before NM's own
 # ActiveConnection exists, so polling for the settled state right away would
 # see the identical pre-attempt idle snapshot and declare victory before
 # anything happened. Waiting for stateChanging:true first proves NM started.
-SECONDS=0
-while [ "\$SECONDS" -lt 10 ]; do
-  $ipc call network status > "$wifi_wrong_status_path" 2>&1
-  if grep -qE '"name":"FORMALTEST","known":(true|false),"connected":(true|false),"stateChanging":true' "$wifi_wrong_status_path"; then
-    break
-  fi
-  sleep 1
-done
-SECONDS=0
-while [ "\$SECONDS" -lt 45 ]; do
-  $ipc call network status > "$wifi_wrong_status_path" 2>&1
-  if grep -qE '"name":"FORMALTEST","known":(true|false),"connected":false,"stateChanging":false' "$wifi_wrong_status_path"; then
-    break
-  fi
-  sleep 1
-done
+until_jq 10 "$wifi_wrong_status_path" 'any(.networks[]; .name == "FORMALTEST" and .stateChanging == true)' call network status
+until_jq 45 "$wifi_wrong_status_path" 'any(.networks[]; .name == "FORMALTEST" and .connected == false and .stateChanging == false)' call network status
 "$grim_bin" "$wifi_wrong_path" > /dev/null 2>&1
 
 $ipc call network connect FORMALTEST formaltest-psk > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 25 ]; do
-  $ipc call network status > "$wifi_connected_status_path" 2>&1
-  if grep -qF '"name":"FORMALTEST","known":true,"connected":true' "$wifi_connected_status_path"; then
-    break
-  fi
-  sleep 1
-done
+until_jq 25 "$wifi_connected_status_path" 'any(.networks[]; .name == "FORMALTEST" and .known == true and .connected == true)' call network status
 "$grim_bin" "$wifi_connected_path" > /dev/null 2>&1
 nmcli --escape no -g connection.permissions connection show FORMALTEST > "$wifi_psk_permissions_path" 2>&1
 
@@ -176,24 +131,10 @@ $ipc call network forget FORMALTEST > /dev/null 2>&1
 # known:false alone is not enough to move on: the panel's own action
 # bookkeeping only clears once BOTH !known and !stateChanging, and
 # connectEap below refuses to run while an action is still in flight.
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call network status > "$wifi_forget_status_path" 2>&1
-  if grep -qE '"name":"FORMALTEST","known":false,"connected":false,"stateChanging":false' "$wifi_forget_status_path"; then
-    break
-  fi
-  sleep 1
-done
+until_jq 15 "$wifi_forget_status_path" 'any(.networks[]; .name == "FORMALTEST" and .known == false and .connected == false and .stateChanging == false)' call network status
 
 $ipc call network connectEap FORMALTEST-EAP formaltest formaltest-eap-pw > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 35 ]; do
-  $ipc call network status > "$wifi_eap_status_path" 2>&1
-  if grep -qF '"name":"FORMALTEST-EAP","known":true,"connected":true' "$wifi_eap_status_path"; then
-    break
-  fi
-  sleep 1
-done
+until_jq 35 "$wifi_eap_status_path" 'any(.networks[]; .name == "FORMALTEST-EAP" and .known == true and .connected == true)' call network status
 "$grim_bin" "$wifi_eap_connected_path" > /dev/null 2>&1
 nmcli --escape no -g connection.permissions connection show FORMALTEST-EAP > "$wifi_eap_permissions_path" 2>&1
 
@@ -201,14 +142,7 @@ nmcli --escape no -g connection.permissions connection show FORMALTEST-EAP > "$w
 # an earlier run corrupted the VM's persistent NM state and broke every scan
 # after it.
 $ipc call network forget FORMALTEST-EAP > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call network status > "$wifi_eap_forget_status_path" 2>&1
-  if grep -qE '"name":"FORMALTEST-EAP","known":false,"connected":false,"stateChanging":false' "$wifi_eap_forget_status_path"; then
-    break
-  fi
-  sleep 1
-done
+until_jq 15 "$wifi_eap_forget_status_path" 'any(.networks[]; .name == "FORMALTEST-EAP" and .known == false and .connected == false and .stateChanging == false)' call network status
 sudo journalctl -u NetworkManager -o cat --since "\$(cat "$wifi_auth_since_path")" \
   | grep -F 'CheckAuthorization(org.freedesktop.NetworkManager.settings.modify' >> "$wifi_auth_path"
 EOF
@@ -216,53 +150,34 @@ EOF
 }
 
 leg_wifi_assert() {
-  if [ ! -s "$wifi_scan_status_path" ] \
-    || ! grep -qF '"name":"FORMALTEST"' "$wifi_scan_status_path" \
-    || ! grep -qF '"name":"FORMALTEST-EAP"' "$wifi_scan_status_path"; then
-    [ -f "$wifi_scan_status_path" ] && cat "$wifi_scan_status_path" >&2
-    fail "FORMALTEST/FORMALTEST-EAP never surfaced in a wifi scan"
-  fi
+  expect_jq "$wifi_scan_status_path" 'any(.networks[]; .name == "FORMALTEST") and any(.networks[]; .name == "FORMALTEST-EAP")' \
+    "FORMALTEST/FORMALTEST-EAP never surfaced in a wifi scan" '[.networks[].name]'
   cat "$wifi_scan_status_path"; echo
   leg_wifi_assert_ghost
   # NetworkManager must have genuinely given up before the frame below can be
   # trusted as the failure state rather than a lucky mid-flight capture.
-  if [ ! -s "$wifi_wrong_status_path" ] \
-    || ! grep -qE '"name":"FORMALTEST","known":(true|false),"connected":false,"stateChanging":false' "$wifi_wrong_status_path"; then
-    [ -f "$wifi_wrong_status_path" ] && cat "$wifi_wrong_status_path" >&2
-    fail "wrong-password connect never settled to a stable disconnected state within the poll budget"
-  fi
+  expect_jq "$wifi_wrong_status_path" 'any(.networks[]; .name == "FORMALTEST" and .connected == false and .stateChanging == false)' \
+    "wrong-password connect never settled to a stable disconnected state within the poll budget" '.networks'
   cat "$wifi_wrong_status_path"; echo
   [ -f "$wifi_wrong_path" ] || fail "no wifi-wrong screenshot produced"
   echo "SMOKE_WIFI_WRONG $wifi_wrong_path"
-  if [ ! -s "$wifi_connected_status_path" ] \
-    || ! grep -qF '"name":"FORMALTEST","known":true,"connected":true' "$wifi_connected_status_path"; then
-    [ -f "$wifi_connected_status_path" ] && cat "$wifi_connected_status_path" >&2
-    fail "real-password connect never reached connected:true within the poll budget"
-  fi
+  expect_jq "$wifi_connected_status_path" 'any(.networks[]; .name == "FORMALTEST" and .known == true and .connected == true)' \
+    "real-password connect never reached connected:true within the poll budget" '.networks'
   cat "$wifi_connected_status_path"; echo
   [ -f "$wifi_connected_path" ] || fail "no wifi-connected screenshot produced"
   echo "SMOKE_WIFI_CONNECTED $wifi_connected_path"
-  if [ ! -s "$wifi_forget_status_path" ] \
-    || ! grep -qE '"name":"FORMALTEST","known":false,"connected":false,"stateChanging":false' "$wifi_forget_status_path"; then
-    [ -f "$wifi_forget_status_path" ] && cat "$wifi_forget_status_path" >&2
-    fail "forget did not settle FORMALTEST to known:false/stateChanging:false within the poll budget"
-  fi
+  expect_jq "$wifi_forget_status_path" 'any(.networks[]; .name == "FORMALTEST" and .known == false and .connected == false and .stateChanging == false)' \
+    "forget did not settle FORMALTEST to known:false/stateChanging:false within the poll budget" '.networks'
   cat "$wifi_forget_status_path"; echo
-  if [ ! -s "$wifi_eap_status_path" ] \
-    || ! grep -qF '"name":"FORMALTEST-EAP","known":true,"connected":true' "$wifi_eap_status_path"; then
-    [ -f "$wifi_eap_status_path" ] && cat "$wifi_eap_status_path" >&2
-    fail "connectEap never reached connected:true for FORMALTEST-EAP within the poll budget"
-  fi
+  expect_jq "$wifi_eap_status_path" 'any(.networks[]; .name == "FORMALTEST-EAP" and .known == true and .connected == true)' \
+    "connectEap never reached connected:true for FORMALTEST-EAP within the poll budget" '.networks'
   cat "$wifi_eap_status_path"; echo
   [ -f "$wifi_eap_connected_path" ] || fail "no wifi-eap-connected screenshot produced"
   echo "SMOKE_WIFI_EAP_CONNECTED $wifi_eap_connected_path"
   # A leftover profile here is what corrupts the VM's persistent NM state for
   # every run after this one.
-  if [ ! -s "$wifi_eap_forget_status_path" ] \
-    || ! grep -qE '"name":"FORMALTEST-EAP","known":false,"connected":false,"stateChanging":false' "$wifi_eap_forget_status_path"; then
-    [ -f "$wifi_eap_forget_status_path" ] && cat "$wifi_eap_forget_status_path" >&2
-    fail "closing forget did not settle FORMALTEST-EAP to known:false/stateChanging:false within the poll budget"
-  fi
+  expect_jq "$wifi_eap_forget_status_path" 'any(.networks[]; .name == "FORMALTEST-EAP" and .known == false and .connected == false and .stateChanging == false)' \
+    "closing forget did not settle FORMALTEST-EAP to known:false/stateChanging:false within the poll budget" '.networks'
   cat "$wifi_eap_forget_status_path"; echo
   leg_wifi_assert_owned
 }
@@ -313,9 +228,7 @@ leg_wifi_assert_ghost() {
   cat "$wifi_ghost_open_status_path"; echo
   "$jq_bin" -e '.knownOpen == true' "$wifi_ghost_open_status_path" > /dev/null \
     || fail "Down, Up, Up, Return did not open the Known networks disclosure"
-  if grep -qF '"name":"FORMALGHOST"' "$wifi_ghost_gone_status_path"; then
-    fail "FORMALGHOST's profile outlived the leg: $(cat "$wifi_ghost_gone_status_path")"
-  fi
+  expect_jq "$wifi_ghost_gone_status_path" 'all(.networks[]; .name != "FORMALGHOST")' "FORMALGHOST's profile outlived the leg" '[.networks[].name]'
   near=$("$jq_bin" '[.networks[] | select(.inRange)] | length' "$wifi_ghost_closed_status_path")
   closed_text=$(wifi_ocr "$wifi_ghost_closed_path")
   open_text=$(wifi_ocr "$wifi_ghost_open_path")

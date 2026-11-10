@@ -326,10 +326,8 @@ leg_iphone_assert() {
 
   if [ ! -s "$iphone_status_connected_path" ]; then fail "no iphone status reply"; fi
   cat "$iphone_status_connected_path"; echo
-  if ! grep -qF '"connected":true' "$iphone_status_connected_path" \
-      || ! grep -qF "\"deviceName\":\"$iphone_device_name\"" "$iphone_status_connected_path"; then
-    fail "iphone status did not report the fixture phone connected: $(cat "$iphone_status_connected_path")"
-  fi
+  expect_jq "$iphone_status_connected_path" '.connected == true and .deviceName == "'"$iphone_device_name"'"' \
+    "iphone status did not report the fixture phone connected" '{connected, deviceName, lastError}'
 
   total0=$("$jq_bin" -r '.pending + .popups' "$iphone_notify_status_0_path")
   total1=$("$jq_bin" -r '.pending + .popups' "$iphone_notify_status_normal_path")

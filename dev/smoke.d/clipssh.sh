@@ -188,9 +188,8 @@ nohost" ]; then
     fail "no notifications status produced"
   fi
   cat "$clipssh_notify_status_path"; echo
-  if grep -q '"popups":0' "$clipssh_notify_status_path"; then
-    fail "no popup is up after the failed transfer, the urgent CLIPSSH FAILED toast never landed: $(cat "$clipssh_notify_status_path")"
-  fi
+  expect_jq "$clipssh_notify_status_path" '.popups > 0' \
+    "no popup is up after the failed transfer, the urgent CLIPSSH FAILED toast never landed"
   for f in "$clipssh_route_png" "$clipssh_sending_png" "$clipssh_copied_png" "$clipssh_failed_png"; do
     if [ ! -f "$f" ]; then
       fail "no clipssh screenshot produced at $f"

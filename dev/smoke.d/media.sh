@@ -110,12 +110,7 @@ fi
 sleep 1
 "$mpv_bin" --no-video --really-quiet "$media_track_long_path" &
 echo \$! > "$media_pid_path"
-SECONDS=0
-while [ "\$SECONDS" -lt 8 ]; do
-  $ipc call media status > "$media_status_long_path" 2>&1
-  grep -qF "\"title\":\"$media_track_title_long\"" "$media_status_long_path" && break
-  sleep 1
-done
+until_jq 8 "$media_status_long_path" '.title == "$media_track_title_long"' call media status
 sleep 5
 "$grim_bin" "$media_marquee_scroll_path" > /dev/null 2>&1
 EOF
@@ -139,8 +134,7 @@ sleep 4
 echo \$! > "$media_pid2_path"
 sleep 4
 $ipc call media players > "$media_players_path" 2>&1
-active=\$(grep -o '"id":"[^"]*"' "$media_controls_status_path" | head -1 | cut -d'"' -f4)
-other=\$(grep -o '"id":"[^"]*"' "$media_players_path" | cut -d'"' -f4 | grep -v "^\$active\$" | head -1)
+other=\$("$jq_bin" -r --slurpfile s "$media_controls_status_path" '[.[].id | select(. != \$s[0].id)] | first // empty' "$media_players_path")
 $ipc call media select "\$other" > /dev/null 2>&1
 sleep 2
 $ipc call media status > "$media_select_status_path" 2>&1
@@ -169,15 +163,9 @@ leg_media_assert() {
     fail "no media status produced"
   fi
   cat "$media_status_path"; echo
-  if ! grep -q '"available":true' "$media_status_path"; then
-    fail "media status reports no player available, got: $(cat "$media_status_path")"
-  fi
-  if ! grep -qF "\"title\":\"$media_track_title\"" "$media_status_path"; then
-    fail "media status title does not match the fixture track's tag ($media_track_title), got: $(cat "$media_status_path")"
-  fi
-  if ! grep -qF "\"artist\":\"$media_track_artist\"" "$media_status_path"; then
-    fail "media status artist does not match the fixture track's tag ($media_track_artist), got: $(cat "$media_status_path")"
-  fi
+  expect_jq "$media_status_path" '.available == true' "media status reports no player available"
+  expect_jq "$media_status_path" ".title == \"$media_track_title\"" "media status title does not match the fixture track's tag ($media_track_title)" '.title'
+  expect_jq "$media_status_path" ".artist == \"$media_track_artist\"" "media status artist does not match the fixture track's tag ($media_track_artist)" '.artist'
   [ -f "$media_marquee_static_path" ] || fail "no media-marquee-static screenshot produced"
   echo "SMOKE_MEDIA_MARQUEE_STATIC $media_marquee_static_path"
   # The scroll frame is only evidence of a marquee if the retitle landed
@@ -185,9 +173,7 @@ leg_media_assert() {
   if [ ! -s "$media_status_long_path" ]; then
     fail "no media status produced after the marquee retitle"
   fi
-  if ! grep -qF "\"title\":\"$media_track_title_long\"" "$media_status_long_path"; then
-    fail "media status after retitle does not show the long overflow title, got: $(cat "$media_status_long_path")"
-  fi
+  expect_jq "$media_status_long_path" ".title == \"$media_track_title_long\"" "media status after retitle does not show the long overflow title" '.title'
   [ -f "$media_marquee_scroll_path" ] || fail "no media-marquee-scroll screenshot produced"
   echo "SMOKE_MEDIA_MARQUEE_SCROLL $media_marquee_scroll_path"
 
@@ -195,14 +181,11 @@ leg_media_assert() {
     fail "no media status produced after the controls leg"
   fi
   cat "$media_controls_status_path"; echo
-  for expect in '"shuffleSupported":true' '"shuffle":true' '"loopSupported":true' '"loop":"track"' '"volumeSupported":true'; do
-    if ! grep -qF "$expect" "$media_controls_status_path"; then
-      fail "media status does not report $expect after the controls leg, got: $(cat "$media_controls_status_path")"
-    fi
-  done
+  expect_jq "$media_controls_status_path" '.shuffleSupported == true and .shuffle == true and .loopSupported == true and .loop == "track" and .volumeSupported == true' \
+    "media status does not report shuffle on, loop track and a volume after the controls leg" '{shuffleSupported, shuffle, loopSupported, loop, volumeSupported}'
   # 0.3 on the wire is 30 in mpv's own units and back; the window is for that
   # round trip's float, not a tolerance on what was asked for.
-  volume=$(grep -o '"volume":[0-9.eE+-]*' "$media_controls_status_path" | head -1 | cut -d: -f2)
+  volume=$("$jq_bin" -r '.volume' "$media_controls_status_path")
   if ! awk -v v="$volume" 'BEGIN { exit !(v > 0.28 && v < 0.32) }'; then
     fail "media volume 30 did not reach the player, status reports volume=$volume"
   fi
@@ -217,12 +200,10 @@ leg_media_assert() {
     fail "no media status produced after select"
   fi
   cat "$media_select_status_path"; echo
-  if ! grep -q '"playerCount":2' "$media_select_status_path"; then
-    fail "second mpv never registered on MPRIS, got: $(cat "$media_select_status_path")"
-  fi
-  active_before=$(grep -o '"id":"[^"]*"' "$media_controls_status_path" | head -1 | cut -d'"' -f4)
-  active_after=$(grep -o '"id":"[^"]*"' "$media_select_status_path" | head -1 | cut -d'"' -f4)
-  selected_after=$(grep -o '"selectedId":"[^"]*"' "$media_select_status_path" | head -1 | cut -d'"' -f4)
+  expect_jq "$media_select_status_path" '.playerCount == 2' "second mpv never registered on MPRIS" '.playerCount'
+  active_before=$("$jq_bin" -r '.id' "$media_controls_status_path")
+  active_after=$("$jq_bin" -r '.id' "$media_select_status_path")
+  selected_after=$("$jq_bin" -r '.selectedId // empty' "$media_select_status_path")
   if [ -z "$active_after" ] || [ "$active_after" != "$selected_after" ] || [ "$active_after" = "$active_before" ]; then
     fail "media select did not move the active player (before=$active_before after=$active_after selected=$selected_after)"
   fi

@@ -163,8 +163,8 @@ sleep 5;  progress_sample track-3
 echo \$! > "$media_progress_pid2_path"
 sleep 4
 $ipc call media players > "$shot_dir/progress-players.json" 2>&1
-active=\$($ipc call media status 2>&1 | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-other=\$(grep -o '"id":"[^"]*"' "$shot_dir/progress-players.json" | cut -d'"' -f4 | grep -v "^\$active\$" | head -1)
+active=\$($ipc call media status 2>&1 | "$jq_bin" -r '.id')
+other=\$("$jq_bin" -r --arg a "\$active" '[.[].id | select(. != \$a)] | first // empty' "$shot_dir/progress-players.json")
 $ipc call media select "\$other" > /dev/null 2>&1
 sleep 3;  progress_sample switch-1
 sleep 5;  progress_sample switch-2
@@ -185,7 +185,7 @@ EOF
 }
 
 media_progress_field() {
-  grep -o "\"$2\":[0-9.eE+-]*" "$shot_dir/progress-$1.json" 2>/dev/null | head -1 | cut -d: -f2
+  "$jq_bin" -r --arg k "$2" '.[$k] // empty' "$shot_dir/progress-$1.json" 2>/dev/null
 }
 
 # One frame with the bar cropped off it. The bar's clock ticks between any
@@ -314,8 +314,8 @@ leg_media_progress_assert() {
     local pos len title lyr drawn width want
     pos=$(media_progress_field "$name" position)
     len=$(media_progress_field "$name" length)
-    title=$(grep -o '"title":"[^"]*"' "$shot_dir/progress-$name.json" 2>/dev/null | head -1 | cut -d'"' -f4)
-    lyr=$(grep -o '"state":"[^"]*"' "$shot_dir/progress-$name-lyrics.json" 2>/dev/null | head -1 | cut -d'"' -f4)
+    title=$("$jq_bin" -r '.title // empty' "$shot_dir/progress-$name.json" 2>/dev/null)
+    lyr=$("$jq_bin" -r '.state // empty' "$shot_dir/progress-$name-lyrics.json" 2>/dev/null)
     # The panel narrows once lyrics go, so each frame is read in its own rect.
     read -r drawn width < <(media_progress_fill "$name" "$(media_progress_rect "$name")")
     want=$(awk -v p="${pos:-0}" -v l="${len:-0}" 'BEGIN { printf "%.4f", (l > 0 ? p / l : 0) }')

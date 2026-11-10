@@ -390,13 +390,13 @@ SECONDS=0
 players=""
 while [ "\$SECONDS" -lt 20 ]; do
   players=\$($ipc call media players 2>&1)
-  count=\$(printf '%s' "\$players" | grep -o '"id":"[^"]*"' | wc -l)
+  count=\$(printf '%s' "\$players" | "$jq_bin" '[.[]?.id] | length' 2>/dev/null || echo 0)
   [ "\$count" -ge 3 ] && break
   sleep 1
 done
 echo "players: \$players" >> "$lyrics_seed_log_path"
 
-for id in \$(printf '%s' "\$players" | grep -o '"id":"[^"]*"' | cut -d'"' -f4); do
+for id in \$(printf '%s' "\$players" | "$jq_bin" -r '.[].id'); do
   $ipc call media select "\$id" > /dev/null 2>&1
   status=""
   SECONDS=0
@@ -437,12 +437,7 @@ EOF
 . "$lyrics_lib_path"
 lyrics_wait_marker "$lyrics_marker_seeded" 30
 "$grim_bin" "$lyrics_bare_path" > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call media lyrics > "$lyrics_status_preopen_path" 2>&1
-  grep -qF '"state":"synced"' "$lyrics_status_preopen_path" && break
-  sleep 1
-done
+until_jq 15 "$lyrics_status_preopen_path" '.state == "synced"' call media lyrics
 $ipc call panel open media > /dev/null 2>&1
 # A playing track keeps the pane moving every frame, so its card never reads at rest.
 sleep 1
@@ -528,12 +523,7 @@ $ipc call media select "\$id2" > /dev/null 2>&1
 for n in 1 2 3 4 5 6 7 8; do
   "$grim_bin" "$shot_dir/lyrics-edge-\${n}.png" > /dev/null 2>&1
 done
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call media lyrics > "$lyrics_status_estimated_path" 2>&1
-  grep -qF '"state":"synced"' "$lyrics_status_estimated_path" && break
-  sleep 1
-done
+until_jq 15 "$lyrics_status_estimated_path" '.state == "synced"' call media lyrics
 # The pane arrives on the panel's own width morph. The position window below
 # can already be open the moment the state flips, so without this the frame
 # lands mid-morph and the pinned fractions read a card that is still moving.
@@ -613,12 +603,7 @@ EOF
 lyrics_wait_marker "$lyrics_marker_track2" 160
 id3=\$(cat "$lyrics_id3_path" 2>/dev/null)
 $ipc call media select "\$id3" > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call media lyrics > "$lyrics_status_none_path" 2>&1
-  grep -qF '"state":"none"' "$lyrics_status_none_path" && break
-  sleep 1
-done
+until_jq 15 "$lyrics_status_none_path" '.state == "none"' call media lyrics
 sleep 2
 "$grim_bin" "$lyrics_none_png_path" > /dev/null 2>&1
 touch "$lyrics_marker_track3"
@@ -1069,27 +1054,17 @@ leg_lyrics_assert() {
   fi
   echo "SMOKE_LYRICS_PREOPEN $lyrics_status_preopen_path"
   cat "$lyrics_status_preopen_path"; echo
-  if ! grep -qF '"state":"synced"' "$lyrics_status_preopen_path"; then
-    fail "media lyrics did not reach synced before the panel opened (P14), got: $(cat "$lyrics_status_preopen_path")"
-  fi
+  expect_jq "$lyrics_status_preopen_path" '.state == "synced"' "media lyrics did not reach synced before the panel opened (P14)" '{state, source, quality, words}'
 
   if [ ! -s "$lyrics_status_synced_path" ]; then
     fail "no media lyrics status produced"
   fi
   cat "$lyrics_status_synced_path"; echo
   echo "SMOKE_LYRICS_STATUS $lyrics_status_synced_path"
-  if ! grep -qF '"state":"synced"' "$lyrics_status_synced_path"; then
-    fail "media lyrics never reached synced for the cached track, got: $(cat "$lyrics_status_synced_path")"
-  fi
-  if ! grep -qF '"source":"cache"' "$lyrics_status_synced_path"; then
-    fail "media lyrics did not read the seeded LRC from cache, got: $(cat "$lyrics_status_synced_path")"
-  fi
-  if ! grep -qF '"words":true' "$lyrics_status_synced_path"; then
-    fail "media lyrics does not report word timing, got: $(cat "$lyrics_status_synced_path")"
-  fi
-  if ! grep -qF '"quality":2' "$lyrics_status_synced_path"; then
-    fail "the syllable track did not report quality 2, got: $(cat "$lyrics_status_synced_path")"
-  fi
+  expect_jq "$lyrics_status_synced_path" '.state == "synced"' "media lyrics never reached synced for the cached track" '{state, source, quality, words}'
+  expect_jq "$lyrics_status_synced_path" '.source == "cache"' "media lyrics did not read the seeded LRC from cache" '{state, source, quality, words}'
+  expect_jq "$lyrics_status_synced_path" '.words == true' "media lyrics does not report word timing" '{state, source, quality, words}'
+  expect_jq "$lyrics_status_synced_path" '.quality == 2' "the syllable track did not report quality 2" '{state, source, quality, words}'
   [ -f "$lyrics_synced_png_path" ] || fail "no lyrics-synced screenshot produced"
   echo "SMOKE_LYRICS_SYNCED $lyrics_synced_png_path"
 
@@ -1167,12 +1142,8 @@ leg_lyrics_assert() {
   fi
   cat "$lyrics_status_estimated_path"; echo
   echo "SMOKE_LYRICS_ESTIMATED_STATUS $lyrics_status_estimated_path"
-  if ! grep -qF '"state":"synced"' "$lyrics_status_estimated_path"; then
-    fail "media lyrics never reached synced for the line-timing track, got: $(cat "$lyrics_status_estimated_path")"
-  fi
-  if ! grep -qF '"quality":1' "$lyrics_status_estimated_path"; then
-    fail "the line-timing track did not report quality 1, got: $(cat "$lyrics_status_estimated_path")"
-  fi
+  expect_jq "$lyrics_status_estimated_path" '.state == "synced"' "media lyrics never reached synced for the line-timing track" '{state, source, quality, words}'
+  expect_jq "$lyrics_status_estimated_path" '.quality == 1' "the line-timing track did not report quality 1" '{state, source, quality, words}'
   if ! "$jq_bin" -e 'all(.lines[] | select(.interlude != true); .estimated == true and (.words | length) > 0)' \
     "$lyrics_status_estimated_path" > /dev/null 2>&1; then
     fail "not every line synthesised words and reported estimated:true, got: $(cat "$lyrics_status_estimated_path")"
@@ -1341,9 +1312,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   fi
   cat "$lyrics_status_none_path"; echo
   echo "SMOKE_LYRICS_NONE $lyrics_status_none_path"
-  if ! grep -qF '"state":"none"' "$lyrics_status_none_path"; then
-    fail "media lyrics did not reach none for the untimed track, got: $(cat "$lyrics_status_none_path")"
-  fi
+  expect_jq "$lyrics_status_none_path" '.state == "none"' "media lyrics did not reach none for the untimed track" '{state, source, quality, words}'
   [ -f "$lyrics_none_png_path" ] || fail "no lyrics-none screenshot produced"
   echo "SMOKE_LYRICS_NONE_PNG $lyrics_none_png_path"
 

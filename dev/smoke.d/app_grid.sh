@@ -295,9 +295,8 @@ leg_app_grid_assert() {
     fail "the apps route listed ${rows:-0} entries, fewer than the seven staged: $(cat "$app_grid_open_path")"
   fi
   # A grid draws no group headings, so it must not report any either.
-  if ! grep -q '"sections":\[\]' "$app_grid_open_path"; then
-    fail "the app grid claimed group headings it cannot draw, got: $(cat "$app_grid_open_path")"
-  fi
+  expect_jq "$app_grid_open_path" '.sections == []' \
+    "the app grid claimed group headings it cannot draw" '.sections'
   echo "SMOKE_APP_GRID $app_grid_png ($rows apps in $columns columns)"
 
   # The icon at cell size. A row list draws the same entry at the body font's

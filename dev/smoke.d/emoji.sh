@@ -127,9 +127,8 @@ leg_emoji_assert() {
   if [ "$icon" != "😭" ]; then
     fail "':e sob' led with '$icon', not the emoji whose only 'sob' is a CLDR keyword"
   fi
-  if ! grep -qF '"label":"Loudly crying face"' "$emoji_keyword_path"; then
-    fail "':e sob' did not name the row it matched: $(cat "$emoji_keyword_path")"
-  fi
+  expect_jq "$emoji_keyword_path" 'any(.[]; .label == "Loudly crying face")' \
+    "':e sob' did not name the row it matched"
 
   cat "$emoji_before_path"; echo
   if [ "$(emoji_row_icon "$emoji_before_path" 0)" != "😢" ] \
@@ -137,9 +136,8 @@ leg_emoji_assert() {
     fail "':e cry' did not open in file order on an empty ledger: $(cat "$emoji_before_path")"
   fi
 
-  if ! grep -q '"level":"emoji"' "$emoji_status_path"; then
-    fail "the route was not open when the row was activated: $(cat "$emoji_status_path")"
-  fi
+  expect_jq "$emoji_status_path" '.level == "emoji"' \
+    "the route was not open when the row was activated" '{isOpen, level}'
   if [ "$(cat "$emoji_clipboard_path")" != "😿" ]; then
     fail "Enter on the second cell put '$(cat "$emoji_clipboard_path")' on the clipboard, not that emoji"
   fi

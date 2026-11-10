@@ -355,10 +355,9 @@ leg_plugins_assert_command() {
     || fail "the crashed bar plugin should read as failed with its exit status: $(cat "$plugins_status_path")"
   [ "$(wc -l < "$plugins_starts_path" 2>/dev/null || echo 0)" -ge 2 ] \
     || fail "the crashed plugin was not started again on its backoff: $(cat "$plugins_starts_path" 2>/dev/null)"
-  grep -qF '"event":"click"' "$plugins_events_path" 2>/dev/null \
-    && grep -qF '"button":"left"' "$plugins_events_path" \
+  "$jq_bin" -se 'any(.[]; .event == "click" and .button == "left")' "$plugins_events_path" > /dev/null 2>&1 \
     || fail "a click on the plugin's cell never reached its stdin: $(cat "$plugins_events_path" 2>/dev/null) room: $(cat "$plugins_room_path")"
-  grep -qF '"event":"scroll"' "$plugins_events_path" \
+  "$jq_bin" -se 'any(.[]; .event == "scroll")' "$plugins_events_path" > /dev/null 2>&1 \
     || fail "a wheel notch over the plugin's cell never reached its stdin: $(cat "$plugins_events_path" 2>/dev/null)"
   leg_plugins_assert_surfaces
 }
@@ -386,12 +385,11 @@ leg_plugins_assert_surfaces() {
     || fail "the panel plugin kept running after its card closed: $(cat "$plugins_panel_procs_path")"
   [ "$(sed -n 1p "$plugins_panel_state_path")" = ok ] && [ "$(sed -n 2p "$plugins_panel_state_path")" = plugin:smoke-panel ] \
     || fail "panel open/state did not answer for the panel plugin: $(cat "$plugins_panel_state_path")"
-  grep -qF '"event":"activate"' "$plugins_panel_events_path" 2>/dev/null \
-    && grep -qF '"id":"r1"' "$plugins_panel_events_path" \
+  "$jq_bin" -se 'any(.[]; .event == "activate" and .id == "r1")' "$plugins_panel_events_path" > /dev/null 2>&1 \
     || fail "Enter on the first row never reached the panel plugin: $(cat "$plugins_panel_events_path" 2>/dev/null)"
-  grep -qF '"id":"t1","checked":true' "$plugins_panel_events_path" \
+  "$jq_bin" -se 'any(.[]; .id == "t1" and .checked == true)' "$plugins_panel_events_path" > /dev/null 2>&1 \
     || fail "Enter on the toggle row did not send its new state: $(cat "$plugins_panel_events_path" 2>/dev/null)"
-  grep -qF '{"event":"activate","id":"b1"}' "$plugins_panel_events_path" \
+  "$jq_bin" -se 'any(.[]; . == {"event": "activate", "id": "b1"})' "$plugins_panel_events_path" > /dev/null 2>&1 \
     || fail "Enter on the button row never reached the panel plugin: $(cat "$plugins_panel_events_path" 2>/dev/null)"
   [ "$(wc -l < "$plugins_panel_events_path")" -eq 3 ] \
     || fail "one Enter per row should have sent exactly three events: $(cat "$plugins_panel_events_path")"
@@ -399,7 +397,7 @@ leg_plugins_assert_surfaces() {
     || fail "the crashed panel plugin was not started again on its backoff: $(cat "$plugins_panel_crash_starts_path" 2>/dev/null)"
   [ "$(sed -n 1p "$plugins_overlay_state_path")" = plugin:smoke-overlay ] && [ -z "$(sed -n 2p "$plugins_overlay_state_path")" ] \
     || fail "the overlay did not open on panel open and close on Escape: $(cat "$plugins_overlay_state_path")"
-  grep -qF '"id":"ov1"' "$plugins_overlay_events_path" 2>/dev/null \
+  "$jq_bin" -se 'any(.[]; .id == "ov1")' "$plugins_overlay_events_path" > /dev/null 2>&1 \
     || fail "Enter on the overlay's row never reached its plugin: $(cat "$plugins_overlay_events_path" 2>/dev/null)"
   echo "SMOKE_PLUGINS_PANEL $plugins_panel_png"
   echo "SMOKE_PLUGINS_PANEL_ACTIVATED $plugins_panel_after_png"

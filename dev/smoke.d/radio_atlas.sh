@@ -112,22 +112,12 @@ leg_radio_atlas_drive() {
 sleep 5
 $ipc call panel open radio > "$radio_atlas_open_path" 2>&1
 until_settled
-SECONDS=0
-while [ "\$SECONDS" -lt 10 ]; do
-  $ipc call radio status > "$radio_atlas_imagery_path" 2>&1
-  grep -q '"imagery":true' "$radio_atlas_imagery_path" && break
-  sleep 0.5
-done
+until_jq 10 "$radio_atlas_imagery_path" '.atlas.globe.imagery == true' call radio status
 sleep 0.5
 $ipc call panel state > "$radio_atlas_state_path" 2>&1
 "$grim_bin" "$radio_atlas_open_png" > /dev/null 2>&1
 "$wtype_bin" -k Return
-SECONDS=0
-while [ "\$SECONDS" -lt 12 ]; do
-  $ipc call radio status > "$radio_atlas_played_path" 2>&1
-  grep -q '"loaded":true' "$radio_atlas_played_path" && break
-  sleep 1
-done
+until_jq 12 "$radio_atlas_played_path" '.loaded == true' call radio status
 sleep 1
 "$grim_bin" "$radio_atlas_turned_png" > /dev/null 2>&1
 $ipc call radio stop > /dev/null 2>&1
@@ -153,12 +143,7 @@ sleep 0.3
 "$wlrctl_bin" pointer move \$gx \$gy
 sleep 1
 click
-SECONDS=0
-while [ "\$SECONDS" -lt 12 ]; do
-  $ipc call radio status > "$radio_atlas_picked_path" 2>&1
-  grep -q '"loaded":true' "$radio_atlas_picked_path" && break
-  sleep 1
-done
+until_jq 12 "$radio_atlas_picked_path" '.loaded == true' call radio status
 sleep 1
 "$grim_bin" "$radio_atlas_picked_png" > /dev/null 2>&1
 # A held drag across the globe that stops, holds still, then lets go: read
@@ -260,13 +245,11 @@ leg_radio_atlas_assert() {
   grep -q "^radio$" "$radio_atlas_state_path" 2>/dev/null \
     || fail "panel state is not radio with the atlas open, got: $(cat "$radio_atlas_state_path" 2>/dev/null)"
   cat "$radio_atlas_played_path"; echo
-  grep -q '"loaded":true' "$radio_atlas_played_path" && grep -qF "\"station\":\"$radio_atlas_name\"" "$radio_atlas_played_path" \
-    || fail "Enter on the list did not play the loopback station"
-  grep -q '"running":false' "$radio_atlas_stopped_path" \
-    || fail "radio stop left the station running: $(cat "$radio_atlas_stopped_path")"
+  expect_jq "$radio_atlas_played_path" '.loaded == true and .station == "'"$radio_atlas_name"'"' "Enter on the list did not play the loopback station" '{loaded, station}'
+  expect_jq "$radio_atlas_stopped_path" '.running == false' "radio stop left the station running" '{running, station}'
   cat "$radio_atlas_picked_path"; echo
-  grep -q '"loaded":true' "$radio_atlas_picked_path" && grep -qF "\"station\":\"$radio_atlas_name\"" "$radio_atlas_picked_path" \
-    || fail "a click on the globe's centre did not pick the station ($(cat "$radio_atlas_globe_path" 2>/dev/null))"
+  expect_jq "$radio_atlas_picked_path" '.loaded == true and .station == "'"$radio_atlas_name"'"' \
+    "a click on the globe's centre did not pick the station ($(cat "$radio_atlas_globe_path" 2>/dev/null))" '{loaded, station}'
   [ -z "$(tr -d '[:space:]' < "$radio_atlas_closed_path" 2>/dev/null)" ] \
     || fail "Escape left a panel open: $(cat "$radio_atlas_closed_path")"
   for png in "$radio_atlas_open_png" "$radio_atlas_turned_png" "$radio_atlas_picked_png"; do

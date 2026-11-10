@@ -87,9 +87,9 @@ leg_menu_actions_assert() {
   done
   "$jq_bin" -e '.mode == "input"' "$p-reminder-input.json" > /dev/null \
     || fail "menu actions: Set Reminder did not open the input step: $(cat "$p-reminder-input.json")"
-  grep -qF '"message":"launcher check"' "$p-reminder-set.json" \
-    || fail "menu actions: the typed reminder was not set: $(cat "$p-reminder-set.json")"
-  grep -qF 'launcher check' "$p-reminder-cleared.json" \
-    && fail "menu actions: Clear Reminders left: $(cat "$p-reminder-cleared.json")"
+  expect_jq "$p-reminder-set.json" 'any(.. | objects; .message == "launcher check")' \
+    "menu actions: the typed reminder was not set"
+  expect_jq "$p-reminder-cleared.json" 'tostring | contains("launcher check") | not' \
+    "menu actions: Clear Reminders left"
   echo "SMOKE_MENU_ACTIONS_HUB $p-hub.png"
 }

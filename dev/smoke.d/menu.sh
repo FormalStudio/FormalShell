@@ -162,7 +162,7 @@ EOF
 }
 
 menu_field() {
-  sed -n 's/.*"'"$2"'":\([0-9-]*\).*/\1/p' "$1"
+  "$jq_bin" -r --arg k "$2" '.[$k] // empty' "$1" 2>/dev/null
 }
 
 menu_cursor_agrees() {
@@ -207,9 +207,8 @@ leg_menu_assert() {
     fail "no root menu status produced"
   fi
   cat "$menu_status_root_path"; echo
-  if ! grep -q '"placeholder":"Search apps, files, commands"' "$menu_status_root_path"; then
-    fail "the root field did not carry the launcher's placeholder, got: $(cat "$menu_status_root_path")"
-  fi
+  expect_jq "$menu_status_root_path" '.placeholder == "Search apps, files, commands"' \
+    "the root field did not carry the launcher's placeholder" '.placeholder'
   root_rows_assert "$menu_status_root_path" Modes '.ids[0] == "apps" and (.ids | index("clipboard"))
       and ([.ids[] | select(startswith("apps."))] | length) == 0' \
     "the root at rest did not list the root routes"
@@ -296,14 +295,11 @@ leg_menu_assert() {
     fail "no emoji menu status produced"
   fi
   cat "$menu_status_emoji_path"; echo
-  if ! grep -q '"level":"emoji"' "$menu_status_emoji_path" \
-    || ! grep -q '"placeholder":"Search emoji"' "$menu_status_emoji_path"; then
-    fail "the emoji route did not report itself, got: $(cat "$menu_status_emoji_path")"
-  fi
+  expect_jq "$menu_status_emoji_path" '.level == "emoji" and .placeholder == "Search emoji"' \
+    "the emoji route did not report itself" '{level, placeholder}'
   # A grid draws no group headings, so it must not report any either.
-  if ! grep -q '"sections":\[\]' "$menu_status_emoji_path"; then
-    fail "the emoji grid claimed group headings it cannot draw, got: $(cat "$menu_status_emoji_path")"
-  fi
+  expect_jq "$menu_status_emoji_path" '.sections == []' \
+    "the emoji grid claimed group headings it cannot draw" '.sections'
   local emoji_columns emoji_rows
   emoji_columns=$(menu_field "$menu_status_emoji_path" columns)
   emoji_rows=$(menu_field "$menu_status_emoji_path" rows)
@@ -315,7 +311,7 @@ leg_menu_assert() {
   fi
   echo "SMOKE_MENU_GRID $emoji_rows emoji in $emoji_columns columns"
   menu_cursor_agrees "$menu_status_emoji_path" "emoji grid"
-  if [ -s "$selection_path" ] && grep -q '"cancelled":true' "$selection_path"; then
+  if [ -s "$selection_path" ] && "$jq_bin" -e '.cancelled == true' "$selection_path" > /dev/null 2>&1; then
     cat "$selection_path"
     echo
   else

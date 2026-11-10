@@ -131,12 +131,7 @@ leg_lyrics_blur_drive() {
 disown
 echo \$! > "$lyrics_blur_pid_path"
 
-SECONDS=0
-while [ "\$SECONDS" -lt 10 ]; do
-  $ipc call media status > "$lyrics_blur_status_path" 2>&1
-  grep -qF "\"title\":\"$lyrics_blur_track_title\"" "$lyrics_blur_status_path" && break
-  sleep 1
-done
+until_jq 10 "$lyrics_blur_status_path" '.title == "$lyrics_blur_track_title"' call media status
 
 # The isolated session's own audio bring-up can pop a volume OSD once,
 # early, unrelated to anything this leg does (seen once as a stray large
@@ -146,12 +141,7 @@ done
 sleep 3
 "$grim_bin" "$lyrics_blur_bare_path" > /dev/null 2>&1
 $ipc call panel open media > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call media lyrics > "$lyrics_blur_status_on_path" 2>&1
-  grep -qF '"state":"synced"' "$lyrics_blur_status_on_path" && break
-  sleep 1
-done
+until_jq 15 "$lyrics_blur_status_on_path" '.state == "synced"' call media lyrics
 
 # Played through two line changes (8s and 14s) under the stale audit: the
 # lit line's wipe and glow redraw small boxes reaching the blurred rows
@@ -175,12 +165,7 @@ $ipc call media lyrics > "$lyrics_blur_status_on_path" 2>&1
 
 settings_retarget '.media.lyricsBlur = false'
 
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  $ipc call media lyrics > "$lyrics_blur_status_off_path" 2>&1
-  grep -qF '"blur":false' "$lyrics_blur_status_off_path" && break
-  sleep 1
-done
+until_jq 15 "$lyrics_blur_status_off_path" '.blur == false' call media lyrics
 # IPC flips with the key; the rows leave their blur on the effects clock after
 # it, and a frame taken in between is the blurred one again.
 sleep 1
@@ -198,8 +183,7 @@ EOF
 
 leg_lyrics_blur_assert() {
   [ -s "$lyrics_blur_status_path" ] || fail "no media status produced for the blur track"
-  grep -qF "\"title\":\"$lyrics_blur_track_title\"" "$lyrics_blur_status_path" \
-    || fail "media status never showed the blur track, got: $(cat "$lyrics_blur_status_path" 2>/dev/null)"
+  expect_jq "$lyrics_blur_status_path" ".title == \"$lyrics_blur_track_title\"" "media status never showed the blur track" '.title'
   [ -f "$lyrics_blur_bare_path" ] || fail "no bare (panel closed) screenshot produced"
 
   if [ ! -s "$lyrics_blur_status_on_path" ]; then
@@ -207,12 +191,8 @@ leg_lyrics_blur_assert() {
   fi
   cat "$lyrics_blur_status_on_path"; echo
   echo "SMOKE_LYRICS_BLUR_STATUS_ON $lyrics_blur_status_on_path"
-  if ! grep -qF '"state":"synced"' "$lyrics_blur_status_on_path"; then
-    fail "media lyrics never reached synced, got: $(cat "$lyrics_blur_status_on_path")"
-  fi
-  if ! grep -qF '"blur":true' "$lyrics_blur_status_on_path"; then
-    fail "media.lyricsBlur's own default did not read true over IPC, got: $(cat "$lyrics_blur_status_on_path")"
-  fi
+  expect_jq "$lyrics_blur_status_on_path" '.state == "synced"' "media lyrics never reached synced" '{state, blur}'
+  expect_jq "$lyrics_blur_status_on_path" '.blur == true' "media.lyricsBlur's own default did not read true over IPC" '{state, blur}'
   stale_audit_assert lyrics-blur
   [ -f "$lyrics_blur_on_png_path" ] || fail "no blur-on screenshot produced"
   echo "SMOKE_LYRICS_BLUR_ON $lyrics_blur_on_png_path"
@@ -222,9 +202,7 @@ leg_lyrics_blur_assert() {
   fi
   cat "$lyrics_blur_status_off_path"; echo
   echo "SMOKE_LYRICS_BLUR_STATUS_OFF $lyrics_blur_status_off_path"
-  if ! grep -qF '"blur":false' "$lyrics_blur_status_off_path"; then
-    fail "the retargeted settings symlink (media.lyricsBlur: false) was never noticed, got: $(cat "$lyrics_blur_status_off_path")"
-  fi
+  expect_jq "$lyrics_blur_status_off_path" '.blur == false' "the retargeted settings symlink (media.lyricsBlur: false) was never noticed" '{state, blur}'
   [ -f "$lyrics_blur_off_png_path" ] || fail "no blur-off screenshot produced"
   echo "SMOKE_LYRICS_BLUR_OFF $lyrics_blur_off_png_path"
 

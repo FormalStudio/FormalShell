@@ -71,26 +71,15 @@ sleep 2
 call panel open network > /dev/null 2>&1
 for ssid in FORMALTEST FORMALTEST-EAP; do
   net "$shot_dir/device-routes-reset.json"
-  if grep -qF "\"name\":\"\$ssid\",\"known\":true" "$shot_dir/device-routes-reset.json"; then
+  if "$jq_bin" -e --arg s "\$ssid" 'any(.networks[]; .name == \$s and .known == true)' "$shot_dir/device-routes-reset.json" > /dev/null 2>&1; then
     call network forget "\$ssid" > /dev/null 2>&1
-    SECONDS=0
-    while [ "\$SECONDS" -lt 15 ]; do
-      net "$shot_dir/device-routes-reset.json"
-      grep -qE "\"name\":\"\$ssid\",\"known\":false,\"connected\":false,\"stateChanging\":false" "$shot_dir/device-routes-reset.json" && break
-      sleep 1
-    done
+    until_jq 15 "$shot_dir/device-routes-reset.json" "any(.networks[]; .name == \"\$ssid\" and .known == false and .connected == false and .stateChanging == false)" call network status
   fi
 done
 call panel close > /dev/null 2>&1
 # The launcher's own scanner hold is what wakes the radios from here on.
 call menu summon wifi > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 25 ]; do
-  net "$shot_dir/device-routes-scan.json"
-  grep -qF '"name":"FORMALTEST"' "$shot_dir/device-routes-scan.json" \
-    && grep -qF '"name":"FORMALTEST-EAP"' "$shot_dir/device-routes-scan.json" && break
-  sleep 1
-done
+until_jq 25 "$shot_dir/device-routes-scan.json" 'any(.networks[]; .name == "FORMALTEST") and any(.networks[]; .name == "FORMALTEST-EAP")' call network status
 
 # Wi-Fi: wrong password through the launcher's masked step.
 route wifi FORMALTEST
@@ -103,18 +92,8 @@ call menu status > "$shot_dir/device-routes-wifi-input.json" 2>&1
 sleep 1
 "$grim_bin" "$shot_dir/device-routes-wifi-masked.png" > /dev/null 2>&1
 "$wtype_bin" -k Return
-SECONDS=0
-while [ "\$SECONDS" -lt 10 ]; do
-  net "$shot_dir/device-routes-wifi-wrong.json"
-  grep -qE '"name":"FORMALTEST","known":(true|false),"connected":(true|false),"stateChanging":true' "$shot_dir/device-routes-wifi-wrong.json" && break
-  sleep 1
-done
-SECONDS=0
-while [ "\$SECONDS" -lt 45 ]; do
-  net "$shot_dir/device-routes-wifi-wrong.json"
-  grep -qE '"name":"FORMALTEST","known":(true|false),"connected":false,"stateChanging":false' "$shot_dir/device-routes-wifi-wrong.json" && break
-  sleep 1
-done
+until_jq 10 "$shot_dir/device-routes-wifi-wrong.json" 'any(.networks[]; .name == "FORMALTEST" and .stateChanging == true)' call network status
+until_jq 45 "$shot_dir/device-routes-wifi-wrong.json" 'any(.networks[]; .name == "FORMALTEST" and .connected == false and .stateChanging == false)' call network status
 sleep 1.5
 call menu status > "$shot_dir/device-routes-wifi-after-wrong.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-wifi-wrong.png" > /dev/null 2>&1
@@ -128,12 +107,7 @@ call menu status > "$shot_dir/device-routes-wifi-input2.json" 2>&1
 "$wtype_bin" formaltest-psk
 sleep 0.5
 "$wtype_bin" -k Return
-SECONDS=0
-while [ "\$SECONDS" -lt 30 ]; do
-  net "$shot_dir/device-routes-wifi-connected.json"
-  grep -qF '"name":"FORMALTEST","known":true,"connected":true' "$shot_dir/device-routes-wifi-connected.json" && break
-  sleep 1
-done
+until_jq 30 "$shot_dir/device-routes-wifi-connected.json" 'any(.networks[]; .name == "FORMALTEST" and .known == true and .connected == true)' call network status
 sleep 2
 call menu status > "$shot_dir/device-routes-wifi-ticked.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-wifi-connected.png" > /dev/null 2>&1
@@ -195,12 +169,7 @@ route wifi FORMALTEST
 idx=\$(row_index "$shot_dir/device-routes-wifi-forget-list.json" wifi.net.FORMALTEST)
 "$grim_bin" "$shot_dir/device-routes-wifi-hint.png" > /dev/null 2>&1
 call menu activateAlternate "\$idx" > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  net "$shot_dir/device-routes-wifi-forgotten.json"
-  grep -qE '"name":"FORMALTEST","known":false,"connected":false,"stateChanging":false' "$shot_dir/device-routes-wifi-forgotten.json" && break
-  sleep 1
-done
+until_jq 15 "$shot_dir/device-routes-wifi-forgotten.json" 'any(.networks[]; .name == "FORMALTEST" and .known == false and .connected == false and .stateChanging == false)' call network status
 call menu close > /dev/null 2>&1
 
 # Audio: the launcher moves the default sink to the null sink.
@@ -235,13 +204,7 @@ call panel close > /dev/null 2>&1
 route radio "Routes Radio"
 idx=\$(row_index "$shot_dir/device-routes-radio-list.json" radio.fav.$device_routes_station_id)
 call menu activate "\$idx" > /dev/null 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 15 ]; do
-  call radio status > "$shot_dir/device-routes-radio-status.json" 2>&1
-  grep -qF '"station":"$device_routes_station_name"' "$shot_dir/device-routes-radio-status.json" \
-    && grep -qF '"running":true' "$shot_dir/device-routes-radio-status.json" && break
-  sleep 1
-done
+until_jq 15 "$shot_dir/device-routes-radio-status.json" '.station == "$device_routes_station_name" and .running == true' call radio status
 sleep 2
 call menu filter "" > /dev/null 2>&1
 sleep 1
@@ -282,17 +245,17 @@ leg_device_routes_assert() {
 
   "$jq_bin" -e '.level == "wifi"' "$p-wifi-list.json" > /dev/null \
     || fail "summon wifi did not land on the wifi level: $(cat "$p-wifi-list.json")"
-  grep -qF '"name":"FORMALTEST-EAP"' "$p-scan.json" || fail "FORMALTEST-EAP never scanned"
+  expect_jq "$p-scan.json" 'any(.networks[]; .name == "FORMALTEST-EAP")' "FORMALTEST-EAP never scanned" '[.networks[].name]'
   "$jq_bin" -e '.mode == "input"' "$p-wifi-input.json" > /dev/null \
     || fail "activating an unknown secured network did not open the password step: $(cat "$p-wifi-input.json")"
-  grep -qE '"name":"FORMALTEST","known":(true|false),"connected":false,"stateChanging":false' "$p-wifi-wrong.json" \
-    || fail "the wrong password never settled to disconnected: $(cat "$p-wifi-wrong.json")"
+  expect_jq "$p-wifi-wrong.json" 'any(.networks[]; .name == "FORMALTEST" and .connected == false and .stateChanging == false)' \
+    "the wrong password never settled to disconnected"
   "$jq_bin" -e '.mode == "menu" and .level == "wifi"' "$p-wifi-after-wrong.json" > /dev/null \
     || fail "the launcher did not come back to the wifi list after the wrong password: $(cat "$p-wifi-after-wrong.json")"
   "$jq_bin" -e '.mode == "input"' "$p-wifi-input2.json" > /dev/null \
     || fail "Enter after a wrong password did not ask again: $(cat "$p-wifi-input2.json")"
-  grep -qF '"name":"FORMALTEST","known":true,"connected":true' "$p-wifi-connected.json" \
-    || fail "the real password never reached connected:true: $(cat "$p-wifi-connected.json")"
+  expect_jq "$p-wifi-connected.json" 'any(.networks[]; .name == "FORMALTEST" and .known == true and .connected == true)' \
+    "the real password never reached connected:true"
   "$jq_bin" -e '.checked | index("wifi.net.FORMALTEST") != null' "$p-wifi-ticked.json" > /dev/null \
     || fail "the connected network carries no tick: $(cat "$p-wifi-ticked.json")"
   grep -q '^ok$' "$p-wifi-into.txt" || fail "menu into on the network answered: $(cat "$p-wifi-into.txt")"
@@ -322,8 +285,7 @@ leg_device_routes_assert() {
     || fail "a root query did not reach the ticked saved network: $(cat "$p-root-wifi.json")"
   "$jq_bin" -e 'any(.[]; .id == "wifi.net.FORMALTEST-EAP") | not' "$p-root-nearby.json" > /dev/null \
     || fail "a nearby network reached the root: $(cat "$p-root-nearby.json")"
-  grep -qF '"name":"FORMALTEST","known":false,"connected":false,"stateChanging":false' "$p-wifi-forgotten.json" \
-    || fail "Shift+Enter did not forget the network: $(cat "$p-wifi-forgotten.json")"
+  expect_jq "$p-wifi-forgotten.json" 'any(.networks[]; .name == "FORMALTEST" and .known == false and .connected == false and .stateChanging == false)' "Shift+Enter did not forget the network"
 
   if grep -qi 'formaltest-psk' "$iso_home/.local/state/formalshell/menu-selection.txt" "$device_routes_selection_copy" "$shell_log_path" 2>/dev/null; then
     fail "a typed password reached menu-selection.txt or the shell log"
@@ -343,12 +305,10 @@ leg_device_routes_assert() {
 
   "$jq_bin" -e --arg id "radio.fav.$device_routes_station_id" '.level == "radio" and (.checked | index($id) != null)' "$p-radio-ticked.json" > /dev/null \
     || fail "the tuned favourite carries no tick: $(cat "$p-radio-ticked.json")"
-  grep -qF "\"station\":\"$device_routes_station_name\"" "$p-radio-status.json" && grep -qF '"running":true' "$p-radio-status.json" \
-    || fail "the favourite never played: $(cat "$p-radio-status.json")"
+  expect_jq "$p-radio-status.json" '.station == "'"$device_routes_station_name"'" and .running == true' "the favourite never played"
   "$jq_bin" -e 'any(.[]; .id == "radio.fav.'"$device_routes_station_id"'")' "$p-root-radio.json" > /dev/null \
     || fail "a root query did not reach the favourite: $(cat "$p-root-radio.json")"
-  grep -qF '"favorites":0' "$p-radio-removed.json" \
-    || fail "Shift+Enter did not remove the favourite: $(cat "$p-radio-removed.json")"
+  expect_jq "$p-radio-removed.json" '.favorites == 0' "Shift+Enter did not remove the favourite"
   grep -qF 'radio.searching' "$p-radio-search.json" \
     && fail "the :r search never left its searching row: $(cat "$p-radio-search.json")"
   grep -qF 'radio.result.' "$p-root-jazz.json" \

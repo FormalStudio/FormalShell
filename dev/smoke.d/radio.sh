@@ -63,12 +63,7 @@ pw_load_module module-null-sink sink_name=$radio_sink sink_properties=device.des
 sleep 4
 if kill -0 "\$(cat "$radio_leftover_pid_path")" 2>/dev/null; then echo alive; else echo gone; fi > "$radio_leftover_after_path"
 $ipc call radio play "$radio_station_id" > "$radio_play_path" 2>&1
-SECONDS=0
-while [ "\$SECONDS" -lt 10 ]; do
-  $ipc call radio status > "$radio_status_path" 2>&1
-  grep -q '"loaded":true' "$radio_status_path" && break
-  sleep 1
-done
+until_jq 10 "$radio_status_path" '.loaded == true' call radio status
 $ipc call media status > "$radio_media_status_path" 2>&1
 $ipc call panel open media > /dev/null 2>&1
 # A playing station keeps the panel moving, so its rest is never reported.
@@ -100,37 +95,22 @@ leg_radio_assert() {
     fail "radio play did not answer ok, got: $(cat "$radio_play_path" 2>/dev/null)"
   fi
   cat "$radio_status_path"; echo
-  if ! grep -q '"loaded":true' "$radio_status_path"; then
-    fail "the radio never loaded the loopback station"
-  fi
+  expect_jq "$radio_status_path" '.loaded == true' "the radio never loaded the loopback station" '{loaded, running, station, error, playerError}'
   cat "$radio_media_status_path"; echo
-  for want in '"kind":"radio"' "\"title\":\"$radio_station_name\"" '"isPlaying":true' '"identity":"Radio"'; do
-    if ! grep -qF "$want" "$radio_media_status_path"; then
-      fail "media status is missing $want"
-    fi
-  done
+  expect_jq "$radio_media_status_path" '.kind == "radio" and .title == "'"$radio_station_name"'" and .isPlaying == true and .identity == "Radio"' \
+    "media status does not carry the playing radio" '{kind, title, isPlaying, identity}'
   cat "$radio_players_path"; echo
-  if ! grep -q '"id":"radio"' "$radio_players_path"; then
-    fail "media players does not list the radio"
-  fi
-  if grep -q '"kind":"stream"' "$radio_players_path"; then
-    fail "the radio's own stream is listed again as an app with no MPRIS"
-  fi
+  expect_jq "$radio_players_path" 'any(.[]; .id == "radio")' "media players does not list the radio"
+  expect_jq "$radio_players_path" 'all(.[]; .kind != "stream")' "the radio's own stream is listed again as an app with no MPRIS"
   cat "$radio_outputs_path"; echo
-  if ! grep -q "\"id\":\"$radio_sink\"" "$radio_outputs_path"; then
-    fail "media outputs does not list the second sink"
-  fi
+  expect_jq "$radio_outputs_path" 'any(.[]; .id == "'"$radio_sink"'")' "media outputs does not list the second sink"
   if ! grep -q "^ok$" "$radio_output_path"; then
     fail "media output did not answer ok, got: $(cat "$radio_output_path")"
   fi
-  if ! grep -q "\"output\":\"$radio_sink\"" "$radio_routed_path" \
-    || ! grep -q "\"output\":\"$radio_sink\"" "$radio_routed_media_path"; then
-    fail "the radio did not move to $radio_sink: $(cat "$radio_routed_path") $(cat "$radio_routed_media_path")"
-  fi
+  expect_jq "$radio_routed_path" '.output == "'"$radio_sink"'"' "the radio did not move to $radio_sink" '.output'
+  expect_jq "$radio_routed_media_path" '.output == "'"$radio_sink"'"' "the media source did not move to $radio_sink" '.output'
   cat "$radio_stopped_path"; echo
-  if ! grep -q '"available":false' "$radio_stopped_path"; then
-    fail "the media source outlived radio stop"
-  fi
+  expect_jq "$radio_stopped_path" '.available == false' "the media source outlived radio stop" '{available, id, kind}'
   for png in "$radio_panel_png_path" "$radio_menu_png_path"; do
     [ -s "$png" ] || fail "no frame at $png"
   done
