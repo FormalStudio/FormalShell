@@ -2,6 +2,7 @@
 //! plus the two composites every panel leans on (`section`, `hero`).
 //! Tokens come from `Space`; nothing here writes a literal size.
 
+use crate::services::motion_art;
 use crate::ui::field::{Buffer, Field};
 use fs_info::notifications::{self, Group};
 use fs_theme::color::Rgba;
@@ -81,6 +82,26 @@ pub fn cover(image: Option<crate::scene::Bitmap>, size: f64) -> El {
 pub fn cover_inner(theme: &fs_theme::theme::Theme, size: f64) -> (u32, f64) {
     let bw = theme.border_width;
     (((size - bw * 2.0).round().max(1.0)) as u32, (theme.cover_radius(size) - bw).max(0.0))
+}
+
+/// A chrome slot's cover (the bar's now-playing cell, the sidebar's media
+/// cards) in a `size` square: the animated frame behind
+/// `media.appleMusicArt` and `media.animatedBarCover`, else the static art,
+/// and what the slot asks the decode for, made at `scale`.
+pub fn chrome_cover(store: &crate::store::Store, a: &crate::services::media::Active, size: f64, scale: f64) -> (Option<crate::scene::Bitmap>, Option<motion_art::Want>) {
+    if a.art_url.is_empty() {
+        return (None, None);
+    }
+    let theme = &store.theme.theme;
+    let (px, radius) = cover_inner(theme, size);
+    let animated = theme.motion_enabled
+        && crate::settings::APPLE_MUSIC_ART.get(&store.config)
+        && crate::settings::ANIMATED_BAR_COVER.get(&store.config)
+        && !a.artist.is_empty()
+        && !a.album.is_empty();
+    let want = animated.then(|| motion_art::Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing }.at(scale));
+    let frame = want.as_ref().and_then(|w| store.media.motion(&w.key(), px, scale));
+    (frame.or_else(|| store.media.cover(&a.art_url, px, radius, scale)), want)
 }
 
 pub fn icon(name: impl Into<String>) -> El {

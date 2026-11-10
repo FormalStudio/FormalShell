@@ -7,6 +7,7 @@
 use std::time::Instant;
 
 use fs_media::visualizer::model;
+use fs_media::visualizer::style::Style;
 use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use vello_cpu::kurbo::{self, Affine, BezPath, Rect, Shape as _};
@@ -27,13 +28,13 @@ use self::scene::{self as vis, PathEl, Shape, TextAlign};
 /// `feed` while it has one and at rest otherwise.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spectrum {
-    pub style: styles::Style,
+    pub style: Style,
     pub columns: usize,
     pub feed: Option<visualizer::Feed>,
 }
 
 struct Live {
-    style: Option<styles::Style>,
+    style: Option<Style>,
     live: bool,
     state: styles::State,
     shown: Vec<f64>,
@@ -79,7 +80,7 @@ fn path(els: &[PathEl], at: Affine) -> BezPath {
     p
 }
 
-fn paint(cx: &mut Cx, r: Rect, style: styles::Style, columns: usize, feed: Option<visualizer::Feed>, key: &str) {
+fn paint(cx: &mut Cx, r: Rect, style: Style, columns: usize, feed: Option<visualizer::Feed>, key: &str) {
     let t = cx.theme;
     let ink = styles::Ink {
         groove: t.colors.get(ColorRole::Muted),

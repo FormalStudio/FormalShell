@@ -24,202 +24,11 @@
 use std::f64::consts::PI;
 
 use fs_media::visualizer::model::BAR_COUNT;
+use fs_media::visualizer::style::Style;
 use fs_theme::color::Rgba;
 use super::band::{Band, LEVEL_ACCENT_FROM, LEVEL_DIM_BELOW, level_color_band};
 use super::scene::{Scene, TextAlign, TextBaseline};
 use fs_js::round;
-
-struct StyleInfo {
-    id: &'static str,
-    label: &'static str,
-    draw: DrawFn,
-}
-
-const STYLES: [StyleInfo; 31] = [
-    StyleInfo {
-        id: "bars",
-        label: "Bars",
-        draw: bars,
-    },
-    StyleInfo {
-        id: "peaks",
-        label: "Peaks",
-        draw: peaks,
-    },
-    StyleInfo {
-        id: "led",
-        label: "LED",
-        draw: led,
-    },
-    StyleInfo {
-        id: "mirror",
-        label: "Mirror",
-        draw: mirror,
-    },
-    StyleInfo {
-        id: "butterfly",
-        label: "Butterfly",
-        draw: butterfly,
-    },
-    StyleInfo {
-        id: "outline",
-        label: "Outline",
-        draw: outline,
-    },
-    StyleInfo {
-        id: "wave",
-        label: "Wave",
-        draw: wave,
-    },
-    StyleInfo {
-        id: "dots",
-        label: "Dots",
-        draw: dots,
-    },
-    StyleInfo {
-        id: "ascii",
-        label: "ASCII",
-        draw: ascii,
-    },
-    StyleInfo {
-        id: "matrix",
-        label: "Matrix",
-        draw: matrix,
-    },
-    StyleInfo {
-        id: "rain",
-        label: "Rain",
-        draw: rain,
-    },
-    StyleInfo {
-        id: "flame",
-        label: "Flame",
-        draw: flame,
-    },
-    StyleInfo {
-        id: "bubbles",
-        label: "Bubbles",
-        draw: bubbles,
-    },
-    StyleInfo {
-        id: "scope",
-        label: "Scope",
-        draw: scope,
-    },
-    StyleInfo {
-        id: "pulse",
-        label: "Pulse",
-        draw: pulse,
-    },
-    StyleInfo {
-        id: "heartbeat",
-        label: "Heartbeat",
-        draw: heartbeat,
-    },
-    StyleInfo {
-        id: "terrain",
-        label: "Terrain",
-        draw: terrain,
-    },
-    StyleInfo {
-        id: "bricks",
-        label: "Bricks",
-        draw: bricks,
-    },
-    StyleInfo {
-        id: "columns",
-        label: "Columns",
-        draw: columns,
-    },
-    StyleInfo {
-        id: "scatter",
-        label: "Scatter",
-        draw: scatter,
-    },
-    StyleInfo {
-        id: "retro",
-        label: "Retro",
-        draw: retro,
-    },
-    StyleInfo {
-        id: "binary",
-        label: "Binary",
-        draw: binary,
-    },
-    StyleInfo {
-        id: "sakura",
-        label: "Sakura",
-        draw: sakura,
-    },
-    StyleInfo {
-        id: "firework",
-        label: "Firework",
-        draw: firework,
-    },
-    StyleInfo {
-        id: "firefly",
-        label: "Firefly",
-        draw: firefly,
-    },
-    StyleInfo {
-        id: "mosaic",
-        label: "Mosaic",
-        draw: mosaic,
-    },
-    StyleInfo {
-        id: "sand",
-        label: "Sand",
-        draw: sand,
-    },
-    StyleInfo {
-        id: "geyser",
-        label: "Geyser",
-        draw: geyser,
-    },
-    StyleInfo {
-        id: "stereo",
-        label: "Stereo",
-        draw: stereo,
-    },
-    StyleInfo {
-        id: "redsector",
-        label: "Red Sector",
-        draw: redsector,
-    },
-    StyleInfo {
-        id: "stipple",
-        label: "Stipple",
-        draw: stipple,
-    },
-];
-
-/// A style the table names, resolved from its id once at the boundary.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Style(usize);
-
-impl Style {
-    pub fn parse(id: &str) -> Option<Self> {
-        STYLES.iter().position(|s| s.id == id).map(Self)
-    }
-
-    pub fn id(self) -> &'static str {
-        STYLES[self.0].id
-    }
-
-    pub fn label(self) -> &'static str {
-        STYLES[self.0].label
-    }
-
-    /// `delta` steps through the cycle order and wraps.
-    pub fn step(self, delta: i64) -> Self {
-        let n = STYLES.len() as i64;
-        Self((((self.0 as i64 + delta) % n) + n) as usize % STYLES.len())
-    }
-}
-
-pub fn ids() -> Vec<&'static str> {
-    STYLES.iter().map(|s| s.id).collect()
-}
 
 /// Frames past this are a stall (a hidden window, a suspended session), and
 /// stepping a whole stall at once would drop every particle and cap at once.
@@ -390,6 +199,42 @@ struct Frame<'a> {
 
 type DrawFn = fn(&mut Scene, &Frame, &mut State);
 
+fn draw_fn(style: Style) -> DrawFn {
+    match style {
+        Style::Bars => bars,
+        Style::Peaks => peaks,
+        Style::Led => led,
+        Style::Mirror => mirror,
+        Style::Butterfly => butterfly,
+        Style::Outline => outline,
+        Style::Wave => wave,
+        Style::Dots => dots,
+        Style::Ascii => ascii,
+        Style::Matrix => matrix,
+        Style::Rain => rain,
+        Style::Flame => flame,
+        Style::Bubbles => bubbles,
+        Style::Scope => scope,
+        Style::Pulse => pulse,
+        Style::Heartbeat => heartbeat,
+        Style::Terrain => terrain,
+        Style::Bricks => bricks,
+        Style::Columns => columns,
+        Style::Scatter => scatter,
+        Style::Retro => retro,
+        Style::Binary => binary,
+        Style::Sakura => sakura,
+        Style::Firework => firework,
+        Style::Firefly => firefly,
+        Style::Mosaic => mosaic,
+        Style::Sand => sand,
+        Style::Geyser => geyser,
+        Style::Stereo => stereo,
+        Style::Redsector => redsector,
+        Style::Stipple => stipple,
+    }
+}
+
 /// Draws one frame of `style` into `scene` over
 /// a `w` x `h` box. `left` and `right` are the same bands per channel; only
 /// `stereo` reads them, and it falls back to `levels` for both.
@@ -406,7 +251,7 @@ pub fn draw(
     left: Option<&[f64]>,
     right: Option<&[f64]>,
 ) {
-    let f = STYLES[style.0].draw;
+    let f = draw_fn(style);
     let dt = if dt.is_finite() && dt > 0.0 {
         dt.min(MAX_DT)
     } else {
@@ -2342,33 +2187,6 @@ mod tests {
     }
 
     #[test]
-    fn ids_are_unique_and_start_with_bars() {
-        let ids = ids();
-        assert_eq!(ids[0], "bars");
-        assert!(ids.len() >= 31);
-        let mut seen = std::collections::HashSet::new();
-        for (i, id) in ids.iter().enumerate() {
-            assert!(seen.insert(*id), "duplicate id {id}");
-            assert!(!STYLES[i].label.is_empty());
-        }
-    }
-
-    #[test]
-    fn step_wraps_both_ways() {
-        let ids = ids();
-        let at = |id| Style::parse(id).unwrap();
-        assert_eq!(at("bars").step(1).id(), ids[1]);
-        assert_eq!(at("bars").step(-1).id(), ids[ids.len() - 1]);
-        assert_eq!(at(ids[ids.len() - 1]).step(1).id(), "bars");
-    }
-
-    #[test]
-    fn unknown_id_is_not_known() {
-        assert_eq!(Style::parse("nope"), None);
-        assert_eq!(Style::parse("peaks").map(Style::label), Some("Peaks"));
-    }
-
-    #[test]
     fn every_style_stays_inside_the_box() {
         let inputs: Vec<(&str, Vec<f64>)> = vec![
             ("silence", frame(|_| 0.0)),
@@ -2384,7 +2202,7 @@ mod tests {
             ),
         ];
         let steps = [0.0, 0.016, 0.016, 0.05, 0.5, 0.016];
-        for id in ids() {
+        for id in Style::ids() {
             for (label, levels) in &inputs {
                 let mut state = State::with_seed(7);
                 // Several frames loud, then the input under test, so falling
@@ -2403,7 +2221,7 @@ mod tests {
 
     #[test]
     fn silence_from_a_fresh_state_draws_something_still() {
-        for id in ids() {
+        for id in Style::ids() {
             let mut state = State::with_seed(7);
             let a = draw_one(id, &frame(|_| 0.0), &mut state, 0.016);
             let b = draw_one(id, &frame(|_| 0.0), &mut state, 0.016);

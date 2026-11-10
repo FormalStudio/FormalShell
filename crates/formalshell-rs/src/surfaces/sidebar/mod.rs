@@ -326,7 +326,7 @@ impl Sidebar {
         let gap = g.gap;
         let room = (bottom - foot_h - gap - y0).max(0.0);
         let art = if collapsed { g.rail.art } else { g.art };
-        let (cover, motion) = store.media.active().map(|a| motion_art::chrome_cover(store, &a, art, raster)).unwrap_or_default();
+        let (cover, motion) = store.media.active().map(|a| crate::ui::w::chrome_cover(store, &a, art, raster)).unwrap_or_default();
         let build = |map: &minimap::Map, kit: &mut Kit| {
             if collapsed { rail(store, map, &g, &cover) } else { cards(theme, store, map, &g, &cover, &self.icons, width, kit, now) }
         };

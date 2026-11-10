@@ -29,7 +29,7 @@ use super::wants::{self, Source};
 use crate::runtime::Ctx;
 use crate::services::proc::Avail;
 use crate::store;
-use crate::ui::spectrum::styles::Style;
+use fs_media::visualizer::style::Style;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {

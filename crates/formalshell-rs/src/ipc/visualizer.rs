@@ -2,7 +2,7 @@
 //! for exploring the styles without an edit to settings.json. The override is
 //! in memory only, `style config` drops it.
 
-use crate::ui::spectrum::styles;
+use fs_media::visualizer::style::Style;
 
 use super::registry::{Function, Reply, Target, Type, Value, text};
 use crate::services::visualizer::Diff;
@@ -25,7 +25,7 @@ fn configured(app: &App) -> String {
     crate::settings::VISUALIZER_STYLE.get(&app.store.config).to_owned()
 }
 
-fn current(app: &App) -> styles::Style {
+fn current(app: &App) -> Style {
     app.store.visualizer.style(&configured(app))
 }
 
@@ -37,9 +37,9 @@ fn style(app: &mut App, args: &[Value]) -> Reply {
         "config" => None,
         "next" => Some(current(app).step(1)),
         "prev" => Some(current(app).step(-1)),
-        id => match styles::Style::parse(id) {
+        id => match Style::parse(id) {
             Some(style) => Some(style),
-            None => return Err(format!("unknown style {id} ({})", styles::ids().join("|"))),
+            None => return Err(format!("unknown style {id} ({})", Style::ids().join("|"))),
         },
     };
     app.apply(store::Diff::Visualizer(Diff::Style(next)));
@@ -47,7 +47,7 @@ fn style(app: &mut App, args: &[Value]) -> Reply {
 }
 
 fn list(_: &mut App, _: &[Value]) -> Reply {
-    text(styles::ids().join("\n"))
+    text(Style::ids().join("\n"))
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
