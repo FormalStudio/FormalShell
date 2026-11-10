@@ -232,13 +232,13 @@ impl App {
         modal.layer = Some(content);
         let shown = Shown::new(&self.store.theme.theme, modal, self.output_size(), self.motion_scale);
         self.launch.win = Some(Window { shown, scan: None, pressed: None });
-        self.log("menu mapped");
+        crate::trace::mapped(crate::trace::Surface::Menu, crate::trace::State::Mapped);
     }
 
     fn hide_launcher(&mut self) {
         if let Some(w) = &mut self.launch.win {
             w.shown.modal.close(Instant::now());
-            self.log("menu closing");
+            crate::trace::mapped(crate::trace::Surface::Menu, crate::trace::State::Closing);
         }
         self.sync_join();
     }
@@ -1149,7 +1149,7 @@ impl App {
         if self.launch.win.as_ref().is_some_and(|w| w.finished(now)) {
             self.drop_launch();
             self.sync_join();
-            self.log("menu unmapped");
+            crate::trace::mapped(crate::trace::Surface::Menu, crate::trace::State::Unmapped);
             if std::mem::take(&mut self.launcher.paste) && !self.launcher.open {
                 self.paste_chord();
             }
@@ -1256,7 +1256,7 @@ impl App {
             self.launcher.dirty = true;
         }
         if first {
-            self.log("menu configured");
+            crate::trace::mapped(crate::trace::Surface::Menu, crate::trace::State::Configured);
         }
     }
 

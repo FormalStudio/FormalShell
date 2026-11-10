@@ -128,7 +128,7 @@ impl App {
         self.overview_capture();
         self.overview_probe();
         self.overview.dirty = true;
-        self.log("overview opening");
+        crate::trace::mapped(crate::trace::Surface::Overview, crate::trace::State::Opening);
     }
 
     fn overview_keyboard(&self, k: KeyboardInteractivity) {
@@ -155,7 +155,7 @@ impl App {
         }
         self.overview_keyboard(KeyboardInteractivity::None);
         self.overview.dirty = true;
-        self.log("overview closing");
+        crate::trace::mapped(crate::trace::Surface::Overview, crate::trace::State::Closing);
     }
 
     fn overview_unmap(&mut self) {
@@ -163,7 +163,7 @@ impl App {
         self.overview.primed = false;
         self.overview.model.unmapped();
         self.capture_clear(Owner::Overview);
-        self.log("overview unmapped");
+        crate::trace::mapped(crate::trace::Surface::Overview, crate::trace::State::Unmapped);
     }
 
     fn overview_current(&self) -> WorkspaceId {
@@ -235,7 +235,7 @@ impl App {
     pub fn overview_frame(&mut self) {
         let Some((s, _, _)) = &mut self.overview.win else { return };
         if s.landed(Instant::now()) {
-            self.log("overview mapped");
+            crate::trace::mapped(crate::trace::Surface::Overview, crate::trace::State::Mapped);
         }
         self.overview.dirty = true;
     }
@@ -296,7 +296,7 @@ impl App {
             let ms = self.overview_pace().ms;
             if self.overview.model.start_zoom(now, ms, landed) {
                 self.overview.dirty = true;
-                self.log("overview zooming");
+                crate::trace::mapped(crate::trace::Surface::Overview, crate::trace::State::Zooming);
             }
         }
         if self.overview.model.phase() == Phase::Open && ready && !self.overview.primed {
@@ -386,7 +386,7 @@ impl App {
                         let output = self.overview.model.output().to_owned();
                         compositor::send(compositor::Command::MoveWindowTo { id: id.clone(), idx, output });
                         compositor::send(compositor::Command::RefreshWindows);
-                        self.log(&format!("overview drop {id} on {idx}"));
+                        crate::trace::note(format_args!("overview drop {id} on {idx}"));
                     }
                     self.overview.dirty = true;
                 }

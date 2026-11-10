@@ -477,7 +477,7 @@ impl Owner for Cards {
             app.dropped.push(p.win.surface.layer.wl_surface().clone());
             app.sync_join();
             app.sync_bar_open(now);
-            app.log("panel unmapped");
+            crate::trace::mapped(crate::trace::Surface::Panel(None), crate::trace::State::Unmapped);
         }
         if let Some(p) = app.outgoing.take_if(|p| p.finished(now)) {
             app.dropped.push(p.win.surface.layer.wl_surface().clone());
@@ -485,7 +485,7 @@ impl Owner for Cards {
         }
         if app.tray_menu.as_ref().is_some_and(|p| p.win.finished(now)) {
             app.tray_menu = None;
-            app.log("tray menu unmapped");
+            crate::trace::mapped(crate::trace::Surface::TrayMenu, crate::trace::State::Unmapped);
         }
     }
 
@@ -1182,7 +1182,7 @@ impl Owner for Scrim {
     fn finished(&self, app: &mut App, now: Instant) {
         if app.scrim.as_ref().is_some_and(|(p, s)| s.mapped() && p.finished(now)) {
             app.scrim = None;
-            app.log("scrim unmapped");
+            crate::trace::mapped(crate::trace::Surface::Scrim, crate::trace::State::Unmapped);
         }
     }
 

@@ -70,7 +70,7 @@ impl App {
         ui.halo_owned = false;
         plugins::shown(&id, true);
         self.plugin_overlay = Some(Window { modal, ui, key, id, cursor: None, ring: false, pressed: None, dirty: true });
-        self.log(&format!("panel {key} mapped"));
+        crate::trace::mapped(crate::trace::Surface::Panel(Some(key)), crate::trace::State::Mapped);
     }
 
     pub fn overlay_close(&mut self) {
@@ -201,7 +201,7 @@ impl App {
         if self.plugin_overlay.as_ref().is_some_and(|w| w.modal.win.finished(now)) {
             self.plugin_overlay = None;
             self.sync_join();
-            self.log("panel plugin overlay unmapped");
+            crate::trace::mapped(crate::trace::Surface::PluginOverlay, crate::trace::State::Unmapped);
             return;
         }
         let qh = self.qh.clone();

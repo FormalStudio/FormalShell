@@ -83,9 +83,9 @@ leg_menu_budget_assert() {
   local out
   out=$(awk '
     function t(line) { match(line, /t=[0-9]+ms/); return substr(line, RSTART + 2, RLENGTH - 4) + 0 }
-    /^ipc t=.*function: "toggle"/ && /target: "menu"/ { n++; if (n % 2 == 1 && n <= 10) { open[++o] = t($0) } ; if (n == 11) rest = t($0) }
+    /^ipc t=[0-9]+ms call menu toggle$/ { n++; if (n % 2 == 1 && n <= 10) { open[++o] = t($0) } ; if (n == 11) rest = t($0) }
     /^commit surface=menu / { mc[++m] = t($0) }
-    /^ipc t=.*function: "status"/ && /target: "menu"/ { st[++s] = t($0) }
+    /^ipc t=[0-9]+ms call menu status$/ { st[++s] = t($0) }
     /^ipc t=.* menu configured$/ { cf[++c] = t($0) }
     function us(line, key) { if (!match(line, key "=[0-9]+")) return 0; return substr(line, RSTART + length(key) + 1, RLENGTH - length(key) - 1) + 0 }
     /^commit surface=bar / { bc[++b] = t($0); bw[b] = us($0, "last_wait_us"); br[b] = us($0, "react_us") }

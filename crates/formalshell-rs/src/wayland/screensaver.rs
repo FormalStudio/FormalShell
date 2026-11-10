@@ -394,7 +394,7 @@ impl App {
         }
         if added {
             self.lock_saver_mapped();
-            self.log(&format!("screensaver on {} outputs", self.saver.overlays.len()));
+            crate::trace::note(format_args!("screensaver on {} outputs", self.saver.overlays.len()));
             self.saver_rebase();
         }
     }
@@ -462,7 +462,7 @@ impl App {
     /// Overlay `i` gone, its run stopped with it.
     fn saver_drop(&mut self, i: usize) {
         let o = self.saver.overlays.remove(i);
-        self.log(&format!("screensaver off {}", self.output_name(&o.output)));
+        crate::trace::note(format_args!("screensaver off {}", self.output_name(&o.output)));
         self.saver_stop_run(o.run);
         if self.saver.active && self.saver.pinned < 0 && self.saver_ttfx() && !self.saver.overlays.is_empty() && self.saver_converged() {
             self.saver_arm_hold();
@@ -818,7 +818,7 @@ impl App {
             for o in std::mem::take(&mut self.saver.overlays) {
                 self.saver_stop_run(o.run);
             }
-            self.log("screensaver unmapped");
+            crate::trace::mapped(crate::trace::Surface::Screensaver, crate::trace::State::Unmapped);
             if let Some(runtime) = &self.runtime {
                 runtime.pool().submit(crate::trace::trim_heap);
             }

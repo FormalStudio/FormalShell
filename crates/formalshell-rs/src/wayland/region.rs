@@ -94,7 +94,7 @@ impl App {
         if !self.capture.picker.open {
             if !self.pickers.surfaces.is_empty() {
                 self.pickers.surfaces.clear();
-                self.log("capture picker unmapped");
+                crate::trace::mapped(crate::trace::Surface::CapturePicker, crate::trace::State::Unmapped);
             }
             return;
         }
@@ -116,7 +116,7 @@ impl App {
                     dirty: true,
                 });
             }
-            self.log("capture picker mapped");
+            crate::trace::mapped(crate::trace::Surface::CapturePicker, crate::trace::State::Mapped);
         }
         for p in &mut self.pickers.surfaces {
             p.dirty = true;

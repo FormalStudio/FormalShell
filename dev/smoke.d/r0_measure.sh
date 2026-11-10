@@ -146,8 +146,8 @@ leg_r0_measure_assert() {
   awk '
     function t(line) { match(line, /t=[0-9]+ms/); return substr(line, RSTART + 2, RLENGTH - 4) + 0 }
     function us(line) { if (!match(line, /render_us=[0-9]+/)) return 0; return substr(line, RSTART + 10, RLENGTH - 10) + 0 }
-    /^ipc t=/ && /function: "r0Panel"/ { if (/"open"/ && ++np <= 10) po[np] = t($0); else if (np <= 10 && !(np in pe)) pe[np] = t($0) }
-    /^ipc t=/ && /function: "r0Scrim"/ { if (/"true"/ && ++ns <= 10) so[ns] = t($0); else if (ns <= 10 && !(ns in se)) se[ns] = t($0) }
+    /^ipc t=[0-9]+ms call debug r0Panel / { if (/"open"/ && ++np <= 10) po[np] = t($0); else if (np <= 10 && !(np in pe)) pe[np] = t($0) }
+    /^ipc t=[0-9]+ms call debug r0Scrim / { if (/"true"/ && ++ns <= 10) so[ns] = t($0); else if (ns <= 10 && !(ns in se)) se[ns] = t($0) }
     /^commit surface=panel / { pc[++a] = t($0); pr[a] = us($0) }
     /^commit surface=scrim / { sc[++b] = t($0); sr[b] = us($0) }
     function step(name, n, opens, ends, ct, cr, m,   i, j, first, lat, k, worst, x, y) {

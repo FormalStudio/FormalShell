@@ -7,6 +7,8 @@ use std::io::Write;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use crate::ipc::Request;
+
 static STARTED: OnceLock<Instant> = OnceLock::new();
 
 /// A dispatch, present or draw that holds the UI thread longer than this is
@@ -51,17 +53,126 @@ pub fn commit_bare(surface: impl Display, rest: Arguments) {
     write(format_args!("commit surface={surface} {rest}"));
 }
 
-/// `ipc t=<ms>ms <what>`: a surface mapped or unmapped, or an IPC call
-/// reaching the UI loop.
-pub fn ipc(started: Instant, what: &str) {
-    eprintln!("ipc t={}ms {what}", since(started));
+fn ms() -> u128 {
+    STARTED.get().map_or(0, |s| s.elapsed().as_millis())
+}
+
+/// `<kind> <target> <member>` then each argument JSON-quoted: an IPC
+/// request as every line below names it.
+pub fn request(r: &Request) -> impl Display + '_ {
+    struct Line<'a>(&'a Request);
+    impl Display for Line<'_> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self.0 {
+                Request::Call { target, function, args } => {
+                    write!(f, "call {target} {function}")?;
+                    args.iter().try_for_each(|a| write!(f, " {}", serde_json::Value::from(a.as_str())))
+                }
+                Request::Show { target, name } => write!(f, "show {target} {name}"),
+                Request::Signal { target, signal } => write!(f, "signal {target} {signal}"),
+                Request::Prop { target, property } => write!(f, "prop {target} {property}"),
+            }
+        }
+    }
+    Line(r)
+}
+
+/// `ipc t=<ms>ms call <target> <function> "<arg>"...`: an IPC request
+/// reaching the UI loop (see [`request`]).
+pub fn call(r: &Request) {
+    write(format_args!("ipc t={}ms {}", ms(), request(r)));
+}
+
+/// A surface whose map state legs time against the IPC calls.
+pub enum Surface<'a> {
+    Bar,
+    /// A panel by id, or with none whichever panel was up.
+    Panel(Option<&'a str>),
+    PluginOverlay,
+    TrayMenu,
+    Scrim,
+    Menu,
+    Overview,
+    Switcher,
+    ProfilesPill,
+    Screensaver,
+    Toasts,
+    HeadsetCard,
+    CapturePicker,
+    Radio,
+    Osd,
+}
+
+impl Display for Surface<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Surface::Bar => "bar",
+            Surface::Panel(Some(id)) => return write!(f, "panel {id}"),
+            Surface::Panel(None) => "panel",
+            Surface::PluginOverlay => "panel plugin overlay",
+            Surface::TrayMenu => "tray menu",
+            Surface::Scrim => "scrim",
+            Surface::Menu => "menu",
+            Surface::Overview => "overview",
+            Surface::Switcher => "switcher",
+            Surface::ProfilesPill => "profiles pill",
+            Surface::Screensaver => "screensaver",
+            Surface::Toasts => "toasts",
+            Surface::HeadsetCard => "headset card",
+            Surface::CapturePicker => "capture picker",
+            Surface::Radio => "radio",
+            Surface::Osd => "osd",
+        })
+    }
+}
+
+pub enum State {
+    /// Asked to open, before its first frame.
+    Opening,
+    Configured,
+    Mapped,
+    /// Its open motion under way.
+    Zooming,
+    Shown,
+    Closing,
+    Unmapped,
+    UnmappedUnderFullscreen,
+    /// Mapped with an empty input region, so the pointer passes through.
+    InputEmpty,
+}
+
+impl Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            State::Opening => "opening",
+            State::Configured => "configured",
+            State::Mapped => "mapped",
+            State::Zooming => "zooming",
+            State::Shown => "shown",
+            State::Closing => "closing",
+            State::Unmapped => "unmapped",
+            State::UnmappedUnderFullscreen => "unmapped under fullscreen",
+            State::InputEmpty => "input empty",
+        })
+    }
+}
+
+/// `ipc t=<ms>ms <surface> <state>` (`ipc t=12ms menu configured`).
+pub fn mapped(surface: Surface, state: State) {
+    write(format_args!("ipc t={}ms {surface} {state}", ms()));
+}
+
+/// `ipc t=<ms>ms <what>`: a line for a person reading the log; no leg
+/// parses these.
+pub fn note(what: Arguments) {
+    write(format_args!("ipc t={}ms {what}", ms()));
 }
 
 /// `event loop: slow <kind> t=<ms>ms <detail>` when `took` passes the one
 /// threshold.
 pub fn slow(kind: &str, took: Duration, detail: Arguments) {
     if took >= SLOW {
-        eprintln!("event loop: slow {kind} t={}ms {detail}", STARTED.get().map_or(0, |s| s.elapsed().as_millis()));
+        eprintln!("event loop: slow {kind} t={}ms {detail}", ms());
     }
 }
 

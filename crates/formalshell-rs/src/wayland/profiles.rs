@@ -127,7 +127,7 @@ impl App {
         let mut popup = Popup::new(surface, card);
         popup.set_open(now, true);
         self.profiles = Some(Pill { popup, pressed: None });
-        self.log("profiles pill mapped");
+        crate::trace::mapped(crate::trace::Surface::ProfilesPill, crate::trace::State::Mapped);
     }
 
     pub(super) fn profiles_frame(&mut self, now: Instant) {
@@ -212,7 +212,7 @@ impl App {
         let Some(p) = &mut self.profiles else { return };
         if p.popup.win.finished(now) {
             self.profiles = None;
-            self.log("profiles pill unmapped");
+            crate::trace::mapped(crate::trace::Surface::ProfilesPill, crate::trace::State::Unmapped);
             return;
         }
         let open = p.popup.is_open();

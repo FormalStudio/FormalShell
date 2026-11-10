@@ -177,7 +177,7 @@ impl App {
         let mut popup = Popup::new(surface, card);
         popup.set_open(Instant::now(), true);
         self.osd.pill = Some(popup);
-        self.log("osd mapped");
+        crate::trace::mapped(crate::trace::Surface::Osd, crate::trace::State::Mapped);
     }
 
     pub(super) fn osd_frame(&mut self, now: Instant) {
@@ -208,7 +208,7 @@ impl App {
         if self.osd.pill.as_ref().is_some_and(|p| p.win.finished(now)) {
             self.osd.pill = None;
             self.sync_join();
-            self.log("osd unmapped");
+            crate::trace::mapped(crate::trace::Surface::Osd, crate::trace::State::Unmapped);
             return;
         }
         if self.osd.pill.is_none() {

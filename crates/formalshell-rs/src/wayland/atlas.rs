@@ -97,7 +97,7 @@ impl App {
         let r = self.store.media.radio.clone();
         self.atlas.model.opened(&r, now);
         self.atlas.seen = Some(r);
-        self.log("radio mapped");
+        crate::trace::mapped(crate::trace::Surface::Radio, crate::trace::State::Mapped);
     }
 
     pub fn atlas_close(&mut self) {
@@ -109,7 +109,7 @@ impl App {
         if let Some(w) = &mut self.atlas.win {
             w.shown.modal.close(Instant::now());
         }
-        self.log("radio closing");
+        crate::trace::mapped(crate::trace::Surface::Radio, crate::trace::State::Closing);
         self.sync_join();
     }
 
@@ -148,7 +148,7 @@ impl App {
             self.atlas.win = None;
             self.atlas.model.unmapped();
             self.sync_join();
-            self.log("radio unmapped");
+            crate::trace::mapped(crate::trace::Surface::Radio, crate::trace::State::Unmapped);
             return;
         }
         let Some(w) = &mut self.atlas.win else { return };

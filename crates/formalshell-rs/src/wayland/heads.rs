@@ -254,7 +254,7 @@ impl App {
         self.bars.live = i;
         live!(self).bar.hover = None;
         self.tip_card = None;
-        self.log(&format!("bar live on {}", live!(self).bar.output));
+        crate::trace::note(format_args!("bar live on {}", live!(self).bar.output));
         self.refresh_bar(None);
         true
     }
@@ -318,10 +318,10 @@ impl App {
                     let output = self.bars.heads[i].output.clone();
                     let layer = self.overlay_on("formalshell:catcher", Layer::Overlay, Anchor::all(), (0, 0), -1, Some(&output));
                     self.bars.heads[i].catcher = Some(PixelSurface::new("catcher", layer, 0.0, &self.pixels, &self.qh, self.started));
-                    self.log(&format!("catcher on {}", self.output_name(&output)));
+                    crate::trace::note(format_args!("catcher on {}", self.output_name(&output)));
                 }
             } else if self.bars.heads[i].catcher.take().is_some() {
-                self.log(&format!("catcher off {}", self.output_name(&self.bars.heads[i].output)));
+                crate::trace::note(format_args!("catcher off {}", self.output_name(&self.bars.heads[i].output)));
             }
         }
     }

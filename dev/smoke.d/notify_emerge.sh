@@ -230,7 +230,7 @@ leg_notify_emerge_assert() {
   local commits
   commits=$(awk '
     function t(line) { match(line, /t=[0-9]+ms/); return substr(line, RSTART + 2, RLENGTH - 4) + 0 }
-    /^ipc t=.*target: "notifications", function: "status"/ { lo = hi; hi = t($0) }
+    /^ipc t=[0-9]+ms call notifications status$/ { lo = hi; hi = t($0) }
     /^commit surface=toasts / { c[++n] = t($0) }
     END { k = 0; for (i = 1; i <= n; i++) if (c[i] > lo && c[i] < hi) k++; print (lo > 0 ? k : -1) }' "$shell_log_path")
   echo "SMOKE_NOTIFY_EMERGE_QUIET commits=$commits"

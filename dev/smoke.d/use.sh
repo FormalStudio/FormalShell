@@ -129,7 +129,7 @@ log launcher-spam
 burst launcher-spam 3
 # Every bound press the shell answers is one toggle call in its log; a shut
 # launcher after ten presses proves nothing unless all ten arrived.
-toggles() { grep -c 'Call { target: "menu", function: "toggle"' "$shell_log_path"; }
+toggles() { grep -cE '^ipc t=[0-9]+ms call menu toggle' "$shell_log_path"; }
 spam_before=\$(toggles)
 for i in 1 2 3 4 5 6 7 8 9 10; do super space; sleep 0.08; done
 sleep 2; check spam-even

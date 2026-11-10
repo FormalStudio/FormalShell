@@ -164,7 +164,7 @@ def open_renders(lines, surface):
     """Each of the first ten opens' slowest render, read off the shell's
     log the way --r0-measure's own summary reads its `render_us_max`: every
     commit of the surface from the open's call to the call after it."""
-    calls = {"panel": ('function: "r0Panel"', '"open"'), "scrim": ('function: "r0Scrim"', '"true"')}[surface]
+    calls = {"panel": ("ms call debug r0Panel ", '"open"'), "scrim": ("ms call debug r0Scrim ", '"true"')}[surface]
     t = lambda l: int(re.search(r"t=(\d+)ms", l).group(1))
     opens, ends = [], []
     for l in lines:

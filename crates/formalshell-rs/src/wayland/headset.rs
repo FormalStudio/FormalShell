@@ -208,7 +208,7 @@ impl App {
         };
         shown.hold();
         self.headset.card = Some(shown);
-        self.log("headset card mapped");
+        crate::trace::mapped(crate::trace::Surface::HeadsetCard, crate::trace::State::Mapped);
     }
 
     fn headset_dismiss(&mut self, now: Instant) {
@@ -288,7 +288,7 @@ impl App {
         if c.popup.win.finished(now) {
             self.headset.card = None;
             self.sync_join();
-            self.log("headset card unmapped");
+            crate::trace::mapped(crate::trace::Surface::HeadsetCard, crate::trace::State::Unmapped);
             return;
         }
         let open = c.popup.is_open();

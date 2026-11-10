@@ -450,10 +450,6 @@ impl App {
         let _ = std::thread::Builder::new().name("fs-warm".into()).spawn(move || text.warm(&jobs));
     }
 
-    fn log(&self, what: &str) {
-        crate::trace::ipc(self.started, what);
-    }
-
     /// While a focused fullscreen window covers the bar's output the bar,
     /// its frame zones and its cards leave the layers (`fullscreen.hideChrome`).
     pub(crate) fn sync_agents(&self) {
@@ -484,7 +480,7 @@ impl App {
         self.sync_agents();
         if hidden {
             if live!(self).surface.take().is_some() {
-                self.log("bar unmapped under fullscreen");
+                crate::trace::mapped(crate::trace::Surface::Bar, crate::trace::State::UnmappedUnderFullscreen);
             }
             live!(self).zones.clear();
             self.panel = None;
@@ -1086,7 +1082,7 @@ impl App {
         self.panel_dirty = true;
         self.tips.hide(None, now);
         self.sync_bar_open(now);
-        self.log(&format!("panel {id} mapped"));
+        crate::trace::mapped(crate::trace::Surface::Panel(Some(id)), crate::trace::State::Mapped);
     }
 
     /// The input region over a popout's resting rect, or its whole surface
@@ -1140,7 +1136,7 @@ impl App {
         if let Some(rt) = &self.runtime {
             rt.service(move |ctx| tray::open_menu(ctx, key, largest));
         }
-        self.log("tray menu mapped");
+        crate::trace::mapped(crate::trace::Surface::TrayMenu, crate::trace::State::Mapped);
         Ok(())
     }
 
@@ -1365,9 +1361,9 @@ impl App {
     /// One IPC call, answered here on the UI loop.
     pub fn call(&mut self, request: &ipc::Request) -> String {
         let t0 = Instant::now();
-        self.log(&format!("{request:?}"));
+        crate::trace::call(request);
         let reply = ipc::dispatch(self, request);
-        crate::trace::slow("call", t0.elapsed(), format_args!("{request:?} us={}", t0.elapsed().as_micros()));
+        crate::trace::slow("call", t0.elapsed(), format_args!("{} us={}", crate::trace::request(request), t0.elapsed().as_micros()));
         reply
     }
 

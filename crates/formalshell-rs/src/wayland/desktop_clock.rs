@@ -208,7 +208,7 @@ impl App {
             let want = settings.is_some() && self.bars.heads[i].backdrop.is_some() && !self.chrome().covered(&name);
             let stale = self.bars.heads[i].clock.as_ref().is_some_and(|c| shards && !c.over_shards);
             if (!want || stale) && self.bars.heads[i].clock.take().is_some() {
-                self.log(&format!("desktop clock off {name}"));
+                crate::trace::note(format_args!("desktop clock off {name}"));
             }
             let Some(settings) = &settings else { continue };
             if !want {
@@ -218,7 +218,7 @@ impl App {
                 let layer = self.overlay_on("formalshell:desktop-clock", Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
                 let surface = Surface::new("desktop-clock", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.on(&output));
                 self.bars.heads[i].clock = Some(Clock::new(surface, shards));
-                self.log(&format!("desktop clock on {name}"));
+                crate::trace::note(format_args!("desktop clock on {name}"));
             }
             let picture = self.desktop_clock_picture(i);
             let Some(clock) = self.bars.heads[i].clock.as_mut() else { continue };

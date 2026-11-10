@@ -182,7 +182,7 @@ impl App {
                 let armed = arm::is_armed(w.arm, now);
                 let active = self.action_active(&w.action);
                 self.hot.wins[i].arm = arm::on_enter(w.arm, now);
-                self.log(&format!("hot corner {} entered armed={armed} active={active}", self.hot.wins[i].action.as_str()));
+                crate::trace::note(format_args!("hot corner {} entered armed={armed} active={active}", self.hot.wins[i].action.as_str()));
                 if armed && !active {
                     self.start_dwell(i);
                 }

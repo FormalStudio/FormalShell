@@ -152,7 +152,7 @@ impl App {
             s.layer.commit();
         }
         self.switcher.dirty = true;
-        self.log("switcher shown");
+        crate::trace::mapped(crate::trace::Surface::Switcher, crate::trace::State::Shown);
     }
 
     /// A key while the card holds the keyboard, as its KeyCatcher binds it.
@@ -273,7 +273,7 @@ impl App {
             self.switcher.win = None;
             self.switcher.model.unmapped();
             self.capture_clear(Owner::Switcher);
-            self.log("switcher unmapped");
+            crate::trace::mapped(crate::trace::Surface::Switcher, crate::trace::State::Unmapped);
             return;
         }
         let ready = self.switcher.win.as_ref().is_some_and(|(s, _)| s.configured && !s.frame_pending());

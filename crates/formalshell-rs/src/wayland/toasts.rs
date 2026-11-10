@@ -114,7 +114,7 @@ impl App {
         let resized = self.toasts.as_ref().is_some_and(|t| t.scene.size.h != out_h as i32);
         if !want || stray || resized || self.toasts.as_ref().is_some_and(|t| t.column != column) {
             if self.toasts.take().is_some() {
-                self.log("toasts unmapped");
+                crate::trace::mapped(crate::trace::Surface::Toasts, crate::trace::State::Unmapped);
             }
             if !want {
                 return;
@@ -173,10 +173,10 @@ impl App {
             t.surface.present(&mut t.scene, animating, &qh);
         }
         if passive {
-            self.log("toasts input empty");
+            crate::trace::mapped(crate::trace::Surface::Toasts, crate::trace::State::InputEmpty);
         }
         if lifted {
-            self.log(&format!("toasts layer {}", if layer == Layer::Top { "top" } else { "overlay" }));
+            crate::trace::note(format_args!("toasts layer {}", if layer == Layer::Top { "top" } else { "overlay" }));
         }
     }
 
