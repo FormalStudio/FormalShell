@@ -525,16 +525,10 @@ fn focus_app(store: &Store, app: &str) {
 }
 
 fn spawn(retry: Retry) {
-    let argv = match retry.cwd {
-        Some(dir) => {
-            let mut argv: Vec<String> = ["sh", "-c", "cd \"$1\" && shift && exec \"$@\"", "sh"].map(String::from).to_vec();
-            argv.push(dir);
-            argv.extend(retry.command.argv());
-            argv
-        }
-        None => retry.command.argv(),
-    };
-    compositor::spawn(&argv);
+    match retry.cwd {
+        Some(dir) => compositor::spawn_in(&dir, &retry.command.argv()),
+        None => compositor::spawn(&retry.command.argv()),
+    }
 }
 
 /// Runs `verb` on the live group `source`. The error is the IPC reply.

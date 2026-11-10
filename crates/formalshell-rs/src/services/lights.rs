@@ -185,9 +185,15 @@ pub fn colour(state: &State, hex: &str) -> Result<(), String> {
 /// True when asusctl ran; false without it. The overnight service's door to
 /// the keyboard lights.
 pub async fn aura_power(off: bool) -> bool {
-    let done = proc::capture(&model::aura_power_argv(off), PROBE_TIMEOUT).await;
+    let mut ran = true;
+    for zone in model::AURA_ZONES {
+        if proc::capture(&model::aura_power_argv(zone, off), PROBE_TIMEOUT).await.code == proc::MISSING {
+            ran = false;
+            break;
+        }
+    }
     command(Cmd::Refresh);
-    done.code == 0
+    ran
 }
 
 /// The theme's primary, as rrggbb, from the UI thread.

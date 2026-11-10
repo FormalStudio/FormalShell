@@ -35,10 +35,10 @@
 
 use fs_js as js;
 use regex::Regex;
-use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
-pub(crate) const ANCESTOR_DEPTH: usize = 3;
+/// How many parents of a window's process are read past the process.
+pub const ANCESTOR_DEPTH: usize = 3;
 
 /// Interpreters and launchers whose basename says nothing about the app running
 /// under them: an entry whose Exec starts with one of these would otherwise
@@ -175,59 +175,21 @@ pub fn entry_for<'a>(
     by_class(win, entries).or_else(|| by_process(procs, entries)).or_else(|| by_title(win, entries))
 }
 
-static DIGITS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]+$").unwrap());
-
-/// The one shell pass the icon service runs over /proc, one line per process:
-/// `<window pid>\t<depth>\t<exe>\t<argv joined by \x1f>`. Returns
-/// `{ "<pid>": [ProcInfo, ...] }`, depth order; a line that does not parse is
-/// dropped rather than guessed at.
-pub fn parse_procs(text: &str) -> HashMap<String, Vec<ProcInfo>> {
-    let mut sparse: HashMap<String, BTreeMap<usize, ProcInfo>> = HashMap::new();
-    for line in text.split('\n') {
-        let fields: Vec<&str> = line.split('\t').collect();
-        if fields.len() < 4 || !DIGITS.is_match(fields[0]) || !DIGITS.is_match(fields[1]) {
-            continue;
-        }
-        let mut argv: Vec<String> = fields[3..].join("\t").split('\u{1f}').map(String::from).collect();
-        while argv.last().is_some_and(String::is_empty) {
-            argv.pop();
-        }
-        let chain = sparse.entry(fields[0].to_string()).or_default();
-        // An index past usize can never be reached by the dense walk below.
-        if let Ok(depth) = fields[1].parse::<usize>() {
-            chain.insert(depth, ProcInfo { exe: fields[2].to_string(), argv });
-        }
+/// A process's argv off its `/proc/<pid>/cmdline`, trailing empty
+/// arguments dropped.
+pub fn parse_cmdline(cmdline: &str) -> Vec<String> {
+    let mut argv: Vec<String> = cmdline.split('\0').map(String::from).collect();
+    while argv.last().is_some_and(String::is_empty) {
+        argv.pop();
     }
-    sparse
-        .into_iter()
-        .map(|(pid, chain)| {
-            let mut dense = Vec::new();
-            let mut by_depth = chain;
-            while let Some(info) = by_depth.remove(&dense.len()) {
-                dense.push(info);
-            }
-            (pid, dense)
-        })
-        .collect()
+    argv
 }
 
-/// The command that produces `parse_procs`' input for `pids`: each one and up to
-/// `ANCESTOR_DEPTH` parents, stopping at init. `/proc/<pid>/status`'s PPid line
-/// rather than `stat`'s fourth field, which sits after a comm that may itself
-/// carry spaces and parentheses.
-pub fn proc_command(pids: &[String]) -> Vec<String> {
-    let script = [
-        r#"for p in "$@"; do q=$p; d=0; "#.to_string(),
-        format!(r#"while [ "$d" -le {ANCESTOR_DEPTH} ] && [ "$q" -gt 1 ] && [ -r "/proc/$q/cmdline" ]; do "#),
-        r#"printf "%s\t%s\t%s\t" "$p" "$d" "$(readlink "/proc/$q/exe" 2>/dev/null)"; "#.to_string(),
-        r#"tr "\000" "\037" < "/proc/$q/cmdline"; echo; "#.to_string(),
-        r#"q=$(sed -n "s/^PPid:[[:space:]]*//p" "/proc/$q/status" 2>/dev/null); q=${q:-0}; d=$((d + 1)); "#.to_string(),
-        "done; done".to_string(),
-    ]
-    .concat();
-    let mut argv = vec!["sh".to_string(), "-c".to_string(), script, "appicon".to_string()];
-    argv.extend(pids.iter().map(|p| js::num_str(js::parse_number(p))));
-    argv
+/// The parent's pid off `/proc/<pid>/status`'s PPid line, rather than
+/// `stat`'s fourth field, which sits after a comm that may itself carry
+/// spaces and parentheses.
+pub fn parent_pid(status: &str) -> Option<i64> {
+    status.lines().find_map(|l| l.strip_prefix("PPid:")).and_then(|v| v.trim().parse().ok())
 }
 
 #[cfg(test)]
@@ -470,25 +432,10 @@ mod tests {
     // the /proc read
 
     #[test]
-    fn the_proc_read_parses_into_depth_order() {
-        let text = "4242\t1\t/usr/bin/bash\tbash\x1f/home/k/.local/bin/messages\x1f\n\
-                    4242\t0\t/opt/app/app\tapp\x1f--flag\x1f\n\
-                    garbage line\n\
-                    17\t0\t\t\n";
-        let read = parse_procs(text);
-        assert_eq!(read["4242"].len(), 2);
-        assert_eq!(read["4242"][0].exe, "/opt/app/app");
-        assert_eq!(read["4242"][0].argv.len(), 2);
-        assert_eq!(read["4242"][1].argv[1], "/home/k/.local/bin/messages");
-        assert_eq!(read["17"].len(), 1);
-        assert_eq!(read["17"][0].argv.len(), 0);
-    }
-
-    #[test]
-    fn the_proc_command_passes_pids_as_arguments() {
-        let argv = proc_command(&cmd(&["4242", "17"]));
-        assert_eq!(argv[0], "sh");
-        assert_eq!(argv[1], "-c");
-        assert_eq!(argv[argv.len() - 2..], cmd(&["4242", "17"])[..]);
+    fn the_proc_read_parses_argv_and_parent() {
+        assert_eq!(parse_cmdline("bash\0/home/k/.local/bin/messages\0"), ["bash", "/home/k/.local/bin/messages"]);
+        assert!(parse_cmdline("").is_empty());
+        assert_eq!(parent_pid("Name:\tbash\nPPid:\t4242\nTracerPid:\t0\n"), Some(4242));
+        assert_eq!(parent_pid("Name:\tbash\n"), None);
     }
 }

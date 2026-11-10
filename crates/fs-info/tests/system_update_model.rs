@@ -156,16 +156,10 @@ fn probe_command_github_without_a_ref_asks_for_head() {
 fn probe_command_git_uses_ls_remote_with_the_locked_ref() {
     let probe = probe_command(&input("quickshell"));
     assert_eq!(probe.kind.as_str(), "git");
-    assert_eq!(probe.argv[0], "sh");
-    assert!(probe.argv[2].contains("git ls-remote"));
-    assert!(probe.argv[2].contains("command -v git"));
-    // url and ref ride as positional arguments, never interpolated into the
-    // script, so nothing out of the lock file is parsed as shell.
     assert_eq!(
-        probe.argv[probe.argv.len() - 2],
-        "https://git.outfoxxed.me/quickshell/quickshell"
+        probe.argv,
+        ["git", "ls-remote", "https://git.outfoxxed.me/quickshell/quickshell", "refs/heads/master"]
     );
-    assert_eq!(probe.argv[probe.argv.len() - 1], "refs/heads/master");
 }
 
 #[test]

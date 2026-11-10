@@ -240,14 +240,7 @@ pub fn probe_command(input: &FlakeInput) -> Probe {
             if input.url.is_empty() {
                 return none;
             }
-            let mut argv = strings(&[
-                "sh",
-                "-c",
-                "command -v git >/dev/null 2>&1 || exit 127; exec git ls-remote \"$1\" \"$2\"",
-                "systemupdate-probe",
-            ]);
-            argv.push(input.url.clone());
-            argv.push(reference.to_owned());
+            let argv = strings(&["git", "ls-remote", &input.url, reference]);
             Probe { kind: ProbeKind::Git, argv, ..none }
         }
         _ => none,

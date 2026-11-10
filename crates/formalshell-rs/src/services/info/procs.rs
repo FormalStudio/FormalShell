@@ -19,7 +19,6 @@ use super::{idle, kicked};
 use crate::runtime::Ctx;
 use crate::services::config;
 use crate::services::compositor;
-use crate::services::proc;
 use crate::services::wants::Source;
 use crate::store;
 
@@ -219,14 +218,26 @@ pub fn begin_signal(pid: &str, name: &str) -> Result<(u64, &'static str), String
 pub fn run_signal(ctx: &Ctx, n: u64, sig: &'static str) {
     let task = ctx.clone();
     ctx.spawn(async move {
-        let done = proc::capture(&procs::kill_command(n, sig), Duration::from_secs(10)).await;
-        if done.code == 0 {
-            finish(&task, n, sig, true, "sent");
-        } else {
-            finish(&task, n, sig, false, &format!("kill exited {}", done.code));
+        match signal(n, sig) {
+            Ok(()) => finish(&task, n, sig, true, "sent"),
+            Err(err) => finish(&task, n, sig, false, &format!("kill failed: {err}")),
         }
         SIGNAL_BUSY.store(false, Ordering::SeqCst);
     });
+}
+
+/// One of `procs::SIGNALS` sent to `pid`.
+fn signal(pid: u64, name: &str) -> std::io::Result<()> {
+    let number = match name {
+        "TERM" => libc::SIGTERM,
+        "KILL" => libc::SIGKILL,
+        "HUP" => libc::SIGHUP,
+        "INT" => libc::SIGINT,
+        _ => return Err(std::io::Error::other(format!("unknown signal {name}"))),
+    };
+    let pid = libc::pid_t::try_from(pid).map_err(std::io::Error::other)?;
+    // SAFETY: kill takes no pointers; a stale pid is ESRCH.
+    if unsafe { libc::kill(pid, number) } == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
 
 const RESTART_TIMEOUT: Duration = Duration::from_millis(5000);
@@ -256,17 +267,15 @@ pub fn run_restart(ctx: &Ctx, n: u64) {
 
 async fn restart_task(ctx: &Ctx, pid: u64) {
     let fail = |message: &str| finish(ctx, pid, "RESTART", false, message);
-    let argv = proc::capture(&procs::argv_command(pid), Duration::from_secs(10)).await;
-    let args = procs::parse_argv(&argv.stdout);
-    if argv.code != 0 || args.is_empty() {
+    let args = std::fs::read(format!("/proc/{pid}/cmdline")).map_or_else(|_| Vec::new(), |raw| procs::parse_argv(&String::from_utf8_lossy(&raw)));
+    if args.is_empty() {
         return fail("no command line to re-run (process gone, or a kernel thread)");
     }
     // Unreadable is normal (another user's process): the respawn then runs
     // from the shell's own cwd.
-    let cwd = proc::capture(&procs::cwd_command(pid), Duration::from_secs(10)).await.stdout.trim().to_owned();
-    let term = proc::capture(&procs::kill_command(pid, "TERM"), Duration::from_secs(10)).await;
-    if term.code != 0 {
-        return fail(&format!("kill exited {}", term.code));
+    let cwd = std::fs::read_link(format!("/proc/{pid}/cwd")).ok();
+    if let Err(err) = signal(pid, "TERM") {
+        return fail(&format!("kill failed: {err}"));
     }
     // Re-running while the old one is still up would give two copies, the
     // one outcome worse than a restart that did not happen. A process that
@@ -275,14 +284,17 @@ async fn restart_task(ctx: &Ctx, pid: u64) {
     loop {
         Timer::after(RESTART_POLL).await;
         waited += RESTART_POLL;
-        if proc::capture(&procs::alive_command(pid), Duration::from_secs(10)).await.code != 0 {
+        if !std::path::Path::new(&format!("/proc/{pid}")).is_dir() {
             break;
         }
         if waited >= RESTART_TIMEOUT {
             return fail(&format!("still running {}s after TERM, nothing re-run", RESTART_TIMEOUT.as_secs()));
         }
     }
-    compositor::spawn(&procs::respawn_command(&args, &cwd));
+    match cwd {
+        Some(dir) => compositor::spawn_in(&dir.to_string_lossy(), &args),
+        None => compositor::spawn(&args),
+    }
     finish(ctx, pid, "RESTART", true, &format!("re-ran {}", args[0]));
 }
 

@@ -261,52 +261,17 @@ pub fn normalize_signal(name: Option<&str>) -> Option<&'static str> {
     SIGNALS.iter().find(|k| **k == s).copied()
 }
 
-/// `kill` as the shell builtin, not the procps binary: every POSIX sh has it,
-/// and this shell ships no dependency on procps anywhere else. The pid is a
-/// number, so it is always digits.
-pub fn kill_command(pid: u64, signal: &str) -> Vec<String> {
-    vec!["sh".into(), "-c".into(), format!("kill -s {signal} {pid}")]
-}
-
-/// The exact argv, one arg per line: the poll's own cmdline pass replaced NULs
-/// with spaces for display, which loses the boundary between an argument and
-/// a space inside one. A restart has to re-exec the real thing, so it re-reads
-/// the file with the separator intact.
-pub fn argv_command(pid: u64) -> Vec<String> {
-    vec!["sh".into(), "-c".into(), format!(r"tr '\0' '\n' < /proc/{pid}/cmdline")]
-}
-
-/// Empty for a process that died between the read and the parse (an empty
-/// cmdline is also what a kernel thread has, which is why nothing offers a
-/// restart on one).
-pub fn parse_argv(text: &str) -> Vec<String> {
-    lines(text).map(String::from).collect()
-}
-
-pub fn alive_command(pid: u64) -> Vec<String> {
-    vec!["sh".into(), "-c".into(), format!("test -d /proc/{pid}")]
-}
-
-/// Re-runs the argv from the process's own working directory. `exec` so the
-/// wrapping shell is replaced rather than left sitting around as the parent,
-/// and `cd` only when a cwd was actually readable: /proc/PID/cwd is a symlink
-/// only the owner (or root) may follow, so another user's process restarts
-/// from the shell's own cwd instead of failing outright.
-///
-/// This restores the command line, never the environment: a process launched
-/// with variables its parent set comes back without them.
-pub fn respawn_command(argv: &[String], cwd: &str) -> Vec<String> {
-    let mut out: Vec<String> = if cwd.is_empty() {
-        vec!["sh".into(), "-c".into(), r#"exec "$@""#.into(), "sh".into()]
-    } else {
-        vec!["sh".into(), "-c".into(), r#"cd "$1" && shift && exec "$@""#.into(), "sh".into(), cwd.into()]
-    };
-    out.extend_from_slice(argv);
-    out
-}
-
-pub fn cwd_command(pid: u64) -> Vec<String> {
-    vec!["sh".into(), "-c".into(), format!("readlink /proc/{pid}/cwd 2>/dev/null || true")]
+/// A process's argv off `/proc/<pid>/cmdline`, every argument whole: the
+/// poll's own cmdline pass replaced NULs with spaces for display, which
+/// loses the boundary between an argument and a space inside one. Empty for
+/// a process that died between the read and the parse (an empty cmdline is
+/// also what a kernel thread has, which is why nothing offers a restart on
+/// one).
+pub fn parse_argv(cmdline: &str) -> Vec<String> {
+    match cmdline.strip_suffix('\0').unwrap_or(cmdline) {
+        "" => Vec::new(),
+        args => args.split('\0').map(String::from).collect(),
+    }
 }
 
 #[cfg(test)]
@@ -592,28 +557,10 @@ mod tests {
     }
 
     #[test]
-    fn kill_interpolates_a_number_never_a_string() {
-        assert_eq!(kill_command(parse_pid("36642").unwrap(), "TERM"), ["sh", "-c", "kill -s TERM 36642"]);
-    }
-
-    #[test]
     fn argv_is_read_back_with_its_separators_intact() {
-        assert_eq!(parse_argv("sh\n-c\nwhile :; do :; done\n"), ["sh", "-c", "while :; do :; done"]);
+        assert_eq!(parse_argv("sh\0-c\0while :; do :; done\0"), ["sh", "-c", "while :; do :; done"]);
+        assert_eq!(parse_argv("printf\0\0x\0"), ["printf", "", "x"]);
         assert!(parse_argv("").is_empty());
-    }
-
-    #[test]
-    fn respawn_passes_every_argument_whole() {
-        let argv = ["sh", "-c", "echo 'hi'"].map(String::from);
-        assert_eq!(
-            respawn_command(&argv, "/home/x y"),
-            ["sh", "-c", r#"cd "$1" && shift && exec "$@""#, "sh", "/home/x y", "sh", "-c", "echo 'hi'"]
-        );
-    }
-
-    #[test]
-    fn respawn_without_a_readable_cwd_still_runs() {
-        assert_eq!(respawn_command(&["mpv".to_string()], ""), ["sh", "-c", r#"exec "$@""#, "sh", "mpv"]);
     }
 
 }

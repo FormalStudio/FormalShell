@@ -1,5 +1,5 @@
 //! The wallpaper picker's scan and its tiles' pictures: a directory listed
-//! (itself and its Dark/Light subdirectories) by a `find` child and read as
+//! (itself and its Dark/Light subdirectories) and read as
 //! pairs and singles, the built-ins out of `FS_WALLPAPERS`'s catalog, every
 //! picture prerendered to a 640x360 `wide` crop in the shared thumbnail
 //! cache, and the tiles decoded from that cache on the pool. A directory is
@@ -16,7 +16,6 @@ use fs_menu::providers::{self, Item, ItemKind};
 use fs_menu::thumbnails::{self, Mode};
 
 use super::clipboard::thumb_dir;
-use super::proc;
 use crate::runtime::Ctx;
 use crate::scene::Bitmap;
 use crate::store;
@@ -173,14 +172,8 @@ async fn run(ctx: Ctx) {
         match cmd {
             Cmd::Boot(_) => {}
             Cmd::Scan(dir) => {
-                let list: Vec<String> = if dir.is_empty() {
-                    Vec::new()
-                } else {
-                    let done = proc::capture(&providers::picker_scan_command(&dir), Duration::from_secs(30)).await;
-                    done.stdout.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()
-                };
-                let (d, l) = (dir.clone(), list.clone());
-                let Some(scan) = ctx.pool().run(move || read(d, l)).await else { continue };
+                let d = dir.clone();
+                let Some(scan) = ctx.pool().run(move || read(d)).await else { continue };
                 let files: Vec<String> = scan.items.iter().chain(&scan.included).flat_map(|i| i.files()).map(str::to_owned).collect();
                 ctx.publish(store::Diff::Picker(Diff::Scanned(scan)));
                 let c = ctx.clone();
@@ -201,8 +194,31 @@ async fn run(ctx: Ctx) {
     }
 }
 
+/// The pickable images in `dir` and in its mode subdirectories, sorted.
+/// Each subdirectory is read once even where a case-insensitive filesystem
+/// answers both `Dark` and `dark` with it, and one past those is never
+/// read, so an unrelated subdirectory of wallpapers stays out.
+fn listing(dir: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut out = std::collections::BTreeSet::new();
+    for sub in ["", "Dark", "dark", "Light", "light"] {
+        let path = std::path::Path::new(dir).join(sub);
+        let Ok(entries) = std::fs::read_dir(&path) else { continue };
+        if !seen.insert(std::fs::canonicalize(&path).unwrap_or(path)) {
+            continue;
+        }
+        for entry in entries.flatten() {
+            if entry.file_type().is_ok_and(|t| t.is_file()) && providers::is_picker_image(&entry.file_name().to_string_lossy()) {
+                out.insert(entry.path().to_string_lossy().into_owned());
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
 /// The listing read as pairs and singles, and the built-ins.
-fn read(dir: String, list: Vec<String>) -> Scan {
+fn read(dir: String) -> Scan {
+    let list = if dir.is_empty() { Vec::new() } else { listing(&dir) };
     let items = providers::items(&list, &dir, identical);
     let included_dir = std::env::var("FS_WALLPAPERS").unwrap_or_default();
     let included = match std::fs::read_to_string(format!("{}/catalog.json", included_dir.trim_end_matches('/'))) {

@@ -139,6 +139,21 @@ async fn run(ctx: Ctx) {
     }
 }
 
+/// `pid` and up to `ANCESTOR_DEPTH` parents, stopping at init or at a
+/// process gone before it was read.
+fn ancestry(pid: i64) -> Vec<ProcInfo> {
+    let mut chain = Vec::new();
+    let mut q = pid;
+    while chain.len() <= appicon::ANCESTOR_DEPTH && q > 1 {
+        let dir = format!("/proc/{q}");
+        let Ok(cmdline) = std::fs::read(format!("{dir}/cmdline")) else { break };
+        let exe = std::fs::read_link(format!("{dir}/exe")).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        chain.push(ProcInfo { exe, argv: appicon::parse_cmdline(&String::from_utf8_lossy(&cmdline)) });
+        q = std::fs::read_to_string(format!("{dir}/status")).ok().and_then(|s| appicon::parent_pid(&s)).unwrap_or(0);
+    }
+    chain
+}
+
 #[derive(Default)]
 struct Inner {
     entries: Vec<DesktopEntry>,
@@ -171,20 +186,16 @@ impl Inner {
 
     /// `/proc` once per window pid that no entry claims by class.
     fn read_procs(&mut self, queries: &[Query]) {
-        let mut wanted: Vec<String> = Vec::new();
         for q in queries {
             let win = window_of(q);
             if q.pid > 1 && !self.asked.contains(&q.pid) && appicon::by_class(Some(&win), &self.entries).is_none() {
                 self.asked.insert(q.pid);
-                wanted.push(q.pid.to_string());
+                let chain = ancestry(q.pid);
+                if !chain.is_empty() {
+                    self.procs.insert(q.pid.to_string(), chain);
+                }
             }
         }
-        if wanted.is_empty() {
-            return;
-        }
-        let argv = appicon::proc_command(&wanted);
-        let Ok(out) = crate::services::proc::std_command(&argv[0]).args(&argv[1..]).output() else { return };
-        self.procs.extend(appicon::parse_procs(&String::from_utf8_lossy(&out.stdout)));
     }
 
     fn icon_for(&mut self, size: u32, q: &Query) -> Icon {

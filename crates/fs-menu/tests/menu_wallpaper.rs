@@ -14,7 +14,7 @@ use common::*;
 use fs_menu::model::build_tree;
 use fs_menu::node::{Entries, Kind, Provider};
 use fs_menu::providers::{
-    Item, ItemKind, Mode, apply_providers, catalog, image_basename, items, tile_rows, title_of,
+    Item, ItemKind, Mode, apply_providers, catalog, image_basename, is_picker_image, items, tile_rows, title_of,
 };
 use serde_json::json;
 
@@ -59,6 +59,12 @@ fn user_overlay_can_hide_it() {
     let tree = build_tree(&only, &entries(json!({ "wallpaper": { "hidden": true } })));
     assert!(!tree.nodes.contains_key("wallpaper"));
     assert!(tree.root_ids.is_empty());
+}
+
+#[test]
+fn pickable_images_go_by_extension_in_any_case() {
+    assert!(is_picker_image("dune.JPG") && is_picker_image("a.webp") && is_picker_image("b.jpeg"));
+    assert!(!is_picker_image("notes.txt") && !is_picker_image("png"));
 }
 
 // Pairs and singles. The scan hands over the picker directory AND its

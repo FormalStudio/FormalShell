@@ -265,6 +265,14 @@ pub fn spawn(argv: &[String]) {
     send(Command::Spawn(argv.to_vec()));
 }
 
+/// `argv` started from `dir`: Hyprland's exec takes no working directory,
+/// so a shell changes into it first.
+pub fn spawn_in(dir: &str, argv: &[String]) {
+    let mut wrapped: Vec<String> = ["sh", "-c", r#"cd "$1" && shift && exec "$@""#, "sh", dir].map(String::from).to_vec();
+    wrapped.extend_from_slice(argv);
+    spawn(&wrapped);
+}
+
 pub fn escape_bind(name: &'static str, argv: Option<&[String]>) {
     send(Command::EscapeBind { name, argv: argv.map(<[String]>::to_vec) });
 }

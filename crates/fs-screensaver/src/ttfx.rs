@@ -128,16 +128,8 @@ pub fn normalize_color(value: &str) -> String {
     }
 }
 
-/// Wrapped in a `command -v` guard: ttfx vanishing from PATH between the
-/// startup probe and a real activation surfaces as exit 127 rather than a
-/// spawn error with no exit code.
 pub fn command(opts: &Opts) -> Vec<String> {
-    let mut cmd: Vec<String> = vec![
-        "sh".into(),
-        "-c".into(),
-        r#"command -v ttfx >/dev/null 2>&1 || exit 127; exec ttfx "$@""#.into(),
-        "sh".into(),
-    ];
+    let mut cmd = vec!["ttfx".to_owned()];
     cmd.extend(args(opts));
     cmd
 }
@@ -406,16 +398,6 @@ mod tests {
         assert_eq!(after(&a, "--terminal-background-color"), "#ff0000");
         assert_eq!(normalize_color("#100f0f"), "#100f0f");
         assert_eq!(normalize_color("transparent"), "#000000");
-    }
-
-    #[test]
-    fn command_guards_against_ttfx_leaving_path() {
-        let cmd = command(&opts("rain", 8, 4, 60, "#000000", 1));
-        assert_eq!(cmd[0], "sh");
-        assert_eq!(cmd[1], "-c");
-        assert!(cmd[2].contains("command -v ttfx"));
-        assert!(cmd[2].contains("exit 127"));
-        assert_eq!(cmd.last().unwrap(), "rain");
     }
 
     // wire protocol
