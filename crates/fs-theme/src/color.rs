@@ -1,10 +1,26 @@
 //! A colour as the renderer takes it, and the two pieces of Qt colour
 //! arithmetic the chrome tables lean on: `Qt.alpha` and `Qt.tint`.
 
-/// Rec. 601 luma, on the channels' own scale.
-pub fn luma601(r: f64, g: f64, b: f64) -> f64 {
-    0.299 * r + 0.587 * g + 0.114 * b
+/// Rec. 601 luma, on the channels' own scale, in the channels' own float
+/// type: an f32 caller rounds as f32 arithmetic does, not through f64.
+pub fn luma601<T: Luma601>(r: T, g: T, b: T) -> T {
+    T::luma601(r, g, b)
 }
+
+pub trait Luma601: Copy {
+    fn luma601(r: Self, g: Self, b: Self) -> Self;
+}
+
+macro_rules! luma601_for {
+    ($($t:ty),*) => {$(
+        impl Luma601 for $t {
+            fn luma601(r: $t, g: $t, b: $t) -> $t {
+                0.299 * r + 0.587 * g + 0.114 * b
+            }
+        }
+    )*};
+}
+luma601_for!(f32, f64);
 
 /// Straight (not premultiplied) RGBA, each channel 0..1.
 #[derive(Clone, Copy, Debug, PartialEq)]
