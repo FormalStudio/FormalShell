@@ -548,7 +548,7 @@ impl Gpu {
             .array_layers(1)
             .samples(vk::SampleCountFlags::TYPE_1)
             .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
-            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .usage(vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::COLOR_ATTACHMENT)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .push_next(&mut external)
@@ -601,7 +601,7 @@ impl Gpu {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUses::COPY_DST | wgpu::TextureUses::COLOR_TARGET,
+                usage: wgpu::TextureUses::COPY_SRC | wgpu::TextureUses::COPY_DST | wgpu::TextureUses::COLOR_TARGET,
                 memory_flags: wgpu::hal::MemoryFlags::empty(),
                 view_formats: Vec::new(),
             };
@@ -617,7 +617,7 @@ impl Gpu {
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
                     format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
                     view_formats: &[],
                 },
             );
@@ -1149,6 +1149,17 @@ impl Canvas {
         with(|g| g.draw(texture, (device.x as u32, device.y as u32), (device.w as u32, device.h as u32), paint));
     }
 
+    /// Every pixel back on the CPU, premultiplied RGBA rows.
+    pub fn read(&self) -> Option<Vec<u8>> {
+        with(|g| {
+            let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell read") });
+            let out = copy_out(g, &mut encoder, &self.texture);
+            let index = g.queue.submit([encoder.finish()]);
+            mapped(g, &out, index, self.size)
+        })
+        .flatten()
+    }
+
     /// `device` back to transparent.
     pub fn clear(&mut self, device: IRect) {
         if device.is_empty() {
@@ -1251,6 +1262,21 @@ impl Buffer {
         .unwrap_or(false)
     }
 
+    /// What the compositor will read, back on the CPU as RGBA rows.
+    pub fn read(&self) -> Option<Vec<u8>> {
+        with(|g| {
+            let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell read") });
+            let out = copy_out(g, &mut encoder, &self.texture);
+            let acquire = self.held.take().map(|was| g.ownership(self.image, false, was));
+            let layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
+            let release = g.ownership(self.image, true, layout);
+            self.held.set(Some(layout));
+            let index = g.queue.submit(acquire.into_iter().chain([encoder.finish(), release]));
+            mapped(g, &out, index, (self.texture.width(), self.texture.height()))
+        })
+        .flatten()
+    }
+
     /// `to` over `from` at `a` (0 is `from` alone) into the whole buffer,
     /// handed over as [`Buffer::fill`] hands its copy over.
     pub fn blend(&self, from: &Picture, to: &Picture, a: f32) -> bool {
@@ -1321,6 +1347,41 @@ impl Buffer {
             }
         }
     }
+}
+
+/// `texture` copied into a buffer the CPU can map, its rows padded to
+/// wgpu's copy alignment.
+fn copy_out(g: &Gpu, encoder: &mut wgpu::CommandEncoder, texture: &wgpu::Texture) -> wgpu::Buffer {
+    let (w, h) = (texture.width(), texture.height());
+    let stride = (w * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+    let out = g.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("formalshell read"),
+        size: u64::from(stride) * u64::from(h),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    encoder.copy_texture_to_buffer(
+        texture.as_image_copy(),
+        wgpu::TexelCopyBufferInfo { buffer: &out, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(stride), rows_per_image: None } },
+        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+    );
+    out
+}
+
+/// `out` once submission `index` is done, the padding cut off its rows.
+fn mapped(g: &Gpu, out: &wgpu::Buffer, index: wgpu::SubmissionIndex, (w, h): (u32, u32)) -> Option<Vec<u8>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    out.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    g.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: Some(std::time::Duration::from_secs(1)) }).ok()?;
+    rx.try_recv().ok()?.ok()?;
+    let stride = (w * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) as usize;
+    let rows = out.slice(..).get_mapped_range();
+    let bytes = rows.chunks(stride).take(h as usize).flat_map(|row| &row[..w as usize * 4]).copied().collect();
+    drop(rows);
+    out.unmap();
+    Some(bytes)
 }
 
 /// A whole-output picture in device memory, uploaded from the BGRA bytes

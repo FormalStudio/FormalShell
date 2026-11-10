@@ -10,7 +10,6 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::json;
-use vello_cpu::Pixmap;
 
 use super::Format;
 use crate::render::Renderer;
@@ -59,23 +58,37 @@ pub fn report() -> serde_json::Value {
     json!({"on": on(), "surfaces": surfaces})
 }
 
-/// `scene` drawn whole at `scale` into a fresh canvas.
-pub fn reference(scene: &Scene, scale: f64) -> Pixmap {
-    let mut r = Renderer::new(1, 1);
+/// A full draw: premultiplied RGBA rows `w` pixels wide.
+pub struct Reference {
+    bytes: Vec<u8>,
+    w: usize,
+    h: usize,
+}
+
+/// `scene` drawn whole at `scale` into a fresh canvas, on the GPU when the
+/// surface draws there, since its antialiasing is not the CPU's. None when
+/// the device cannot give the pixels back.
+pub fn reference(scene: &Scene, scale: f64, gpu: bool) -> Option<Reference> {
+    let mut r = if gpu { Renderer::gpu(1, 1)? } else { Renderer::new(1, 1) };
     r.set_scale(scale);
     r.resize(scene.size.w.max(1) as u16, scene.size.h.max(1) as u16);
     r.render(scene, scene.size);
-    r.canvas().clone()
+    let (w, h) = r.pixels();
+    let bytes = match r.gpu_canvas() {
+        Some(canvas) => canvas.read()?,
+        None => r.canvas().data_as_u8_slice().to_vec(),
+    };
+    Some(Reference { bytes, w: w as usize, h: h as usize })
 }
 
-/// The buffer a surface is about to commit (`bytes`, in its shm `format`
-/// and faded by `opacity` out of 256) against `reference`.
-pub fn compare(name: &'static str, commit: u64, reference: &Pixmap, bytes: &[u8], format: Format, opacity: u16) {
-    let w = reference.width() as usize;
+/// The buffer a surface is about to commit (`bytes`, in its `format` and
+/// faded by `opacity` out of 256) against `reference`.
+pub fn compare(name: &'static str, commit: u64, reference: &Reference, bytes: &[u8], format: Format, opacity: u16) {
+    let w = reference.w;
     let fade = |c: u8| if opacity < 256 { ((u16::from(c) * opacity + 128) >> 8) as u8 } else { c };
     let (mut count, mut x0, mut y0, mut x1, mut y1) = (0u64, usize::MAX, usize::MAX, 0, 0);
-    for (i, (px, got)) in reference.data().iter().zip(bytes.chunks_exact(4)).enumerate() {
-        let want = format.pixel([px.r, px.g, px.b, px.a]).map(fade);
+    for (i, (px, got)) in reference.bytes.as_chunks::<4>().0.iter().zip(bytes.as_chunks::<4>().0).enumerate() {
+        let want = format.pixel(*px).map(fade);
         if want.iter().zip(got).any(|(a, b)| a.abs_diff(*b) > TOLERANCE) {
             let (x, y) = (i % w, i / w);
             count += 1;
@@ -101,13 +114,13 @@ pub fn compare(name: &'static str, commit: u64, reference: &Pixmap, bytes: &[u8]
 
 /// The stale box and a margin round it, the buffer on top and the full
 /// draw under it, for reading by eye.
-fn save(name: &str, commit: u64, reference: &Pixmap, bytes: &[u8], format: Format, r: IRect) -> Option<String> {
+fn save(name: &str, commit: u64, reference: &Reference, bytes: &[u8], format: Format, r: IRect) -> Option<String> {
     let dir = match std::env::var_os("FS_STALE_DIR") {
         Some(dir) => std::path::PathBuf::from(dir),
         None => crate::paths::session_runtime()?.join("formalshell-stale"),
     };
     std::fs::create_dir_all(&dir).ok()?;
-    let (w, h) = (reference.width() as i32, reference.height() as i32);
+    let (w, h) = (reference.w as i32, reference.h as i32);
     let crop = IRect::new(r.x - 24, r.y - 24, r.w + 48, r.h + 48).intersect(&IRect::new(0, 0, w, h));
     let mut out = image::RgbaImage::new(crop.w as u32, crop.h as u32 * 2);
     for y in 0..crop.h {
@@ -115,9 +128,9 @@ fn save(name: &str, commit: u64, reference: &Pixmap, bytes: &[u8], format: Forma
             let i = ((crop.y + y) * w + crop.x + x) as usize;
             let g = &bytes[i * 4..i * 4 + 4];
             let got = format.pixel([g[0], g[1], g[2], g[3]]);
-            let px = reference.data()[i];
+            let px = &reference.bytes[i * 4..i * 4 + 4];
             out.put_pixel(x as u32, y as u32, image::Rgba(got));
-            out.put_pixel(x as u32, (y + crop.h) as u32, image::Rgba([px.r, px.g, px.b, px.a]));
+            out.put_pixel(x as u32, (y + crop.h) as u32, image::Rgba([px[0], px[1], px[2], px[3]]));
         }
     }
     let path = dir.join(format!("{name}-{commit}.png"));

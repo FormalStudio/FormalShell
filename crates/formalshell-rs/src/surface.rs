@@ -521,7 +521,7 @@ pub struct Surface<R: Role = LayerSurface> {
     retired: Option<Buffer>,
     retired_dmabuf: Option<crate::gpu::Buffer>,
     /// `debug staleAudit`'s full draw of the frame being committed.
-    audit: Option<vello_cpu::Pixmap>,
+    audit: Option<audit::Reference>,
     /// The scale and logical size that buffer was drawn at.
     front_view: Option<(f64, (i32, i32))>,
     /// [`Pixels::clear`] is attached: the surface shows nothing and holds
@@ -1018,8 +1018,8 @@ impl<R: Role> Surface<R> {
             return;
         }
         let damage = std::mem::take(&mut self.raster);
-        if audit::on() && !self.renderer.is_gpu() {
-            self.audit = Some(audit::reference(scene, self.renderer.scale()));
+        if audit::on() {
+            self.audit = audit::reference(scene, self.renderer.scale(), self.renderer.is_gpu());
         }
         self.commit_frame(damage, scene.size, request, qh);
     }
@@ -1211,7 +1211,15 @@ impl<R: Role> Surface<R> {
         let copy = self.copy_list(stale, damage, size);
         let opacity = self.opacity;
         let canvas = self.renderer.gpu_canvas()?;
-        self.dmabufs[at].fill(canvas, &copy, opacity).then_some(at)
+        if !self.dmabufs[at].fill(canvas, &copy, opacity) {
+            return None;
+        }
+        if let Some(reference) = self.audit.take()
+            && let Some(bytes) = self.dmabufs[at].read()
+        {
+            audit::compare(self.name, self.commits + 1, &reference, &bytes, Format::Rgba, opacity);
+        }
+        Some(at)
     }
 
     /// `stale` and `damage` as canvas pixels, a rect inside another dropped.
