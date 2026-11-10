@@ -33,7 +33,7 @@ card_corner_log="$shot_dir/card-corner.log"
 card_corner_monitors="$shot_dir/card-corner-monitors.json"
 
 leg_card_corner_fixture() {
-  $convert_bin -size 1920x1080 xc:'#e0e0e0' "$card_corner_flat"
+  flat_wallpaper "$card_corner_flat" '#e0e0e0'
   settings_pin '.layout = "sidebar" | .theme.reactiveRims = false'
 }
 

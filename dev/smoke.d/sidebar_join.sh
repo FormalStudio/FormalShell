@@ -26,7 +26,7 @@ sidebar_join_status="$shot_dir/sidebar-join-status.json"
 sidebar_join_frames=12
 
 leg_sidebar_join_fixture() {
-  $convert_bin -size 1920x1080 xc:'#808080' "$sidebar_join_flat"
+  flat_wallpaper "$sidebar_join_flat" '#808080'
   settings_pin '.layout = "sidebar"'
 }
 

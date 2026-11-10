@@ -85,8 +85,9 @@ sleep 0.2
 # would otherwise widen the diff below to span the whole screen height.
 # Leaving the 60px bar out (the same constant media_progress.sh's own rect
 # finder uses) keeps the diff to the panel alone.
-rect_a=\$(card_box "\$f0" "\$f1" 60 8%)
-rect_b=\$(card_box "\$f1" "\$f2" 60 8%)
+bar=\$(logical_px 60)
+rect_a=\$(card_box "\$f0" "\$f1" "\$bar" 8%)
+rect_b=\$(card_box "\$f1" "\$f2" "\$bar" 8%)
 
 IFS='x+' read -r wa ha xa ya <<< "\$rect_a"
 IFS='x+' read -r wb hb xb yb <<< "\$rect_b"
@@ -100,7 +101,7 @@ if [ -n "\${wa:-}" ] && [ -n "\${wb:-}" ]; then
   if [ "\$x2" -gt "\$x1" ] && [ "\$y2" -gt "\$y1" ]; then
     pad=6
     x1=\$(( x1 - pad > 0 ? x1 - pad : 0 ))
-    y1=\$(( y1 - pad > 60 ? y1 - pad : 60 ))
+    y1=\$(( y1 - pad > bar ? y1 - pad : bar ))
     w=\$(( x2 - x1 + pad * 2 ))
     h=\$(( y2 - y1 + pad * 2 ))
     printf '%sx%s+%s+%s' "\$w" "\$h" "\$x1" "\$y1" > "$visualizer_styles_rect_path"

@@ -166,7 +166,7 @@ leg_notify_emerge_assert() {
   # higher cut measures the card's border alone and puts the box in the wrong
   # place.
   local rect card_w card_h card_x card_y
-  rect=$(card_box "$notify_emerge_bare_path" "$notify_emerge_settled_path" "$notify_emerge_body_top" 2%)
+  rect=$(card_box "$notify_emerge_bare_path" "$notify_emerge_settled_path" "$(logical_px "$notify_emerge_body_top")" 2%)
   IFS='x+' read -r card_w card_h card_x card_y <<< "$rect"
   if [ -z "$card_w" ] || [ "${card_w:-0}" -lt 200 ] || [ "${card_h:-0}" -lt 40 ]; then
     fail "could not measure the notification off the bare/settled pair, got rect '$rect'"

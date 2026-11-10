@@ -89,8 +89,8 @@ leg_depth_fixture() {
   else
   local band
   band="rectangle $(depth_x 620),0 $(depth_x 739),1079"
-  $convert_bin -size 1920x1080 xc:'#101418' -fill '#ff7a1a' -draw "$band" "$depth_picture_path"
-  $convert_bin -size 1920x1080 xc:black -fill white -draw "$band" "$depth_dir/.depth/band.png.png"
+  $convert_bin -size "${out_w}x${out_h}" xc:'#101418' -fill '#ff7a1a' -draw "$band" "$depth_picture_path"
+  $convert_bin -size "${out_w}x${out_h}" xc:black -fill white -draw "$band" "$depth_dir/.depth/band.png.png"
   touch -r "$depth_picture_path" "$depth_dir/.depth/band.png.png"
   fi
   mkdir -p "$iso_home/.local/state/formalshell"

@@ -40,7 +40,7 @@ reactive_rims_rest_path="$shot_dir/reactive-rims-rest.txt"
 reactive_rims_dispatch_path="$shot_dir/reactive-rims-dispatch.txt"
 
 leg_reactive_rims_fixture() {
-  $convert_bin -size 1920x1080 xc:'#ff0000' -fill '#0000ff' \
+  $convert_bin -size "${out_w}x${out_h}" xc:'#ff0000' -fill '#0000ff' \
     -draw "rectangle 960,0 1919,1079" "$reactive_rims_wp"
   settings_pin '.bar.layout.left = ["audio"] | .bar.layout.right = ["network"]'
 }

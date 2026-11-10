@@ -32,7 +32,7 @@ unlock_frame_gap=0.05
 unlock_scale=1000
 
 leg_unlock_fixture() {
-  $convert_bin -size 1920x1080 xc:'#8c8c8c' "png:$unlock_wallpaper"
+  flat_wallpaper "png:$unlock_wallpaper" '#8c8c8c'
 }
 
 leg_unlock_timing() {

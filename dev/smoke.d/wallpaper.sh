@@ -77,7 +77,7 @@ EOF
   # derived palette is allowed and so is the only one that can tell a plain
   # image from a quantized one. The gradient is generated portrait and
   # rotated so the ramp runs along the axis a full-width sample crosses.
-  $convert_bin -size 1920x1080 xc:'#7a3fb0' "$wp_path"
+  flat_wallpaper "$wp_path" '#7a3fb0'
   $convert_bin -size 1080x1920 gradient:'#3fb07a-#0b2d20' -rotate 90 "$wp2_path"
 }
 

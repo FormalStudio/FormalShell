@@ -41,8 +41,8 @@ glass_behind_numbers="$shot_dir/glass-behind-numbers.txt"
 glass_behind_surfaces="none menu panel centre osd switcher toast"
 
 leg_glass_behind_fixture() {
-  $convert_bin -size 1920x1080 xc:'#d0d0d0' "$glass_behind_bright"
-  $convert_bin -size 1920x1080 xc:'#202020' "$glass_behind_dark"
+  flat_wallpaper "$glass_behind_bright" '#d0d0d0'
+  flat_wallpaper "$glass_behind_dark" '#202020'
 }
 
 leg_glass_behind_timing() {

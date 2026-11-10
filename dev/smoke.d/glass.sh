@@ -23,8 +23,8 @@ glass_dump_opaque="$shot_dir/glass-dump-opaque.json"
 glass_dump_clear="$shot_dir/glass-dump-clear.json"
 
 leg_glass_fixture() {
-  $convert_bin -size 1920x1080 xc:'#e6e6e6' "$glass_bright"
-  $convert_bin -size 1920x1080 xc:'#202020' "$glass_dark"
+  flat_wallpaper "$glass_bright" '#e6e6e6'
+  flat_wallpaper "$glass_dark" '#202020'
 }
 
 leg_glass_timing() {

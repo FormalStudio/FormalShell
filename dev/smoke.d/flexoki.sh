@@ -36,7 +36,7 @@ leg_flexoki_fixture() {
   # The pin is a substring test on the path, so the directory carries it and
   # the file name stays ordinary: the documented "a flexoki/ directory" half
   # of the rule, which no other leg covers.
-  $convert_bin -size 1920x1080 xc:'#7a3fb0' "$flexoki_wall_path"
+  flat_wallpaper "$flexoki_wall_path" '#7a3fb0'
 
   # Deliberately a purple wallpaper. Nothing about its pixels may reach any
   # output, and a purple one makes that visible in the frame if it ever does.

@@ -53,8 +53,8 @@ use_wp_b="$shot_dir/use-wp-b.png"
 
 leg_use_fixture() {
   settings_pin '.bar.layout.right = ["bluetooth", "weather", "tray", "bell", "indicators", "chevron", "battery", "audio", "network"]'
-  $convert_bin -size 1920x1080 gradient:'#20304a-#6a3a5a' "$use_wp_a"
-  $convert_bin -size 1920x1080 gradient:'#d8c890-#3a6a40' "$use_wp_b"
+  $convert_bin -size "${out_w}x${out_h}" gradient:'#20304a-#6a3a5a' "$use_wp_a"
+  $convert_bin -size "${out_w}x${out_h}" gradient:'#d8c890-#3a6a40' "$use_wp_b"
 }
 
 leg_use_timing() {

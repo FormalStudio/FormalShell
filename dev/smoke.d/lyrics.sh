@@ -803,7 +803,7 @@ EOF
 lyrics_burst_body() {
   local frame="$1" body="${1%.png}-body.png" bar
   bar=$(logical_px 60)
-  "$convert_bin" "$frame" -crop "1920x$((1080 - bar))+0+${bar}" +repage "$body" > /dev/null 2>&1
+  "$convert_bin" "$frame" -chop "0x${bar}" "$body" > /dev/null 2>&1
   printf '%s' "$body"
 }
 
@@ -1318,7 +1318,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
 
   # Measured here rather than in the session: eight diffs cost more time
   # than the run has left once the burst itself is done.
-  local edge_n edge_x edge_w edge_y edge_h edge_far=$((1920 - $(logical_px 12))) edge_off
+  local edge_n edge_x edge_w edge_y edge_h edge_far=$((out_w - $(logical_px 12))) edge_off
   : > "$lyrics_edge_rects_path"
   for edge_n in 1 2 3 4 5 6 7 8; do
     [ -f "$shot_dir/lyrics-edge-${edge_n}.png" ] || fail "edge-burst frame $edge_n was never taken"
@@ -1404,7 +1404,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   fi
   # And the claim is about the centring rather than a clamp: both ends of
   # the settled card are clear of the screen's own padding.
-  if [ "$last_x" -le "$(logical_px 16)" ] || [ $((last_x + last_w)) -ge $((1920 - $(logical_px 16))) ]; then
+  if [ "$last_x" -le "$(logical_px 16)" ] || [ $((last_x + last_w)) -ge $((out_w - $(logical_px 16))) ]; then
     fail "the settled card is against the screen's padding, so its place says nothing about its cell: x=$last_x w=$last_w"
   fi
   echo "SMOKE_LYRICS_CENTRE cell centre x=$cell_centre, card centre x=$((last_x + last_w / 2)) with the pane open (narrow width=$nw, settled width=$last_w)"

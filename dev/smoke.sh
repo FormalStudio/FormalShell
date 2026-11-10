@@ -131,6 +131,12 @@ slot_port() {
   esac
 }
 
+# flat_wallpaper <path> <colour>: a wallpaper of one colour at the
+# output's size, from a fixture or a drive.
+flat_wallpaper() {
+  "$convert_bin" -size "${out_w}x${out_h}" "xc:$2" "$1"
+}
+
 # The session's output scale: the g815 panel's 1.25 unless the run asks
 # for one (FS_SMOKE_SCALE) or carries a leg declaring leg_<n>_scale1, one
 # whose probes still read fixed pixels. Set before the legs are sourced,
@@ -278,9 +284,12 @@ done
 echo "output scale: $FS_SMOKE_SCALE"
 # The output's size in logical pixels, the space the shell's rects and a
 # virtual pointer's moves are in, for a drive placing something against an
-# edge before any frame is read. hypr_base_config pins the mode at 1920x1080.
-logical_w=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1920 / s + 0.5 }')
-logical_h=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1080 / s + 0.5 }')
+# edge before any frame is read. out_w and out_h are the mode
+# hypr_base_config asks for, until the session reports the size it got.
+out_w=1920
+out_h=1080
+logical_w=$(awk -v s="$FS_SMOKE_SCALE" -v w="$out_w" 'BEGIN { printf "%d", w / s + 0.5 }')
+logical_h=$(awk -v s="$FS_SMOKE_SCALE" -v h="$out_h" 'BEGIN { printf "%d", h / s + 0.5 }')
 # The scale a frame will be at, until the session reports the one it got.
 out_scale=$FS_SMOKE_SCALE
 
@@ -754,7 +763,7 @@ hypr_base_config() {
   # 1024x768 at scale 2, and a nested window takes aquamarine's own default
   # rather than a size the bar is worth reading at. FS_SMOKE_SCALE=1.25
   # runs it fractional, the g815 panel's scale.
-  echo "hl.monitor({ output = \"\", mode = \"1920x1080@60\", position = \"0x0\", scale = ${FS_SMOKE_SCALE:-1} })"
+  echo "hl.monitor({ output = \"\", mode = \"${out_w}x${out_h}@60\", position = \"0x0\", scale = ${FS_SMOKE_SCALE:-1} })"
   echo "hl.config({"
   echo "  general = { gaps_in = 0, gaps_out = 0, border_size = 0 },"
   # DESIGN.md: nothing in the shell blurs anything, and a compositor blur
@@ -946,7 +955,7 @@ fi
 
 # The output the session really got. The monitor rule above is a request: a
 # nested Hyprland's output follows the size its parent gives the window, so
-# a leg cropping frames reads these rather than 1920x1080. Sampled once the
+# a leg cropping frames reads these rather than the mode asked. Sampled once the
 # desktop has arrived, the parent having configured the window by then, and
 # again at teardown: a parent that resized the window mid-run leaves frames
 # of two sizes, which no crop can read.
@@ -1062,11 +1071,11 @@ colour_px() {
 {
   echo '# shellcheck shell=bash'
   echo '# Written per run by dev/smoke.sh; dev/smoke.d/README.md has the contract.'
-  for lib_var in shot_dir iso_home settings_path rig_password pw_modules_path out_scale $(compgen -v | grep '_bin$'); do
+  for lib_var in shot_dir iso_home settings_path rig_password pw_modules_path out_scale out_w out_h $(compgen -v | grep '_bin$'); do
     printf '%s=%q\n' "$lib_var" "${!lib_var}"
   done
   printf 'formalshell_ipc=%q\n' "$PWD/result/bin/formalshell-ipc"
-  declare -f pw_load_module pw_unload_modules pixel patch_mean patch_rgb card_box diff_px colour_px logical_px frame_logical
+  declare -f pw_load_module pw_unload_modules pixel patch_mean patch_rgb flat_wallpaper card_box diff_px colour_px logical_px frame_logical
   cat <<'LIB'
 # call <target> <fn> [args...]: the shell's IPC, as `$ipc call`.
 call() { "$formalshell_ipc" call "$@"; }

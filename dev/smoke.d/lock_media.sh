@@ -57,8 +57,8 @@ leg_lock_media_fixture() {
     -i "$lock_media_art" -map 0:a -map 1:0 -c:v png -disposition:v attached_pic -t 30 \
     -metadata "title=$lock_media_title" -metadata "artist=$lock_media_artist" \
     -c:a flac -y "$lock_media_track"
-  $convert_bin -size 1920x1080 xc:'#ffffff' "$lock_media_bright_wp"
-  $convert_bin -size 1920x1080 xc:'#1e1e1e' "$lock_media_dark_wp"
+  flat_wallpaper "$lock_media_bright_wp" '#ffffff'
+  flat_wallpaper "$lock_media_dark_wp" '#1e1e1e'
 }
 
 leg_lock_media_timing() {

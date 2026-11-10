@@ -191,9 +191,7 @@ media_progress_field() {
 # One frame with the bar cropped off it. The bar's clock ticks between any
 # two frames, and the rect below is a diff of two.
 media_progress_body() {
-  local h
-  h=$($convert_bin "$shot_dir/progress-$1.png" -format '%h' info: 2>/dev/null)
-  $convert_bin "$shot_dir/progress-$1.png" -crop "1920x$((h - 60))+0+60" +repage \
+  $convert_bin "$shot_dir/progress-$1.png" -chop "0x$(logical_px 60)" \
     "$shot_dir/progress-body-$1.png" > /dev/null 2>&1
   printf '%s' "$shot_dir/progress-body-$1.png"
 }
@@ -202,9 +200,10 @@ media_progress_body() {
 # frame with the panel open, so nothing below reads a hardcoded screen
 # coordinate.
 media_progress_rect() {
-  local w h x y
-  IFS='x+' read -r w h x y <<< "$(card_box "$shot_dir/progress-bare.png" "$shot_dir/progress-$1.png" 60 8%)"
-  [ -n "$y" ] && echo "${w}x${h}+${x}+$((y - 60))"
+  local w h x y bar
+  bar=$(logical_px 60)
+  IFS='x+' read -r w h x y <<< "$(card_box "$shot_dir/progress-bare.png" "$shot_dir/progress-$1.png" "$bar" 8%)"
+  [ -n "$y" ] && echo "${w}x${h}+${x}+$((y - bar))"
 }
 
 # The progress track's fill, as a fraction of its own groove, read off one

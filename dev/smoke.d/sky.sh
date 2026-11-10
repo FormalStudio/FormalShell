@@ -30,7 +30,7 @@ sky_phases="noon low dusk night"
 leg_sky_fixture() {
   settings_pin '.location = {"latitude": 52.37, "longitude": 4.9}'
   settings_pin '.wallpaper.color = "sky"'
-  $convert_bin -size 1920x1080 xc:'#5a8a3c' "$sky_picture"
+  flat_wallpaper "$sky_picture" '#5a8a3c'
 }
 
 leg_sky_timing() {

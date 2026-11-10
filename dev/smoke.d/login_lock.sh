@@ -77,7 +77,7 @@ for _ in \$(seq 1 200); do
   $ipc call lock status 2>/dev/null | grep -q '"secure":true' && break
   sleep 0.05
 done
-"$hyprctl_bin" eval 'hl.monitor({ output = "", mode = "1920x1080@60", position = "0x0", scale = $login_lock_rescale })' > /dev/null 2>&1
+"$hyprctl_bin" eval 'hl.monitor({ output = "", mode = "${out_w}x${out_h}@60", position = "0x0", scale = $login_lock_rescale })' > /dev/null 2>&1
 # The nested output starts at the backend's window size and takes its mode a
 # moment later, Hyprland stretching the lock's first buffer until the shell
 # commits one at the new size: the grab waits for the mode to hold.

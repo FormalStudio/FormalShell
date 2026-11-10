@@ -91,7 +91,7 @@ EOF
   settings_pin '. * {"bar": {"layout": {"right": ["bluetooth", "weather", "tray", "bell", "indicators", "custom:chevgrow", "chevron", "battery", "audio", "network"]}, "modules": [{"id": "chevgrow", "type": "command", "command": ["bash", "'"$chevron_grow_cmd_path"'"], "interval": 500}]}}'
   # The wallpaper the band's dark ink comes from, the flat bright field
   # --bar-adaptive reads `dark` off: mean 230, no spread, nothing busy.
-  $convert_bin -size 1920x1080 xc:'#e6e6e6' "$chevron_bright_wp"
+  flat_wallpaper "$chevron_bright_wp" '#e6e6e6'
 }
 
 leg_chevron_timing() {

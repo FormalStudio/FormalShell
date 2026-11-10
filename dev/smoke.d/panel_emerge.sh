@@ -190,7 +190,7 @@ leg_panel_emerge_assert() {
   # Cropped below the bar first: the cell that owns an open panel draws a mark
   # of its own, which is a difference and is not the card.
   local rect card_w card_h card_x card_y
-  rect=$(card_box "$panel_emerge_bare_path" "$panel_emerge_rest_path" "$panel_emerge_body_top" 8%)
+  rect=$(card_box "$panel_emerge_bare_path" "$panel_emerge_rest_path" "$(logical_px "$panel_emerge_body_top")" 8%)
   IFS='x+' read -r card_w card_h card_x card_y <<< "$rect"
   if [ -z "$card_w" ] || [ "${card_w:-0}" -lt 200 ] || [ "${card_h:-0}" -lt 80 ]; then
     fail "could not measure the network card off the open/closed pair, got rect '$rect'"

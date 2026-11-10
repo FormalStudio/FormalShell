@@ -18,7 +18,7 @@ leg_showcase_claims="wallpaper=shared"
 
 leg_showcase_fixture() {
   local wp="$shot_dir/showcase-wallpaper.png"
-  $convert_bin -size 1920x1080 xc:'#101428' \
+  $convert_bin -size "${out_w}x${out_h}" xc:'#101428' \
     \( -size 1400x1400 radial-gradient:'#e0703a-none' \) -geometry +900+250 -composite \
     \( -size 1500x1500 radial-gradient:'#4a3fb0-none' \) -geometry -500-500 -composite \
     \( -size 1100x1100 radial-gradient:'#2a8f9a-none' \) -geometry +100+500 -composite \

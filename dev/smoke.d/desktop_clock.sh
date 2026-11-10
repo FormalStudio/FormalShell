@@ -33,8 +33,8 @@ desktop_clock_results="$shot_dir/desktop-clock-results.txt"
 leg_desktop_clock_fixture() {
   settings_pin '.desktopClock.enabled = true'
   mkdir -p "$desktop_clock_dir/.depth"
-  $convert_bin -size 1920x1080 xc:'#101418' -fill '#ff7a1a' -draw 'rectangle 940,0 979,1079' "$desktop_clock_picture"
-  $convert_bin -size 1920x1080 xc:black -fill white -draw 'rectangle 940,0 979,1079' -draw 'rectangle 0,900 1919,1079' "$desktop_clock_dir/.depth/band.png.png"
+  $convert_bin -size "${out_w}x${out_h}" xc:'#101418' -fill '#ff7a1a' -draw 'rectangle 940,0 979,1079' "$desktop_clock_picture"
+  $convert_bin -size "${out_w}x${out_h}" xc:black -fill white -draw 'rectangle 940,0 979,1079' -draw 'rectangle 0,900 1919,1079' "$desktop_clock_dir/.depth/band.png.png"
   touch -r "$desktop_clock_picture" "$desktop_clock_dir/.depth/band.png.png"
   cp dev/smoke.d/fixtures/desktop-clock-mountains.jpg "$desktop_clock_photo"
   cp dev/smoke.d/fixtures/desktop-clock-mountains.depth.png "$desktop_clock_dir/.depth/mountains.jpg.png"

@@ -26,7 +26,7 @@ bar_ink_json="$shot_dir/bar-ink.json"
 bar_ink_room_json="$shot_dir/bar-ink-room.json"
 
 leg_bar_ink_fixture() {
-  $convert_bin -size 1920x1080 xc:black -fill white \
+  $convert_bin -size "${out_w}x${out_h}" xc:black -fill white \
     -draw "rectangle 960,0 1919,1079" "$bar_ink_wp"
 }
 

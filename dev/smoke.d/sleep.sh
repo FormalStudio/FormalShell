@@ -41,7 +41,7 @@ sleep_unlocked_path="$shot_dir/sleep-unlocked.txt"
 
 leg_sleep_fixture() {
   settings_pin '.lock.blankAfterSeconds = 12'
-  $convert_bin -size 1920x1080 xc:'#1e1e1e' "$sleep_wallpaper"
+  flat_wallpaper "$sleep_wallpaper" '#1e1e1e'
 }
 
 leg_sleep_timing() {

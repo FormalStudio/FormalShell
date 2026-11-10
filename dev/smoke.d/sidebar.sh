@@ -105,9 +105,9 @@ leg_sidebar_fixture() {
   sidebar_clock_case || return 0
   local wall="$sidebar_clock_dir/split.png" state="$iso_home/.local/state/formalshell/state.json"
   mkdir -p "$sidebar_clock_dir/.depth" "$(dirname "$state")"
-  $convert_bin -size 1920x1080 xc:'#101418' -fill '#e03020' -draw 'rectangle 0,0 51,200' -fill '#20c040' -draw 'rectangle 52,0 160,200' \
+  $convert_bin -size "${out_w}x${out_h}" xc:'#101418' -fill '#e03020' -draw 'rectangle 0,0 51,200' -fill '#20c040' -draw 'rectangle 52,0 160,200' \
     -fill '#ff7a1a' -draw 'rectangle 38,0 44,1079' "$wall"
-  $convert_bin -size 1920x1080 xc:black -fill white -draw 'rectangle 38,0 44,1079' -draw 'rectangle 0,900 1919,1079' "$sidebar_clock_dir/.depth/split.png.png"
+  $convert_bin -size "${out_w}x${out_h}" xc:black -fill white -draw 'rectangle 38,0 44,1079' -draw 'rectangle 0,900 1919,1079' "$sidebar_clock_dir/.depth/split.png.png"
   touch -r "$wall" "$sidebar_clock_dir/.depth/split.png.png"
   [ -s "$state" ] || echo '{}' > "$state"
   "$jq_bin" --arg w "$wall" '. + {"wallpaper": $w, "clockFormat": "h:mm AP"}' "$state" > "$state.new" && mv "$state.new" "$state"

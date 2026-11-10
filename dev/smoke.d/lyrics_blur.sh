@@ -70,12 +70,13 @@ lyrics_blur_cache_key() {
 # a frame with the panel closed and one with it open, bar cropped away
 # first. Echoes "x y w h bodyImagePath"; y is relative to that crop.
 lyrics_blur_pane_rect() {
-  local bare="$1" open="$2" open_body rect w h x y
+  local bare="$1" open="$2" bar open_body rect w h x y
+  bar=$(logical_px 60)
   open_body="${open%.png}-body.png"
-  "$convert_bin" "$open" -chop 0x60 "$open_body" > /dev/null 2>&1
-  rect=$(card_box "$bare" "$open" 60 8%)
+  "$convert_bin" "$open" -chop "0x${bar}" "$open_body" > /dev/null 2>&1
+  rect=$(card_box "$bare" "$open" "$bar" 8%)
   IFS='x+' read -r w h x y <<< "$rect"
-  printf '%s %s %s %s %s\n' "${x:-0}" "$(( ${y:-60} - 60 ))" "${w:-0}" "${h:-0}" "$open_body"
+  printf '%s %s %s %s %s\n' "${x:-0}" "$(( ${y:-$bar} - bar ))" "${w:-0}" "${h:-0}" "$open_body"
 }
 
 # A 3x1 morphological gradient (max-min over each pixel's own row of three),

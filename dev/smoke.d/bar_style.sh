@@ -51,7 +51,7 @@ leg_bar_style_validate() {
 leg_bar_style_fixture() {
   settings_pin ".bar.style = \"$(leg_arg bar_style)\""
   if bar_style_alone; then
-    $convert_bin -size 1920x1080 xc:'#808080' "$bar_style_wp"
+    flat_wallpaper "$bar_style_wp" '#808080'
   fi
 }
 

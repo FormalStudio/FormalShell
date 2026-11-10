@@ -61,9 +61,9 @@ leg_bar_adaptive_fixture() {
     settings_pin '.bar.style = "transparent"'
   fi
   settings_pin '.fullscreen.hideChrome = false'
-  $convert_bin -size 1920x1080 xc:'#e6e6e6' "$bar_adaptive_bright_wp"
-  $convert_bin -size 1920x1080 xc:'#1e1e1e' "$bar_adaptive_dark_wp"
-  $convert_bin -size 1920x1080 xc:black -fill white \
+  flat_wallpaper "$bar_adaptive_bright_wp" '#e6e6e6'
+  flat_wallpaper "$bar_adaptive_dark_wp" '#1e1e1e'
+  $convert_bin -size "${out_w}x${out_h}" xc:black -fill white \
     -draw "rectangle 960,0 1919,1079" "$bar_adaptive_busy_wp"
 }
 
