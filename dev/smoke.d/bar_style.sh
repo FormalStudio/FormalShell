@@ -63,7 +63,8 @@ leg_bar_style_drive() {
   local script="$shot_dir/bar-style-drive.sh" wallpaper=""
   if bar_style_alone; then
     wallpaper="$ipc call wallpaper set \"$bar_style_wp\" > /dev/null 2>&1
-sleep 6"
+until_wallpaper \"$bar_style_wp\"
+until_settled"
   fi
   write_script "$script" <<EOS
 #!/usr/bin/env bash

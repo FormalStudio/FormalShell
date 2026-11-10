@@ -216,7 +216,7 @@ $ipc call sidebar expand > /dev/null 2>&1
 sleep 1.5
 "$grim_bin" "$minimap_redrawn_png" > /dev/null 2>&1
 $ipc call menu toggle > /dev/null 2>&1
-sleep 1
+until_settled
 $ipc call sidebar focus > /dev/null 2>&1
 sleep 0.5
 $ipc call menu status > "$shot_dir/minimap-menu-status.json" 2>&1

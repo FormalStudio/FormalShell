@@ -63,13 +63,14 @@ sleep 1.5
 "$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = 300, y = 200, window = '$win' })" >> "$reactive_rims_dispatch_path" 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 860, y = 820, window = '$win' })" >> "$reactive_rims_dispatch_path" 2>&1
 $ipc call wallpaper set "$reactive_rims_wp" > /dev/null 2>&1
-sleep 6
+until_wallpaper "$reactive_rims_wp"
+until_settled
 $ipc call panel toggle audio > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call debug dump > "$reactive_rims_left_json" 2>&1
 "$grim_bin" "$reactive_rims_left_png" > /dev/null 2>&1
 $ipc call panel toggle network > /dev/null 2>&1
-sleep 2.5
+until_settled
 $ipc call debug dump > "$reactive_rims_right_json" 2>&1
 "$grim_bin" "$reactive_rims_right_png" > /dev/null 2>&1
 c0=\$(commits)

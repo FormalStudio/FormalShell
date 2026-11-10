@@ -57,7 +57,8 @@ mkdir -p "$sleep_burst_dir"
 sleep 5
 $ipc call wallpaper set "$sleep_wallpaper" > /dev/null 2>&1
 $ipc call theme mode light > /dev/null 2>&1
-sleep 8
+until_wallpaper "$sleep_wallpaper" light
+until_settled
 systemd-inhibit --list --no-pager > "$sleep_inhibit_before_path" 2>&1
 $ipc call lock status > "$sleep_status_before_path" 2>&1
 $ipc call debug motionScale 1000 > /dev/null 2>&1

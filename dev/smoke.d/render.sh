@@ -48,22 +48,25 @@ turn() {
     sleep 0.25
   done
   $ipc call wallpaper set "$shot_dir/render-wallpaper.png" > /dev/null 2>&1
-  sleep 4
+  # A later shell starts on the theme.json the first one made for this
+  # picture and runs no matugen of its own, so it names no palette source.
+  until_jq 60 "$shot_dir/render-\$name-theme.json" '.desktop == "$shot_dir/render-wallpaper.png" and (.palette.wallpaper == .desktop or (.palette == null and .themeJsonPresent))' call theme status
+  until_settled
   $ipc call debug dump > "$shot_dir/render-\$name.json" 2>&1
   "$grim_bin" "$shot_dir/render-\$name-desktop.png" > /dev/null 2>&1
   date +%H%M > "$shot_dir/render-\$name-desktop.minute"
   $ipc call panel open audio > /dev/null 2>&1
-  sleep 1.5
+  until_settled
   "$grim_bin" "$shot_dir/render-\$name-panel.png" > /dev/null 2>&1
   date +%H%M > "$shot_dir/render-\$name-panel.minute"
   $ipc call panel close > /dev/null 2>&1
   sleep 1
   $ipc call menu toggle > /dev/null 2>&1
-  sleep 2.5
+  until_settled
   $ipc call menu status > "$shot_dir/render-\$name-menu.json" 2>&1
   "$grim_bin" "$shot_dir/render-\$name.png" > /dev/null 2>&1
   $ipc call menu toggle > /dev/null 2>&1
-  sleep 1.5
+  until_settled
   notify-send -u critical -t 0 "Render check" "One sticky toast for each shell" > /dev/null 2>&1
   $ipc call osd volume > /dev/null 2>&1
   sleep 1.2
@@ -72,7 +75,8 @@ turn() {
   $ipc call osd close > /dev/null 2>&1
   sleep 1
   $ipc call lock lock > /dev/null 2>&1
-  sleep 3
+  until_jq 10 "$shot_dir/render-\$name-locked.json" '.locked and .secure' call lock status
+  until_settled
   $ipc call lock status > "$shot_dir/render-\$name-lock.json" 2>&1
   "$grim_bin" "$shot_dir/render-\$name-lock.png" > /dev/null 2>&1
   date +%H%M > "$shot_dir/render-\$name-lock.minute"

@@ -444,6 +444,7 @@ while [ "\$SECONDS" -lt 15 ]; do
   sleep 1
 done
 $ipc call panel open media > /dev/null 2>&1
+# A playing track keeps the pane moving every frame, so its card never reads at rest.
 sleep 1
 "$grim_bin" "$lyrics_synced_png_path" > /dev/null 2>&1
 $ipc call media lyrics > "$lyrics_status_synced_path" 2>&1
@@ -498,6 +499,7 @@ $ipc call media lyrics > "$lyrics_status_postwheel_path" 2>&1
 $ipc call panel close > /dev/null 2>&1
 sleep 6
 $ipc call panel open media > /dev/null 2>&1
+# A playing track keeps the pane moving every frame, so its card never reads at rest.
 sleep 2
 $ipc call media lyrics > "$lyrics_status_reopen_path" 2>&1
 "$grim_bin" "$lyrics_reopen_png_path" > /dev/null 2>&1
@@ -645,6 +647,7 @@ id1=\$(cat "$lyrics_id1_path" 2>/dev/null)
 $ipc call panel close > /dev/null 2>&1
 sleep 1
 $ipc call panel toggle media > /dev/null 2>&1
+# A playing track keeps the pane moving every frame, so its card never reads at rest.
 sleep 1
 "$grim_bin" "$lyrics_return_narrow_path" > /dev/null 2>&1
 $ipc call media select "\$id1" > /dev/null 2>&1

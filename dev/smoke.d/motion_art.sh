@@ -85,6 +85,7 @@ burst "$shot_dir/motion-art-bar" $motion_art_frames 0.15
 decoders bar
 commits bar 3
 call panel open media > /dev/null 2>&1
+# The animated cover keeps the card moving and its decoder is a child of its own: a fixed wait.
 sleep 4
 burst "$shot_dir/motion-art-play" $motion_art_frames 0.15
 decoders open
@@ -104,6 +105,7 @@ decoders off
 "$grim_bin" "$shot_dir/motion-art-off.png" > /dev/null 2>&1
 commits off 3
 call panel open media > /dev/null 2>&1
+# The decoder is a child of its own, started or not on the open.
 sleep 4
 decoders off_panel
 commits off_panel 3

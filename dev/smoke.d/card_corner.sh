@@ -52,7 +52,9 @@ done
 # First: the recolour reloads Hyprland's config, which drops an output
 # rule made at runtime.
 $ipc call wallpaper set "$card_corner_flat" > "$card_corner_log" 2>&1
-sleep 4
+until_wallpaper "$card_corner_flat"
+# The compositor's own reload, asked for just before the palette lands.
+sleep 1
 width=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
 "$hyprctl_bin" output create headless "$card_corner_second" >> "$card_corner_log" 2>&1
 "$hyprctl_bin" eval "hl.monitor({ output = \\"$card_corner_second\\", mode = \\"1600x1000@60\\", position = \\"\${width}x0\\", scale = 1.25 })" >> "$card_corner_log" 2>&1
@@ -62,15 +64,15 @@ sleep 3
 sleep 1
 "$grim_bin" -o "$card_corner_second" "$card_corner_bare" >> "$card_corner_log" 2>&1
 $ipc call panel open network >> "$card_corner_log" 2>&1
-sleep 3
+until_settled
 "$grim_bin" -o "$card_corner_second" "$card_corner_panel" >> "$card_corner_log" 2>&1
 $ipc call panel close >> "$card_corner_log" 2>&1
 sleep 2
 $ipc call menu toggle >> "$card_corner_log" 2>&1
-sleep 3
+until_settled
 "$grim_bin" -o "$card_corner_second" "$card_corner_menu" >> "$card_corner_log" 2>&1
 $ipc call menu toggle >> "$card_corner_log" 2>&1
-sleep 1
+until_settled
 own=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].name')
 "$grim_bin" -o "\$own" "$card_corner_own" >> "$card_corner_log" 2>&1
 "$hyprctl_bin" -j monitors > "$card_corner_monitors" 2>> "$card_corner_log"

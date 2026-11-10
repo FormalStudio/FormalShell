@@ -99,9 +99,9 @@ EOF
 }
 
 leg_gpu_timing() {
-  # gpu-drive.sh's last step lands around 21s (15s of sleeps plus five IPC
-  # calls and two grims on llvmpipe), with the offload launch 6s before
-  # it so the probe has long since written its file.
+  # gpu-drive.sh's last step lands well inside this, with the offload
+  # launch 3s and a settle before it so the probe has long since written
+  # its file.
   leg_timing 60
 }
 
@@ -111,14 +111,14 @@ leg_gpu_drive() {
 #!/usr/bin/env bash
 $ipc call monitor gpu > "$gpu_cards_path" 2>&1
 $ipc call menu summon gpu > "$gpu_route_reply_path" 2>&1
-sleep 2
+until_settled
 $ipc call menu status > "$gpu_menu_status_path" 2>&1
 "$grim_bin" "$gpu_route_png" > /dev/null 2>&1
 sleep 1
 $ipc call monitor launch formalshell-gpu-probe card0 > "$gpu_launch_reply_path" 2>&1
 sleep 3
 $ipc call menu summon monitor > /dev/null 2>&1
-sleep 3
+until_settled
 "$grim_bin" "$gpu_monitor_png" > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"

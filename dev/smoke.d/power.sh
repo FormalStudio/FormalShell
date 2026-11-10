@@ -38,7 +38,7 @@ leg_power_drive() {
 # Armed, then confirmed: the row's two Enters.
 confirm_row() {
   call menu summon system > /dev/null 2>&1
-  sleep 1.5
+  until_settled
   local idx
   idx=\$(row_index "$power_p-menu.json" "\$1")
   call menu activate "\$idx" > "$power_p-arm-\$1.txt" 2>&1
@@ -70,7 +70,7 @@ done
 grep -q '"challenge"' "$power_p-can.txt" || exit 0
 
 call menu summon "" > /dev/null 2>&1
-sleep 1.5
+until_settled
 "$wtype_bin" "shutdown"
 sleep 1.5
 call menu status > "$power_p-typed.json" 2>&1

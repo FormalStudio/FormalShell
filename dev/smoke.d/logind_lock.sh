@@ -51,7 +51,7 @@ $ipc call lock status > "\$p-status-2.json" 2>&1
 hint "\$sid" > "\$p-hint-2.txt"
 "$grim_bin" "\$p-unlocked.png" > /dev/null 2>&1
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 1
+until_settled
 "$wtype_bin" -s 300 "lock"
 sleep 1
 $ipc call menu status > "\$p-menu.json" 2>&1

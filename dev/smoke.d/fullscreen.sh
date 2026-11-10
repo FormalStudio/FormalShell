@@ -145,7 +145,7 @@ sleep 3
 wait_cava down 5
 work on 6
 $ipc call menu summon "" > /dev/null 2>&1
-sleep 2
+until_settled menu menu-content menu-scrim menu-scrim-band
 "$hyprctl_bin" -j layers > "$fullscreen_menu_layers" 2>&1
 "$grim_bin" "$fullscreen_menu_path" > /dev/null 2>&1
 $ipc call menu close > /dev/null 2>&1

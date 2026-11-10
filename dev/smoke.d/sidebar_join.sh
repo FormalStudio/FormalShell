@@ -72,7 +72,8 @@ for _ in \$(seq 1 40); do
   sleep 0.5
 done
 $ipc call wallpaper set "$sidebar_join_flat" > /dev/null 2>&1
-sleep 3
+until_wallpaper "$sidebar_join_flat"
+until_settled
 $ipc call sidebar status > "$sidebar_join_status" 2>&1
 EOF
     sidebar_join_burst "panel open network" "panel close" panel

@@ -210,7 +210,7 @@ $ipc call panel close > /dev/null 2>&1
 sleep 1
 # The power profile pill on the right edge while the Settings tiles are up.
 $ipc call panel open settings > /dev/null 2>&1
-sleep 2
+until_settled
 $ipc call debug dump 2>/dev/null | "$jq_bin" -c '.profilesPill' > "$sidebar_pill_dump"
 "$grim_bin" "$sidebar_pill_png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1

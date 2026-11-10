@@ -47,7 +47,9 @@ date +%H:%M > "$theme_auto_clock_path"
 $ipc call theme status > "$theme_auto_status1_path" 2>&1
 "$grim_bin" "$theme_auto_before_png" > /dev/null 2>&1
 $ipc call theme mode toggle > "$theme_auto_toggle_path" 2>&1
-sleep 3
+before=\$("$jq_bin" -r .mode "$theme_auto_status1_path")
+until_jq 60 "$theme_auto_status2_path" ".mode != \"\$before\" and .override != null and .palette.mode == .mode and .palette.wallpaper == .desktop" call theme status
+until_settled
 $ipc call theme status > "$theme_auto_status2_path" 2>&1
 cat "$theme_auto_state_json" > "$theme_auto_state_path" 2>&1
 "$grim_bin" "$theme_auto_after_png" > /dev/null 2>&1

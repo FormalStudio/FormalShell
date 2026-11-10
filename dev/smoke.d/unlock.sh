@@ -44,9 +44,11 @@ leg_unlock_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 call wallpaper set "$unlock_wallpaper" > /dev/null 2>&1
-sleep 8
+until_wallpaper "$unlock_wallpaper"
+until_settled
 call lock lock > /dev/null 2>&1
-sleep 4
+until_jq 10 "$shot_dir/unlock-locked.json" '.locked and .secure' call lock status
+until_settled
 "$grim_bin" "$unlock_locked_path" > /dev/null 2>&1
 call debug motionScale $unlock_scale > "$unlock_scale_path" 2>&1
 # The password first, Return on its own wtype so the frames start with it.

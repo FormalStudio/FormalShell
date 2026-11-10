@@ -62,13 +62,13 @@ shoot() {
   local p=\$1
   "$grim_bin" "$shot_dir/glass-behind-\$p-none.png" > /dev/null 2>&1
   $ipc call menu toggle > /dev/null 2>&1
-  sleep 1.5
+  until_settled
   $ipc call debug dump > "$shot_dir/glass-behind-\$p-menu.json" 2>&1
   "$grim_bin" "$shot_dir/glass-behind-\$p-menu.png" > /dev/null 2>&1
   $ipc call menu toggle > /dev/null 2>&1
-  sleep 1
+  until_settled
   $ipc call panel open audio > /dev/null 2>&1
-  sleep 1.5
+  until_settled
   "$grim_bin" "$shot_dir/glass-behind-\$p-panel.png" > /dev/null 2>&1
   $ipc call panel close > /dev/null 2>&1
   sleep 1

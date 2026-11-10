@@ -67,6 +67,7 @@ while [ "\$SECONDS" -lt 8 ]; do
 done
 
 $ipc call panel open media > /dev/null 2>&1
+# The running spectrum keeps the card moving, so it never reads at rest.
 sleep 2
 
 # Three frames of the running spectrum, close enough together that the

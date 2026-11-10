@@ -81,7 +81,7 @@ $ipc call bar chevron status > "$bar_position_status_expanded_path" 2>&1
 $ipc call quicksettings status > "$bar_position_quick_path" 2>&1
 "$grim_bin" "$bar_position_expanded_path" > /dev/null 2>&1
 $ipc call panel open audio > "$bar_position_panel_open_path" 2>&1
-sleep 2
+until_settled
 $ipc call panel state > "$bar_position_panel_state_path" 2>&1
 EOS
 )

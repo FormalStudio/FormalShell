@@ -83,10 +83,10 @@ leg_deform_drive() {
 # The card at rest, and the same output without it: between them they say
 # where the card is and what the desktop under it looks like.
 $ipc call panel open network > "$deform_open_path" 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$deform_rest_path" > /dev/null 2>&1
 $ipc call panel toggle network > "$deform_close_path" 2>&1
-sleep 2
+until_settled
 "$grim_bin" "$deform_bare_path" > /dev/null 2>&1
 sleep 1
 $arm

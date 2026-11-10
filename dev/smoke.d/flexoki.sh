@@ -80,9 +80,9 @@ leg_flexoki_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call wallpaper set "$flexoki_wall_path" > /dev/null 2>&1
-sleep 7
+until_wallpaper "$flexoki_wall_path"
+until_settled
 $ipc call theme status > "$flexoki_status_path" 2>&1
-sleep 1
 "$grim_bin" "$flexoki_shot_path" > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"

@@ -67,11 +67,11 @@ $ipc call debug motionScale 100 > /dev/null 2>&1
 k1=\$("$jq_bin" '.backdrop[0].clock' "$shot_dir/backdrop-slowed.json")
 echo "slowclock clock_ms=\$(awk -v a="\$k0" -v b="\$k1" 'BEGIN { print b - a }')" >> "\$out"
 $ipc call menu toggle > /dev/null 2>&1
-sleep 1
+until_settled menu menu-content menu-scrim menu-scrim-band
 quiet modal 3
 dump modal
 $ipc call menu toggle > /dev/null 2>&1
-sleep 2
+until_settled menu menu-content menu-scrim menu-scrim-band
 spawn_foot formalshell-backdrop "" "formalshell backdrop"
 sleep 3
 "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set', window = 'class:formalshell-backdrop' })" > /dev/null 2>&1

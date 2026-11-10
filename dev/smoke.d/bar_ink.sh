@@ -39,7 +39,8 @@ leg_bar_ink_drive() {
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 $ipc call wallpaper set "$bar_ink_wp" > /dev/null 2>&1
-sleep 6
+until_wallpaper "$bar_ink_wp"
+until_settled
 $ipc call bar paint > "$bar_ink_json" 2>&1
 $ipc call bar room > "$bar_ink_room_json" 2>&1
 "$grim_bin" "$bar_ink_png" > /dev/null 2>&1

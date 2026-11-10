@@ -70,10 +70,10 @@ done
 sleep 2
 
 $ipc call menu toggle > /dev/null 2>&1
-sleep 3
+until_settled menu menu-content menu-scrim menu-scrim-band
 shot launcher
 $ipc call menu toggle > /dev/null 2>&1
-sleep 2
+until_settled menu menu-content menu-scrim menu-scrim-band
 
 slow 300
 $ipc call menu toggle > /dev/null 2>&1 &
@@ -98,6 +98,7 @@ sleep 2
 
 shot media-closed
 $ipc call panel open media > /dev/null 2>&1
+# The playing track's spectrum keeps the card moving, so it never reads at rest.
 sleep 3
 shot media
 for id in bars led scope retro firework redsector; do
@@ -132,7 +133,8 @@ kill "\$(cat "$shot_dir/shots-mpv.pid")" 2>/dev/null
 sleep 1
 
 $ipc call lock lock > /dev/null 2>&1
-sleep 4
+until_jq 10 "$shot_dir/shots-locked.json" '.locked and .secure' call lock status
+until_settled lock
 shot lock
 "$wtype_bin" "$rig_password"
 "$wtype_bin" -k Return

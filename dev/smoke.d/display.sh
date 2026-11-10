@@ -63,7 +63,7 @@ mon "$display_monitors_enabled"
 "$hyprctl_bin" output remove "$display_second" >> "$display_create_path" 2>&1
 sleep 1
 call panel open display > /dev/null 2>&1
-sleep 3
+until_settled
 "$grim_bin" "$display_panel_png" > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"

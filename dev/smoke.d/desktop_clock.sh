@@ -91,7 +91,9 @@ snap serif
 retarget 'del(.desktopClock.face)'
 
 $ipc call wallpaper set "$desktop_clock_photo" > /dev/null 2>&1
-sleep 6
+until_wallpaper "$desktop_clock_photo"
+until_jq 10 "$shot_dir/desktop-clock-photo-wait.json" '.desktopClock | length > 0 and all(.enabled and .depth)' call debug dump
+until_settled
 snap photo
 retarget '.desktopClock.enabled = false'
 snap bare

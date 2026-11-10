@@ -100,7 +100,7 @@ park_at() {
 }
 park_at \$((lw / 2)) \$((lh / 2))
 echo "open: \$(call panel open network)" >> "$multi_output_click"
-sleep 2
+until_settled
 echo "state open: \$(call panel state)" >> "$multi_output_click"
 "$hyprctl_bin" -j layers > "$multi_output_layers_open" 2>&1
 "$grim_bin" "$multi_output_open_png" > /dev/null 2>&1
@@ -114,7 +114,7 @@ park_at \$((lw + 640)) 2
 call bar room > "$multi_output_room" 2>&1
 park_at \$((lw / 2)) \$((lh / 2))
 echo "reopen: \$(call panel open network)" >> "$multi_output_click"
-sleep 2
+until_settled
 echo "state reopen: \$(call panel state)" >> "$multi_output_click"
 "$hyprctl_bin" -j layers > "$multi_output_layers_reopen" 2>&1
 cell=\$("$jq_bin" -r '[.[0].cells[] | select(.name == "audio" and .whole)] | first | "\\(.x + .width / 2 | floor) \\(.y + .height / 2 | floor)"' "$multi_output_room" 2>/dev/null)
@@ -163,7 +163,8 @@ echo "status readd: \$(call screensaver status)" >> "$multi_output_saver"
 call screensaver stop > /dev/null 2>&1
 sleep 2
 echo "lock: \$(call lock lock)" >> "$multi_output_saver"
-sleep 3
+until_jq 10 "$shot_dir/multi-output-locked.json" '.locked and .secure' call lock status
+until_settled
 "$grim_bin" -o "\$first" "$multi_output_lock_first_png" > /dev/null 2>&1
 "$grim_bin" -o "$multi_output_second" "$multi_output_lock_second_png" > /dev/null 2>&1
 echo "locked: \$(call lock isLocked)" >> "$multi_output_saver"
