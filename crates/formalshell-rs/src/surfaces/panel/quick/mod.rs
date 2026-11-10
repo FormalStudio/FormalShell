@@ -19,7 +19,7 @@ use fs_system::power::model::{battery_icon, charge_threshold_active};
 use fs_upower::Profile;
 use serde_json::{Value as Json, json};
 
-use super::{Effect, Nav, Out, Panel, View, Walk};
+use super::{Effect, Nav, Out, Panel, Verb, View, Walk};
 use crate::motion::{Animated, Kind as Clock};
 use crate::services::devices::bluetooth::{ActionKind as BtAction, Cmd as BtCmd};
 use crate::services::devices::{self, audio, bluetooth as bt, network as net};
@@ -27,7 +27,8 @@ use crate::services::power::{self, Action as PowerAction};
 use crate::runtime::now_ms;
 use crate::services::ipad::Link;
 use crate::services::wants::Source;
-use crate::services::{display, theme};
+use crate::services::notifications::Op;
+use crate::services::{display, ipad, lights, nightlight, overnight, theme};
 use crate::store::{Store, Topic};
 use crate::ui::confirm::Armed;
 use crate::surfaces::activity;
@@ -109,40 +110,18 @@ pub enum Action {
     Wired,
     /// Balanced and the last other profile, flipped.
     PowerMode,
-    /// Closes the card, then runs.
-    Leave(Run),
-    /// Runs with the card left open.
-    Run(Run),
-}
-
-/// A call the card makes of the shell. Whatever holds the card runs it
-/// through the functions the matching IPC verb calls, so a refusal reads
-/// the same from either.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Run {
-    Screenshot,
-    Lock,
-    Logout,
-    Overview,
+    /// Closes the card, then asks the shell.
+    Leave(Verb),
+    /// Asks the shell with the card left open.
+    Do(Verb),
     Wifi(bool),
     Bluetooth,
     NightLight,
     DarkStyle,
     Dnd,
-    Caffeinate,
-    Overnight,
-    Hdr,
-    /// One output's HDR, from the display panel.
-    HdrOutput(String, bool),
     Keyboard,
-    KeyboardEffect(String),
+    Overnight,
     IpadSwitch,
-    IpadReconnect,
-    IpadEdge(Edge),
-    RecordStop,
-    ClearReminders,
-    /// A finished Activity group, by source.
-    Dismiss(String),
 }
 
 /// One control as the store has it now.
@@ -246,9 +225,9 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     if let Some((glyph, percent)) = battery(store) {
         out.push(Tile::new("battery", Kind::System, glyph, "Battery").subtitle(Some(percent)).does(Action::Panel(PanelId::Power)));
     }
-    out.push(Tile::new("screenshot", Kind::System, "camera", "Screenshot").does(Action::Leave(Run::Screenshot)));
+    out.push(Tile::new("screenshot", Kind::System, "camera", "Screenshot").does(Action::Leave(Verb::Screenshot)));
     out.push(Tile::new("settings", Kind::System, "settings", "Settings").does(Action::Panel(PanelId::Settings)));
-    out.push(Tile::new("lock", Kind::System, "lock", "Lock").does(Action::Leave(Run::Lock)));
+    out.push(Tile::new("lock", Kind::System, "lock", "Lock").does(Action::Leave(Verb::Lock)));
     out.push(Tile { menu: true, ..Tile::new("power", Kind::System, "power", "Power off").does(Action::Menu) });
 
     let a = &store.audio;
@@ -287,7 +266,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
             .split(wifi_reason.is_none())
             .subtitle(n.ssid.as_ref().filter(|_| wifi_on).map(|(s, _)| s.clone()))
             .unless(wifi_reason)
-            .does(Action::Run(Run::Wifi(!wifi_on))),
+            .does(Action::Wifi(!wifi_on)),
     );
 
     let bt = &store.bluetooth;
@@ -304,7 +283,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
             .split(bt.powered.is_some())
             .subtitle(bt_sub)
             .unless(bt.powered.is_none().then_some("No adapter"))
-            .does(Action::Run(Run::Bluetooth)),
+            .does(Action::Bluetooth),
     );
 
     let profiles = store.profiles.as_ref();
@@ -318,28 +297,28 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
 
     let nl = &store.nightlight;
     let nl_reason = (!nl.active).then(|| nl.last_error.lines().next().unwrap_or("").trim()).filter(|r| !r.is_empty());
-    out.push(Tile::toggle("night-light", "lightbulb", "Night light", nl.active).unless(nl_reason).does(Action::Run(Run::NightLight)));
+    out.push(Tile::toggle("night-light", "lightbulb", "Night light", nl.active).unless(nl_reason).does(Action::NightLight));
 
     let pinned = theme::mode_key(store.config.settings()).pinned().is_some();
     out.push(
         Tile::toggle("dark-style", "moon", "Dark style", store.state.data.mode == fs_theme::theme::Mode::Dark)
             .unless(pinned.then_some("Set in settings.json"))
-            .does(Action::Run(Run::DarkStyle)),
+            .does(Action::DarkStyle),
     );
 
-    out.push(Tile::toggle("dnd", "bell-off", "Do not disturb", store.notifications.model.dnd).does(Action::Run(Run::Dnd)));
+    out.push(Tile::toggle("dnd", "bell-off", "Do not disturb", store.notifications.model.dnd).does(Action::Dnd));
 
     let l = &store.lights;
     if l.available {
         let effect = l.effects.iter().find(|(id, _)| *id == l.effect).map(|(_, label)| label.clone());
-        out.push(Tile::toggle("keyboard", "keyboard", "Keyboard", l.brightness > 0).split(true).subtitle(effect).does(Action::Run(Run::Keyboard)));
+        out.push(Tile::toggle("keyboard", "keyboard", "Keyboard", l.brightness > 0).split(true).subtitle(effect).does(Action::Keyboard));
     }
 
-    out.push(Tile::toggle("caffeinate", "coffee", "Caffeinate", store.caffeinate.active).does(Action::Run(Run::Caffeinate)));
-    out.push(Tile::toggle("overnight", "moon-star", "Overnight", store.state.data.overnight.is_some()).does(Action::Run(Run::Overnight)));
+    out.push(Tile::toggle("caffeinate", "coffee", "Caffeinate", store.caffeinate.active).does(Action::Do(Verb::Caffeinate)));
+    out.push(Tile::toggle("overnight", "moon-star", "Overnight", store.state.data.overnight.is_some()).does(Action::Overnight));
 
     if let Some(output) = store.compositor.outputs.iter().find(|o| display::hdr_supported(store, &o.name)) {
-        out.push(Tile::toggle("hdr", "sun-medium", "HDR", display::hdr_active(store)).subtitle(Some(output.name.clone())).does(Action::Run(Run::Hdr)));
+        out.push(Tile::toggle("hdr", "sun-medium", "HDR", display::hdr_active(store)).subtitle(Some(output.name.clone())).does(Action::Do(Verb::Hdr)));
     }
 
     let ipad = store.ipad.bridge.as_ref();
@@ -351,7 +330,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
             .split(ipad.is_some())
             .subtitle(ipad.map(|i| i.state_label().to_owned()))
             .unless(ipad.is_none().then_some("padbridge is not running"))
-            .does(Action::Run(Run::IpadSwitch)),
+            .does(Action::IpadSwitch),
     );
 
     let n = background(store).len();
@@ -453,7 +432,7 @@ pub struct Extra {
 /// Where a click on `entry`'s tile goes.
 enum Tap {
     Panel(PanelId),
-    Run(Run),
+    Leave(Verb),
     Cell,
 }
 
@@ -461,7 +440,7 @@ fn tap(entry: &Entry) -> Tap {
     match entry.kind {
         EntryKind::Builtin(Builtin::Tray) => Tap::Panel(PanelId::TrayOverflow),
         // The cell's own click focuses whichever chip it lands on.
-        EntryKind::Builtin(Builtin::Workspaces) => Tap::Run(Run::Overview),
+        EntryKind::Builtin(Builtin::Workspaces) => Tap::Leave(Verb::Overview),
         EntryKind::Builtin(b) => PanelId::opened_by(b).map_or(Tap::Cell, Tap::Panel),
         _ => Tap::Cell,
     }
@@ -1297,9 +1276,9 @@ impl QuickSettings {
         }
         match tap(entry) {
             Tap::Panel(p) => fx.push(Out::Panel(p, None)),
-            Tap::Run(run) => {
+            Tap::Leave(verb) => {
                 fx.push(Out::Close);
-                fx.push(Out::Quick(run));
+                fx.push(Out::Do(verb));
             }
             Tap::Cell => match cell.click(Button::Left, (0.0, 0.0), &env) {
                 CellAction::None => {}
@@ -1350,11 +1329,19 @@ impl QuickSettings {
                 }
             }
             Action::PowerMode => self.power_mode(fx),
-            Action::Leave(run) => {
+            Action::Leave(verb) => {
                 fx.push(Out::Close);
-                fx.push(Out::Quick(run));
+                fx.push(Out::Do(verb));
             }
-            Action::Run(run) => fx.push(Out::Quick(run)),
+            Action::Do(verb) => fx.push(Out::Do(verb)),
+            Action::Wifi(on) => net::send(net::Cmd::Wifi(on)),
+            Action::Bluetooth => refused("bluetooth", bt::toggle_power(&fx.store.bluetooth)),
+            Action::NightLight => nightlight::toggle(),
+            Action::DarkStyle => refused("dark style", theme::set_mode(fx.store, theme::Ask::Toggle).map(drop)),
+            Action::Dnd => fx.push(Out::apply(Op::SetDnd(!fx.store.notifications.model.dnd))),
+            Action::Keyboard => refused("keyboard", lights::toggle(&fx.store.lights)),
+            Action::Overnight => overnight::set(fx.store, fx.runtime, fx.store.state.data.overnight.is_none()),
+            Action::IpadSwitch => refused("ipad", ipad::send(&fx.store.ipad, |_| Ok(ipad::Cmd::Switch))),
         }
     }
 
@@ -1396,9 +1383,9 @@ impl QuickSettings {
                 }
                 devices::power::send(devices::power::Cmd::Profile(p));
             }
-            Pick::Effect(id) => fx.push(Out::Quick(Run::KeyboardEffect(id))),
-            Pick::Reconnect => fx.push(Out::Quick(Run::IpadReconnect)),
-            Pick::Edge(edge) => fx.push(Out::Quick(Run::IpadEdge(edge))),
+            Pick::Effect(id) => refused("keyboard", lights::effect(&fx.store.lights, &id)),
+            Pick::Reconnect => refused("ipad", ipad::send(&fx.store.ipad, |_| Ok(ipad::Cmd::Reconnect))),
+            Pick::Edge(edge) => refused("ipad", ipad::send(&fx.store.ipad, |i| Ok(ipad::Cmd::Position(edge, i.stretch)))),
             Pick::Power(what) => self.power(what, fx),
             Pick::Task(what) => background_row(&what, fx),
         }
@@ -1422,7 +1409,7 @@ impl QuickSettings {
         fx.push(Out::Close);
         match action {
             Some(a) => power::request(a),
-            None => fx.push(Out::Quick(Run::Logout)),
+            None => fx.push(Out::Do(Verb::Logout)),
         }
     }
 
@@ -1495,19 +1482,26 @@ fn wifi_row(ssid: String, fx: &mut Effect) {
     net::send(net::Cmd::Connect(ssid, net::Secret::Saved));
 }
 
+/// A control's refusal, logged: the card has nowhere to show it.
+fn refused(what: &str, done: Result<(), String>) {
+    if let Err(e) = done {
+        eprintln!("quick settings: {what}: {e}");
+    }
+}
+
 /// Enter or a click on one of Background's rows: what can be stopped
 /// stops (a finished Activity group is dismissed), a running group hands
 /// the card over to Activity and AirPlay to the media panel.
 fn background_row(what: &str, fx: &mut Effect) {
     let Some(task) = background(fx.store).into_iter().find(|t| t.what == what) else { return };
     match (task.what.as_str(), task.stop) {
-        ("recording", Some(_)) => fx.push(Out::Quick(Run::RecordStop)),
-        ("reminders", Some(_)) => fx.push(Out::Quick(Run::ClearReminders)),
+        ("recording", Some(_)) => fx.push(Out::Do(Verb::RecordStop)),
+        ("reminders", Some(_)) => fx.push(Out::apply(Op::ClearReminders)),
         ("airplay", _) => fx.push(Out::Panel(PanelId::Media, None)),
         (what, stop) => {
             if let Some(source) = what.strip_prefix("activity:") {
                 if stop.is_some() {
-                    fx.push(Out::Quick(Run::Dismiss(source.to_owned())));
+                    refused("activity", crate::services::activity::act(fx.store, fx.runtime, crate::services::activity::Verb::Dismiss, source).map(drop));
                 } else {
                     fx.push(Out::Panel(PanelId::Activity, None));
                 }

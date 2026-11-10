@@ -15,7 +15,7 @@
 
 use fs_system::display::outputs::{self, Output};
 
-use super::{Effect, Nav, Out, Panel, View, quick};
+use super::{Effect, Nav, Out, Panel, Verb, View};
 use crate::services::display::{self, Brightness};
 use crate::services::compositor::{self, Command};
 use crate::services::wants::Source;
@@ -242,7 +242,7 @@ impl Panel for Display {
                     set_brightness(fx, d, d.percent as f64 + (*n).signum() as f64 * STEP);
                 }
             }
-            (Some(Press::Hdr(name)), What::Toggle(on)) => fx.push(Out::Quick(quick::Run::HdrOutput(name.clone(), *on))),
+            (Some(Press::Hdr(name)), What::Toggle(on)) => fx.push(Out::Do(Verb::HdrOutput(name.clone(), *on))),
             (None, What::Toggle(on)) if ev.on == "mirror" => set_mirror(store, &rows, *on),
             _ => {}
         }
@@ -253,7 +253,7 @@ impl Panel for Display {
         let rows = sorted(store);
         match stop.get::<Press>() {
             Some(Press::Output(name)) => toggle_output(&rows, name),
-            Some(Press::Hdr(name)) => fx.push(Out::Quick(quick::Run::HdrOutput(name.clone(), !display::hdr_on(store, name)))),
+            Some(Press::Hdr(name)) => fx.push(Out::Do(Verb::HdrOutput(name.clone(), !display::hdr_on(store, name)))),
             None if stop == "mirror" => set_mirror(store, &rows, outputs::mirrored_names(&rows).is_empty()),
             _ => {}
         }

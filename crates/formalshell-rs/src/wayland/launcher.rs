@@ -274,7 +274,8 @@ impl App {
             p.started = true;
             let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
             p.module.start(&mut fx);
-            fx.none("start");
+            let outs = fx.outs();
+            self.panel_outs(super::Holder::Launcher, outs);
         }
     }
 

@@ -753,14 +753,14 @@ impl Host {
     /// `Panel::start` with the store in reach, then the cursor's start
     /// asked again, since a panel may only know it once it has read the
     /// store.
-    pub fn start(&mut self, store: &Store, runtime: Option<&Runtime>) {
+    pub fn start(&mut self, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
         self.wants.set(&self.module.wants(store));
         let mut fx = Effect::new(store, runtime);
         self.module.start(&mut fx);
-        fx.none("start");
         if let Some(key) = self.module.cursor_start() {
             self.cursor.key = Some(key);
         }
+        fx.outs()
     }
 
     /// Enter on `stop` as though the cursor sat there: the stop drawn with
@@ -952,12 +952,12 @@ impl Host {
     /// vertically by `travel`, the same frame read as a wheel's or a
     /// touchpad's.
     #[allow(clippy::too_many_arguments)]
-    pub fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, travel: Travel, store: &Store, runtime: Option<&Runtime>) {
+    pub fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, travel: Travel, store: &Store, runtime: Option<&Runtime>) -> Vec<Out> {
         let now = Instant::now();
         if let Travel::Lift(time) = travel {
             let max = (self.content_h - self.viewport.h as f64).max(0.0);
             self.touch.release(now, time, self.scroll.target(), max, Clock::SpatialFast.ms(&store.theme.theme) * self.scale, self.scale);
-            return;
+            return Vec::new();
         }
         let point = IRect::new(x.floor() as i32, y.floor() as i32, 1, 1);
         if (self.viewport.intersects(&point) || self.body.over_float(x, y))
@@ -967,11 +967,10 @@ impl Host {
             self.body.scroll(&h.path, -dy * store.theme.theme.space.control_height);
             let mut fx = Effect::new(store, runtime);
             self.module.event(&Event { on, what: What::Scroll(dx, dy), button: Button::Left }, &mut fx);
-            fx.none("scroll");
-            return;
+            return fx.outs();
         }
         if dy == 0.0 {
-            return;
+            return Vec::new();
         }
         let up = dy < 0.0;
         if let Some((_, h)) = self.hit_at(x, y)
@@ -980,13 +979,12 @@ impl Host {
         {
             let mut fx = Effect::new(store, runtime);
             self.module.event(&Event { on, what: What::Wheel(if up { 1 } else { -1 }), button: Button::Left }, &mut fx);
-            fx.none("wheel");
-            return;
+            return fx.outs();
         }
         let view = self.viewport.h as f64;
         let max = (self.content_h - view).max(0.0);
         if max <= 0.0 {
-            return;
+            return Vec::new();
         }
         if let Travel::Pixels { px, finger, time } = travel {
             let base = self.scroll.target();
@@ -997,12 +995,13 @@ impl Host {
                 (base + px).clamp(0.0, max)
             };
             self.scroll.jump(next);
-            return;
+            return Vec::new();
         }
         self.touch.settle();
         let base = self.scroll.target();
         let next = (base + if up { -crate::scroll::BODY_NOTCH } else { crate::scroll::BODY_NOTCH }).clamp(0.0, max);
         self.scroll.set(now, next, Clock::SpatialFast.ms(&store.theme.theme) * self.scale);
+        Vec::new()
     }
 }
 

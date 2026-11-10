@@ -13,12 +13,12 @@
 use fs_theme::palette::ColorRole;
 use fs_info::notifications::{self as model, Group, Urgency};
 
-use super::{Effect, Panel, View};
+use super::{Effect, Out, Panel, View};
 use crate::services::activity::{self as activity_service, Input};
 use crate::runtime::now_ms;
-use crate::services::notifications::{Diff, Op};
+use crate::services::notifications::Op;
 use crate::surfaces::activity;
-use crate::store::{self, Topic};
+use crate::store::Topic;
 use crate::ui::el::Kind;
 use crate::ui::{El, Event, Ink, On, Type, Variant, Weight, What, w};
 
@@ -64,8 +64,8 @@ impl Center {
     }
 }
 
-fn send(fx: &Effect, op: Op) {
-    fx.service(move |ctx| ctx.publish(store::Diff::Notifications(Diff::Op(op))));
+fn send(fx: &mut Effect, op: Op) {
+    fx.push(Out::apply(op));
 }
 
 fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
@@ -120,7 +120,7 @@ fn find(v: &crate::store::Store, key: &str) -> Option<Group> {
     model::group_entries(&m.pending).into_iter().chain(model::group_entries(&past)).find(|g| model::group_key(g) == key)
 }
 
-fn activate_row(fx: &Effect, key: &str) {
+fn activate_row(fx: &mut Effect, key: &str) {
     let Some(g) = find(fx.store, key) else { return };
     if g.actions.iter().any(|a| a.key == "default") {
         send(fx, Op::Invoke(g.id, "default".into()));

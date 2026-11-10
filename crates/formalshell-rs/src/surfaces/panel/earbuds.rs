@@ -28,7 +28,7 @@ use fs_devices::earbuds::motion::{EulerDegrees, Quat};
 use fs_devices::earbuds::{self as model, BatteryId, Bpm, Control, ControlKind, Device, HeartRate, HeartSample, Motion, Value};
 use fs_types::Percent;
 
-use super::{Effect, Nav, Panel, View};
+use super::{Effect, Nav, Out, Panel, View};
 use head::Head;
 use heart::Heart;
 use crate::services::devices::earbuds;
@@ -151,9 +151,9 @@ fn value_text(v: &Value) -> String {
     }
 }
 
-fn set(fx: &Effect, key: &str, raw: String) {
+fn set(fx: &mut Effect, key: &str, raw: String) {
     if key == DEVICE {
-        fx.service(move |ctx| ctx.publish(store::Diff::Earbuds(earbuds::Diff::Select(raw))));
+        fx.push(Out::apply(store::Diff::Earbuds(earbuds::Diff::Select(raw))));
         return;
     }
     match fx.store.earbuds.plan(key, &raw) {
@@ -185,7 +185,7 @@ impl Earbuds {
 
     /// A press writes the device and moves only the ring: the selection
     /// follows once the service reports it.
-    fn press(&mut self, fx: &Effect, index: usize) {
+    fn press(&mut self, fx: &mut Effect, index: usize) {
         let (opts, selected) = devices(&fx.store.earbuds);
         let Some(o) = opts.get(index) else { return };
         self.rings.insert(DEVICE.to_owned(), index);
@@ -196,7 +196,7 @@ impl Earbuds {
 
     /// Entry `index` of a choice: an option alone is written as is, a tier
     /// writes the member last picked in it, else its first.
-    fn pick_entry(&mut self, fx: &Effect, key: &str, index: usize) {
+    fn pick_entry(&mut self, fx: &mut Effect, key: &str, index: usize) {
         let Some(ctl) = model::control(fx.store.earbuds.active(), key) else { return };
         let es = entries(ctl);
         let Some(e) = es.get(index) else { return };
@@ -210,7 +210,7 @@ impl Earbuds {
     }
 
     /// Member `index` of the picked tier.
-    fn pick_member(&mut self, fx: &Effect, key: &str, index: usize) {
+    fn pick_member(&mut self, fx: &mut Effect, key: &str, index: usize) {
         let Some(ctl) = model::control(fx.store.earbuds.active(), key) else { return };
         let es = entries(ctl);
         let Some(m) = picked(ctl, &es).and_then(|at| es[at].members.get(index).copied()) else { return };
@@ -262,7 +262,7 @@ impl Earbuds {
     }
 
     /// A dropdown's row: writes that option and closes it.
-    fn pick_option(&mut self, fx: &Effect, key: &str, i: usize) {
+    fn pick_option(&mut self, fx: &mut Effect, key: &str, i: usize) {
         self.menu.clear();
         let Some(ctl) = model::control(fx.store.earbuds.active(), key) else { return };
         if model::option_index(Some(ctl)) != Some(i)
@@ -272,7 +272,7 @@ impl Earbuds {
         }
     }
 
-    fn step_range(fx: &Effect, ctl: &Control, direction: f64) {
+    fn step_range(fx: &mut Effect, ctl: &Control, direction: f64) {
         if let Value::Num(n) = ctl.value {
             set(fx, &ctl.key, fs_js::num_str(n + direction * ctl.step));
         }

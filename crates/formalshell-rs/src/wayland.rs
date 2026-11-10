@@ -73,7 +73,7 @@ use crate::ipc;
 use crate::paint::Kit;
 use crate::runtime::{Msg, Runtime};
 use crate::scene::NodeId;
-use crate::services::{barpaint, devices, compositor, notifications, overnight, theme, tray, visualizer};
+use crate::services::{barpaint, devices, compositor, notifications, overnight, tray, visualizer};
 use crate::settings;
 use crate::store::{Diff, Moved, Store, Topic};
 use crate::surface::{Backend, PixelSurface, Pixels, Surface};
@@ -1066,7 +1066,7 @@ impl App {
         let surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
         let mut host = Host::new(module, id, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
         host.from = from;
-        host.start(&self.store, self.runtime.as_ref());
+        let outs = host.start(&self.store, self.runtime.as_ref());
         match self.panel.take() {
             Some(mut old) if old.is_open() => {
                 host.take_over(old.win.card.live());
@@ -1078,7 +1078,7 @@ impl App {
         }
         host.win.card.set_open(now, true);
         self.panel = Some(host);
-        self.panel_dirty = true;
+        self.panel_outs(Holder::Host, outs);
         self.tips.hide(None, now);
         self.sync_bar_open(now);
         crate::trace::mapped(crate::trace::Surface::Panel(Some(id)), crate::trace::State::Mapped);
@@ -1744,7 +1744,10 @@ impl App {
             Out::Menu(key, anchor) => {
                 let _ = self.open_tray_menu(&key, anchor, true);
             }
-            Out::Quick(run) => self.quick(run),
+            Out::Do(verb) => self.panel_verb(verb),
+            Out::Apply(diff) => {
+                self.apply(*diff);
+            }
             Out::Launch(id, command) => {
                 if !command.is_empty() {
                     crate::services::launch::spawn(&self.store, &id, &crate::services::launch::scoped(&command));
@@ -1762,60 +1765,31 @@ impl App {
         }
     }
 
-    /// A quick settings call, through the functions its IPC verb calls; a
-    /// refusal is logged.
-    fn quick(&mut self, run: quick::Run) {
-        use crate::services::{ipad, lights, nightlight};
-        use quick::Run;
-        let done = match &run {
-            Run::Screenshot => capture_host::shot_pick(self, "smart", capture_host::Processing::Default).map(drop),
-            Run::Lock => self.lock(),
-            Run::Logout => {
+    /// A panel's call of the shell, through the functions its IPC verb
+    /// calls; a refusal is logged.
+    fn panel_verb(&mut self, verb: panel::Verb) {
+        use panel::Verb;
+        let done = match &verb {
+            Verb::Screenshot => capture_host::shot_pick(self, "smart", capture_host::Processing::Default).map(drop),
+            Verb::Lock => self.lock(),
+            Verb::Logout => {
                 self.logout();
                 Ok(())
             }
-            Run::Overview => {
+            Verb::Overview => {
                 self.overview_action(overview::Action::Open);
                 Ok(())
             }
-            Run::Wifi(on) => {
-                devices::network::send(devices::network::Cmd::Wifi(*on));
-                Ok(())
-            }
-            Run::Bluetooth => devices::bluetooth::toggle_power(&self.store.bluetooth),
-            Run::NightLight => {
-                nightlight::toggle();
-                Ok(())
-            }
-            Run::DarkStyle => theme::set_mode(&self.store, theme::Ask::Toggle).map(drop),
-            Run::Dnd => {
-                self.apply(notifications::Op::SetDnd(!self.store.notifications.model.dnd));
-                Ok(())
-            }
-            Run::Caffeinate => {
+            Verb::Caffeinate => {
                 self.set_caffeinated(!self.store.caffeinate.active);
                 Ok(())
             }
-            Run::Overnight => {
-                overnight::set(&self.store, self.runtime.as_ref(), self.store.state.data.overnight.is_none());
-                Ok(())
-            }
-            Run::Hdr => self.hdr.toggle(&self.store),
-            Run::HdrOutput(output, on) => self.hdr.set(&self.store, output, *on),
-            Run::Keyboard => lights::toggle(&self.store.lights),
-            Run::KeyboardEffect(id) => lights::effect(&self.store.lights, id),
-            Run::IpadSwitch => ipad::send(&self.store.ipad, |_| Ok(ipad::Cmd::Switch)),
-            Run::IpadReconnect => ipad::send(&self.store.ipad, |_| Ok(ipad::Cmd::Reconnect)),
-            Run::IpadEdge(edge) => ipad::send(&self.store.ipad, |i| Ok(ipad::Cmd::Position(*edge, i.stretch))),
-            Run::RecordStop => capture_host::record::stop(self),
-            Run::ClearReminders => {
-                self.apply(notifications::Op::ClearReminders);
-                Ok(())
-            }
-            Run::Dismiss(source) => crate::services::activity::act(&self.store, self.runtime.as_ref(), crate::services::activity::Verb::Dismiss, source).map(drop),
+            Verb::Hdr => self.hdr.toggle(&self.store),
+            Verb::HdrOutput(output, on) => self.hdr.set(&self.store, output, *on),
+            Verb::RecordStop => capture_host::record::stop(self),
         };
         if let Err(e) = done {
-            eprintln!("quick settings: {run:?}: {e}");
+            eprintln!("panel: {verb:?}: {e}");
         }
     }
 

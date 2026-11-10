@@ -93,8 +93,10 @@ pub enum Edit {
 pub const ATLAS: &str = "@radio-atlas";
 
 /// What a panel asks of the shell outside it. A panel pushes as many as it
-/// needs; whatever holds the card runs them in order.
-#[derive(Debug, PartialEq)]
+/// needs; whatever holds the card runs them in order. A service call that
+/// needs nothing of the shell is made by the panel itself, through the
+/// service's own `send`.
+#[derive(Debug)]
 pub enum Out {
     /// Close the card.
     Close,
@@ -113,11 +115,36 @@ pub enum Out {
     /// Close, then run a bar cell's own click (an info tile whose cell
     /// opens no panel).
     Act(crate::surfaces::bar::cell::Action),
-    /// A quick settings control's call, the card left open.
-    Quick(quick::Run),
+    /// A call only the shell can make, the card left open.
+    Do(Verb),
+    /// A change to the store, applied on the UI thread.
+    Apply(Box<crate::store::Diff>),
     /// Desktop entry `.0` launched off a command line of its own (one of
     /// its actions'), the card left open.
     Launch(String, Vec<String>),
+}
+
+impl Out {
+    pub fn apply(diff: impl Into<crate::store::Diff>) -> Self {
+        Out::Apply(Box::new(diff.into()))
+    }
+}
+
+/// The calls behind [`Out::Do`]. Whatever holds the card runs them
+/// through the functions the matching IPC verb calls, so a refusal reads
+/// the same from either.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Verb {
+    Screenshot,
+    Lock,
+    Logout,
+    Overview,
+    Caffeinate,
+    /// HDR on the output quick settings shows it for.
+    Hdr,
+    /// One output's HDR.
+    HdrOutput(String, bool),
+    RecordStop,
 }
 
 /// What a panel may do from an input.

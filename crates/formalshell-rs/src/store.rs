@@ -37,6 +37,14 @@ macro_rules! slices {
             $( $(#[$m])* $variant($diff), )*
         }
 
+        impl std::fmt::Debug for Diff {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $( Diff::$variant(_) => f.write_str(stringify!($variant)), )*
+                }
+            }
+        }
+
         /// The slice a diff changed, for the surfaces that read it.
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum Topic {

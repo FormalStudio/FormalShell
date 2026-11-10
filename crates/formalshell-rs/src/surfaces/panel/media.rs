@@ -182,9 +182,9 @@ fn press(fx: &Effect, id: &str) {
     }
 }
 
-fn set_follow(fx: &Effect, on: bool) {
+fn set_follow(fx: &mut Effect, on: bool) {
     if fx.store.lyrics.follow != on {
-        fx.service(move |ctx| ctx.publish(store::Diff::Lyrics(crate::services::lyrics::Diff::Follow(on))));
+        fx.push(Out::apply(store::Diff::Lyrics(crate::services::lyrics::Diff::Follow(on))));
     }
 }
 
@@ -214,14 +214,14 @@ impl Media {
             .collect()
     }
 
-    fn pick(&mut self, id: &str, fx: &Effect) {
+    fn pick(&mut self, id: &str, fx: &mut Effect) {
         if self.menu == "output" {
             fx.store.media.set_output(id);
             self.menu = "";
             return;
         }
         let id = id.to_owned();
-        fx.service(move |ctx| ctx.publish(store::Diff::Media(crate::services::media::Diff::Select(id))));
+        fx.push(Out::apply(store::Diff::Media(crate::services::media::Diff::Select(id))));
         self.menu = "";
     }
 
@@ -500,7 +500,7 @@ impl Panel for Media {
             ("volume", What::Wheel(d)) => self.step_volume(fx, *d as f64 * VOLUME_STEP),
             ("spectrum", What::Click) => {
                 let next = Some(fx.store.visualizer.style(VISUALIZER_STYLE.get(&fx.store.config)).step(1));
-                fx.service(move |ctx| ctx.publish(store::Diff::Visualizer(visualizer::Diff::Style(next))));
+                fx.push(Out::apply(store::Diff::Visualizer(visualizer::Diff::Style(next))));
             }
             _ => {}
         }

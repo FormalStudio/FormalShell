@@ -10,7 +10,7 @@
 
 use fs_chrome::bar::panels::PanelId;
 
-use super::{Effect, Out, Panel, View, quick};
+use super::{Effect, Out, Panel, Verb, View};
 use crate::services::power;
 use crate::store::Topic;
 use crate::ui::{El, Event, On, Size, Type, Weight, What, w};
@@ -169,7 +169,7 @@ impl Settings {
         let id = SESSION[i].0;
         if id == "lock" {
             fx.push(Out::Close);
-            fx.push(Out::Quick(quick::Run::Lock));
+            fx.push(Out::Do(Verb::Lock));
             return;
         }
         if matches!(id, "reboot" | "poweroff") && armed != Some(i) {
