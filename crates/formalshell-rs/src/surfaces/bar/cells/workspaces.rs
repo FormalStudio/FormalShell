@@ -796,17 +796,37 @@ mod tests {
         assert_eq!(c.wheel(true, &env(&store)), Action::WorkspaceAt(3));
     }
 
+    const STRIP: IRect = IRect { x: 0, y: 0, w: 200, h: 20 };
+
+    fn centre(r: IRect) -> (f64, f64) {
+        (f64::from(r.x) + f64::from(r.w) / 2.0, f64::from(r.y) + f64::from(r.h) / 2.0)
+    }
+
+    fn chip_rect(c: &Workspaces, i: usize) -> IRect {
+        c.chip_rect(&c.chips[i], STRIP)
+    }
+
+    fn icon_rects(c: &Workspaces, i: usize) -> Vec<IRect> {
+        let chip = &c.chips[i];
+        c.parts(chip).1.into_iter().map(|along| c.icon_rect(chip, along, STRIP)).collect()
+    }
+
     #[test]
     fn a_click_lands_on_the_icon_or_the_chip() {
         let store = Store::default();
         let mut c = cell();
-        // Past the label (44 + 6 + 8 + 2) the first icon spans 60..70.
-        assert_eq!(c.click(Button::Left, (65.0, 5.0), &env(&store)), Action::Window("a".into()));
-        assert_eq!(c.click(Button::Left, (77.0, 5.0), &env(&store)), Action::Window("b".into()));
-        assert_eq!(c.click(Button::Left, (47.0, 5.0), &env(&store)), Action::Workspace("2".into()));
-        assert_eq!(c.click(Button::Left, (90.0, 5.0), &env(&store)), Action::WorkspaceAt(3));
-        assert_eq!(c.click(Button::Left, (42.0, 5.0), &env(&store)), Action::None);
-        assert_eq!(c.click(Button::Right, (65.0, 5.0), &env(&store)), Action::None);
+        let icons = icon_rects(&c, 1);
+        assert_eq!(icons.len(), 2);
+        assert_eq!(c.click(Button::Left, centre(icons[0]), &env(&store)), Action::Window("a".into()));
+        assert_eq!(c.click(Button::Left, centre(icons[1]), &env(&store)), Action::Window("b".into()));
+        let chip = chip_rect(&c, 1);
+        assert_eq!(c.click(Button::Left, (f64::from(chip.x) + 1.0, 5.0), &env(&store)), Action::Workspace("2".into()));
+        assert_eq!(c.click(Button::Left, (f64::from(chip.x + chip.w) - 1.0, 5.0), &env(&store)), Action::Workspace("2".into()));
+        assert_eq!(c.click(Button::Left, centre(chip_rect(&c, 2)), &env(&store)), Action::WorkspaceAt(3));
+        let past_chip = f64::from(chip.x + chip.w);
+        assert!(past_chip < f64::from(chip_rect(&c, 2).x), "the chips leave a gap");
+        assert_eq!(c.click(Button::Left, (past_chip + 0.5, 5.0), &env(&store)), Action::None);
+        assert_eq!(c.click(Button::Right, centre(icons[0]), &env(&store)), Action::None);
     }
 
     #[test]
@@ -817,10 +837,14 @@ mod tests {
     #[test]
     fn the_pointer_reports_what_it_changed() {
         let mut c = cell();
-        assert_eq!(c.pointer(Some((65.0, 5.0))), (true, false));
-        assert_eq!(c.pointer(Some((66.0, 5.0))), (false, false));
+        let icons = icon_rects(&c, 1);
+        let on_icon = centre(icons[0]);
+        let on_second = centre(icons[1]);
+        assert_eq!(c.pointer(Some(on_icon)), (true, false));
+        assert_eq!(c.pointer(Some((on_icon.0 + 1.0, on_icon.1))), (false, false));
+        assert_eq!(c.pointer(Some(on_second)), (true, false));
         c.show_apps = "hover".into();
-        assert_eq!(c.pointer(Some((10.0, 5.0))), (true, true));
+        assert_eq!(c.pointer(Some(centre(chip_rect(&c, 0)))), (true, true));
         assert_eq!(c.pointer(None), (true, true));
     }
 

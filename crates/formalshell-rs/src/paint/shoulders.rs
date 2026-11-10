@@ -191,7 +191,10 @@ mod tests {
         assert_eq!(over, 14.0);
         let o = outline(200.0 + over * 2.0, 100.0 + 14.0, 14.0, 0.0, 0.0, 14.0, 0.0, walls);
         assert!(o.walled[1] && !o.walled[0]);
-        assert_eq!(o.p[7].x, over + 200.0 + 13.0);
-        assert_eq!(o.p[0].x, over - 14.0);
+        let xs = o.p.map(|p| p.x);
+        let left = xs.into_iter().fold(f64::INFINITY, f64::min);
+        let right = xs.into_iter().fold(f64::NEG_INFINITY, f64::max);
+        assert_eq!(left, over - 14.0);
+        assert_eq!(right, over + 200.0 + 13.0);
     }
 }

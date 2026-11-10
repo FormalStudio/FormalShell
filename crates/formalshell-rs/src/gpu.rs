@@ -1476,8 +1476,7 @@ impl Fade {
 
 #[cfg(test)]
 mod tests {
-    /// Run where lavapipe is installed (the rigs carry it):
-    /// `cargo test -p formalshell-rs one_driver -- --ignored`.
+    /// Run where lavapipe is installed: `just check gpu` on the rig.
     #[test]
     #[ignore = "needs the Vulkan loader and lavapipe"]
     fn one_driver_holds_that_driver_alone() {

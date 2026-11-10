@@ -854,7 +854,6 @@ mod tests {
     fn surface_key_carries_the_plugin_prefix() {
         let p = run(&one("diskwatch", bar_manifest())).plugins.remove(0);
         assert_eq!(surface_key(&p), "plugin:diskwatch");
-        assert_eq!(PLUGIN_PREFIX, "plugin:");
     }
 
     #[test]

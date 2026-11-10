@@ -143,7 +143,8 @@ pipewire, PAM or Wayland to link.
   GitHub runner.
 - `just check <name>`: `dev/check.sh` on the rig. `fs-tray`, `fs-notifd`,
   `fs-mpris` and `fs-dbus` run their tests under `dbus-run-session` against
-  their own dbus-daemon. `fs-auth`, `fs-audio`, `fs-bluez`, `fs-network` and
+  their own dbus-daemon. `gpu` runs `gpu.rs`'s ignored test against the
+  rig's lavapipe. `fs-auth`, `fs-audio`, `fs-bluez`, `fs-network` and
   `fs-upower` drive real system daemons and run on the VM rig: `dev/check.sh
   build` compiles their test binaries (ignored tests included) and probes
   on a rig slot, and the guest runs them against its own PAM and polkit

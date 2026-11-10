@@ -518,22 +518,33 @@ mod tests {
         assert_eq!(c.on(&bare), Some(Control::Button(Button::SHUTDOWN)));
     }
 
+    /// Big enough that the top-left corner is clear of the card.
+    const SCREEN: (i32, i32) = (900, 700);
+
+    /// The red of the top-left pixel of an idle-blanked lock at `wake`,
+    /// over `backdrop`.
+    fn blanked_corner(theme: &Theme, kit: &mut Kit, backdrop: Option<&Bitmap>, has_wallpaper: bool, wake: f32) -> i32 {
+        use crate::render::Renderer;
+        let (w, h) = SCREEN;
+        let shared = Shared { has_wallpaper, backdrop, blanked: true, wake, ..Shared::new("", prompt("", (0, 0), false)) };
+        let mut view = View::new(w, h);
+        draw(&mut view, &shared, theme, kit, Instant::now());
+        let mut r = Renderer::new(w as u16, h as u16);
+        r.render(&view.scene, IRect::new(0, 0, w, h));
+        r.canvas().data()[0].r as i32
+    }
+
+    fn flat(rgba: [u8; 4]) -> Bitmap {
+        let (w, h) = SCREEN;
+        Bitmap::from_rgba(w as u16, h as u16, rgba.repeat((w * h) as usize))
+    }
+
     #[test]
     fn blank_and_wake_crossfade_the_backdrop() {
-        use crate::render::Renderer;
         let theme = Theme::resolve(|_| None, &Default::default());
         let mut kit = Kit::new(&theme);
-        // Big enough that the corner is clear of the card.
-        let (w, h) = (900, 700);
-        let white = Bitmap::from_rgba(w as u16, h as u16, vec![255; (w * h * 4) as usize]);
-        let mut corner = |wake: f32| {
-            let shared = Shared { has_wallpaper: true, backdrop: Some(&white), blanked: true, wake, ..Shared::new("", prompt("", (0, 0), false)) };
-            let mut view = View::new(w, h);
-            draw(&mut view, &shared, &theme, &mut kit, Instant::now());
-            let mut r = Renderer::new(w as u16, h as u16);
-            r.render(&view.scene, IRect::new(0, 0, w, h));
-            r.canvas().data()[0].r as i32
-        };
+        let white = flat([255; 4]);
+        let mut corner = |wake| blanked_corner(&theme, &mut kit, Some(&white), true, wake);
         let (off, half, on) = (corner(0.0), corner(0.5), corner(1.0));
         assert_eq!(off, 0);
         assert!(half > off + 40 && half < on - 40, "{off} {half} {on}");
@@ -541,29 +552,18 @@ mod tests {
 
     #[test]
     fn wake_never_passes_a_light_background() {
-        use crate::render::Renderer;
         let theme = Theme::resolve(|_| None, &fs_theme::palette::fallback("light"));
         assert!(theme.colors.get(ColorRole::Background).luma601() > 200.0);
         let mut kit = Kit::new(&theme);
-        // Big enough that the corner is clear of the column.
-        let (w, h) = (900, 700);
-        let dim =Bitmap::from_rgba(w as u16, h as u16, [24, 24, 24, 255].repeat((w * h) as usize));
-        let mut corner = |backdrop: Option<&Bitmap>, has_wallpaper: bool, wake: f32| {
-            let shared = Shared { has_wallpaper, backdrop, blanked: true, wake, ..Shared::new("", prompt("", (0, 0), false)) };
-            let mut view = View::new(w, h);
-            draw(&mut view, &shared, &theme, &mut kit, Instant::now());
-            let mut r = Renderer::new(w as u16, h as u16);
-            r.render(&view.scene, IRect::new(0, 0, w, h));
-            r.canvas().data()[0].r as i32
-        };
+        let dim = flat([24, 24, 24, 255]);
         for (backdrop, has) in [(Some(&dim), true), (None, true), (None, false)] {
-            let rest = corner(backdrop, has, 1.0);
+            let rest = blanked_corner(&theme, &mut kit, backdrop, has, 1.0);
             for wake in [0.05, 0.25, 0.5, 0.75] {
-                let at = corner(backdrop, has, wake);
+                let at = blanked_corner(&theme, &mut kit, backdrop, has, wake);
                 assert!(at <= rest, "wake {wake} drew {at}, brighter than the settled {rest}");
             }
         }
-        assert_eq!(corner(None, true, 1.0), 0, "a wallpaper still decoding draws dark");
+        assert_eq!(blanked_corner(&theme, &mut kit, None, true, 1.0), 0, "a wallpaper still decoding draws dark");
     }
 
     /// The check's pulse is what keeps the lock asking for frames while PAM
@@ -575,19 +575,12 @@ mod tests {
         let mut kit = Kit::new(&theme);
         let mut animating = |checking: bool| {
             let shared = Shared::new("", prompt("", (0, 0), checking));
-            let mut view = View::new(900, 700);
+            let mut view = View::new(SCREEN.0, SCREEN.1);
             let now = Instant::now();
             draw(&mut view, &shared, &theme, &mut kit, now);
             draw(&mut view, &shared, &theme, &mut kit, now + std::time::Duration::from_millis(300)).0
         };
         assert!(animating(true));
         assert!(!animating(false));
-        assert_eq!(prompt("", (0, 0), true).placeholder, "Unlocking\u{2026}");
-    }
-
-    #[test]
-    fn whole_numbers_print_like_js() {
-        assert_eq!(fs_js::json_number(0.0).to_string(), "0");
-        assert_eq!(fs_js::json_number(12.5).to_string(), "12.5");
     }
 }

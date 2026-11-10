@@ -285,10 +285,17 @@ mod tests {
 
     #[test]
     fn room_has_the_last_word() {
-        let need = extent(6, 30.0, 8.0);
-        assert_eq!(need, 6.0 * 30.0 + 5.0 * 8.0);
-        assert!(fits(6, need, 30.0, 8.0, -1));
-        assert!(!fits(6, need - 1.0, 30.0, 8.0, -1));
-        assert!(!fits(0, 100.0, 30.0, 8.0, -1));
+        let least = |n: usize, spacing: f64| (0..2000).find(|b| fits(n, f64::from(*b), 30.0, spacing, -1));
+        let mut last = 0;
+        for n in 1..=6 {
+            let b = least(n, 8.0).expect("some room fits the tray");
+            assert!(b > last, "{n} icons need more room than {}", n - 1);
+            assert!(!fits(n, f64::from(b) - 1.0, 30.0, 8.0, -1));
+            assert!((b..b + 100).all(|more| fits(n, f64::from(more), 30.0, 8.0, -1)));
+            last = b;
+        }
+        assert!(least(6, 12.0) > least(6, 8.0));
+        assert!(least(0, 8.0).is_none());
+        assert!(!fits(6, 5000.0, 30.0, 8.0, 4));
     }
 }

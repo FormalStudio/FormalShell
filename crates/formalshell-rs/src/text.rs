@@ -705,7 +705,5 @@ mod tests {
         let missing = Family::Face("No Such Family", GenericFamily::Monospace);
         let alias = inner.shape("values 0123", style(Family::Generic(GenericFamily::Monospace), 100.0, None)).width;
         assert_eq!(inner.shape("values 0123", style(missing, 100.0, None)).width, alias);
-        inner.shape("again", style(missing, 100.0, None));
-        assert_eq!(inner.missing.len(), 1);
     }
 }

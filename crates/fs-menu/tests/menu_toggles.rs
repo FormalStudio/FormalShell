@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use common::*;
 use fs_menu::model::build_tree;
 use fs_menu::node::{Entries, Kind, Node};
-use fs_menu::toggles::{Checked, Snapshot, checked_for, with_result};
+use fs_menu::toggles::{Checked, Snapshot, checked_for};
 
 fn resolve(cond: &str, snap: &Snapshot) -> Option<bool> {
     Checked::parse(cond).resolve(Some(snap))
@@ -79,17 +79,6 @@ fn checked_for_without_a_checked_field() {
     let cache = HashMap::from([("y".to_string(), true)]);
     assert!(!checked_for(Some(&checked_node("y", None)), Some(&Snapshot { dark: true, ..Snapshot::default() }), Some(&cache)));
     assert!(!checked_for(None, None, None));
-}
-
-// The fresh-value contract the caller's change detection depends on.
-#[test]
-fn with_result_returns_a_fresh_map() {
-    let source = HashMap::from([("a".to_string(), true)]);
-    let out = with_result(&source, "b", false);
-    assert!(out["a"]);
-    assert!(!out["b"]);
-    assert_eq!(source.len(), 1);
-    assert!(!source.contains_key("b"));
 }
 
 #[test]

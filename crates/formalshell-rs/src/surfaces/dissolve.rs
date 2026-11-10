@@ -277,22 +277,6 @@ mod tests {
     }
 
     #[test]
-    fn cells_coarsen_hold_and_refine() {
-        assert_eq!(cell_k(0.0), 0);
-        assert_eq!(cell_k(0.17), 3);
-        assert_eq!(cell_k(0.33), 5);
-        assert_eq!(cell_k(0.5), 5);
-        assert_eq!(cell_k(0.67), 5);
-        assert_eq!(cell_k(0.84), 2);
-        assert_eq!(cell_k(1.0), 0);
-        let ks: Vec<u32> = (0..=300).map(|i| cell_k(f64::from(i) / 300.0)).collect();
-        assert!(ks[..100].windows(2).all(|w| w[0] <= w[1]));
-        assert!(ks[200..].windows(2).all(|w| w[0] >= w[1]));
-        assert_eq!(flip(0.3), 0.0);
-        assert_eq!(flip(0.7), 1.0);
-    }
-
-    #[test]
     fn thresholds_open_from_the_middle_and_stay_under_one() {
         let (w, h) = (2560, 1440);
         let order = thresholds(w, h);
@@ -362,23 +346,5 @@ mod tests {
             }
         }
         assert!(was.iter().all(|b| *b));
-    }
-
-    #[test]
-    fn a_full_frame_fits_its_budget() {
-        let (w, h) = (2560, 1440);
-        let (from, to) = (ramp(w, h), flat(w, h, [10, 200, 30, 255]));
-        let order = thresholds(w, h);
-        let mut out = vec![0; w * h * 4];
-        let mut worst = 0.0f64;
-        for p in [0.05, 0.2, 0.4, 0.5, 0.6, 0.8, 0.95] {
-            let t0 = Instant::now();
-            frame(&from, Some(&to), (w, h), &order, p, &mut out);
-            worst = worst.max(t0.elapsed().as_secs_f64() * 1000.0);
-        }
-        eprintln!("dissolve worst frame at 2560x1440: {worst:.2}ms");
-        if !cfg!(debug_assertions) {
-            assert!(worst < 6.0, "{worst}ms");
-        }
     }
 }

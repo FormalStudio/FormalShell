@@ -988,7 +988,6 @@ version = "0.2.0"
 dependencies = [
  "fs-js",
  "fs-types",
- "image",
  "regex",
  "serde",
  "serde_json",

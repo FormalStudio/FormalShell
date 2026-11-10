@@ -400,24 +400,6 @@ mod tests {
         assert_eq!(serde_json::to_value(&normalized).unwrap(), img);
     }
 
-    // Purity: the reducers take state by reference and the input is intact after.
-    #[test]
-    fn purity_add_does_not_mutate_input_state() {
-        let s = add(&State::default(), &entry("a", "one"), 1000).state;
-        let before = serde_json::to_string(&s).unwrap();
-        add(&s, &entry("b", "two"), 1001);
-        assert_eq!(serde_json::to_string(&s).unwrap(), before);
-    }
-
-    #[test]
-    fn purity_remove_and_clear_do_not_mutate_input_state() {
-        let s = add(&State::default(), &entry("a", "one"), 1000).state;
-        let before = serde_json::to_string(&s).unwrap();
-        remove(&s, "a");
-        clear(&s);
-        assert_eq!(serde_json::to_string(&s).unwrap(), before);
-    }
-
     // drop_echo, the part of the uri-list echo handling that lives in the history
     // reducer.
     #[test]

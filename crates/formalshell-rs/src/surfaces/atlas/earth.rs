@@ -234,8 +234,6 @@ pub(super) fn sample(earth: &Earth, pool: &mut Vec<Arc<Pixmap>>, coarse: bool, a
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use super::*;
     use crate::services::earth::pictures::{coded, pyramid};
 
@@ -273,23 +271,9 @@ mod tests {
         assert_eq!(stats.level, 4096);
         assert!(stats.missing > 4 && stats.missing == stats.tiles, "{stats:?}");
         assert!(worst(&a, &b) <= 1, "the fallback differs from the coarse level by {}", worst(&a, &b));
-        let wanted = empty.wanted();
-        assert_eq!(wanted.len(), stats.missing);
-        assert!(wanted.iter().all(|&(l, _)| l == 1));
-    }
-
-    #[test]
-    fn sampling_tiles_costs_what_the_whole_picture_does() {
-        let tiled = pyramid(&[(1024, 512), (4096, 2048)], 512, true);
-        let whole = Earth::single(4096, 2048, coded(4096, 2048));
-        for (name, e) in [("whole", &whole), ("tiled", &tiled), ("whole", &whole), ("tiled", &tiled)] {
-            let mut pool = Vec::new();
-            let t = Instant::now();
-            for _ in 0..20 {
-                sample(e, &mut pool, false, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, crate::surfaces::atlas::model::view_distance(1.0), &ROT).unwrap();
-            }
-            eprintln!("{name}: {} us a frame", t.elapsed().as_micros() / 20);
-        }
+        let (_, resident) = draw(&pyramid(&[(1024, 512), (4096, 2048)], 512, true), 547.0);
+        assert_eq!((stats.level, stats.missing), (resident.level, resident.tiles), "it should ask for every tile the resident frame draws");
+        assert_eq!(draw(&empty, 547.0).1, stats, "the same view should ask for the same tiles again");
     }
 
     #[test]

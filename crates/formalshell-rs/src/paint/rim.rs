@@ -277,6 +277,7 @@ pub fn blend_ms(theme: &fs_theme::theme::Theme, scale: f64) -> f64 {
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use std::time::Duration;
 
     fn lit(rgb: [f32; 3], generation: u64) -> Lit {
         Lit { generation, field: Rc::new(Field { sky: Some(Arc::new(rim::Sky::flat(rgb, (400.0, 300.0)))), glints: Vec::new() }) }
@@ -299,16 +300,24 @@ mod tests {
     fn the_same_aim_twice_starts_nothing() {
         let card = Rect::new(100.0, 100.0, 300.0, 200.0);
         let now = Instant::now();
-        let mut rim = Rim::default();
-        rim.aim(now, Some(&lit([1.0, 0.0, 0.0], 1)), card, BASE, 350.0);
-        rim.painted();
-        assert!(!rim.running(now));
-        rim.aim(now, Some(&lit([1.0, 0.0, 0.0], 1)), card, BASE, 350.0);
-        assert!(!rim.running(now));
+        let (red, blue) = (lit([1.0, 0.0, 0.0], 1), lit([0.0, 0.0, 1.0], 2));
+        let mut once = Rim::default();
+        let mut again = Rim::default();
+        for rim in [&mut once, &mut again] {
+            rim.aim(now, Some(&red), card, BASE, 350.0);
+            rim.aim(now, Some(&blue), card, BASE, 350.0);
+        }
+        let at = |ms: u64| now + Duration::from_millis(ms);
+        again.aim(at(10), Some(&blue), card, BASE, 350.0);
         // A new generation that changes nothing either.
-        rim.aim(now, Some(&lit([1.0, 0.0, 0.0], 2)), card, BASE, 350.0);
-        assert!(!rim.running(now));
-        rim.aim(now, Some(&lit([0.0, 0.0, 1.0], 3)), card, BASE, 350.0);
-        assert!(rim.running(now));
+        again.aim(at(10), Some(&lit([0.0, 0.0, 1.0], 3)), card, BASE, 350.0);
+        let (start, end) = (once.current(now), once.current(at(5000)));
+        let mut mid = 0;
+        for ms in (10..400).step_by(5) {
+            let value = once.current(at(ms));
+            assert!(value == again.current(at(ms)), "an aim at the same target restarted the blend at {ms}ms");
+            mid += usize::from(value != start && value != end);
+        }
+        assert!(mid > 0, "the blend never showed a value between its ends");
     }
 }

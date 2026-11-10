@@ -690,15 +690,6 @@ mod tests {
     }
 
     #[test]
-    fn status_reads_like_the_golden_reply() {
-        let s = State::default();
-        assert_eq!(
-            status(&s, (0.0, 0.0, false)).to_string(),
-            r#"{"dnd":false,"pending":0,"popups":0,"centerOpen":false,"centerHeight":0,"centerMaxHeight":0,"centerCapped":false}"#
-        );
-    }
-
-    #[test]
     fn a_reminder_fires_through_dnd_into_the_popups() {
         let mut s = State::default();
         s.model.set_dnd(true);

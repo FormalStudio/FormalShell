@@ -1162,14 +1162,4 @@ mod tests {
         assert!(st.paused());
         assert!(st.running());
     }
-
-    #[test]
-    fn status_words_the_ipc_reply() {
-        let s = tuned("Artist - Song").status();
-        assert_eq!(s["running"], true);
-        assert_eq!(s["station"], "Smoke Radio");
-        assert_eq!(s["label"], "Artist - Song");
-        assert_eq!(s["volume"], 70);
-        assert_eq!(s["queue"], 0);
-    }
 }

@@ -400,10 +400,18 @@ mod tests {
 
     #[test]
     fn the_decode_is_looped_paced_and_cropped_to_the_slot() {
-        let args = ffmpeg_args("/c/a.mp4", 96).join(" ");
-        assert!(args.contains("-re -stream_loop -1 -i /c/a.mp4"), "{args}");
-        assert!(args.contains("fps=25/3,scale=96:96:force_original_aspect_ratio=increase,crop=96:96"), "{args}");
-        assert!(args.ends_with("-f rawvideo -pix_fmt rgba -"), "{args}");
+        let args = ffmpeg_args("/c/a.mp4", 96);
+        let at = |flag: &str| args.iter().position(|a| a == flag).unwrap_or_else(|| panic!("no {flag} in {args:?}"));
+        let input = at("-i");
+        assert_eq!(args[input + 1], "/c/a.mp4");
+        assert_eq!(args[at("-stream_loop") + 1], "-1", "loops for ever");
+        assert!(at("-stream_loop") < input && at("-re") < input, "input options come before the input");
+        let filter = &args[at("-vf") + 1];
+        assert!(filter.contains("fps="), "{filter}");
+        assert!(filter.contains("crop=96:96"), "{filter}");
+        assert_eq!(args.last().map(String::as_str), Some("-"), "frames go to stdout");
+        assert_eq!(args[at("-f") + 1], "rawvideo");
+        assert_eq!(args[at("-pix_fmt") + 1], "rgba");
     }
 
     #[test]

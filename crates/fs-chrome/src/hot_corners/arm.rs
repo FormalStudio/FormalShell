@@ -343,11 +343,6 @@ mod tests {
         assert!(is_armed(adopt(60000, false, 5000), 60000));
     }
 
-    #[test]
-    fn the_cooldown_is_the_documented_number() {
-        assert_eq!(REARM_COOLDOWN_MS, 400);
-    }
-
     // The screensaver corner after a dismiss with the cursor parked in it.
     // The end is the unmap at the close of the 400ms fade, not the moment the
     // action dropped to inactive, and the pointer is read off the compositor

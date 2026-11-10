@@ -943,15 +943,67 @@ mod tests {
         assert!(drop_on(&o, 0, &"b".into(), 0, 1, 1, false, &none).0.is_empty());
     }
 
+    /// The workspaces after the compositor ran `cmds`: a window moved to a
+    /// workspace arrives last in a column of its own, a swap trades two
+    /// places, a column move takes the column whole.
+    fn settle(o: &[Vec<WindowId>], cmds: &[Command], col: &dyn Fn(&WindowId) -> Option<i64>) -> Vec<Vec<WindowId>> {
+        let mut rows: Vec<Vec<Vec<WindowId>>> = o
+            .iter()
+            .map(|r| {
+                let mut cols: Vec<Vec<WindowId>> = Vec::new();
+                let mut last = None;
+                for w in r {
+                    let c = col(w);
+                    match (c, last) {
+                        (Some(c), Some(l)) if c == l => cols.last_mut().unwrap().push(w.clone()),
+                        _ => cols.push(vec![w.clone()]),
+                    }
+                    last = c;
+                }
+                cols
+            })
+            .collect();
+        let find = |rows: &[Vec<Vec<WindowId>>], id: &WindowId| {
+            rows.iter().enumerate().find_map(|(r, cols)| cols.iter().enumerate().find_map(|(c, col)| col.iter().position(|w| w == id).map(|i| (r, c, i))))
+        };
+        for cmd in cmds {
+            match cmd {
+                Command::MoveWindowTo { id, idx, .. } => {
+                    let (r, c, i) = find(&rows, id).unwrap();
+                    let w = rows[r][c].remove(i);
+                    rows[r].retain(|col| !col.is_empty());
+                    rows[(*idx - 1) as usize].push(vec![w]);
+                }
+                Command::SwapWindows { a, b } => {
+                    let (ra, ca, ia) = find(&rows, a).unwrap();
+                    let (rb, cb, ib) = find(&rows, b).unwrap();
+                    let wa = rows[ra][ca][ia].clone();
+                    rows[ra][ca][ia] = rows[rb][cb][ib].clone();
+                    rows[rb][cb][ib] = wa;
+                }
+                Command::MoveColumn { id, before } => {
+                    let (r, c, _) = find(&rows, id).unwrap();
+                    let moved = rows[r].remove(c);
+                    let at = before.as_ref().map_or(rows[r].len(), |b| find(&rows, b).unwrap().1);
+                    rows[r].insert(at, moved);
+                }
+                _ => panic!("a drop sent a command the model does not know"),
+            }
+        }
+        rows.into_iter().map(|cols| cols.into_iter().flatten().collect()).collect()
+    }
+
     #[test]
     fn a_drop_on_another_row_moves_then_swaps_into_the_slot() {
         let o = order(&[&["a", "b"], &["c"], &[]]);
         let (cmds, out) = drop_on(&o, 0, &"a".into(), 1, 0, 2, false, &none);
-        assert!(matches!(&cmds[..], [Command::MoveWindowTo { id, idx: 2, .. }, Command::SwapWindows { a, b }] if id == "a" && a == "a" && b == "c"));
-        assert_eq!(out, order(&[&["b"], &["a", "c"], &[]]));
+        let want = order(&[&["b"], &["a", "c"], &[]]);
+        assert_eq!(settle(&o, &cmds, &none), want);
+        assert_eq!(out, want);
         let (cmds, out) = drop_on(&o, 0, &"a".into(), 1, 1, 2, false, &none);
-        assert!(matches!(&cmds[..], [Command::MoveWindowTo { .. }]));
-        assert_eq!(out, order(&[&["b"], &["c", "a"], &[]]));
+        let want = order(&[&["b"], &["c", "a"], &[]]);
+        assert_eq!(settle(&o, &cmds, &none), want);
+        assert_eq!(out, want);
     }
 
     #[test]
@@ -990,10 +1042,10 @@ mod tests {
         };
         let o = order(&[&["a", "b", "c", "d"], &[]]);
         let (cmds, out) = drop_on(&o, 0, &"a".into(), 0, 2, 1, true, &col);
-        assert!(matches!(&cmds[..], [Command::MoveColumn { id, before: None }] if id == "a"));
+        assert_eq!(settle(&o, &cmds, &col)[0], ["c", "d", "a", "b"]);
         assert_eq!(out[0], ["c", "d", "a", "b"]);
         let (cmds, out) = drop_on(&o, 0, &"d".into(), 0, 1, 1, true, &col);
-        assert!(matches!(&cmds[..], [Command::MoveColumn { id, before: Some(b) }] if id == "d" && b == "b"));
+        assert_eq!(settle(&o, &cmds, &col)[0], ["d", "a", "b", "c"]);
         assert_eq!(out[0], ["d", "a", "b", "c"]);
         assert!(drop_on(&o, 0, &"b".into(), 0, 0, 1, true, &col).0.is_empty());
         let row = &o[0];

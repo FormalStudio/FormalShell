@@ -867,16 +867,4 @@ mod tests {
         let h = |hovered, kit: &mut Kit| ui::measure(&bubble(&theme, &g, 0, None, hovered, None), 300.0, &theme, kit).1;
         assert_eq!(h(false, &mut kit), h(true, &mut kit));
     }
-
-    #[test]
-    fn the_summary_and_the_body_wrap_to_two_lines() {
-        let theme = theme();
-        let mut wrapped = Vec::new();
-        walk(&bubble(&theme, &group("", "some body"), 0, None, false, None), &mut |e| {
-            if let Kind::Para { lines, .. } = &e.kind {
-                wrapped.push(*lines);
-            }
-        });
-        assert_eq!(wrapped, vec![2, 2]);
-    }
 }

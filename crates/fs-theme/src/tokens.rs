@@ -389,9 +389,8 @@ mod tests {
     }
 
     #[test]
-    fn radii_are_the_libadwaita_ladder() {
-        assert_eq!((RADII.sm, RADII.md, RADII.lg, RADII.xl), (6.0, 9.0, 12.0, 15.0));
-        assert_eq!(RADII.step("lg"), Some(12.0));
+    fn radii_step_looks_up_a_name() {
+        assert_eq!(RADII.step("lg"), Some(RADII.lg));
         assert_eq!(RADII.step("pill"), None);
     }
 
@@ -418,15 +417,6 @@ mod tests {
     #[test]
     fn cover_radius_is_square_at_a_zero_step() {
         assert_eq!(cover_radius(0.0, 96.0), 0.0);
-    }
-
-    #[test]
-    fn weights_carry_adwaita_bold_and_heavy() {
-        assert_eq!(WEIGHTS.normal, 400.0);
-        assert_eq!(WEIGHTS.medium, 500.0);
-        assert_eq!(WEIGHTS.semibold, 600.0);
-        assert_eq!(WEIGHTS.bold, 700.0);
-        assert_eq!(WEIGHTS.heavy, 800.0);
     }
 
     #[test]
@@ -492,15 +482,6 @@ mod tests {
         let (on, off) = (motion_tokens(true), motion_tokens(false));
         assert_eq!(off.marquee_px_per_sec, on.marquee_px_per_sec);
         assert_eq!(off.marquee_hold_ms, on.marquee_hold_ms);
-    }
-
-    #[test]
-    fn motion_tokens_pin_the_expressive_durations() {
-        let m = motion_tokens(true);
-        assert_eq!(
-            [m.spatial_fast, m.spatial, m.spatial_slow, m.effects_fast, m.effects, m.effects_slow, m.emphasized, m.reveal],
-            [350.0, 500.0, 650.0, 150.0, 200.0, 300.0, 400.0, 400.0]
-        );
     }
 
     #[test]

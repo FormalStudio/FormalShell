@@ -301,7 +301,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn held_focus_follows_focus_js() {
+    fn a_remembered_focus_holds_across_a_gap_while_its_window_stays_on_the_workspace() {
         let windows = vec![Window { id: WindowId::new("a"), workspace_id: WorkspaceId::new("1"), ..Window::default() }];
         let held = |focused: &str, remembered: &str, ws: &str| {
             held_focus(&WindowId::new(focused), &WindowId::new(remembered), &windows, &WorkspaceId::new(ws))

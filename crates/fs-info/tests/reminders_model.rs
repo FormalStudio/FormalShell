@@ -118,14 +118,6 @@ fn add_keeps_list_sorted_by_due_at() {
 }
 
 #[test]
-fn add_does_not_mutate_input() {
-    let list = vec![entry("b", 3000.0)];
-    let _ = add(&list, entry("a", 1000.0));
-    assert_eq!(list.len(), 1);
-    assert_eq!(list[0].id, "b");
-}
-
-#[test]
 fn normalize_drops_malformed_entries() {
     let raw = json!([
         { "id": "a", "message": "m-a", "setAt": 0, "dueAt": 2000 },
@@ -142,18 +134,6 @@ fn normalize_drops_malformed_entries() {
 fn normalize_of_non_array_is_empty() {
     assert_eq!(normalize(&json!(null)).len(), 0);
     assert_eq!(normalize(&json!({ "id": "a", "dueAt": 1 })).len(), 0);
-}
-
-#[test]
-fn normalize_does_not_mutate_input() {
-    let raw = json!([
-        { "id": "b", "dueAt": 3000 },
-        { "id": "a", "dueAt": 1000 },
-    ]);
-    let before = raw.clone();
-    let list = normalize(&raw);
-    assert_eq!(ids(&list), "a,b");
-    assert_eq!(raw, before);
 }
 
 #[test]

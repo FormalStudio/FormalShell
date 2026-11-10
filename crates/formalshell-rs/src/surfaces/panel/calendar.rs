@@ -256,6 +256,20 @@ impl Panel for Calendar {
 mod tests {
     use super::*;
 
+    use crate::ui::{Button, What};
+
+    fn click(c: &mut Calendar, on: &str) {
+        let store = Store::default();
+        let mut fx = Effect::new(&store, None);
+        c.event(&Event { on: on.to_owned(), what: What::Click, button: Button::Left }, &mut fx);
+    }
+
+    fn press(c: &mut Calendar, text: &str) {
+        let store = Store::default();
+        let mut fx = Effect::new(&store, None);
+        c.key(None, text, &mut fx);
+    }
+
     #[test]
     fn select_aligns_the_view_and_moves_the_cursor() {
         let mut c = Calendar::new(false);
@@ -268,14 +282,27 @@ mod tests {
         // October 2026 starts on a Thursday, so the 6th is the ninth cell.
         assert_eq!(c.take_cursor().as_deref(), Some("day:8"));
         assert_eq!(c.take_cursor(), None);
+
+        // The first cell is a September padding day: clicking it realigns the view.
+        click(&mut c, "day:0");
+        let status = c.status();
+        assert_eq!(status["selected"], "2026-09-28");
+        assert_eq!(status["view"], "September 2026");
+        // September 2026 starts on a Tuesday, so the 28th is the 29th cell.
+        assert_eq!(c.take_cursor().as_deref(), Some("day:28"));
     }
 
     #[test]
     fn stepping_a_month_resets_the_selection_to_today() {
         let mut c = Calendar::new(false);
-        c.select(NaiveDate::from_ymd_opt(2026, 3, 15).unwrap());
-        c.step_month(1);
-        assert_eq!((c.year, c.month), (2026, 4));
-        assert_eq!(c.selected, today());
+        assert_eq!(c.select_iso("2026-03-15"), Ok(()));
+        press(&mut c, "]");
+        let status = c.status();
+        assert_eq!(status["view"], "April 2026");
+        assert_eq!(status["selected"], status["today"]);
+        click(&mut c, "prev");
+        assert_eq!(c.status()["view"], "March 2026");
+        press(&mut c, "[");
+        assert_eq!(c.status()["view"], "February 2026");
     }
 }

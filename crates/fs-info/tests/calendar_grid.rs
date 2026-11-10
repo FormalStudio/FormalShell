@@ -9,7 +9,6 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
 
 #[test]
 fn a_month_is_always_six_weeks_of_seven_days() {
-    assert_eq!(COLUMNS, 7);
     assert_eq!(month_cells(2026, 8).len(), 42);
     // February in a non-leap year pads out to the same 42 cells, so stepping
     // months never resizes the card.

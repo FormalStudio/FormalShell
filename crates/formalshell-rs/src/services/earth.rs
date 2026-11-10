@@ -488,14 +488,6 @@ fn tone(rgb: &mut [u8]) {
     }
 }
 
-impl Earth {
-    /// The tiles the last frame asked for and still misses.
-    #[cfg(test)]
-    pub(crate) fn wanted(&self) -> Vec<Id> {
-        self.shared.as_ref().map_or_else(Vec::new, |s| s.state.lock().unwrap().wanted.clone())
-    }
-}
-
 /// Pyramids built in memory, for the sampler's tests too.
 #[cfg(test)]
 pub(crate) mod pictures {

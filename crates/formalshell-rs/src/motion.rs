@@ -388,30 +388,29 @@ mod tests {
         }
     }
 
+    const KINDS: [Kind; 6] = [Kind::SpatialFast, Kind::Spatial, Kind::EffectsFast, Kind::Effects, Kind::EffectsSlow, Kind::Emphasized];
+
+    /// A kind naming a curve the table does not carry falls back to
+    /// spatial's, which would show here as two kinds sharing a curve.
     #[test]
-    fn the_clocks_read_the_tables_curves_and_durations() {
-        let curves = [
-            (Kind::SpatialFast, vec![0.42, 1.67, 0.21, 0.9, 1.0, 1.0], 350.0),
-            (Kind::Spatial, vec![0.38, 1.21, 0.22, 1.0, 1.0, 1.0], 500.0),
-            (Kind::EffectsFast, vec![0.31, 0.94, 0.34, 1.0, 1.0, 1.0], 150.0),
-            (Kind::Effects, vec![0.34, 0.8, 0.34, 1.0, 1.0, 1.0], 200.0),
-            (Kind::EffectsSlow, vec![0.34, 0.88, 0.34, 1.0, 1.0, 1.0], 300.0),
-            (
-                Kind::Emphasized,
-                vec![0.05, 0.0, 2.0 / 15.0, 0.06, 1.0 / 6.0, 0.4, 5.0 / 24.0, 0.82, 0.25, 1.0, 1.0, 1.0],
-                400.0,
-            ),
-        ];
-        let theme = fs_theme::theme::Theme::default();
-        for (kind, points, ms) in curves {
-            assert_eq!(kind.curve(), Curve::new(&points), "{kind:?}");
-            assert_eq!(kind.ms(&theme), ms, "{kind:?}");
+    fn every_clock_rides_a_curve_of_its_own_off_the_table() {
+        let table: Vec<Curve> = tokens::MOTION_CURVES.iter().map(|(_, points)| Curve::new(points)).collect();
+        for (i, a) in KINDS.iter().enumerate() {
+            assert!(table.contains(&a.curve()), "{a:?} is not a table curve");
+            for b in &KINDS[i + 1..] {
+                assert_ne!(a.curve(), b.curve(), "{a:?} and {b:?}");
+            }
         }
-        assert_eq!(PULSE_MS, 900.0);
-        assert_eq!(
-            (DEFORM.max_stretch, DEFORM.dead_band, DEFORM.stiffness, DEFORM.damping, DEFORM.epsilon),
-            (0.35, 5.0, 200.0, 16.0, 0.002)
-        );
+    }
+
+    #[test]
+    fn every_clock_runs_with_motion_on_and_none_with_it_off() {
+        let on = fs_theme::theme::Theme::default();
+        let off = fs_theme::theme::Theme { motion_enabled: false, ..on.clone() };
+        for kind in KINDS {
+            assert!(kind.ms(&on) > 0.0, "{kind:?}");
+            assert_eq!(kind.ms(&off), 0.0, "{kind:?}");
+        }
     }
 
     #[test]

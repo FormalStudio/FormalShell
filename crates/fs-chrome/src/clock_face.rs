@@ -564,30 +564,4 @@ mod tests {
         }
     }
 
-    /// Writes every face and width for 09:19 at 240px into
-    /// `artifacts/desktop-clock/` for reading beside the reference.
-    #[test]
-    #[ignore]
-    fn write_faces() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../artifacts/desktop-clock");
-        std::fs::create_dir_all(&dir).unwrap();
-        for (text, suffix) in [("09:19", ""), ("0123456789", "-digits")] {
-            for face in [Face::Pixel, Face::Gooey] {
-                for width in [Width::Narrow, Width::Wide] {
-                    let m = render(face, text, 240, width).unwrap();
-                let pad = 40;
-                let mut img = image::GrayImage::from_pixel(m.width + 2 * pad, m.height + 2 * pad, image::Luma([96]));
-                for y in 0..m.height {
-                    for x in 0..m.width {
-                        let a = m.at(x, y) as u32;
-                        img.put_pixel(x + pad, y + pad, image::Luma([(96 + (255 - 96) * a / 255) as u8]));
-                    }
-                }
-                let path = dir.join(format!("{}-{}{suffix}.png", face.as_str(), width.as_str()));
-                img.save(&path).unwrap();
-                println!("{}", path.display());
-                }
-            }
-        }
-    }
 }

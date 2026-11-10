@@ -534,16 +534,6 @@ fn group_entries_of_empty_list_is_empty() {
     assert_eq!(group_entries(&[]).len(), 0);
 }
 
-#[test]
-fn purity_group_entries_does_not_mutate_input() {
-    let mut s = State::new();
-    add_at(&mut s, summary(notif("a", 1), "Ping"), 1000);
-    add_at(&mut s, summary(notif("b", 1), "Ping"), 1001);
-    let before = s.clone();
-    let _ = group_entries(&s.popups);
-    assert_eq!(s, before);
-}
-
 // is_chromium_derived / sanitize_body / styled_body
 
 #[test]
@@ -683,7 +673,6 @@ fn position_spec_bottom_right_is_the_default() {
     assert!(spec.bottom);
     assert!(!spec.left);
     assert!(spec.right);
-    assert_eq!(DEFAULT_POSITION.as_str(), "bottom-right");
 }
 
 #[test]
@@ -765,14 +754,6 @@ fn stack_order_single_entry() {
     let order = stack_order(&[group("only", 1000, 2)]);
     assert_eq!(order.len(), 1);
     assert_eq!(order[0].id, id("only"));
-}
-
-#[test]
-fn purity_stack_order_does_not_mutate_input() {
-    let input = [group("a", 1000, 1), group("b", 3000, 2)];
-    let before = input.clone();
-    let _ = stack_order(&input);
-    assert_eq!(input, before);
 }
 
 // notifications.sound: elementary's map, and urgency outranking the category

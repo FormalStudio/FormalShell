@@ -1065,47 +1065,6 @@ mod tests {
         assert!(!g.paint(&ink(), 1.0, 1.0).iter().any(|op| matches!(op, VOp::Image(..))));
     }
 
-    #[test]
-    fn sampling_a_full_disc() {
-        // A 1000 px pane, the atlas's globe on a 2560x1440 output.
-        let mut g = Globe {
-            rect: (0.0, 0.0, 1000.0, 900.0),
-            countries: Some(Arc::new(load())),
-            earth: Some(Arc::new(coded_earth(4096, 2048))),
-            ..Globe::default()
-        };
-        let t = Instant::now();
-        for i in 0..20 {
-            g.centre_longitude = i as f64 * 3.0;
-            g.paint(&ink(), 1.0, 1.0);
-        }
-        eprintln!("globe build with imagery: {} us a frame", t.elapsed().as_micros() / 20);
-        let earth = g.earth.clone().unwrap();
-        let rot = Rot { sin_lat: 0.3, cos_lat: 0.95, sin_lon: 0.5, cos_lon: 0.86 };
-        let t = Instant::now();
-        let mut px = 0;
-        let mut pool = Vec::new();
-        for _ in 0..20 {
-            let b = sampler::sample(&earth, &mut pool, false, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap().0;
-            px = b.pixmap.width() as usize * b.pixmap.height() as usize;
-        }
-        eprintln!("sampler alone: {} us over {px} px", t.elapsed().as_micros() / 20);
-        let t = Instant::now();
-        for _ in 0..20 {
-            sampler::sample(&earth, &mut pool, true, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap();
-        }
-        eprintln!("sampler coarse: {} us", t.elapsed().as_micros() / 20);
-        let b = sampler::sample(&earth, &mut pool, true, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap().0;
-        assert_eq!(b.pixmap.sample(400, 400), b.pixmap.sample(401, 401), "a coarse sample covers its 2x2 block");
-        g.earth = None;
-        let t = Instant::now();
-        for i in 0..20 {
-            g.centre_longitude = i as f64 * 3.0 + 1.0;
-            g.paint(&ink(), 1.0, 1.0);
-        }
-        eprintln!("globe build flat: {} us a frame", t.elapsed().as_micros() / 20);
-    }
-
     fn dragged() -> Globe {
         Globe { rect: (0.0, 0.0, 400.0, 300.0), centre_latitude: 0.0, centre_longitude: 0.0, ..Globe::default() }
     }

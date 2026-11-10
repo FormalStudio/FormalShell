@@ -60,13 +60,6 @@ mod tests {
     }
 
     #[test]
-    fn host_theme_form_is_a_theme_call() {
-        let a = argv(&["theme", "mode", "toggle"]);
-        let Command::Theme(rest) = parse(&a) else { panic!("not theme") };
-        assert_eq!(theme_call(rest), ["call", "theme", "mode", "toggle"]);
-    }
-
-    #[test]
     fn subcommands_keep_their_words() {
         let a = argv(&["install", "--now"]);
         assert_eq!(parse(&a), Command::Install("install", &a[2..]));

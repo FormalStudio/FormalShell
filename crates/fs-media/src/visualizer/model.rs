@@ -478,12 +478,6 @@ mod tests {
     }
 
     #[test]
-    fn baseline_is_bar_count_long() {
-        assert_eq!(baseline_levels().len(), 24);
-        assert_eq!(BAR_COUNT, 24);
-    }
-
-    #[test]
     fn downsample_takes_the_peak_of_each_group() {
         let levels = [
             1.0, 2.0, 3.0, 4.0, 9.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 8.0, 1.0, 1.0, 1.0, 1.0, 9.0,

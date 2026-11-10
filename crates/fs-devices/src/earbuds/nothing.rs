@@ -604,7 +604,6 @@ mod tests {
             Some(Line::Error { code, .. }) => assert_eq!(code, ""),
             other => panic!("{other:?}"),
         }
-        assert_eq!(UNSUPPORTED_EXIT, 3);
     }
 
     #[test]

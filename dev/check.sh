@@ -5,6 +5,7 @@
 #   dev/check.sh <session check>         a crate in dev/rig.sh's rig_session_checks
 #   dev/check.sh build <crate> <dir>     on the rig: a VM check's binaries into <dir>
 #   FS_CHECK_BIN=<dir> dev/check.sh <VM check>   a crate in dev/rig.sh's rig_vm_checks
+#   dev/check.sh gpu                     gpu.rs's ignored test, on a rig slot
 #
 # The session checks start their own dbus-daemon (and fs-notifd the real
 # notify-send) on a private session bus; dbus-run-session keeps anything
@@ -60,6 +61,12 @@ run_tests() {
   done
 }
 
+# The GPU backend's driver pick against lavapipe, which the rig carries
+# and lint's run cannot assume.
+if [ "$1" = gpu ]; then
+  exec fspec dev -- cargo test --locked --release --package formalshell-rs gpu:: -- --ignored
+fi
+
 if rig_is_session_check "$1"; then
   for tool in dbus-daemon dbus-run-session; do
     command -v "$tool" >/dev/null 2>&1 || fail "$1: $tool is not on PATH; install the openSUSE package dbus-1-daemon"
@@ -69,7 +76,7 @@ if rig_is_session_check "$1"; then
   fi
   exec dbus-run-session -- fspec dev -- cargo test --locked --release --package "$1"
 fi
-rig_is_vm_check "$1" || fail "$1: no such check ($rig_session_checks; on the VM rig: $rig_vm_checks)"
+rig_is_vm_check "$1" || fail "$1: no such check (gpu $rig_session_checks; on the VM rig: $rig_vm_checks)"
 bin="${FS_CHECK_BIN:-}"
 [ -n "$bin" ] || fail "$1: drives real system daemons and runs on the VM rig: dev/vm.sh check $1 (dev/remote.sh check $1 hands it there)"
 skip=()

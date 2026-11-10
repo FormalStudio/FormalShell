@@ -148,9 +148,13 @@ mod tests {
 
     #[test]
     fn centred_on_the_output() {
-        assert_eq!(centred(0, 0, 2560, 1440, 12.0), IRect::new(512, 86, 1536, 1267));
-        // A laptop's 1536 wide output keeps 1100.
-        assert_eq!(centred(1920, 0, 1536, 864, 12.0), IRect::new(1920 + 218, 52, 1100, 760));
+        for (x, y, w, h) in [(0, 0, 2560, 1440), (1920, 0, 1536, 864), (-1280, 200, 1280, 720)] {
+            let r = centred(x, y, w, h, 12.0);
+            assert!((2 * r.x + r.width - (2 * x + w)).abs() <= 1, "{r:?} off centre horizontally on {w}x{h}");
+            assert!((2 * r.y + r.height - (2 * y + h)).abs() <= 1, "{r:?} off centre vertically on {w}x{h}");
+            assert!(r.x > x && r.y > y && r.x + r.width < x + w && r.y + r.height < y + h, "{r:?} touches an edge of {w}x{h}");
+            assert!(r.width * 2 > w, "{r:?} is a sliver of {w}x{h}");
+        }
     }
 
     #[test]

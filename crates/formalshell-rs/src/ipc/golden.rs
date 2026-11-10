@@ -2,7 +2,9 @@
 //! client's parsing and the registry. The stub registry is the shell's own
 //! [`super::targets`] with every handler answering the recorded reply, so
 //! the replay pins argument counts, parse errors and listings; `probe` alone
-//! echoes what the registry parsed. `tests/ipc-cases.jsonl` holds cases in
+//! echoes what the registry parsed. A case naming a `state` is answered by
+//! the service's own status over that fixture instead, which pins the
+//! reply's wording. `tests/ipc-cases.jsonl` holds cases in
 //! the same shape for what the fixed file never recorded, and
 //! `tests/ipc-signatures.txt` pins every target's signatures.
 
@@ -19,6 +21,8 @@ struct Case {
     stdout: String,
     stderr: String,
     exit: i32,
+    #[serde(default)]
+    state: Option<String>,
 }
 
 const fn f(name: &'static str, params: &'static [(&'static str, Type)], ret: Type, call: fn(&mut Replay, &[Value]) -> Reply) -> Function<Replay> {
@@ -27,13 +31,36 @@ const fn f(name: &'static str, params: &'static [(&'static str, Type)], ret: Typ
 
 const STR: (&str, Type) = ("a", Type::String);
 
-/// The recorded stdout of the case being replayed, less its final newline.
+/// What the case being replayed answers: its recorded stdout less the
+/// final newline, or its fixture's status.
 struct Replay {
-    reply: String,
+    reply: Reply,
 }
 
 fn replay(ctx: &mut Replay, _: &[Value]) -> Reply {
-    text(ctx.reply.clone())
+    ctx.reply.clone()
+}
+
+/// A case's `state`: what `radio status` and `notifications status` answer
+/// over a known state, built the way their handlers build it.
+fn fixture(name: &str) -> Reply {
+    use fs_media::radio::stations::Station;
+
+    use crate::services::{notifications, radio};
+    match name {
+        "radio tuned" => {
+            let tuned = radio::State {
+                station: Some(Station { uuid: "u".into(), name: "Smoke Radio".into(), url: "http://h/live/station.mp3?x=1".into(), ..Station::default() }),
+                title: "Artist - Song".into(),
+                ..radio::State::default()
+            };
+            let mut status = tuned.status();
+            status["atlas"] = crate::surfaces::atlas::Atlas::default().status(&tuned);
+            Ok(status)
+        }
+        "notifications" => Ok(notifications::status(&notifications::State::default(), (0.0, 0.0, false))),
+        other => panic!("no fixture {other}"),
+    }
 }
 
 /// Every shell target, each handler replaying the recorded reply.
@@ -89,7 +116,7 @@ fn probe() -> Target<Replay> {
 }
 
 /// stdout, stderr and the exit code, as formalshell-ipc would leave them.
-fn run(registry: &Registry<Replay>, argv: &[String], live: bool, reply: &str) -> (String, String, i32, bool) {
+fn run(registry: &Registry<Replay>, argv: &[String], live: bool, reply: Reply) -> (String, String, i32, bool) {
     let request = match cli::parse(argv) {
         Ok(request) => request,
         Err(err) => return (String::new(), err.stderr(), err.exit, false),
@@ -101,7 +128,7 @@ fn run(registry: &Registry<Replay>, argv: &[String], live: bool, reply: &str) ->
     if let Some(message) = cli::missing(&request) {
         return (message.into(), String::new(), 0, listing);
     }
-    (registry.answer(&mut Replay { reply: reply.to_owned() }, &request), String::new(), 0, listing)
+    (registry.answer(&mut Replay { reply }, &request), String::new(), 0, listing)
 }
 
 /// The quoted path is the instance's own, so only the words around it are
@@ -135,7 +162,10 @@ fn replay_all(jsonl: &str) {
     let registry = stub();
     let cases: Vec<Case> = jsonl.lines().map(|line| serde_json::from_str(line).expect("a golden line")).collect();
     for case in &cases {
-        let reply = case.stdout.strip_suffix('\n').unwrap_or(&case.stdout);
+        let reply = match &case.state {
+            Some(name) => fixture(name),
+            None => text(case.stdout.strip_suffix('\n').unwrap_or(&case.stdout)),
+        };
         let (stdout, stderr, exit, listing) = run(&registry, &case.argv, case.live, reply);
         let what = format!("{:?} live={}", case.argv, case.live);
         assert_eq!(exit, case.exit, "exit code of {what}");
@@ -174,6 +204,6 @@ fn matches_shell_cases() {
 #[test]
 fn signatures_match_snapshot() {
     let show = Request::Show { target: String::new(), name: String::new() };
-    let listing = Registry { targets: shell() }.answer(&mut Replay { reply: String::new() }, &show);
+    let listing = Registry { targets: shell() }.answer(&mut Replay { reply: text("") }, &show);
     assert_eq!(listing, include_str!("../../tests/ipc-signatures.txt"), "tests/ipc-signatures.txt is out of date");
 }

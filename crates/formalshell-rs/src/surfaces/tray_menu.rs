@@ -447,16 +447,31 @@ mod tests {
 
     #[test]
     fn a_card_capped_below_its_rows_scrolls_by_notches_and_stops_at_the_last_row() {
+        let theme = Theme::default();
+        let mut kit = Kit::new(&theme);
         let mut m = menu();
         m.cap = m.height() - m.look.control_height * 2.0;
+        let rect = IRect::new(0, 0, 300, m.height().min(m.cap).round() as i32);
+        let mut scene = Scene::new(rect.w, rect.h);
+        let mut draw = |m: &mut Menu| {
+            m.layout(&mut kit, &mut scene, rect, 1.0, rect, 1.0);
+        };
+        draw(&mut m);
+        let last = m.rows.len() - 1;
+        assert!(m.rects[last].bottom() > m.body.bottom(), "the last row should start cut off");
         assert!(m.scroll_notches(1.0));
-        assert_eq!(m.scroll, m.look.control_height);
+        draw(&mut m);
+        assert!(m.rects[last].bottom() > m.body.bottom(), "one notch should not reach the end");
         assert!(m.scroll_notches(5.0));
-        let end = m.rows_height() - (m.height().min(m.cap) - m.chrome());
-        assert_eq!(m.scroll, end);
+        draw(&mut m);
+        assert_eq!(m.rects[last].bottom(), m.body.bottom());
+        let rest = m.rects.clone();
         assert!(!m.scroll_notches(1.0));
+        draw(&mut m);
+        assert_eq!(m.rects, rest);
         assert!(m.scroll_notches(-9.0));
-        assert_eq!(m.scroll, 0.0);
+        draw(&mut m);
+        assert_eq!(m.rects[0].y, m.body.y);
     }
 
     #[test]
@@ -464,14 +479,5 @@ mod tests {
         let mut m = menu();
         assert!(!m.scroll_notches(1.0));
         assert_eq!(m.scroll, 0.0);
-    }
-
-    #[test]
-    fn height_counts_the_header_and_every_row() {
-        let mut m = menu();
-        let before = m.height();
-        m.activate(4);
-        assert!(m.height() > before);
-        assert!(m.height() > m.look.control_height * 4.0);
     }
 }

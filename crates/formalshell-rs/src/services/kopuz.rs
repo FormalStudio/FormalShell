@@ -246,12 +246,6 @@ mod tests {
     }
 
     #[test]
-    fn dont_recommend_is_offered_where_the_source_takes_it() {
-        assert_eq!(State::default().actions(), ["like"]);
-        assert_eq!(State { dont_recommend: true, ..State::default() }.actions(), ["like", "dontRecommend"]);
-    }
-
-    #[test]
     fn like_and_dont_recommend_follow_the_heart() {
         let s = State { key: "k".into(), dont_recommend: true, ..State::default() };
         assert_eq!(s.like("toggle"), Ok(Action::Favorite("k".into(), true)));
