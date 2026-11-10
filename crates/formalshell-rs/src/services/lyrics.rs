@@ -403,9 +403,8 @@ fn cached(key: &str) -> Option<Result<Vec<Line>, ()>> {
     fresh.then_some(Err(()))
 }
 
-fn write_atomic(path: PathBuf, body: &[u8]) {
-    let tmp = path.with_extension("tmp");
-    if std::fs::write(&tmp, body).and_then(|_| std::fs::rename(&tmp, &path)).is_err() {
+fn write_cache(path: PathBuf, body: &[u8]) {
+    if crate::paths::write_atomic(&path, body).is_err() {
         eprintln!("lyrics: could not write {}", path.display());
     }
 }
@@ -449,7 +448,7 @@ async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
     {
         let path = dir.join(format!("{}.json", ask.key));
         let body = json!({ "source": "kopuz", "lines": lines }).to_string();
-        ctx.pool().run(move || write_atomic(path, body.as_bytes())).await;
+        ctx.pool().run(move || write_cache(path, body.as_bytes())).await;
         return remember(ctx, session, &ask.key, Phase::Synced, Source::Kopuz, lines);
     }
     if let Some((state, source, lines)) = known {
@@ -503,14 +502,14 @@ async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
         None if erred => publish(ctx, &ask.key, Phase::Error, Source::Unknown, Vec::new()),
         None => {
             let path = dir.join(format!("{}.miss", ask.key));
-            ctx.pool().run(move || write_atomic(path, b"")).await;
+            ctx.pool().run(move || write_cache(path, b"")).await;
             remember(ctx, session, &ask.key, Phase::None, Source::Unknown, Vec::new());
         }
         Some(w) if erred => remember(ctx, session, &ask.key, Phase::Synced, Source::provider(&w.source), w.lines),
         Some(w) => {
             let path = dir.join(format!("{}.json", ask.key));
             let body = json!({ "source": w.source, "lines": w.lines }).to_string();
-            ctx.pool().run(move || write_atomic(path, body.as_bytes())).await;
+            ctx.pool().run(move || write_cache(path, body.as_bytes())).await;
             remember(ctx, session, &ask.key, Phase::Synced, Source::provider(&w.source), w.lines);
         }
     }

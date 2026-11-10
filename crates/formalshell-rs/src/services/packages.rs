@@ -334,7 +334,7 @@ fn spawn_info(ctx: &Ctx, id: String) {
         let Some(url) = url else { return };
         let path = shot_path(&url);
         let have = std::fs::metadata(&path).is_ok_and(|m| m.len() > 0);
-        let got = have || fetch_shot(&url, &path).await;
+        let got = have || http::download(http::Request::get(&url, 20).follow(50).connect_timeout(4).max_filesize(8_388_608), &path).await.is_ok();
         if !got {
             send(Cmd::InfoFailed(id));
         }
@@ -352,21 +352,6 @@ fn shot_path(url: &str) -> PathBuf {
     // `image::open` reads the format off the extension.
     let ext = url.rsplit('/').next().and_then(|last| last.rsplit_once('.')).map(|(_, e)| e).filter(|e| !e.is_empty() && e.chars().all(|c| c.is_ascii_alphanumeric())).unwrap_or("png");
     base.join("formalshell/install-shots").join(format!("{:016x}.{ext}", h.finish()))
-}
-
-/// curl into a part file, renamed over `path` once whole.
-async fn fetch_shot(url: &str, path: &Path) -> bool {
-    let Some(dir) = path.parent() else { return false };
-    if std::fs::create_dir_all(dir).is_err() {
-        return false;
-    }
-    let part = path.with_extension("part");
-    let req = http::Request::get(url, 20).follow(50).connect_timeout(4).max_filesize(8_388_608).output(&part);
-    if http::get(&req).await.is_none() {
-        let _ = std::fs::remove_file(&part);
-        return false;
-    }
-    std::fs::rename(&part, path).is_ok()
 }
 
 /// The spec's directory, off `FSPEC_SPEC` as fspec reads it (a directory

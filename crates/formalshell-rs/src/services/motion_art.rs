@@ -369,15 +369,8 @@ async fn lookup(w: &Job, dir: &str, key: &str, token: &mut String) -> Result<Opt
         return Err("rendition playlist fetch failed");
     }
     let Some(mp4) = am::extract_mp4_url(&rendition, &variant) else { return Ok(None) };
-    std::fs::create_dir_all(dir).map_err(|_| "could not create cache dir")?;
     let path = format!("{dir}/{key}.mp4");
-    let part = format!("{path}.{}.part", std::process::id());
-    let ok = http::get(&http::Request::get(mp4, 60).follow(5).connect_timeout(5).output(&part)).await.is_some();
-    if !ok {
-        let _ = std::fs::remove_file(&part);
-        return Err("artwork download failed");
-    }
-    std::fs::rename(&part, &path).map_err(|_| "could not install downloaded artwork")?;
+    http::download(http::Request::get(mp4, 60).follow(5).connect_timeout(5), std::path::Path::new(&path)).await.map_err(|_| "artwork download failed")?;
     Ok(Some(path))
 }
 

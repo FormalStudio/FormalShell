@@ -299,7 +299,7 @@ async fn run(ctx: Ctx) {
             ctx.publish(store::Diff::Clipboard(Diff::Items(items.clone())));
             let (path, text) = (path.clone(), serde_json::json!({ "items": items }).to_string());
             ctx.pool().run(move || {
-                if let Err(err) = super::state::write_atomic(&path, &text) {
+                if let Err(err) = crate::paths::write_atomic(&path, &text) {
                     eprintln!("clipboard: {}: {err}", path.display());
                 }
             })

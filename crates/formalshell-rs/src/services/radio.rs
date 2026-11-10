@@ -262,13 +262,7 @@ fn read_cache(path: &std::path::Path) -> Option<(Value, Vec<Station>)> {
 
 fn write_cache(path: &std::path::Path, rows: &[Station]) {
     let doc = json!({ "fetchedAt": crate::runtime::now_ms() as f64, "stations": rows });
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let tmp = path.with_extension("json.tmp");
-    if std::fs::write(&tmp, format!("{doc}\n")).is_ok() {
-        let _ = std::fs::rename(&tmp, path);
-    }
+    let _ = crate::paths::write_atomic(path, format!("{doc}\n"));
 }
 
 fn stale_doc(doc: &Value) -> bool {
@@ -413,15 +407,7 @@ impl Radio {
             "output": self.st.output,
         });
         let path = state_path();
-        let write = || -> std::io::Result<()> {
-            if let Some(dir) = path.parent() {
-                std::fs::create_dir_all(dir)?;
-            }
-            let tmp = path.with_extension("json.tmp");
-            std::fs::write(&tmp, format!("{doc}\n"))?;
-            std::fs::rename(&tmp, &path)
-        };
-        if write().is_err() {
+        if crate::paths::write_atomic(&path, format!("{doc}\n")).is_err() {
             self.st.local_error = "Saved stations could not be written".into();
             self.publish();
         }

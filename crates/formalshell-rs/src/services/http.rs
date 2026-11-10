@@ -4,7 +4,7 @@
 //! transport failure (no route, timeout, a body past the size cap, curl
 //! missing) is an `Err`, and a status past 399 is an `Ok` the caller reads.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use async_io::Timer;
@@ -213,6 +213,23 @@ async fn attempt(req: &Request) -> Result<Response, Failure> {
 /// The reply of a request that got through and was not refused, or `None`.
 pub async fn get(req: &Request) -> Option<Response> {
     send(req).await.ok().filter(Response::ok)
+}
+
+/// `req`'s body at `path` whole or not at all: curl writes a part file
+/// beside it, named for this process, renamed over `path` once done.
+pub async fn download(req: Request, path: &Path) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let part = dir.join(format!(".{name}.{}.part", std::process::id()));
+    let result = match get(&req.output(&part)).await {
+        Some(_) => std::fs::rename(&part, path),
+        None => Err(std::io::Error::other("download failed")),
+    };
+    if result.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    result
 }
 
 #[cfg(test)]

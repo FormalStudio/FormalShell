@@ -6,7 +6,8 @@
 //! Also holds the names another program reads or writes: `install.rs`
 //! writes them into the login script and the PAM file, the shell reads them.
 
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 /// The shell's own directory under the runtime dir.
 pub const SHELL_DIR: &str = "formalshell";
@@ -93,4 +94,41 @@ pub fn compositor_file(name: &str) -> PathBuf {
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
         .unwrap_or_default();
     shell_runtime().join(format!("{name}-{}", id.replace('/', "_")))
+}
+
+/// Temp file beside the target, then a rename over it, so a reader (or a
+/// crash) never sees half a file. The temp name carries the pid: two
+/// shells overlap across an instance takeover, and a fixed name lets one
+/// rename the other's half-written file.
+pub fn write_atomic(path: &Path, body: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    let result = (|| {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(body.as_ref())?;
+        file.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_write_replaces_the_file_and_leaves_no_temp() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("formalshell").join("state.json");
+        write_atomic(&path, "one\n").unwrap();
+        write_atomic(&path, "two\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "two\n");
+        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(left, ["state.json"]);
+    }
 }

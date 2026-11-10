@@ -5,7 +5,6 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -312,25 +311,6 @@ pub fn state_path() -> PathBuf {
     crate::paths::state().join("formalshell").join("state.json")
 }
 
-/// Temp file beside the target, then a rename over it, so a reader (or a
-/// crash) never sees half a file.
-pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
-    let dir = path.parent().unwrap_or(Path::new("."));
-    std::fs::create_dir_all(dir)?;
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
-    let result = (|| {
-        let mut file = std::fs::File::create(&tmp)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()?;
-        std::fs::rename(&tmp, path)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    result
-}
-
 static SETTERS: OnceLock<async_channel::Sender<Vec<Field>>> = OnceLock::new();
 
 /// Queues `fields` as one write. Callable from any thread; dropped before the
@@ -490,7 +470,7 @@ async fn write(ctx: &Ctx, path: &Path, shared: &Rc<RefCell<Shared>>) {
     let text = shared.borrow().data.to_text();
     let target = path.to_path_buf();
     let body = text.clone();
-    match ctx.pool().run(move || write_atomic(&target, &body)).await {
+    match ctx.pool().run(move || crate::paths::write_atomic(&target, &body)).await {
         Some(Ok(())) => shared.borrow_mut().written = Some(text),
         Some(Err(e)) => eprintln!("State: failed to write state.json: {e}"),
         None => eprintln!("State: the write of state.json panicked"),
@@ -764,17 +744,6 @@ mod tests {
         assert!(!slice.apply(Diff(vec![])));
         assert!(slice.apply(Diff(vec![Field::Dnd(true)])));
         assert!(slice.data.dnd);
-    }
-
-    #[test]
-    fn atomic_write_replaces_the_file_and_leaves_no_temp() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("formalshell").join("state.json");
-        write_atomic(&path, "one\n").unwrap();
-        write_atomic(&path, "two\n").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "two\n");
-        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap()).unwrap().map(|e| e.unwrap().file_name()).collect();
-        assert_eq!(left, ["state.json"]);
     }
 
     #[test]

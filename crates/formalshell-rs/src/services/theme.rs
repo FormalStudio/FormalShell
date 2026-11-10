@@ -395,19 +395,6 @@ async fn blocking<T: Send + 'static>(ctx: &Ctx, job: impl FnOnce() -> io::Result
     ctx.pool().run(job).await.unwrap_or_else(|| Err(io::Error::other("pool job panicked")))
 }
 
-/// Written beside the target and renamed over it, so a reader never sees it
-/// half written. The staging name carries the pid: two publishes of one
-/// path can overlap, and a fixed name loses the second rename.
-fn publish_file(path: &Path, content: &str) -> io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let mut staged = path.as_os_str().to_owned();
-    staged.push(format!(".tmp.{}", std::process::id()));
-    std::fs::write(&staged, content)?;
-    std::fs::rename(&staged, path)
-}
-
 /// theme.json as read here: per key, a missing or malformed
 /// value falls back to zinc and the rest stays.
 pub(crate) fn read_palette(path: &Path) -> (Map<String, Value>, bool) {
@@ -686,7 +673,7 @@ impl Engine {
             if std::fs::read_to_string(&path).is_ok_and(|current| current == wanted) {
                 return Ok(());
             }
-            publish_file(&path, &wanted)
+            crate::paths::write_atomic(&path, &wanted)
         })
         .await;
         if let Err(err) = result {
@@ -735,7 +722,7 @@ impl Engine {
         let json = serde_json::to_string_pretty(&Value::Object(written.clone())).unwrap_or_default();
         let colors = matugen::hyprland_colors(&written);
         let (theme_json, hypr) = (self.env.theme_json(), self.env.hypr_colors());
-        let wrote = blocking(&self.ctx, move || publish_file(&theme_json, &json)).await;
+        let wrote = blocking(&self.ctx, move || crate::paths::write_atomic(&theme_json, &json)).await;
         match wrote {
             Ok(()) => {
                 let merged = palette::merge_with_fallback(Some(&Value::Object(written)));
@@ -744,7 +731,7 @@ impl Engine {
             }
             Err(err) => warn(format!("failed to write static theme.json: {err}")),
         }
-        if let Err(err) = blocking(&self.ctx, move || publish_file(&hypr, &colors)).await {
+        if let Err(err) = blocking(&self.ctx, move || crate::paths::write_atomic(&hypr, &colors)).await {
             warn(format!("failed to write fallback formalshell-colors.lua: {err}"));
         }
         compositor::send(Command::Reload);
