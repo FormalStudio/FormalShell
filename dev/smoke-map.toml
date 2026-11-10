@@ -122,6 +122,14 @@ paths = [
   "dev/scoped-run.sh",
 ]
 
+# The launcher's picker rendering and selection helpers.
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/surfaces/launcher/mod.rs",
+  "crates/formalshell-rs/src/surfaces/launcher/rows.rs",
+]
+runs = ["--picker", "--picker --light", "--wheel"]
+
 # Launcher
 [[rule]]
 paths = [

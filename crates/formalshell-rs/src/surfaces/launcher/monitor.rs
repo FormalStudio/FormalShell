@@ -121,3 +121,21 @@ pub(super) fn proc_row(m: &Model, store: &Store, row: &Node, i: usize, selected:
         .on(format!("row:{i}"))
         .stop(format!("r:{}", row.id))
 }
+
+impl Model {
+    /// One monitor tick onto the tiles' history lines.
+    pub fn monitor_sample(&mut self, store: &Store) {
+        let m = &store.monitor;
+        if m.sampled_ms.is_none() || m.sampled_ms == self.monitor_history.sampled {
+            return;
+        }
+        let h = &mut self.monitor_history;
+        h.sampled = m.sampled_ms;
+        push(&mut h.cpu, m.cpu.aggregate);
+        push(&mut h.mem, m.mem.as_ref().map(|x| x.used_fraction));
+        push(&mut h.gpu, m.gpu_busy());
+        push(&mut h.rx, m.net_available.then(|| m.net.iter().map(|n| n.rx_bytes_per_sec).sum()));
+        push(&mut h.tx, m.net_available.then(|| m.net.iter().map(|n| n.tx_bytes_per_sec).sum()));
+        self.dirty = true;
+    }
+}

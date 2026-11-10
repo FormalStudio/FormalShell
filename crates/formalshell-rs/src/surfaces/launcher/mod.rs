@@ -568,22 +568,6 @@ impl Model {
         self.column.as_ref().map_or(self.query.text(), |c| c.list_query.as_str())
     }
 
-    /// One monitor tick onto the tiles' history lines.
-    pub fn monitor_sample(&mut self, store: &Store) {
-        let m = &store.monitor;
-        if m.sampled_ms.is_none() || m.sampled_ms == self.monitor_history.sampled {
-            return;
-        }
-        let h = &mut self.monitor_history;
-        h.sampled = m.sampled_ms;
-        push(&mut h.cpu, m.cpu.aggregate);
-        push(&mut h.mem, m.mem.as_ref().map(|x| x.used_fraction));
-        push(&mut h.gpu, m.gpu_busy());
-        push(&mut h.rx, m.net_available.then(|| m.net.iter().map(|n| n.rx_bytes_per_sec).sum()));
-        push(&mut h.tx, m.net_available.then(|| m.net.iter().map(|n| n.tx_bytes_per_sec).sum()));
-        self.dirty = true;
-    }
-
     /// A held panel stands alone: no foot under it.
     pub fn footless(&self) -> bool {
         self.mode == Mode::Menu && self.view == View::Panel
@@ -2995,63 +2979,9 @@ impl Shown {
             .and_then(|h| h.stop.clone())
     }
 
-    /// The embedded panel's body, ending as far above the card's edge as
-    /// its last thing stands off the sides (panel-language spec §2).
-    fn panel_el(&self, m: &Model, store: &Store, theme: &Theme) -> Option<El> {
-        let p = m.panel.as_ref().filter(|_| m.on_panel())?;
-        let v = crate::surfaces::panel::View {
-            store,
-            theme,
-            output: self.output,
-            cursor: p.cursor.shown(),
-            hovered: self.hovered_stop(),
-            now: Instant::now(),
-            motion_scale: self.scale,
-            raster: self.modal.win.surface.scale(),
-        };
-        Some(p.module.body(&v))
-    }
-
-    fn measure_panel(&self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit) {
-        let Some(p) = m.panel.as_mut() else { return };
-        let v = crate::surfaces::panel::View {
-            store,
-            theme,
-            output: self.output,
-            cursor: None,
-            hovered: None,
-            now: Instant::now(),
-            motion_scale: self.scale,
-            raster: self.modal.win.surface.scale(),
-        };
-        p.width = crate::surfaces::panel::card_width(p.module.as_ref(), p.id.desc().width, &v, kit);
-        let Some(el) = self.panel_el(m, store, theme) else { return };
-        let width = m.panel_body(theme).1;
-        m.layout.content_h = ui::measure(&el, width, theme, kit).1;
-        m.layout.row_ends = ui::row_ends(&el, width, theme, kit);
-        m.layout.close = w::closing_room(&theme.space, &el);
-    }
-
     /// The body's stops, for the embedded panel's cursor.
     pub fn stops(&self) -> &[ui::Stop] {
         &self.body.stops
-    }
-
-    /// The smallest scroll that shows the embedded panel's cursor stop.
-    pub fn follow_panel(&self, m: &mut Model) {
-        let Some(st) = m.panel.as_ref().and_then(|p| p.cursor.shown()).and_then(|k| self.body.stops.iter().find(|st| st.key == k)) else { return };
-        let top = st.rect.y as f64 - self.panel_origin;
-        let (h, view) = (st.rect.h as f64, m.body_h);
-        let mut next = m.scroll;
-        if top < next {
-            next = top;
-        } else if top + h > next + view {
-            next = top + h - view;
-        }
-        m.scroll = next.clamp(0.0, (m.layout.content_h - view).max(0.0));
-        m.travels = true;
-        m.wheeled = false;
-        m.touch.settle();
     }
 
     /// The card at this frame of its size morph. Off a top bar it is
