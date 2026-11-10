@@ -216,8 +216,7 @@ fn sky_at(app: &mut App, args: &[Value]) -> Reply {
             Err(e) => return Err(e.to_string()),
         }
     };
-    app.store.theme.sky_at = pin;
-    crate::wayland::theme_inputs(app);
+    app.apply(crate::store::Diff::Theme(crate::services::theme::Diff::SkyAt(pin)));
     ok()
 }
 

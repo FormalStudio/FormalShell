@@ -175,7 +175,7 @@ fn wallpaper_source(doc: &Value, env: &theme::Env) -> Option<String> {
     let picture = if mirrored.is_file() { Some(mirrored.to_string_lossy().into_owned()) } else { settings::greeter_wallpaper(doc) };
     let sky = theme::Sky::read(settings::location(doc), None).step;
     // The mirror already copied the half the session's mode shows.
-    let source = wallpaper::source(color.as_deref(), &Value::Null, picture.as_deref().unwrap_or(""), "", "", sky);
+    let source = wallpaper::source(color.as_deref(), picture.as_deref().unwrap_or(""), sky);
     (!source.is_empty()).then_some(source)
 }
 

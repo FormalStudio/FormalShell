@@ -137,14 +137,45 @@ pub fn start(ctx: &Ctx) {
 /// the UI thread once the slice has applied and before any surface redraws.
 /// A reaction that moves a slice of its own hands back that diff.
 pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
+    // A sky step the engine published (Theme) moves the desktop's source too.
+    if matches!(topic, Topic::Config | Topic::State | Topic::Theme)
+        && let Some(inputs) = store.theme_inputs()
+    {
+        theme::send_inputs(inputs);
+    }
     match topic {
         Topic::Media => {
             kopuz::sync(&store.media);
             lyrics::sync(&store.media, &store.config, &store.lyrics);
             None
         }
-        Topic::Config | Topic::Lyrics => {
+        Topic::Config => {
+            use crate::settings::{DEPTH_GENERATE, LOCALSEND_ALIAS, LOCALSEND_DIR, LOCALSEND_RECEIVE, PICKER_DIRECTORY};
+            let c = &store.config;
+            picker::command(picker::Cmd::Boot(PICKER_DIRECTORY.get(c).to_owned()));
+            localsend::command(localsend::Cmd::Config { receive: LOCALSEND_RECEIVE.get(c), alias: LOCALSEND_ALIAS.get(c).to_owned(), dir: LOCALSEND_DIR.get(c).to_owned() });
+            depth::command(depth::Cmd::Config { enabled: DEPTH_GENERATE.get(c), dir: PICKER_DIRECTORY.get(c).to_owned() });
+            lights_palette(store);
             lyrics::sync(&store.media, &store.config, &store.lyrics);
+            None
+        }
+        Topic::Lyrics => {
+            lyrics::sync(&store.media, &store.config, &store.lyrics);
+            None
+        }
+        Topic::State => {
+            lights::record(store.state.data.lights.clone());
+            None
+        }
+        Topic::Theme => {
+            lights_palette(store);
+            None
+        }
+        Topic::Display => {
+            let scales = &store.display.scales;
+            menu::ask(menu::Ask::Scale(scales.primary()));
+            tray::scale(scales.largest());
+            notifications::scale(scales.largest());
             None
         }
         Topic::Compositor | Topic::Launch => launch::windows_changed(store),
@@ -159,4 +190,10 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
         | Topic::Logind => battery::check(store),
         _ => None,
     }
+}
+
+/// The theme's primary as the keyboard lights' wallpaper colour.
+fn lights_palette(store: &Store) {
+    let c = store.theme.theme.colors.get(fs_theme::palette::ColorRole::Primary);
+    lights::palette(fs_system::lights::hex_from_rgb(f64::from(c.r) * 255.0, f64::from(c.g) * 255.0, f64::from(c.b) * 255.0));
 }

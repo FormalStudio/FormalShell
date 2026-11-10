@@ -160,15 +160,30 @@ fn route<S, D>(slot: &mut S, diff: D, apply: impl FnOnce(&mut S, D) -> Option<To
 }
 
 impl Store {
-    /// What the desktop shows ([`wallpaper::source`]).
+    /// What the desktop shows ([`wallpaper::desktop`]).
     pub fn desktop(&self) -> String {
         self.desktop_for(&self.state.data.mode)
     }
 
     /// What the desktop shows in `mode`.
     pub fn desktop_for(&self, mode: &str) -> String {
+        wallpaper::desktop(crate::settings::wallpaper_color(&self.config).as_deref(), &self.state.data, mode, self.sky_step())
+    }
+
+    /// The theme engine's inputs, once both files have been read.
+    pub fn theme_inputs(&self) -> Option<theme::Inputs> {
+        if !self.config.loaded || !self.state.loaded {
+            return None;
+        }
         let data = &self.state.data;
-        wallpaper::source(crate::settings::wallpaper_color(&self.config).as_deref(), &data.wallpaper_color, &data.wallpaper, &data.wallpaper_dark, mode, self.sky_step())
+        Some(theme::Inputs {
+            settings: self.config.settings().clone(),
+            wallpaper: self.desktop(),
+            mode: data.mode.clone(),
+            mode_override: theme::parse_override(&data.mode_override),
+            location: crate::settings::location(&self.config),
+            sky_at: self.theme.sky_at,
+        })
     }
 
     /// The step a sky desktop shows: the engine's last reading, else the

@@ -1336,12 +1336,29 @@ impl App {
             if let Some(diff) = crate::services::react(&self.store, topic) {
                 self.apply(diff);
             }
-            surfaces::changed(self, topic);
+            self.changed(topic);
         }
     }
 
-    /// A store change to every window owner reading its topic.
-    pub fn owners_changed(&mut self, topic: Topic) {
+    /// What a store change asks of the shell's own parts, then of every
+    /// window owner that reads its topic (`Owner::reads`).
+    pub(crate) fn changed(&mut self, topic: Topic) {
+        if matches!(topic, Topic::Compositor | Topic::State | Topic::Display | Topic::Config) {
+            self.hdr.reconcile(&self.store);
+        }
+        match topic {
+            Topic::Compositor => self.zen_changed(),
+            Topic::Menu | Topic::Activity => {
+                // An fspec change landing moves the launcher's rows, whichever
+                // of the two told of it.
+                if crate::services::packages::land(&mut self.store) {
+                    self.launcher_store_changed();
+                }
+            }
+            Topic::Capture => capture_host::events(self),
+            Topic::Clipboard => self.field_paste(),
+            _ => {}
+        }
         owner::changed(self, topic);
     }
 
@@ -2176,25 +2193,6 @@ impl ProvidesRegistryState for App {
 
 delegate_registry!(App);
 delegate_dispatch2!(App);
-
-/// The theme engine's inputs once both files have been read.
-pub fn theme_inputs(app: &App) {
-    let (config, state) = (&app.store.config, &app.store.state);
-    if !config.loaded || !state.loaded {
-        return;
-    }
-    // Off settings.json itself rather than the resolved theme, which may
-    // not have taken this settings change yet.
-    let color = settings::wallpaper_color(config);
-    theme::send_inputs(theme::Inputs {
-        settings: config.settings().clone(),
-        wallpaper: crate::services::wallpaper::source(color.as_deref(), &state.data.wallpaper_color, &state.data.wallpaper, &state.data.wallpaper_dark, &state.data.mode, app.store.sky_step()),
-        mode: state.data.mode.clone(),
-        mode_override: theme::parse_override(&state.data.mode_override),
-        location: settings::location(config),
-        sky_at: app.store.theme.sky_at,
-    });
-}
 
 /// A bar's exclusive zone told to its layer again when its paint moved it
 /// (a band turning solid under a maximized window reserves its margin too).

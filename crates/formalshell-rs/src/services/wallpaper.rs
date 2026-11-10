@@ -18,6 +18,7 @@ use fs_chrome::grid::Grid;
 use image::imageops::{self, FilterType};
 
 use crate::runtime::Ctx;
+use crate::services::state;
 use crate::store;
 
 /// One output's picture, rows of wl_shm ARGB8888 (BGRA in memory).
@@ -35,23 +36,29 @@ pub struct Picture {
 const FLAT: &str = "color:";
 const SKY: &str = "sky:";
 
-/// What the desktop shows: the picker's last colour (`wallpaperColor` in
-/// state.json a hex or `sky`), the picture when it last chose one
-/// (`false`), and with no choice `wallpaper.color` over the picture. The
-/// picture is `dark` in dark mode when that slot is set, else `light`.
-/// `sky` is the step the sky stands in now.
-pub fn source(color: Option<&str>, picked: &serde_json::Value, light: &str, dark: &str, mode: &str, sky: i32) -> String {
+/// What the session's desktop shows in `mode`: the picker's last colour
+/// (`wallpaperColor` in state.json a hex or `sky`), the picture when it
+/// last chose one (`false`), and with no choice `configured`
+/// (`wallpaper.color`) over the picture. The picture is the dark slot in
+/// dark mode when that slot is set, else the light one. `sky` is the step
+/// the sky stands in now.
+pub fn desktop(configured: Option<&str>, data: &state::Data, mode: &str, sky: i32) -> String {
     use serde_json::Value;
-    let color = match picked {
+    let color = match &data.wallpaper_color {
         Value::String(hex) => Some(hex.as_str()),
         Value::Bool(false) => None,
-        _ => color,
+        _ => configured,
     };
+    let picture = if mode == "dark" && !data.wallpaper_dark.is_empty() { &data.wallpaper_dark } else { &data.wallpaper };
+    source(color, picture, sky)
+}
+
+/// `color` (a hex or `sky`) over `picture`.
+pub fn source(color: Option<&str>, picture: &str, sky: i32) -> String {
     match color {
         Some(fs_theme::theme::SKY) => sky_source(sky),
         Some(hex) => flat_source(hex),
-        None if mode == "dark" && !dark.is_empty() => dark.to_owned(),
-        None => light.to_owned(),
+        None => picture.to_owned(),
     }
 }
 
@@ -382,9 +389,13 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn data(picked: serde_json::Value, light: &str, dark: &str) -> state::Data {
+        state::Data { wallpaper_color: picked, wallpaper: light.into(), wallpaper_dark: dark.into(), ..state::Data::default() }
+    }
+
     #[test]
     fn the_settings_colour_covers_the_picture_until_the_picker_says_otherwise() {
-        let one = |color, picked: &serde_json::Value, picture, sky| source(color, picked, picture, "", "dark", sky);
+        let one = |color, picked: &serde_json::Value, picture, sky| desktop(color, &data(picked.clone(), picture, ""), "dark", sky);
         assert_eq!(one(Some("#402484"), &json!(null), "/w.png", 0), "color:#402484");
         assert_eq!(one(None, &json!(null), "/w.png", 0), "/w.png");
         assert_eq!(one(Some("#402484"), &json!(false), "/w.png", 0), "/w.png");
@@ -398,18 +409,18 @@ mod tests {
 
     #[test]
     fn the_mode_picks_the_half() {
-        assert_eq!(source(None, &json!(false), "/l.png", "/d.png", "dark", 0), "/d.png");
-        assert_eq!(source(None, &json!(false), "/l.png", "/d.png", "light", 0), "/l.png");
-        assert_eq!(source(None, &json!(false), "/l.png", "", "dark", 0), "/l.png");
-        assert_eq!(source(None, &json!(false), "/l.png", "", "light", 0), "/l.png");
+        assert_eq!(desktop(None, &data(json!(false), "/l.png", "/d.png"), "dark", 0), "/d.png");
+        assert_eq!(desktop(None, &data(json!(false), "/l.png", "/d.png"), "light", 0), "/l.png");
+        assert_eq!(desktop(None, &data(json!(false), "/l.png", ""), "dark", 0), "/l.png");
+        assert_eq!(desktop(None, &data(json!(false), "/l.png", ""), "light", 0), "/l.png");
     }
 
     #[test]
     fn a_colour_covers_both_halves() {
         for mode in ["light", "dark"] {
-            assert_eq!(source(None, &json!("#ff8000"), "/l.png", "/d.png", mode, 0), "color:#ff8000");
-            assert_eq!(source(None, &json!("sky"), "/l.png", "/d.png", mode, 3), "sky:3");
-            assert_eq!(source(Some("#402484"), &json!(null), "/l.png", "/d.png", mode, 0), "color:#402484");
+            assert_eq!(desktop(None, &data(json!("#ff8000"), "/l.png", "/d.png"), mode, 0), "color:#ff8000");
+            assert_eq!(desktop(None, &data(json!("sky"), "/l.png", "/d.png"), mode, 3), "sky:3");
+            assert_eq!(desktop(Some("#402484"), &data(json!(null), "/l.png", "/d.png"), mode, 0), "color:#402484");
         }
     }
 

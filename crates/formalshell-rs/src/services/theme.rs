@@ -147,6 +147,8 @@ pub enum Diff {
     /// The compositor's own blur switch, read on start and every reload.
     Blur(bool),
     Sky(Option<Sky>),
+    /// `debug skyAt`: the instant the sky is read at, none for now.
+    SkyAt(Option<i64>),
 }
 
 impl State {
@@ -165,6 +167,10 @@ impl State {
             }
             Diff::Sky(s) if s != self.sky => {
                 self.sky = s;
+                return true;
+            }
+            Diff::SkyAt(at) if at != self.sky_at => {
+                self.sky_at = at;
                 return true;
             }
             _ => return false,

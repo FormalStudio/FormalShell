@@ -38,7 +38,7 @@ impl App {
         n.sync(&self.store.state.data);
         n.phone.sync_config(self.store.config.get("iphone.notifications.dedupe"));
         if n.tick(now_ms()) || moved || dnd != self.store.notifications.model.dnd {
-            surfaces::changed(self, Topic::Notifications);
+            self.changed(Topic::Notifications);
         }
     }
 
