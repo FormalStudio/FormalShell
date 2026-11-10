@@ -15,9 +15,11 @@ use fs_info::notifications::Urgency;
 use futures_lite::FutureExt;
 use serde_json::{Value, json};
 
+use super::config::{self, Settings};
 use super::notifications::{self, Op};
 use super::proc;
 use crate::runtime::{Ctx, now_ms};
+use crate::settings::{LOCALSEND_ALIAS, LOCALSEND_DIR, LOCALSEND_RECEIVE};
 use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(2);
@@ -88,8 +90,6 @@ impl Payload {
 }
 
 pub enum Cmd {
-    /// `localsend.receive`, `.alias` and `.dir` as read.
-    Config { receive: bool, alias: String, dir: String },
     Scan { force: bool },
     Send { peer: Peer, payload: Payload },
 }
@@ -105,7 +105,15 @@ fn toast(ctx: &Ctx, summary: &str, body: &str, urgency: Urgency) {
     ctx.publish(store::Diff::Notifications(notifications::Diff::Op(Op::Notify(summary.into(), body.into(), urgency))));
 }
 
+/// `localsend.receive`, `.alias` and `.dir` as written.
+type Keys = (bool, String, String);
+
+fn keys(settings: &Settings) -> Option<Keys> {
+    Some((LOCALSEND_RECEIVE.get(settings), LOCALSEND_ALIAS.get(settings).to_owned(), LOCALSEND_DIR.get(settings).to_owned()))
+}
+
 enum Wake {
+    Config(Option<Keys>),
     Cmd(Cmd),
     Scanned(String),
     Sent(proc::Done),
@@ -123,23 +131,23 @@ async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded::<Wake>();
     // Back to the floor when the settings change, not when it starts.
     let mut recv = proc::Supervised::new(BASE_BACKOFF, MAX_BACKOFF, proc::Reset::Manual);
-    let mut config: Option<(bool, String, String)> = None;
+    let settings = config::subscribe();
+    let mut config: Option<Keys> = None;
     ctx.publish(store::Diff::Localsend(Diff(s.clone())));
     loop {
         let wake = async { CHANNEL.1.recv().await.ok().map(Wake::Cmd) }
+            .or(async { Some(Wake::Config(config::moved(&settings, &config, keys).await.and_then(|s| keys(&s)))) })
             .or(async { rx.recv().await.ok() })
             .or(async { Some(Wake::Recv(recv.next().await)) })
             .await;
         let Some(wake) = wake else { return };
         match wake {
-            Wake::Cmd(Cmd::Config { receive, alias, dir }) => {
+            Wake::Config(None) => return,
+            Wake::Config(Some(next)) => {
+                config = Some(next.clone());
+                let (receive, alias, dir) = next;
                 let alias = if alias.is_empty() { if host.is_empty() { "FormalShell".to_owned() } else { host.clone() } } else { alias };
                 let dir = if dir.is_empty() { crate::paths::home().join("Downloads").to_string_lossy().into_owned() } else { dir };
-                let next = (receive, alias.clone(), dir.clone());
-                if config.as_ref() == Some(&next) {
-                    continue;
-                }
-                config = Some(next);
                 (s.enabled, s.alias, s.dir) = (receive, alias, dir);
                 recv.stop();
                 s.receiving = false;

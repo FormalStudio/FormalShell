@@ -149,11 +149,6 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
             None
         }
         Topic::Config => {
-            use crate::settings::{DEPTH_GENERATE, LOCALSEND_ALIAS, LOCALSEND_DIR, LOCALSEND_RECEIVE, PICKER_DIRECTORY};
-            let c = &store.config;
-            picker::command(picker::Cmd::Boot(PICKER_DIRECTORY.get(c).to_owned()));
-            localsend::command(localsend::Cmd::Config { receive: LOCALSEND_RECEIVE.get(c), alias: LOCALSEND_ALIAS.get(c).to_owned(), dir: LOCALSEND_DIR.get(c).to_owned() });
-            depth::command(depth::Cmd::Config { enabled: DEPTH_GENERATE.get(c), dir: PICKER_DIRECTORY.get(c).to_owned() });
             lights_palette(store);
             lyrics::sync(&store.media, &store.config, &store.lyrics);
             Some(notifications::Op::Dedupe(crate::settings::iphone_dedupe(c)).into())

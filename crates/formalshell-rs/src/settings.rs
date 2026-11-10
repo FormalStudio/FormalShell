@@ -275,6 +275,11 @@ pub const HOT_CORNER_TOP_RIGHT: Word = corner("hotCorners.topRight", Corner::Top
 pub const HOT_CORNER_BOTTOM_LEFT: Word = corner("hotCorners.bottomLeft", Corner::BottomLeft);
 pub const HOT_CORNER_BOTTOM_RIGHT: Word = corner("hotCorners.bottomRight", Corner::BottomRight);
 
+/// `plugins.disabled`, the plugin ids left unloaded.
+pub fn plugins_disabled(doc: &(impl Doc + ?Sized)) -> Vec<String> {
+    strings(doc, "plugins.disabled")
+}
+
 const fn corner(key: &'static str, corner: Corner) -> Word {
     Word::new(key, corners::default_action(corner))
 }

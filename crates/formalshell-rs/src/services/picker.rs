@@ -12,12 +12,15 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
+use futures_lite::FutureExt;
 use fs_menu::providers::{self, Item, ItemKind};
 use fs_menu::thumbnails::{self, Mode};
 
 use super::clipboard::thumb_dir;
+use super::config;
 use crate::runtime::Ctx;
 use crate::scene::Bitmap;
+use crate::settings::PICKER_DIRECTORY;
 use crate::store;
 
 /// The `wide` thumbnail's width; its height is 9/16 of it.
@@ -141,10 +144,13 @@ pub fn directory(configured: &str) -> String {
 
 pub enum Cmd {
     Scan(String),
-    /// `picker.directory` as read: scanned and warmed once per value.
-    Boot(String),
     /// Decode these tiles' pictures (by [`tile_key`]) at `Px`.
     Thumbs(Vec<String>, Px),
+}
+
+enum Wake {
+    Cmd(Cmd),
+    Dir(String),
 }
 
 static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
@@ -159,18 +165,24 @@ pub fn start(ctx: &Ctx) {
 }
 
 async fn run(ctx: Ctx) {
+    let settings = config::subscribe();
+    // `picker.directory` as read: scanned and warmed once per value.
     let mut booted: Option<String> = None;
-    while let Ok(cmd) = CHANNEL.1.recv().await {
-        let cmd = match cmd {
-            Cmd::Boot(dir) if booted.as_ref() == Some(&dir) => continue,
-            Cmd::Boot(dir) => {
-                booted = Some(dir.clone());
-                Cmd::Scan(directory(&dir))
+    let dir = |s: &config::Settings| Some(PICKER_DIRECTORY.get(s).to_owned());
+    loop {
+        let wake = async { CHANNEL.1.recv().await.ok().map(Wake::Cmd) }
+            .or(async { config::moved(&settings, &booted, dir).await.and_then(|s| dir(&s)).map(Wake::Dir) })
+            .await;
+        let cmd = match wake {
+            None => return,
+            Some(Wake::Cmd(cmd)) => cmd,
+            Some(Wake::Dir(d)) => {
+                let scan = Cmd::Scan(directory(&d));
+                booted = Some(d);
+                scan
             }
-            c => c,
         };
         match cmd {
-            Cmd::Boot(_) => {}
             Cmd::Scan(dir) => {
                 let d = dir.clone();
                 let Some(scan) = ctx.pool().run(move || read(d)).await else { continue };

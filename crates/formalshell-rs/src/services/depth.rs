@@ -7,14 +7,15 @@
 //! follows, so its own writes do not start another run.
 
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
 use futures_lite::FutureExt;
 use serde_json::{Value, json};
 
+use super::config::{self, Settings};
 use super::proc;
+use crate::settings::{DEPTH_GENERATE, PICKER_DIRECTORY};
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -71,21 +72,15 @@ fn same_file(a: &str, b: &str) -> bool {
     a == b || matches!((std::fs::canonicalize(a), std::fs::canonicalize(b)), (Ok(x), Ok(y)) if x == y)
 }
 
-pub enum Cmd {
-    Config { enabled: bool, dir: String },
-}
-
 enum Wake {
-    Cmd(Cmd),
+    /// `wallpaper.depthGenerate` and `picker.directory` as read.
+    Config(Option<(bool, String)>),
     Changed(u64),
     Done(proc::Done),
 }
 
-static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
-
-/// Callable from any thread.
-pub fn command(cmd: Cmd) {
-    let _ = CHANNEL.0.try_send(cmd);
+fn keys(settings: &Settings) -> (bool, String) {
+    (DEPTH_GENERATE.get(settings), PICKER_DIRECTORY.get(settings).to_owned())
 }
 
 pub fn start(ctx: &Ctx) {
@@ -93,6 +88,7 @@ pub fn start(ctx: &Ctx) {
 }
 
 async fn run(ctx: Ctx) {
+    let settings = config::subscribe();
     let (tx, rx) = async_channel::unbounded::<Wake>();
     let mut s = State::default();
     let mut generation: u64 = 0;
@@ -101,13 +97,14 @@ async fn run(ctx: Ctx) {
     let mut pending = false;
     let mut logged = false;
     loop {
-        let wake = async { CHANNEL.1.recv().await.ok().map(Wake::Cmd) }.or(async { rx.recv().await.ok() }).await;
+        let current = (s.enabled, s.dir.clone());
+        let wake = async { Some(Wake::Config(config::moved(&settings, &current, keys).await.map(|n| keys(&n)))) }
+            .or(async { rx.recv().await.ok() })
+            .await;
         let Some(wake) = wake else { return };
         let want = match wake {
-            Wake::Cmd(Cmd::Config { enabled, dir }) => {
-                if (enabled, &dir) == (s.enabled, &s.dir) {
-                    continue;
-                }
+            Wake::Config(None) => return,
+            Wake::Config(Some((enabled, dir))) => {
                 (s.enabled, s.dir) = (enabled, dir);
                 generation += 1;
                 _stop = None;

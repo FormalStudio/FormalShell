@@ -369,14 +369,6 @@ pub fn directory() -> PathBuf {
     crate::paths::config().join("formalshell").join("plugins")
 }
 
-fn disabled() -> Vec<String> {
-    config::current()
-        .get("plugins.disabled")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
-        .unwrap_or_default()
-}
-
 fn publish(ctx: &Ctx, diff: Diff) {
     ctx.publish(store::Diff::Plugins(diff));
 }
@@ -603,7 +595,7 @@ async fn rescan(ctx: &Ctx, hosts: &mut Hosts, open: &HashSet<String>) -> Resolve
     let scan = dir.clone();
     let scanned = scan.clone();
     let records = ctx.pool().run(move || read_records(&scanned)).await.unwrap_or_default();
-    let resolved = plugins::resolve(records, &disabled());
+    let resolved = plugins::resolve(records, &crate::settings::plugins_disabled(&config::current()));
     for warning in &resolved.warnings {
         eprintln!("plugins: {warning}");
     }
@@ -618,7 +610,7 @@ async fn rescan(ctx: &Ctx, hosts: &mut Hosts, open: &HashSet<String>) -> Resolve
 
 enum Next {
     Cmd(Option<Cmd>),
-    Settings,
+    Settings(Option<config::Settings>),
 }
 
 pub fn start(ctx: &Ctx) {
@@ -633,14 +625,12 @@ async fn run(ctx: Ctx) {
     let _ = settings.recv().await;
     let mut hosts = Hosts::new();
     let mut draining = Draining::new();
-    let mut off = disabled();
+    let mut off = crate::settings::plugins_disabled(&config::current());
     let mut open = HashSet::new();
     let mut resolved = rescan(&ctx, &mut hosts, &open).await;
     loop {
-        let next = async { Next::Cmd(rx.recv().await.ok()) }.or(async {
-            let _ = settings.recv().await;
-            Next::Settings
-        });
+        let next = async { Next::Cmd(rx.recv().await.ok()) }
+            .or(async { Next::Settings(config::moved(&settings, &off, crate::settings::plugins_disabled).await) });
         match next.await {
             Next::Cmd(None) => return,
             Next::Cmd(Some(Cmd::Rescan)) => {
@@ -664,13 +654,11 @@ async fn run(ctx: Ctx) {
                     let _ = events.try_send(line);
                 }
             }
-            Next::Settings => {
-                let now = disabled();
-                if now != off {
-                    off = now;
-                    end_draining(&mut draining);
-                    resolved = rescan(&ctx, &mut hosts, &open).await;
-                }
+            Next::Settings(None) => return,
+            Next::Settings(Some(next)) => {
+                off = crate::settings::plugins_disabled(&next);
+                end_draining(&mut draining);
+                resolved = rescan(&ctx, &mut hosts, &open).await;
             }
         }
     }
