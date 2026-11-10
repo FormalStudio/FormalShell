@@ -143,6 +143,7 @@ for scale, r in sorted(scaled, key=lambda s: -est[key(*s)]):
     e = est[key(scale, r)]
     print("%s\t%s\t%s" % ("?" if e == float("inf") else int(e), scale, r))
 ' "$list" "$times" "$rig" "$out/manifest.json" > "$out/order"
+  if [ ! -s "$out/order" ]; then echo "$label: no runs this rig can take"; return 0; fi
   started=$SECONDS
   echo "$label: building once on $rig, then $(wc -l < "$out/order" | tr -d ' ') runs over $jobs slots into $out"
   trap 'rig_drop_shared; exit 143' INT TERM HUP
