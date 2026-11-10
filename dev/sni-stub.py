@@ -9,7 +9,7 @@ The icon is a flat color square built at runtime from --color (no icon-theme
 lookup: the VM ships no icon theme), in the wire format IconPixmap
 requires: network/big-endian ARGB32 bytes per pixel.
 
---menu (M32) additionally exports a real com.canonical.dbusmenu tree at
+--menu additionally exports a real com.canonical.dbusmenu tree at
 /MenuBar and points the item's own "Menu" property (an object path) at it,
 which is what marks the item as having a menu. GetLayout/AboutToShow/Event
 are the only methods a client needs to show and activate it: it calls

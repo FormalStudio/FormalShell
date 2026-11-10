@@ -252,7 +252,7 @@ impl Env {
     }
 }
 
-/// What the engine reacts to. Task 5 sends one whenever any of it moves.
+/// What the engine reacts to: one is sent whenever any of it moves.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Inputs {
     pub settings: Value,

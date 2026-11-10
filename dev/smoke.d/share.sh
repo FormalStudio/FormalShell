@@ -14,7 +14,7 @@
 # What is under test: the route resolves and renders (a screenshot, read by
 # eye, of the honest "No devices found" state -- this rig's isolated
 # network genuinely has no second LocalSend peer to discover; a real
-# two-instance transfer is Task 7's own dedicated leg), and the
+# two-instance transfer is --localsend's, on the VM rig), and the
 # `localsend` IPC target's status/scan/peers round trip against the real
 # CLI process LocalsendService actually spawns.
 leg_share_flag="--share"

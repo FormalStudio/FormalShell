@@ -1,15 +1,14 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --shoulders proves the join (M54 D6): a card hanging off the bar and the
+# --shoulders proves the join: a card hanging off the bar and the
 # bar's own inward line are one silhouette, not a card parked against a line.
 # The bar opens a gap of the card's rect plus a fillet's radius at either end,
 # and the shoulders component draws a concave quarter arc into each of those
 # two ends, running from the card's side out to the line.
 #
-# Nothing consumes Shoulders until M54 Task 3, so the leg publishes the join
-# itself over `debug join <edge> <x> <width>` and the shell's own preview
-# surface hangs one card at that rect. The
-# card's depth is that file's business; everything asserted here is along the
+# The leg publishes the join itself over `debug join <edge> <x> <width>`, so
+# the gap sits at a rect it chose rather than wherever a panel would rest, and
+# the shell's own preview surface hangs one card at that rect. The card's depth is that file's business; everything asserted here is along the
 # bar.
 #
 # Only a band with a line has a gap to open: the default transparent band

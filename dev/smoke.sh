@@ -458,9 +458,8 @@ need_pkexec() {
       exit 1
     fi
     # pkexec resets PATH to its own compiled-in secure default before exec'ing
-    # the target, so a bare `true` 127s. `type -P`, not `command -v`: bash's
-    # own builtin shadows the real
-    # binary and command -v returns the bare word, which 127s just the same.
+    # the target, so it gets an absolute path. `type -P`, not `command -v`: bash's own
+    # builtin shadows the real binary and command -v returns the bare word.
     polkit_true_bin=$(type -P true)
   fi
 }

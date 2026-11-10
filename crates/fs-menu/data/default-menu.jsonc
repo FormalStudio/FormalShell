@@ -175,17 +175,11 @@
     "reminder.show": { "iconName": "clock", "label": "Show Reminders", "action": "@ipc:reminder.show" },
     "reminder.clear": { "iconName": "x", "label": "Clear Reminders", "action": "@ipc:reminder.clear" },
 
-    // SHARE (M17 Task 1, restructured M75 Task 5 for localsend-cli):
-    // present when either localsend-cli (the primary path, peers under
-    // Send, LocalsendService) or the GUI's `localsend_app` (the fallback,
-    // nixpkgs' pkgs.localsend, verified against its actual installed bin/,
-    // not the bare `localsend` name omarchy assumes) resolves on PATH --
-    // the standard `command -v` presence guard (the Tailscale panel's
-    // own "NO TAILSCALE" check uses the same idiom). Every child is
-    // dynamic, none declared here: providers.js's sharePeerEntries()
-    // builds the whole subtree at tree-build time, picking the CLI or the
-    // GUI shape off whether LocalSend is installed, the same
-    // fully-dynamic pattern gpuModeEntry uses for "gpu.mode.*".
+    // Present when localsend-cli (peers under Send) or the GUI's
+    // `localsend_app` (the fallback; the GUI installs that name, not
+    // `localsend`) resolves on PATH. Every child is built at tree-build time
+    // by fs-menu's `share_peer_entries`, which picks the CLI or the GUI
+    // shape off which one is installed; none is declared here.
     "share": { "iconName": "share-2", "chord": "Super+Ctrl+S",
         "label": "Share",
         "when": "command -v localsend-cli >/dev/null 2>&1 || command -v localsend_app >/dev/null 2>&1"

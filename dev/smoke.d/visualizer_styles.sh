@@ -11,7 +11,7 @@
 # finder uses), intersected so a stray once-a-second tick of the elapsed
 # readout in one of the two diffs can't widen the box.
 #
-# The second half is the AGC settling claim from Task 1 (fix f4e5885): with
+# The second half is the AGC settling claim (f4e5885): with
 # the player volume forced to 100, `visualizer status`'s levels (exposed
 # there for this leg) must not all sit above 0.9 once cava's had a couple of
 # seconds to converge. Before that fix a loud track pegged every band.
@@ -141,7 +141,7 @@ while IFS= read -r id; do
   prev="\$crop"
 done < "$visualizer_styles_ids_path"
 
-# The AGC settling claim (Task 1, f4e5885): a loud track, player volume
+# The AGC settling claim (f4e5885): a loud track, player volume
 # forced to 100, must not peg every band near the ceiling.
 $ipc call media volume 100 > /dev/null 2>&1
 sleep 3
