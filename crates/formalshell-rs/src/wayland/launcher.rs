@@ -977,8 +977,43 @@ impl App {
     }
 
     /// The launcher's window, while it is open.
-    pub fn launcher_shown(&self) -> Option<&Shown> {
+    fn launcher_shown(&self) -> Option<&Shown> {
         self.launch.win.as_ref().filter(|w| w.shown.modal.open).map(|w| &w.shown)
+    }
+
+    /// `menu status`: the model's report and the open window's boxes.
+    pub fn launcher_status(&self) -> serde_json::Value {
+        let mut v = self.launcher.status(&self.store);
+        let rect = |r: fs_types::IRect| serde_json::json!(r);
+        let shown = self.launcher_shown();
+        if let Some(r) = shown.and_then(|w| w.body_rect) {
+            v["body"] = rect(r);
+        }
+        if let Some(r) = shown.and_then(|w| w.field_box()) {
+            v["fieldBox"] = rect(r);
+        }
+        if let Some(r) = shown.and_then(|w| w.token_rect()) {
+            v["tokenBox"] = rect(r);
+        }
+        let (hover, action_hover) = shown.map_or((None, None), |w| w.hovered());
+        v["hover"] = hover.map_or(-1, |i| i as i64).into();
+        v["actionHover"] = action_hover.map_or(-1, |i| i as i64).into();
+        if let Some(r) = shown.and_then(|w| w.column_box()) {
+            v["actionsBox"] = rect(r);
+        }
+        if let Some(r) = shown.and_then(|w| w.pane_box()) {
+            v["paneBox"] = rect(r);
+        }
+        if let Some(w) = shown {
+            v["cardBox"] = rect(w.card_box());
+            v["rowBoxes"] = w.row_boxes().into_iter().map(|(i, r)| keyed("index", i.into(), r)).collect();
+        }
+        v["footHints"] = shown
+            .map_or_else(Vec::new, |w| w.foot_hints())
+            .into_iter()
+            .map(|(on, r)| keyed("on", on.into(), r))
+            .collect();
+        v
     }
 
     /// `mirror status`.
@@ -1537,4 +1572,13 @@ fn write_selection(path: &std::path::Path, answer: &Selected) {
         let _ = std::fs::create_dir_all(dir);
     }
     let _ = std::fs::write(path, line.to_string());
+}
+
+/// `r`'s wire form led by one more key.
+fn keyed(key: &str, value: serde_json::Value, r: fs_types::IRect) -> serde_json::Value {
+    let mut out = serde_json::Map::from_iter([(key.to_owned(), value)]);
+    if let serde_json::Value::Object(rect) = serde_json::json!(r) {
+        out.extend(rect);
+    }
+    serde_json::Value::Object(out)
 }
