@@ -267,13 +267,16 @@ pub fn run_restart(ctx: &Ctx, n: u64) {
 
 async fn restart_task(ctx: &Ctx, pid: u64) {
     let fail = |message: &str| finish(ctx, pid, "RESTART", false, message);
-    let args = std::fs::read(format!("/proc/{pid}/cmdline")).map_or_else(|_| Vec::new(), |raw| procs::parse_argv(&String::from_utf8_lossy(&raw)));
+    // Unreadable is normal for the cwd (another user's process): the
+    // respawn then runs from the shell's own cwd.
+    let read = move || {
+        let args = std::fs::read(format!("/proc/{pid}/cmdline")).map_or_else(|_| Vec::new(), |raw| procs::parse_argv(&String::from_utf8_lossy(&raw)));
+        (args, std::fs::read_link(format!("/proc/{pid}/cwd")).ok())
+    };
+    let (args, cwd) = ctx.pool().run(read).await.unwrap_or_default();
     if args.is_empty() {
         return fail("no command line to re-run (process gone, or a kernel thread)");
     }
-    // Unreadable is normal (another user's process): the respawn then runs
-    // from the shell's own cwd.
-    let cwd = std::fs::read_link(format!("/proc/{pid}/cwd")).ok();
     if let Err(err) = signal(pid, "TERM") {
         return fail(&format!("kill failed: {err}"));
     }
@@ -284,7 +287,7 @@ async fn restart_task(ctx: &Ctx, pid: u64) {
     loop {
         Timer::after(RESTART_POLL).await;
         waited += RESTART_POLL;
-        if !std::path::Path::new(&format!("/proc/{pid}")).is_dir() {
+        if !ctx.pool().run(move || std::path::Path::new(&format!("/proc/{pid}")).is_dir()).await.unwrap_or(false) {
             break;
         }
         if waited >= RESTART_TIMEOUT {
