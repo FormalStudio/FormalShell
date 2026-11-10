@@ -108,9 +108,65 @@ pub struct Sleep {
     pub monitoring: bool,
     pub inhibiting: bool,
     preparing: bool,
-    result: String,
     started: Option<Instant>,
-    last: Option<Map<String, Value>>,
+    last: Option<SleepRecord>,
+}
+
+/// One PrepareForSleep, as `lock status` reports it.
+struct SleepRecord {
+    result: SleepLock,
+    prepared_at: u64,
+    released: Option<(Release, u64)>,
+}
+
+impl SleepRecord {
+    fn json(&self) -> Value {
+        json!({
+            "result": self.result.wire(),
+            "release": self.released.map(|(why, _)| why.as_str()),
+            "preparedAt": self.prepared_at,
+            "releasedAt": self.released.map(|(_, at)| at),
+        })
+    }
+}
+
+/// What locking for a sleep came to.
+enum SleepLock {
+    Locked,
+    Already,
+    Failed(String),
+}
+
+impl SleepLock {
+    fn wire(&self) -> String {
+        match self {
+            SleepLock::Locked => "ok".into(),
+            SleepLock::Already => "already".into(),
+            SleepLock::Failed(why) => format!("error: {why}"),
+        }
+    }
+}
+
+/// Why the delay inhibitor was let go.
+#[derive(Clone, Copy)]
+enum Release {
+    Already,
+    External,
+    Failed,
+    Secure,
+    Timeout,
+}
+
+impl Release {
+    fn as_str(self) -> &'static str {
+        match self {
+            Release::Already => "already",
+            Release::External => "external",
+            Release::Failed => "failed",
+            Release::Secure => "secure",
+            Release::Timeout => "timeout",
+        }
+    }
 }
 
 pub struct Lock {
@@ -1388,7 +1444,7 @@ impl App {
             "enabled": self.lock_before_sleep(),
             "monitoring": s.monitoring,
             "inhibiting": s.inhibiting,
-            "last": s.last.clone().map_or(Value::Null, Value::Object),
+            "last": s.last.as_ref().map_or(Value::Null, SleepRecord::json),
         });
         state
     }
@@ -1415,18 +1471,11 @@ impl App {
         }
         self.lock.sleep.preparing = true;
         let result = if self.lock.locked && !self.lock_external() {
-            "already".to_owned()
+            SleepLock::Already
         } else {
-            self.lock().map_or_else(|err| format!("error: {err}"), |()| "ok".into())
+            self.lock().map_or_else(SleepLock::Failed, |()| SleepLock::Locked)
         };
-        let at = epoch_ms();
-        let mut last = Map::new();
-        last.insert("result".into(), json!(result));
-        last.insert("release".into(), Value::Null);
-        last.insert("preparedAt".into(), json!(at));
-        last.insert("releasedAt".into(), Value::Null);
-        self.lock.sleep.last = Some(last);
-        self.lock.sleep.result = result;
+        self.lock.sleep.last = Some(SleepRecord { result, prepared_at: epoch_ms(), released: None });
         self.lock.sleep.started = Some(Instant::now());
         self.check_sleep_release();
     }
@@ -1436,39 +1485,38 @@ impl App {
         let Some(started) = self.lock.sleep.started else { return };
         let elapsed = started.elapsed().as_millis() as u64;
         let external = self.lock_external();
-        let result = self.lock.sleep.result.as_str();
+        let Some(record) = &self.lock.sleep.last else { return };
         // The blank set for the sleep is committed before the machine may go.
         let drawing = self.lock.dirty && !self.lock.outs.is_empty() && elapsed < 3000;
         let why = if drawing {
-            ""
-        } else if result == "already" {
-            "already"
+            None
+        } else if matches!(record.result, SleepLock::Already) {
+            Some(Release::Already)
         } else if external {
-            if elapsed >= 1000 { "external" } else { "" }
-        } else if result != "ok" {
-            "failed"
+            (elapsed >= 1000).then_some(Release::External)
+        } else if matches!(record.result, SleepLock::Failed(_)) {
+            Some(Release::Failed)
         } else if self.lock.secure {
-            "secure"
+            Some(Release::Secure)
         } else if elapsed >= 3000 {
-            "timeout"
+            Some(Release::Timeout)
         } else {
-            ""
+            None
         };
-        if why.is_empty() {
+        let Some(why) = why else {
             let Some(handle) = &self.handle else { return };
             let _ = handle.insert_source(Timer::from_duration(Duration::from_millis(50)), |_, _, app: &mut App| {
                 app.check_sleep_release();
                 TimeoutAction::Drop
             });
             return;
+        };
+        if matches!(why, Release::Failed | Release::Timeout) {
+            eprintln!("LockService: letting suspend proceed without a lock: {} {}", why.as_str(), record.result.wire());
         }
         self.lock.sleep.started = None;
         if let Some(last) = &mut self.lock.sleep.last {
-            last.insert("release".into(), json!(why));
-            last.insert("releasedAt".into(), json!(epoch_ms()));
-        }
-        if why == "failed" || why == "timeout" {
-            eprintln!("LockService: letting suspend proceed without a lock: {why} {result}");
+            last.released = Some((why, epoch_ms()));
         }
         if let Some(rt) = &self.runtime {
             rt.service(|_| crate::services::sleep::release());
