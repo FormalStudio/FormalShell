@@ -15,32 +15,20 @@ use super::{App, Press, Target};
 use crate::motion::Kind;
 use crate::runtime::now_ms;
 use crate::services::notifications::Op;
-use crate::store::Topic;
 use crate::surface::{Backend, Surface};
 use crate::surfaces;
 use crate::surfaces::panel::center;
 use crate::surfaces::toasts::{Act, Toasts};
 
 impl App {
+    /// The centre's state as the panel host has it, which every way a card
+    /// opens or shuts reaches, then the slice's clock.
     pub(crate) fn tick_notifications(&mut self) {
         let open = self.center_open();
-        let n = &mut self.store.notifications;
-        let dnd = n.model.dnd;
-        let mut moved = false;
-        // Closing the centre files everything pending as seen, however
-        // the card was closed (Escape, a click outside, showHistory).
-        if n.center_open != open {
-            n.center_open = open;
-            if !open {
-                n.mark_all_seen();
-            }
-            moved = true;
+        if open != self.store.notifications.center_open {
+            self.apply(Op::CenterOpen(open));
         }
-        n.sync(&self.store.state.data);
-        n.phone.sync_config(self.store.config.get("iphone.notifications.dedupe"));
-        if n.tick(now_ms()) || moved || dnd != self.store.notifications.model.dnd {
-            self.changed(Topic::Notifications);
-        }
+        self.apply(Op::Tick(now_ms()));
     }
 
     fn center_open(&self) -> bool {

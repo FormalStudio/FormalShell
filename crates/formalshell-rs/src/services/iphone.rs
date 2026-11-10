@@ -194,25 +194,14 @@ fn entries(m: &model::State) -> impl Iterator<Item = &model::Entry> {
 }
 
 /// The centre's side of the mirror, held by the notification state on the
-/// UI thread: `iphone.notifications.dedupe`, and what a phone or local
-/// arrival does to the cards already there.
+/// UI thread: `iphone.notifications.dedupe`'s rules, and what a phone or
+/// local arrival does to the cards already there.
 #[derive(Default)]
 pub struct Mirror {
-    rules: Vec<iphone::DedupeRule>,
-    /// The key as last read, absent included.
-    seen: Option<Option<Value>>,
+    pub rules: Vec<iphone::DedupeRule>,
 }
 
 impl Mirror {
-    /// Reads `iphone.notifications.dedupe` whenever settings.json moved.
-    pub fn sync_config(&mut self, raw: Option<&Value>) {
-        if self.seen.as_ref().is_some_and(|seen| seen.as_ref() == raw) {
-            return;
-        }
-        self.seen = Some(raw.cloned());
-        let raw = raw.cloned().unwrap_or_else(iphone::default_dedupe);
-        self.rules = iphone::dedupe_rules(&raw);
-    }
 
     /// A phone arrival; `quiet` is Focus's "history, no toast". ANCS resends
     /// an id when the phone modifies a notification, which updates its card

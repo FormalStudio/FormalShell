@@ -308,14 +308,6 @@ impl Dispatch2<ExtIdleNotificationV1, App> for LockIdle {
     }
 }
 
-/// `lock.command` as read: a list of
-/// non-empty strings, or nothing.
-fn command(app: &App) -> Vec<String> {
-    let Some(Value::Array(items)) = app.store.config.get("lock.command") else { return Vec::new() };
-    let argv: Vec<String> = items.iter().filter_map(|v| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned)).collect();
-    if argv.len() == items.len() { argv } else { Vec::new() }
-}
-
 /// Present while this session's built-in lock is held, whichever shell
 /// holds it.
 fn held_marker() -> std::path::PathBuf {
@@ -393,7 +385,7 @@ fn take_splash() -> Option<Bitmap> {
 }
 
 fn via_logind(app: &App) -> bool {
-    command(app).first().is_some_and(|b| b.rsplit('/').next() == Some("loginctl"))
+    crate::settings::lock_command(&app.store.config).first().is_some_and(|b| b.rsplit('/').next() == Some("loginctl"))
 }
 
 impl App {
@@ -425,7 +417,7 @@ impl App {
     /// `lock lock`. An external locker named by `lock.command` runs in
     /// place of the surface, unless it is not on PATH.
     pub fn lock(&mut self) -> Result<(), String> {
-        let argv = command(self);
+        let argv = crate::settings::lock_command(&self.store.config);
         if let Some(bin) = argv.first() {
             if on_path(bin) {
                 compositor::spawn(&argv);
@@ -460,7 +452,7 @@ impl App {
     /// A `lock.command` that is loginctl comes back as logind's Lock, which
     /// raises the built-in lock: that one is not external.
     pub fn lock_external(&self) -> bool {
-        !via_logind(self) && command(self).first().is_some_and(|b| on_path(b))
+        !via_logind(self) && crate::settings::lock_command(&self.store.config).first().is_some_and(|b| on_path(b))
     }
 
     /// The boot's lock, called before any other surface is made and before

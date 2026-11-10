@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use async_io::Timer;
-use fs_chrome::bar::layout::{self, EntryKind};
+use fs_chrome::bar::layout::EntryKind;
 use fs_types::Region;
 use futures_lite::{AsyncReadExt, FutureExt};
 use serde_json::Value;
@@ -84,7 +84,7 @@ impl State {
 /// The command modules the bar places, region by region. Plugins never
 /// place a module, so the layout is resolved without them.
 fn placed(settings: &Settings) -> Vec<Module> {
-    let resolved = layout::resolve(settings.get("bar"), &[]);
+    let resolved = crate::settings::bar_layout(settings, &[]);
     Region::ALL
         .iter()
         .flat_map(|r| resolved.regions.get(*r).to_vec())

@@ -1427,7 +1427,7 @@ impl App {
     pub(super) fn launcher_inputs(&mut self) {
         let l = &self.store.lights;
         let inputs = fs_menu::base::BaseInputs {
-            buttons: self.store.config.get("menu.customPowerButtons").cloned().unwrap_or_default(),
+            buttons: crate::settings::custom_power_buttons(&self.store.config),
             lights: l.available.then(|| {
                 l.effects.iter().map(|(id, label)| fs_menu::providers::LightEffect { id: id.clone(), label: label.clone() }).collect()
             }),

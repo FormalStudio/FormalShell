@@ -158,15 +158,16 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
             depth::command(depth::Cmd::Config { enabled: DEPTH_GENERATE.get(c), dir: PICKER_DIRECTORY.get(c).to_owned() });
             lights_palette(store);
             lyrics::sync(&store.media, &store.config, &store.lyrics);
-            None
+            Some(notifications::Op::Dedupe(crate::settings::iphone_dedupe(c)).into())
         }
         Topic::Lyrics => {
             lyrics::sync(&store.media, &store.config, &store.lyrics);
             None
         }
         Topic::State => {
-            lights::record(store.state.data.lights.clone());
-            None
+            let data = &store.state.data;
+            lights::record(data.lights.clone());
+            Some(notifications::Op::Sync(data.dnd, data.reminders.clone()).into())
         }
         Topic::Theme => {
             lights_palette(store);

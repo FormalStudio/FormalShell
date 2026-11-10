@@ -122,6 +122,14 @@ pub enum Op {
     ClearReminders,
     /// The pending reminders as one toast, the bar's reminder indicator.
     ShowReminders,
+    /// state.json's dnd and reminders, as the file now reads.
+    Sync(bool, Value),
+    /// `iphone.notifications.dedupe`'s rules, as settings.json now reads.
+    Dedupe(Vec<fs_devices::iphone::DedupeRule>),
+    /// The notification centre opened or shut, however it was.
+    CenterOpen(bool),
+    /// The clock: whatever came due by this unix millisecond runs.
+    Tick(i64),
 }
 
 impl From<Op> for store::Diff {
@@ -263,6 +271,24 @@ impl State {
                 self.store_reminders(Vec::new());
             }
             Op::ShowReminders => self.show_reminders(),
+            Op::Sync(dnd, reminders) => return self.sync(dnd, reminders),
+            Op::Dedupe(rules) => {
+                self.phone.rules = rules;
+                return false;
+            }
+            Op::CenterOpen(open) => {
+                if self.center_open == open {
+                    return false;
+                }
+                self.center_open = open;
+                // Closing the centre files everything pending as seen,
+                // however the card was closed (Escape, a click outside,
+                // showHistory).
+                if !open {
+                    self.mark_all_seen();
+                }
+            }
+            Op::Tick(now) => return self.tick(now),
         }
         true
     }
@@ -311,16 +337,21 @@ impl State {
         self.icons.retain(|k, _| live.contains(k));
     }
 
-    /// Mirrors state.json's dnd and reminders whenever the file moved.
-    pub fn sync(&mut self, data: &state::Data) {
-        if self.dnd_seen != Some(data.dnd) {
-            self.dnd_seen = Some(data.dnd);
-            self.model.set_dnd(data.dnd);
+    /// Mirrors state.json's dnd and reminders where they moved in the
+    /// file. True when either did.
+    fn sync(&mut self, dnd: bool, list: Value) -> bool {
+        let mut moved = false;
+        if self.dnd_seen != Some(dnd) {
+            self.dnd_seen = Some(dnd);
+            moved |= self.model.dnd != dnd;
+            self.model.set_dnd(dnd);
         }
-        if self.reminders_seen.as_ref() != Some(&data.reminders) {
-            self.reminders_seen = Some(data.reminders.clone());
-            self.reminders = reminders::normalize(&data.reminders);
+        if self.reminders_seen.as_ref() != Some(&list) {
+            self.reminders = reminders::normalize(&list);
+            self.reminders_seen = Some(list);
+            moved = true;
         }
+        moved
     }
 
     fn set_dnd(&mut self, on: bool) {
@@ -820,7 +851,7 @@ mod tests {
 
     fn mirrored() -> State {
         let mut s = State::default();
-        s.phone.sync_config(None);
+        s.phone.rules = crate::settings::iphone_dedupe(&Value::Null);
         s
     }
 

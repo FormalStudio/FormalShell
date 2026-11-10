@@ -862,7 +862,7 @@ mod tests {
 
     fn inputs() -> BaseInputs {
         BaseInputs {
-            buttons: json!([{"label": "Hibernate", "command": "systemctl hibernate"}, {"label": "Sleep", "command": "@ipc:power.suspend"}]),
+            buttons: fs_menu::base::power_buttons(&json!([{"label": "Hibernate", "command": "systemctl hibernate"}, {"label": "Sleep", "command": "@ipc:power.suspend"}])),
             lights: Some(vec![LightEffect { id: "static".into(), label: "Static".into() }]),
             ipad: true,
             share: Some(ShareInputs {

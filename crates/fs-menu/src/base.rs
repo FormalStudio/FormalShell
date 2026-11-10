@@ -16,7 +16,7 @@ pub const EMOJI: &str = include_str!("../data/emoji.json");
 /// What the base tree is built from besides the files.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BaseInputs {
-    pub buttons: Value,
+    pub buttons: Vec<CustomPowerButton>,
     /// The keyboard lights' effects, `None` while no keyboard was found.
     pub lights: Option<Vec<LightEffect>>,
     /// padbridge is on the bus: the iPad route.
@@ -62,7 +62,7 @@ pub fn base_tree(defaults: Entries, inputs: &BaseInputs, user: &Entries) -> Tree
             merged.insert(k, v);
         }
     }
-    for (k, v) in providers::custom_power_button_entries(&power_buttons(&inputs.buttons)) {
+    for (k, v) in providers::custom_power_button_entries(&inputs.buttons) {
         merged.insert(k, v);
     }
     for (route, name) in &inputs.plugin_modes {
@@ -77,7 +77,8 @@ pub fn base_tree(defaults: Entries, inputs: &BaseInputs, user: &Entries) -> Tree
     tree
 }
 
-fn power_buttons(v: &Value) -> Vec<CustomPowerButton> {
+/// `menu.customPowerButtons`'s items that carry a label and a command.
+pub fn power_buttons(v: &Value) -> Vec<CustomPowerButton> {
     let Value::Array(items) = v else { return Vec::new() };
     items
         .iter()

@@ -202,6 +202,12 @@ pub const WORKSPACES_MAX_ICONS: Number = Number::new("workspaces.maxIcons", 8.0)
 pub const WORKSPACES_SHOW_APPS: Word = Word::new("workspaces.showApps", "all");
 pub const WORKSPACES_AGENTS: Flag = Flag::new("workspaces.agents", true);
 
+/// The `bar` object's layout and modules, resolved over the bar plugins'
+/// cells.
+pub fn bar_layout(doc: &(impl Doc + ?Sized), bar_plugins: &[fs_chrome::plugins::Plugin]) -> fs_chrome::bar::layout::Resolved {
+    fs_chrome::bar::layout::resolve(lookup(doc.doc(), "bar"), bar_plugins)
+}
+
 /// `workspaces.agentHosts`, the hosts T3 Code agents are asked about.
 pub fn agent_hosts(doc: &(impl Doc + ?Sized)) -> Vec<String> {
     strings(doc, "workspaces.agentHosts")
@@ -330,6 +336,11 @@ pub const LOCALSEND_RECEIVE: Flag = Flag::new("localsend.receive", false);
 pub const LOCALSEND_ALIAS: Word = Word::new("localsend.alias", "");
 pub const LOCALSEND_DIR: Word = Word::new("localsend.dir", "");
 
+/// `menu.customPowerButtons`, each item with a label and a command.
+pub fn custom_power_buttons(doc: &(impl Doc + ?Sized)) -> Vec<fs_menu::providers::CustomPowerButton> {
+    lookup(doc.doc(), "menu.customPowerButtons").map_or_else(Vec::new, fs_menu::base::power_buttons)
+}
+
 /// `menu.abbreviations`, query to subject id, the queries in their
 /// matching form.
 pub fn menu_abbreviations(doc: &(impl Doc + ?Sized)) -> HashMap<String, String> {
@@ -364,6 +375,15 @@ pub fn iphone_block(doc: &(impl Doc + ?Sized)) -> Vec<String> {
     strings(doc, "iphone.notifications.block")
 }
 
+/// `iphone.notifications.dedupe`'s rules, the Messages rule while the key
+/// is absent.
+pub fn iphone_dedupe(doc: &(impl Doc + ?Sized)) -> Vec<fs_devices::iphone::DedupeRule> {
+    match lookup(doc.doc(), "iphone.notifications.dedupe") {
+        Some(raw) => fs_devices::iphone::dedupe_rules(raw),
+        None => fs_devices::iphone::dedupe_rules(&fs_devices::iphone::default_dedupe()),
+    }
+}
+
 /// `media.lyricsOffsetMs`, -5000 to 5000.
 pub fn lyrics_offset_ms(doc: &(impl Doc + ?Sized)) -> f64 {
     LYRICS_OFFSET_MS.rounded(doc, -5000.0, 5000.0)
@@ -386,6 +406,13 @@ pub const SAVER_FRAME_RATE: Number = Number::new("screensaver.frameRate", 120.0)
 /// Idle time before the screensaver, read with [`Number::positive`].
 pub const SAVER_TIMEOUT_SECONDS: Number = Number::new("screensaver.timeoutSeconds", 300.0);
 pub const CAFFEINATE_ON_STARTUP: Flag = Flag::new("caffeinate.onStartup", false);
+
+/// `lock.command`: a list of non-empty strings, else nothing.
+pub fn lock_command(doc: &(impl Doc + ?Sized)) -> Vec<String> {
+    let Some(Value::Array(items)) = lookup(doc.doc(), "lock.command") else { return Vec::new() };
+    let argv: Vec<String> = items.iter().filter_map(|v| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned)).collect();
+    if argv.len() == items.len() { argv } else { Vec::new() }
+}
 
 pub const NIGHTLIGHT_SCHEDULE: Word = Word::new("nightlight.schedule", "sun");
 pub const NIGHTLIGHT_START_ON: Flag = Flag::new("nightlight.startOn", false);

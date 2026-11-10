@@ -46,7 +46,6 @@ use std::time::Instant;
 
 use calloop::LoopHandle;
 use calloop::timer::{TimeoutAction, Timer};
-use fs_chrome::bar::layout;
 use fs_chrome::bar::panels::{Home, PanelId};
 use fs_types::{Edge, IRect, Region as BarRegion};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
@@ -592,8 +591,7 @@ impl App {
             self.set_bar_theme();
         }
         self.sync_hot_corners();
-        let bar_cfg = self.store.config.get("bar").cloned();
-        let resolved = layout::resolve(bar_cfg.as_ref(), &self.store.plugins.bar_plugins());
+        let resolved = settings::bar_layout(&self.store.config, &self.store.plugins.bar_plugins());
         visualizer::set_motion(settings::MOTION.get(&self.store.config));
         self.arm_caffeinate();
         self.arm_settle();
