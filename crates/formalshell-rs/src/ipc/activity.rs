@@ -1,14 +1,13 @@
 //! `activity`: what is running, grouped by source (`services/activity.rs`),
 //! `seen`, which folds the failures that stay until looked at, a row's own
-//! verbs by source (`surfaces/activity.rs`), and `launch`, a desktop entry
+//! verbs by source, and `launch`, a desktop entry
 //! spawned with its launch shown (`services/launch.rs`), for a keybind, and
 //! `openApp`, the app an install brought, off its row's source.
 
 use fs_chrome::bar::panels::PanelId;
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
-use crate::services::activity::{self, Input};
-use crate::surfaces::activity::{self as row, Done, Verb};
+use crate::services::activity::{self, Done, Input, Verb};
 use crate::wayland::App;
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
@@ -21,7 +20,7 @@ fn seen(_: &mut App, _: &[Value]) -> Reply {
 }
 
 fn verb(app: &mut App, verb: Verb, source: &str) -> Reply {
-    match row::act(&app.store, app.runtime.as_ref(), verb, source) {
+    match activity::act(&app.store, app.runtime.as_ref(), verb, source) {
         Ok(Done::Panel) => {
             if !app.shows(PanelId::Activity) {
                 app.set_panel(PanelId::Activity, true, None);

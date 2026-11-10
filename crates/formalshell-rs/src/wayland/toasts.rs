@@ -271,7 +271,7 @@ impl App {
 
     fn toast_act(&mut self, act: Act) {
         if let Act::Activity(verb, source) = act {
-            if let Ok(surfaces::activity::Done::Panel) = surfaces::activity::act(&self.store, self.runtime.as_ref(), verb, &source) {
+            if let Ok(crate::services::activity::Done::Panel) = crate::services::activity::act(&self.store, self.runtime.as_ref(), verb, &source) {
                 self.set_panel(PanelId::Activity, true, None);
                 if let Some(panel) = self.panel_mut::<crate::surfaces::panel::activity::Activity>(PanelId::Activity) {
                     panel.select(&source);

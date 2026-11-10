@@ -18,7 +18,7 @@ use std::time::Duration;
 use async_channel::{Receiver, Sender};
 use async_io::{Async, Timer};
 use fs_activity::launcher::{self, Entry};
-use fs_activity::{Activity, Notice, State as ItemState, fspec};
+use fs_activity::{Activity, FspecSource, Notice, Origin, Retry, State as ItemState, fspec};
 use fs_dbus::{Owner, OwnerWatch};
 use fs_types::NotificationId;
 use futures_lite::{AsyncReadExt, StreamExt};
@@ -26,10 +26,11 @@ use serde_json::json;
 use zbus::message::Type;
 use zbus::{MatchRule, MessageStream};
 
-use crate::runtime::now_ms;
-use crate::runtime::Ctx;
+use crate::runtime::{Ctx, Runtime, now_ms};
 use crate::services::appicon::{applications_dirs, scan_launchable};
-use crate::store;
+use crate::services::notifications::{self, Op};
+use crate::services::{compositor, menu};
+use crate::store::{self, Store};
 
 const LAUNCHER_ENTRY: &str = "com.canonical.Unity.LauncherEntry";
 /// A line longer than this is not fspec's: the connection is dropped.
@@ -468,6 +469,124 @@ async fn listen_launcher(ctx: &Ctx, tx: &Sender<Input>) -> zbus::Result<()> {
     Ok(())
 }
 
+/// A row's verbs, carried in its widgets' `on` as `<verb>:<source>`, and
+/// what the IPC verbs name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verb {
+    Open,
+    Dismiss,
+    Retry,
+    /// The app an install brought.
+    OpenApp,
+}
+
+impl Verb {
+    const ALL: [Verb; 4] = [Verb::Open, Verb::Dismiss, Verb::Retry, Verb::OpenApp];
+
+    fn word(self) -> &'static str {
+        match self {
+            Verb::Open => "open",
+            Verb::Dismiss => "dismiss",
+            Verb::Retry => "retry",
+            Verb::OpenApp => "open-app",
+        }
+    }
+
+    /// The `on` a widget carries for this verb on group `source`.
+    pub fn on(self, source: &str) -> String {
+        format!("{}:{source}", self.word())
+    }
+
+    pub fn parse(on: &str) -> Option<(Verb, &str)> {
+        let (word, source) = on.split_once(':')?;
+        Verb::ALL.into_iter().find(|v| v.word() == word).map(|verb| (verb, source))
+    }
+}
+
+/// What the caller still has to do itself.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Done {
+    Nothing,
+    /// An fspec row opens the Activity panel.
+    Panel,
+}
+
+fn notify(runtime: Option<&Runtime>, op: Op) {
+    if let Some(rt) = runtime {
+        rt.service(move |ctx| ctx.publish(store::Diff::Notifications(notifications::Diff::Op(op))));
+    }
+}
+
+/// The window of desktop entry `app`, else the entry launched.
+fn focus_app(store: &Store, app: &str) {
+    let id = app.trim_end_matches(".desktop");
+    let window = store.compositor.snapshot.windows.iter().find(|w| w.app_id.eq_ignore_ascii_case(id) || w.initial_class.eq_ignore_ascii_case(id));
+    match window {
+        Some(win) => compositor::focus_window(&win.id),
+        None => {
+            if let Some(argv) = menu::launch_argv(&store.menu, id) {
+                super::launch::spawn(store, id, &argv);
+            }
+        }
+    }
+}
+
+fn spawn(retry: Retry) {
+    let argv = match retry.cwd {
+        Some(dir) => {
+            let mut argv: Vec<String> = ["sh", "-c", "cd \"$1\" && shift && exec \"$@\"", "sh"].map(String::from).to_vec();
+            argv.push(dir);
+            argv.extend(retry.argv);
+            argv
+        }
+        None => retry.argv,
+    };
+    compositor::spawn(&argv);
+}
+
+/// Runs `verb` on the live group `source`. The error is the IPC reply.
+pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -> Result<Done, String> {
+    let activity = &store.activity.activity;
+    let groups = activity.groups();
+    let Some(g) = groups.iter().find(|g| g.source == source) else { return Err(format!("no activity from '{source}'")) };
+    match verb {
+        Verb::Open => {
+            let lead = g.lead();
+            match (lead.origin, lead.app.as_deref(), lead.notification()) {
+                (Origin::Fspec, ..) => return Ok(Done::Panel),
+                (Origin::LauncherEntry | Origin::Launch, Some(app), _) => focus_app(store, app),
+                (Origin::Notification, _, Some(id)) => notify(runtime, Op::Invoke(id, "default".into())),
+                _ => {}
+            }
+        }
+        Verb::Dismiss => {
+            let ids: Vec<_> = g.items.iter().filter_map(|i| i.notification()).collect();
+            if !ids.is_empty() {
+                notify(runtime, Op::DismissGroup(ids));
+            }
+            send(Input::Dismiss(source.to_owned()));
+        }
+        Verb::OpenApp => {
+            let Some(app) = super::packages::landed_app(store, source) else { return Err(format!("'{source}' brought no app")) };
+            focus_app(store, app);
+            send(Input::Dismiss(source.to_owned()));
+        }
+        Verb::Retry => {
+            let Some(retry) = activity.retry(source) else { return Err(format!("'{source}' cannot be retried")) };
+            // The packages service follows its own installs' operations.
+            match FspecSource::parse(source) {
+                Some(FspecSource { kind: "install", arg: Some(id) }) => super::packages::install(store, id),
+                Some(FspecSource { kind: "uninstall", arg: Some(id) }) => {
+                    super::packages::send(super::packages::Cmd::Uninstall(id.to_owned()));
+                }
+                _ => spawn(retry),
+            }
+            send(Input::Dismiss(source.to_owned()));
+        }
+    }
+    Ok(Done::Nothing)
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;
@@ -645,5 +764,17 @@ mod tests {
         assert_eq!(v["fspec"], json!({"installed": false, "watching": true, "dir": "/run/x", "error": null}));
         assert_eq!(v["groups"], json!([]));
         assert_eq!(v["history"], json!([]));
+    }
+
+    #[test]
+    fn every_verb_prints_and_parses_back() {
+        let source = "fspec:install:org.mozilla.firefox";
+        for (verb, word) in [(Verb::Open, "open"), (Verb::Dismiss, "dismiss"), (Verb::Retry, "retry"), (Verb::OpenApp, "open-app")] {
+            let on = format!("{word}:{source}");
+            assert_eq!(verb.on(source), on);
+            assert_eq!(Verb::parse(&on), Some((verb, source)));
+        }
+        assert_eq!(Verb::parse("close"), None);
+        assert_eq!(Verb::parse("action:k"), None);
     }
 }

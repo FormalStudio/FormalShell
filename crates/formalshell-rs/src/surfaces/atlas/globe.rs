@@ -10,13 +10,14 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::model::{self as rm, Feature, KineticOptions, KineticState, View};
+use super::model::{self as rm, Feature, KineticOptions, KineticState, Rot, View, light};
 use fs_media::radio::stations::Station;
 use fs_theme::color::Rgba;
 use vello_cpu::Pixmap;
 use vello_cpu::kurbo::{self, BezPath, Circle, Shape as _};
 
-use super::earth::{ATMOSPHERE, Earth, Stats};
+use super::earth::{self as sampler, ATMOSPHERE};
+use crate::services::earth::{Earth, Stats};
 use crate::scene::{Brush, VOp};
 use crate::scroll::Velocity;
 
@@ -213,14 +214,6 @@ fn lighter(c: Rgba, factor: f64) -> Rgba {
         v = 1.0;
     }
     from_hsv(h, s, v, c.a)
-}
-
-/// Camera-space light, x right, y up, z toward the viewer: upper left and a
-/// little in front, so the lit side faces the reader.
-pub(super) fn light() -> [f64; 3] {
-    let (x, y, z): (f64, f64, f64) = (-0.55, 0.6, 0.58);
-    let l = (x * x + y * y + z * z).sqrt();
-    [x / l, y / l, z / l]
 }
 
 fn lambert(n: [f64; 3]) -> f64 {
@@ -745,7 +738,7 @@ impl Globe {
                 ((dy + dd + 1.0).ceil().min(((oy + h) * k).ceil())) as i32,
             );
             let t = Instant::now();
-            if let Some((image, stats)) = earth.sample(&mut self.sampled, moving, area, (dx, dy), r * k, dd, distance, &rot) {
+            if let Some((image, stats)) = sampler::sample(earth, &mut self.sampled, moving, area, (dx, dy), r * k, dd, distance, &rot) {
                 let px = image.pixmap.width() as u64 * image.pixmap.height() as u64;
                 ops.push(VOp::Image(image.at(k), (area.0 as f64 / k, area.1 as f64 / k), alpha));
                 sampled = Some((t.elapsed().as_micros(), px));
@@ -962,26 +955,6 @@ impl Globe {
     }
 }
 
-pub(super) struct Rot {
-    pub(super) sin_lat: f64,
-    pub(super) cos_lat: f64,
-    pub(super) sin_lon: f64,
-    pub(super) cos_lon: f64,
-}
-
-impl Rot {
-    /// A world unit vector in the view frame: x right, y up, z toward the
-    /// camera.
-    fn apply(&self, p: &[f64; 3]) -> [f64; 3] {
-        let horizontal = p[0] * self.cos_lon + p[1] * self.sin_lon;
-        [
-            p[1] * self.cos_lon - p[0] * self.sin_lon,
-            self.cos_lat * p[2] - self.sin_lat * horizontal,
-            self.sin_lat * p[2] + self.cos_lat * horizontal,
-        ]
-    }
-}
-
 /// Canvas2D's `arc(cx, cy, r, from, to, anticlockwise)` appended to a path
 /// whose pen already sits at the arc's start.
 fn arc_to(path: &mut BezPath, centre: (f64, f64), radius: f64, from: f64, to: f64, anticlockwise: bool) {
@@ -1113,16 +1086,16 @@ mod tests {
         let mut px = 0;
         let mut pool = Vec::new();
         for _ in 0..20 {
-            let b = earth.sample(&mut pool, false, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap().0;
+            let b = sampler::sample(&earth, &mut pool, false, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap().0;
             px = b.pixmap.width() as usize * b.pixmap.height() as usize;
         }
         eprintln!("sampler alone: {} us over {px} px", t.elapsed().as_micros() / 20);
         let t = Instant::now();
         for _ in 0..20 {
-            earth.sample(&mut pool, true, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap();
+            sampler::sample(&earth, &mut pool, true, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap();
         }
         eprintln!("sampler coarse: {} us", t.elapsed().as_micros() / 20);
-        let b = earth.sample(&mut pool, true, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap().0;
+        let b = sampler::sample(&earth, &mut pool, true, (100, 50, 900, 850), (500.0, 450.0), 547.0, 396.0, rm::view_distance(1.0), &rot).unwrap().0;
         assert_eq!(b.pixmap.sample(400, 400), b.pixmap.sample(401, 401), "a coarse sample covers its 2x2 block");
         g.earth = None;
         let t = Instant::now();

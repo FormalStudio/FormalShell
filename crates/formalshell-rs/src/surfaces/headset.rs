@@ -11,20 +11,18 @@
 //! is up, so a backend reporting later never moves it; a longer name elides.
 
 use fs_chrome::bar::panels::PanelId;
-use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
+use fs_devices::earbuds::{BatteryId, DeviceKind};
 use fs_system::power::model::Thresholds;
 use fs_theme::palette::ColorRole;
 use fs_theme::color::Rgba;
 use fs_theme::style::Role;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
-use fs_types::{BtAddress, Percent};
+use fs_types::Percent;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::scene::{IRect, Paint, Scene};
-use crate::services::devices::earbuds;
-use crate::services::devices::headsets::Headset;
-use crate::store::Store;
+use crate::services::devices::headsets::Identity;
 use crate::paint::{Kit, Painter};
 use crate::ui::el::{Ring, Size};
 use crate::ui::{self, El, Ink, Type, w};
@@ -56,33 +54,13 @@ fn icon_of(bluez: &str, kind: Option<DeviceKind>) -> &'static str {
     }
 }
 
-/// What the card shows for the device at `address`, off the store: the
-/// earbuds backend's parts when one claims it, BlueZ's Battery1 otherwise,
-/// and no ring at all when nothing reports a level.
-pub fn face(store: &Store, address: BtAddress) -> Face {
-    let seen: Option<&Headset> = store
-        .bluetooth
-        .headsets
-        .as_ref()
-        .and_then(|list| list.iter().find(|h| h.address == address));
-    // The AirPods daemon's status file carries no address, so a connected
-    // device of its own with no address is matched by name.
-    let claimed: Option<&Device> = store.earbuds.devices().iter().find(|d| {
-        d.address == Some(address)
-            || (d.address.is_none() && d.connected && seen.is_some_and(|h| !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name)))
-    });
-    let icon = icon_of(seen.map_or("", |h| h.icon.as_str()), claimed.map(|d| d.kind));
-    // BlueZ holds the name the device advertises, which some cut short
-    // ("CMF Head" for a CMF Headphone Pro), and the backend's own comes up
-    // to ~40s after connecting, so the one it gave last stands in until then.
-    let name = claimed
-        .map(|d| d.name.as_str())
-        .filter(|n| !n.is_empty())
-        .or_else(|| remembered(store, address, |f| f.name.as_deref()))
-        .or_else(|| seen.map(|h| h.name.as_str()).filter(|n| !n.is_empty()))
-        .map_or_else(|| address.to_string(), str::to_owned);
+/// What the card shows for a device: the earbuds backend's parts when one
+/// claims it, BlueZ's Battery1 otherwise, and no ring at all when nothing
+/// reports a level.
+pub fn face(id: &Identity) -> Face {
+    let icon = icon_of(id.seen.map_or("", |h| h.icon.as_str()), id.claimed.map(|d| d.kind));
     let mut parts: Vec<Part> = Vec::new();
-    if let Some(d) = claimed {
+    if let Some(d) = id.claimed {
         for side in [BatteryId::Left, BatteryId::Right, BatteryId::Case, BatteryId::Single] {
             if let Some(b) = d.batteries.iter().find(|b| b.id == side) {
                 parts.push(Part { side, level: b.level });
@@ -90,50 +68,11 @@ pub fn face(store: &Store, address: BtAddress) -> Face {
         }
     }
     if parts.is_empty()
-        && let Some(level) = seen.and_then(|h| h.battery)
+        && let Some(level) = id.seen.and_then(|h| h.battery)
     {
         parts.push(Part { side: BatteryId::Single, level: level.to_percent().round() });
     }
-    // nothingctl takes up to ~40s to name a headphone it has just seen
-    // connect, far past the card's hold, so the set it named last time
-    // stands in until it does.
-    let art = claimed
-        .map(|d| d.art.clone())
-        .filter(|a| !a.is_empty())
-        .or_else(|| remembered(store, address, |f| f.art.as_deref()).map(str::to_owned))
-        .unwrap_or_default();
-    Face { icon, art, name, parts, panel: if claimed.is_some() { PanelId::Earbuds } else { PanelId::Bluetooth } }
-}
-
-/// What the earbuds backend last called `address` (`field` the name) or the
-/// picture set it named (the art).
-fn remembered(store: &Store, address: BtAddress, field: fn(&earbuds::Face) -> Option<&str>) -> Option<&str> {
-    store.state.data.earbuds_faces.get(&address.to_string()).and_then(field).filter(|s| !s.is_empty())
-}
-
-/// The `address -> {art, name}` entries the earbuds backend reports now
-/// that state.json does not hold yet: a device's own address, or for one
-/// with none (the AirPods daemon's) the connected Bluetooth headset of its
-/// name. A set it has not named yet keeps the one remembered.
-pub fn learned(store: &Store) -> Vec<(String, earbuds::Face)> {
-    let headsets = store.bluetooth.headsets.as_deref().unwrap_or_default();
-    store
-        .earbuds
-        .devices()
-        .iter()
-        .filter(|d| !d.art.is_empty() || !d.name.is_empty())
-        .filter_map(|d| {
-            let address = match d.address {
-                Some(address) => address,
-                None => headsets.iter().find(|h| h.connected && !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name))?.address,
-            };
-            let art = if d.art.is_empty() { remembered(store, address, |f| f.art.as_deref()).unwrap_or_default() } else { d.art.as_str() };
-            let key = address.to_string();
-            let held = store.state.data.earbuds_faces.get(&key);
-            let entry = earbuds::Face { art: Some(art.to_owned()), name: Some(d.name.clone()), ..held.cloned().unwrap_or_default() };
-            (held != Some(&entry)).then_some((key, entry))
-        })
-        .collect()
+    Face { icon, art: id.art.clone(), name: id.name.clone(), parts, panel: if id.claimed.is_some() { PanelId::Earbuds } else { PanelId::Bluetooth } }
 }
 
 /// The picture's and the ring's square slot, which sets the capsule's height.

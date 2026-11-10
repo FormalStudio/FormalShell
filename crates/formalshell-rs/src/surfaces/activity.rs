@@ -4,17 +4,15 @@
 //! [`folded`]. The sidebar's card is [`installs_card`], one line a group.
 //!
 //! A row's `on` actions are a [`Verb`] and the group's source
-//! (`open:<source>`); [`act`] runs one, which the IPC verbs call too.
+//! (`open:<source>`); `services::activity::act` runs one, which the IPC
+//! verbs call too.
 
-use fs_activity::{FspecSource, Group, Item, Origin, Retry, State};
+use fs_activity::{Group, Item, Retry, State};
 use fs_theme::theme::Theme;
 
-use crate::runtime::Runtime;
-use crate::services::activity::{self as service, Input};
 use crate::runtime::now_ms;
-use crate::services::notifications::{self as notifications, Op};
-use crate::services::{compositor, menu};
-use crate::store::{self, Store};
+use crate::services::activity::Verb;
+use crate::store::Store;
 use crate::ui::el::Ring;
 use crate::ui::{El, Ink, Type, Weight, w};
 
@@ -58,7 +56,7 @@ pub fn row(theme: &Theme, store: &Store, g: &Group, actions: bool) -> El {
     .fill();
     let mut parts = vec![w::ring(ring(lead)), words];
     if actions {
-        if lead.state != State::Failed && crate::surfaces::packages::landed_app(store, g.source).is_some() {
+        if lead.state != State::Failed && crate::services::packages::landed_app(store, g.source).is_some() {
             parts.push(w::icon_button("square-arrow-out-up-right").tip("Open").on(Verb::OpenApp.on(g.source)));
         }
         if lead.state == State::Failed && Retry::of(lead).is_some() {
@@ -145,141 +143,8 @@ pub fn installs_card(store: &Store) -> Option<El> {
     Some(w::action_card(w::column(0.0, lines).fill(), crate::surfaces::sidebar::Intent::Panel(fs_chrome::bar::panels::PanelId::Activity).on()).cell_state(|c| c.inset = Some(CARD_INSET)).fill())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Verb {
-    Open,
-    Dismiss,
-    Retry,
-    /// The app an install brought.
-    OpenApp,
-}
-
-impl Verb {
-    const ALL: [Verb; 4] = [Verb::Open, Verb::Dismiss, Verb::Retry, Verb::OpenApp];
-
-    fn word(self) -> &'static str {
-        match self {
-            Verb::Open => "open",
-            Verb::Dismiss => "dismiss",
-            Verb::Retry => "retry",
-            Verb::OpenApp => "open-app",
-        }
-    }
-
-    /// The `on` a widget carries for this verb on group `source`.
-    pub fn on(self, source: &str) -> String {
-        format!("{}:{source}", self.word())
-    }
-
-    pub fn parse(on: &str) -> Option<(Verb, &str)> {
-        let (word, source) = on.split_once(':')?;
-        Verb::ALL.into_iter().find(|v| v.word() == word).map(|verb| (verb, source))
-    }
-}
-
-/// What the caller still has to do itself.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Done {
-    Nothing,
-    /// An fspec row opens the Activity panel.
-    Panel,
-}
-
-fn notify(runtime: Option<&Runtime>, op: Op) {
-    if let Some(rt) = runtime {
-        rt.service(move |ctx| ctx.publish(store::Diff::Notifications(notifications::Diff::Op(op))));
-    }
-}
-
-/// The window of desktop entry `app`, else the entry launched.
-fn focus_app(store: &Store, app: &str) {
-    let id = app.trim_end_matches(".desktop");
-    let window = store.compositor.snapshot.windows.iter().find(|w| w.app_id.eq_ignore_ascii_case(id) || w.initial_class.eq_ignore_ascii_case(id));
-    match window {
-        Some(win) => compositor::focus_window(&win.id),
-        None => {
-            if let Some(argv) = menu::launch_argv(&store.menu, id) {
-                crate::services::launch::spawn(store, id, &argv);
-            }
-        }
-    }
-}
-
-fn spawn(retry: Retry) {
-    let argv = match retry.cwd {
-        Some(dir) => {
-            let mut argv: Vec<String> = ["sh", "-c", "cd \"$1\" && shift && exec \"$@\"", "sh"].map(String::from).to_vec();
-            argv.push(dir);
-            argv.extend(retry.argv);
-            argv
-        }
-        None => retry.argv,
-    };
-    compositor::spawn(&argv);
-}
-
-/// Runs `verb` on the live group `source`. The error is the IPC reply.
-pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -> Result<Done, String> {
-    let activity = &store.activity.activity;
-    let groups = activity.groups();
-    let Some(g) = groups.iter().find(|g| g.source == source) else { return Err(format!("no activity from '{source}'")) };
-    match verb {
-        Verb::Open => {
-            let lead = g.lead();
-            match (lead.origin, lead.app.as_deref(), lead.notification()) {
-                (Origin::Fspec, ..) => return Ok(Done::Panel),
-                (Origin::LauncherEntry | Origin::Launch, Some(app), _) => focus_app(store, app),
-                (Origin::Notification, _, Some(id)) => notify(runtime, Op::Invoke(id, "default".into())),
-                _ => {}
-            }
-        }
-        Verb::Dismiss => {
-            let ids: Vec<_> = g.items.iter().filter_map(|i| i.notification()).collect();
-            if !ids.is_empty() {
-                notify(runtime, Op::DismissGroup(ids));
-            }
-            service::send(Input::Dismiss(source.to_owned()));
-        }
-        Verb::OpenApp => {
-            let Some(app) = crate::surfaces::packages::landed_app(store, source) else { return Err(format!("'{source}' brought no app")) };
-            focus_app(store, app);
-            service::send(Input::Dismiss(source.to_owned()));
-        }
-        Verb::Retry => {
-            let Some(retry) = activity.retry(source) else { return Err(format!("'{source}' cannot be retried")) };
-            // The packages service follows its own installs' operations.
-            match FspecSource::parse(source) {
-                Some(FspecSource { kind: "install", arg: Some(id) }) => crate::surfaces::packages::install(store, id),
-                Some(FspecSource { kind: "uninstall", arg: Some(id) }) => {
-                    crate::services::packages::send(crate::services::packages::Cmd::Uninstall(id.to_owned()));
-                }
-                _ => spawn(retry),
-            }
-            service::send(Input::Dismiss(source.to_owned()));
-        }
-    }
-    Ok(Done::Nothing)
-}
-
 /// The history, newest first, `max` rows.
 pub fn history(theme: &Theme, store: &Store, max: usize) -> Vec<El> {
     let now = now_ms();
     store.activity.activity.history().take(max).map(|i| w::cell(folded(theme, i, now)).ghost().interactive().stop(i.id.clone())).collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_verb_prints_and_parses_back() {
-        let source = "fspec:install:org.mozilla.firefox";
-        for (verb, word) in [(Verb::Open, "open"), (Verb::Dismiss, "dismiss"), (Verb::Retry, "retry"), (Verb::OpenApp, "open-app")] {
-            let on = format!("{word}:{source}");
-            assert_eq!(verb.on(source), on);
-            assert_eq!(Verb::parse(&on), Some((verb, source)));
-        }
-        assert_eq!(Verb::parse("close"), None);
-        assert_eq!(Verb::parse("action:k"), None);
-    }
 }

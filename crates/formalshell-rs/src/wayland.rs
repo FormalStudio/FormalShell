@@ -2025,7 +2025,7 @@ impl App {
                 self.clear_reminders();
                 Ok(())
             }
-            Run::Dismiss(source) => surfaces::activity::act(&self.store, self.runtime.as_ref(), surfaces::activity::Verb::Dismiss, source).map(drop),
+            Run::Dismiss(source) => crate::services::activity::act(&self.store, self.runtime.as_ref(), crate::services::activity::Verb::Dismiss, source).map(drop),
         };
         if let Err(e) = done {
             eprintln!("quick settings: {run:?}: {e}");

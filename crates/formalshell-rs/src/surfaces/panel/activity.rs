@@ -6,7 +6,8 @@
 
 use super::{Effect, Panel, View};
 use crate::store::Topic;
-use crate::surfaces::activity::{self, Verb};
+use crate::services::activity::{self, Verb};
+use crate::surfaces::activity as rows;
 use crate::ui::{El, Event, w};
 
 const EARLIER: usize = 10;
@@ -48,8 +49,8 @@ impl Panel for Activity {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let a = &v.store.activity;
-        let running = activity::list(v.theme, v.store, usize::MAX);
-        let earlier = activity::history(v.theme, v.store, EARLIER);
+        let running = rows::list(v.theme, v.store, usize::MAX);
+        let earlier = rows::history(v.theme, v.store, EARLIER);
         let mut parts = Vec::new();
         if running.is_empty() && earlier.is_empty() {
             parts.push(w::panel_empty(s, "Nothing running"));

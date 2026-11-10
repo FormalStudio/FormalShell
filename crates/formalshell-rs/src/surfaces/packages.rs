@@ -1,18 +1,13 @@
-//! Install mode's half on the UI thread (launcher spec §8): the rows off
-//! the packages service, a package row's ring while its install runs, and
-//! what the shell does once one lands.
-
-use std::collections::HashSet;
+//! Install mode's rows (launcher spec §8) off the packages service's
+//! answers, and a package row's ring while its install runs. What the rows
+//! need asked is `services::packages::search_for`.
 
 use fs_activity::{Item, State as Run};
 use fs_menu::node::{Kind as NodeKind, Node};
 use fs_menu::providers as p;
 
-use crate::services::menu::{self as index, Ask};
-use crate::services::packages::{self, Change, Cmd, NO_FSPEC, Verb};
-use crate::services::state;
+use crate::services::packages::{NO_FSPEC, Verb};
 use crate::store::Store;
-use crate::surfaces::sidebar::Intent;
 use crate::ui::el::Ring;
 
 /// How many apps already here head the packages for the same words.
@@ -28,7 +23,6 @@ pub fn install_rows(store: &Store, q: &str) -> Vec<Node> {
     if q.chars().count() < 2 {
         return Vec::new();
     }
-    packages::send(Cmd::Search(q.to_owned()));
     let found = match &store.packages.search {
         Some((answered, found)) if answered == q => found,
         _ => return vec![p::install_searching_row()],
@@ -38,10 +32,6 @@ pub fn install_rows(store: &Store, q: &str) -> Vec<Node> {
         Err(why) => return vec![p::install_failed_row(why)],
         Ok(found) => found,
     };
-    let icons: Vec<String> = found.iter().filter_map(|f| f.icon.clone()).filter(|i| i.starts_with('/') && !store.menu.row_icons.contains_key(i)).collect();
-    if !icons.is_empty() {
-        index::ask(Ask::Icons(icons));
-    }
     let boost = fs_menu::search::Boost { abbrev: None, picks: &[], now: 0.0 };
     let apps = fs_menu::search::rank_with(store.menu.nodes(), q, &store.menu.cond, Some("apps"), boost)
         .into_iter()
@@ -128,169 +118,5 @@ pub fn row_checked(store: &Store, row: &Node, checked: bool) -> bool {
     match p::is_package(row).then(|| live(store, &row.path)).flatten().and_then(|l| l.installed) {
         Some(installed) => installed,
         None => checked,
-    }
-}
-
-/// Starts an install of `id`, named off the search that listed it, the
-/// launcher's Enter and Activity's Retry alike.
-pub fn install(store: &Store, id: &str) {
-    let name = match &store.packages.search {
-        Some((_, Ok(found))) => found.iter().find(|f| f.id == id).map(|f| f.name.clone()),
-        _ => None,
-    };
-    let name = name.or_else(|| store.packages.started(id).map(|s| s.name.clone())).unwrap_or_default();
-    packages::send(Cmd::Install(id.to_owned(), name, desktop_ids(store)));
-}
-
-/// The desktop ids the apps scan knows now, before an install.
-pub fn desktop_ids(store: &Store) -> HashSet<String> {
-    store.menu.exec.apps.keys().cloned().collect()
-}
-
-/// fspec operations that change what is installed.
-fn changes_apps(kind: &str) -> bool {
-    matches!(kind, "install" | "uninstall" | "undo")
-}
-
-/// What the shell does once an fspec install, uninstall or undo succeeds,
-/// whoever started it: the apps scanned again and every owner answer
-/// dropped. An install the launcher started also records a pick for the
-/// app it brought, once the scan has it, so the app heads `Recent` once.
-/// True when the launcher's rows may read differently.
-pub fn land(store: &mut Store) -> bool {
-    let done: Vec<String> = store
-        .activity
-        .activity
-        .live()
-        .iter()
-        .chain(store.activity.activity.history())
-        .filter(|i| i.origin == fs_activity::Origin::Fspec && changes_apps(&i.kind) && matches!(i.state, Run::Succeeded | Run::Done))
-        .map(|i| i.id.clone())
-        .filter(|id| !store.packages.landed.contains(id))
-        .collect();
-    let mut moved = false;
-    if !done.is_empty() {
-        store.packages.landed.extend(done);
-        store.packages.owners.clear();
-        packages::send(Cmd::Forget);
-        packages::send(Cmd::Check);
-        index::ask(Ask::Rescan);
-        moved = true;
-    }
-    let now = desktop_ids(store);
-    let labels: std::collections::HashMap<String, String> =
-        now.iter().filter_map(|id| store.menu.nodes().get(&format!("apps.{id}")).map(|n| (id.clone(), n.label.clone()))).collect();
-    let mut claimed: HashSet<String> = store.packages.started.iter().filter_map(|s| s.app.clone()).collect();
-    let mut picks = Vec::new();
-    for s in store.packages.started.iter_mut().filter(|s| s.verb == Verb::Install && s.app.is_none()) {
-        let Ok(Some(op)) = &s.op else { continue };
-        if !store.packages.landed.contains(&fs_activity::fspec::item_id(op)) {
-            continue;
-        }
-        let mut fresh: Vec<&String> = now
-            .iter()
-            .filter(|id| !s.before.contains(*id) && !claimed.contains(*id))
-            .filter(|id| brought_by(id, labels.get(*id).map_or("", String::as_str), &s.id, &s.name))
-            .collect();
-        fresh.sort();
-        if let Some(app) = fresh.first() {
-            claimed.insert((*app).clone());
-            s.app = Some((*app).clone());
-            picks.push(fs_menu::actions::SubjectId::App((*app).clone()).to_string());
-            moved = true;
-        }
-    }
-    if !picks.is_empty() {
-        let mut held = store.state.data.picks.clone();
-        let at = crate::surfaces::launcher::now_ms();
-        for id in &picks {
-            held = fs_menu::frecency::record(&held, id, at, None);
-        }
-        state::set(vec![state::Field::Picks(held)]);
-    }
-    moved
-}
-
-/// Whether desktop entry `desktop` (shown as `label`) is the app package
-/// `id` (`<source>:<ref>`, catalog name `name`) brought: a Flathub app's
-/// entry is named after its ref, anything else matches by name.
-fn brought_by(desktop: &str, label: &str, id: &str, name: &str) -> bool {
-    let reference = id.split_once(':').map_or(id, |(_, r)| r);
-    let tail = |s: &str| s.rsplit(['.', '/']).next().unwrap_or(s).to_owned();
-    desktop.eq_ignore_ascii_case(reference)
-        || tail(desktop).eq_ignore_ascii_case(&tail(reference))
-        || (!name.is_empty() && (label.eq_ignore_ascii_case(name) || desktop.eq_ignore_ascii_case(name)))
-}
-
-/// The Software card's rows (Plan 5.3): the upstream's commits the spec
-/// checkout lacks, with Apply, and the newest app change, with Undo. Each
-/// is a label over a caption so the words keep the sidebar's narrow width.
-pub fn software_rows(theme: &fs_theme::theme::Theme, store: &Store) -> Vec<crate::ui::El> {
-    use crate::ui::{Ink, Type, Variant, Weight, w};
-    let s = &theme.space;
-    let row = |icon: &str, words: Vec<crate::ui::El>, button: Option<crate::ui::El>| {
-        let mut r = vec![w::icon(icon).ink(Ink::Muted), w::column(0.0, words).fill()];
-        r.extend(button);
-        w::row(s.icon_gap, r)
-    };
-    let dim = |text: String| w::para(text, Type::Caption, Weight::Normal, Ink::Muted, 3);
-    let button = |glyph: &str, tip: &str, on: &str| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on);
-    if !store.activity.fspec.installed {
-        return vec![row("refresh-cw", vec![dim("Updates need fspec".into())], None)];
-    }
-    let sw = &store.packages.software;
-    packages::send(Cmd::Watch);
-    // No spec is nothing to track rather than a failure.
-    if matches!(&sw.behind, Some(Err(why)) if why == packages::NO_SPEC) {
-        return Vec::new();
-    }
-    let retry = !sw.applying && matches!(sw.failed, Some((packages::Change::Apply, _)));
-    let updates = match &sw.behind {
-        None => row("refresh-cw", vec![dim("Checking for updates\u{2026}".into())], None),
-        Some(Err(why)) => row("refresh-cw", vec![dim(why.clone())], None),
-        // The checkout already fast-forwarded, so only the apply failed:
-        // the row keeps its retry.
-        Some(Ok((0, _))) if retry => row("refresh-cw", vec![w::label("Failed").elide(), dim("Not applied".into())], Some(button("rotate-ccw", "Apply again", &Intent::Software(Change::Apply).on()))),
-        Some(Ok((0, _))) => row("refresh-cw", vec![dim("Up to date".into())], None),
-        Some(Ok((n, upstream))) => {
-            let label = if *n == 1 { "1 update".to_owned() } else { format!("{n} updates") };
-            let (caption, apply) = if sw.applying { ("Applying\u{2026}".to_owned(), None) } else { (upstream.clone(), Some(button("download", "Apply", &Intent::Software(Change::Apply).on()))) };
-            row("refresh-cw", vec![w::label(label).elide(), dim(caption)], apply)
-        }
-    };
-    let mut out = vec![updates];
-    if let Some((verb, name)) = &sw.last {
-        let app = store.menu.nodes().get(&format!("apps.{name}")).map_or(name.as_str(), |n| n.label.as_str());
-        let (icon, words) = match verb {
-            Verb::Install => ("package-plus", "Installed"),
-            Verb::Uninstall => ("package-minus", "Removed"),
-        };
-        let undoing = store.activity.activity.live().iter().any(|i| i.origin == fs_activity::Origin::Fspec && i.kind == "undo" && i.state == Run::Running);
-        let undo = (!undoing).then(|| button("undo-2", "Undo", &Intent::Software(Change::Undo).on()));
-        out.push(row(icon, vec![w::label(words), dim(app.to_owned())], undo));
-    }
-    if let Some((_, why)) = &sw.failed {
-        out.push(w::para(why.clone(), Type::Caption, Weight::Normal, Ink::Destructive, 3));
-    }
-    out
-}
-
-/// The app an Activity install row's Open launches, once it landed.
-pub fn landed_app<'a>(store: &'a Store, source: &str) -> Option<&'a str> {
-    let id = fs_activity::FspecSource::arg_of(source, "install")?;
-    store.packages.started(id).filter(|s| s.verb == Verb::Install).and_then(|s| s.app.as_deref())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::brought_by;
-
-    #[test]
-    fn an_install_claims_only_its_own_app() {
-        assert!(brought_by("org.mozilla.firefox", "Firefox", "flatpak:org.mozilla.firefox", "Firefox"));
-        assert!(brought_by("firefox", "Firefox", "zypper:firefox", "firefox"));
-        assert!(brought_by("org.gnome.Btop", "btop", "zypper:btop", "btop"));
-        assert!(!brought_by("org.gnome.Calculator", "Calculator", "zypper:btop", "btop"));
-        assert!(!brought_by("org.example.Other", "Other", "aqua:ripgrep", "ripgrep"));
     }
 }

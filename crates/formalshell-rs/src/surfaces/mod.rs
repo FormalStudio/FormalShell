@@ -7,6 +7,7 @@ pub mod bar;
 pub mod capture;
 pub mod card;
 pub mod card_window;
+pub mod desktop_clock;
 pub mod dissolve;
 pub mod headset;
 pub mod launcher;
@@ -59,6 +60,13 @@ pub fn changed(app: &mut App, topic: Topic) {
             lights_palette(app);
             // A sky step the engine published moves the desktop's source.
             theme_inputs(app);
+        }
+        Topic::Menu | Topic::Activity => {
+            // An fspec change landing moves the launcher's rows, whichever
+            // of the two told of it.
+            if crate::services::packages::land(&mut app.store) {
+                app.launcher_store_changed();
+            }
         }
         Topic::Capture => crate::wayland::capture_host::events(app),
         Topic::Clipboard => app.field_paste(),

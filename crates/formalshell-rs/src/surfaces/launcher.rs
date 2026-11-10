@@ -1233,6 +1233,12 @@ impl Model {
     }
 
     /// The launcher plugin whose mode the list holds.
+    /// The query Install mode's rows resolve for, while they are the list.
+    pub fn install_query(&self) -> Option<&str> {
+        let install = self.mode == Mode::Menu && self.children.is_empty() && self.level.as_deref() == Some(fs_menu::providers::INSTALL_ROUTE);
+        install.then(|| self.list_text())
+    }
+
     fn plugin_mode(&self) -> Option<&str> {
         let route = self.level.as_deref().filter(|_| self.mode == Mode::Menu && self.children.is_empty())?;
         route.strip_prefix(fs_chrome::plugins::PLUGIN_PREFIX)
@@ -2959,7 +2965,10 @@ impl Model {
                 return noted(fs_menu::keybinds::rows_for(reply, q));
             }
             Some("radio.search") => return noted(radio_search_rows(store, q)),
-            Some(fs_menu::providers::INSTALL_ROUTE) => return noted(crate::surfaces::packages::install_rows(store, q)),
+            Some(fs_menu::providers::INSTALL_ROUTE) => {
+                crate::services::packages::search_for(store, q);
+                return noted(crate::surfaces::packages::install_rows(store, q));
+            }
             _ => {}
         }
         let snap = snapshot(store);

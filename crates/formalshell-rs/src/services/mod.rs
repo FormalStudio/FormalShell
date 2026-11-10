@@ -27,6 +27,7 @@ pub mod depth;
 pub mod cover;
 pub mod devices;
 pub mod display;
+pub mod earth;
 pub mod http;
 pub mod icons;
 pub mod inhibit;

@@ -326,6 +326,7 @@ impl Owner for Bar {
             live!(app).bar.layout(&mut app.kit, &app.store, now);
             live!(app).dirty = false;
             app.sync_sidebar_keys();
+            app.sidebar_software();
             app.sync_bar_input();
         }
         let win = &mut live!(app);

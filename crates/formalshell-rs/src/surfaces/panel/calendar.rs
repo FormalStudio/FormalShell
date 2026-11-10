@@ -137,7 +137,7 @@ impl Panel for Calendar {
         let t = now.date_naive();
         let cells = self.cells();
         let events = &v.store.calendar.events;
-        let twelve = clock::uses_meridiem(&crate::surfaces::bar::cells::clock::clock_format(v.store));
+        let twelve = clock::uses_meridiem(&crate::surfaces::desktop_clock::clock_format(v.store));
 
         // One square per day, centred in its seventh of the row, so the
         // circles keep the same rhythm across and down.

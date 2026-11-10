@@ -337,9 +337,9 @@ runs = ["--backdrop", "--wallpaper", "--wallpaper-pair", "--sky", "--desktop-clo
 paths = ["crates/formalshell-rs/src/services/clock.rs"]
 runs = ["--desktop-clock", "--lock"]
 
-# The sidebar's clock card draws its digits through the desktop clock's glass.
+# The sidebar's clock card draws its digits through the desktop clock's face and glass.
 [[rule]]
-paths = ["crates/fs-chrome/src/clock_face.rs", "crates/formalshell-rs/src/wayland/desktop_clock.rs"]
+paths = ["crates/fs-chrome/src/clock_face.rs", "crates/formalshell-rs/src/surfaces/desktop_clock.rs", "crates/formalshell-rs/src/wayland/desktop_clock.rs"]
 runs = ["--desktop-clock", "--lock", "--sidebar", "--sidebar --light"]
 
 [[rule]]
@@ -412,7 +412,7 @@ paths = ["crates/formalshell-rs/src/services/radio.rs", "crates/formalshell-rs/s
 runs = ["--radio", "--radio-atlas"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/atlas/**", "crates/formalshell-rs/src/wayland/atlas.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/atlas/**", "crates/formalshell-rs/src/services/earth.rs", "crates/formalshell-rs/src/wayland/atlas.rs"]
 runs = ["--radio-atlas", "--radio-atlas-cold"]
 
 [[rule]]

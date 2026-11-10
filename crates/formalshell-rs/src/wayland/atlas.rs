@@ -16,7 +16,7 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 use super::App;
 use crate::services::radio::{self, Cmd, Reply};
 use crate::store::Diff;
-use crate::surfaces::atlas::earth;
+use crate::services::earth;
 use crate::surfaces::atlas::globe::{self, Out};
 use crate::surfaces::atlas::view::Shown;
 use crate::surfaces::atlas::{Atlas, Key};

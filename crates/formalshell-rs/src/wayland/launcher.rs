@@ -366,6 +366,14 @@ impl App {
             self.launcher_resolve = false;
             self.launcher.motion_scale = self.motion_scale;
             self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.kit);
+            self.launcher_asks();
+        }
+    }
+
+    /// What the rows just resolved need asked of the services.
+    fn launcher_asks(&self) {
+        if let Some(q) = self.launcher.install_query() {
+            crate::services::packages::search_for(&self.store, q);
         }
     }
 
@@ -456,7 +464,7 @@ impl App {
             Intent::ClipsshImage(id, path) => self.clipssh_image(id, path),
             Intent::ClipsshSend(alias) => clipssh::command(clipssh::Cmd::Send(alias.clone())),
             Intent::AppGpu(id) => self.call_self("monitor", "launch", &[id, ""]),
-            Intent::PackageInstall(id) => crate::surfaces::packages::install(&self.store, id),
+            Intent::PackageInstall(id) => packages::install(&self.store, id),
             Intent::PackageUninstall(id) => packages::send(packages::Cmd::Uninstall(id.clone())),
             Intent::PowerSuspend => power::request(power::Action::Suspend),
             Intent::PowerReboot => power::request(power::Action::Reboot),
@@ -937,10 +945,7 @@ impl App {
     /// holds reads.
     pub(super) fn launcher_changed(&mut self, topic: Topic) {
         match topic {
-            Topic::Menu => {
-                crate::surfaces::packages::land(&mut self.store);
-                self.launcher_store_changed();
-            }
+            Topic::Menu => self.launcher_store_changed(),
             Topic::Packages => {
                 self.launcher.owner_answer(&self.store);
                 self.launcher_store_changed();
@@ -967,7 +972,7 @@ impl App {
                 self.launcher_store_changed();
             }
             Topic::Activity => {
-                if crate::surfaces::packages::land(&mut self.store) || self.launcher.level.as_deref() == Some(fs_menu::providers::INSTALL_ROUTE) {
+                if self.launcher.level.as_deref() == Some(fs_menu::providers::INSTALL_ROUTE) {
                     self.launcher_store_changed();
                 }
             }
@@ -992,7 +997,7 @@ impl App {
     }
 
     /// The store moved under an open launcher: the rows again.
-    pub(super) fn launcher_store_changed(&mut self) {
+    pub(crate) fn launcher_store_changed(&mut self) {
         if self.launcher.open {
             self.launcher_resolve = true;
         } else {
@@ -1078,6 +1083,7 @@ impl App {
             if self.launcher_warm && !self.launcher.open {
                 self.launcher_warm = false;
                 self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.kit);
+                self.launcher_asks();
                 self.warm_launcher_text();
                 if !self.fresh_asked && !self.store.menu.nodes().is_empty() {
                     self.fresh_asked = true;

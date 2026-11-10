@@ -8,6 +8,7 @@ use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 
 use super::App;
 use crate::services::compositor::{self, Command};
+use crate::services::packages;
 
 impl App {
     /// The minimap's cursor up with the keyboard, or both given back.
@@ -33,6 +34,15 @@ impl App {
         live!(self).dirty = true;
         self.request_paint();
         true
+    }
+
+    /// The open column draws the Software card while fspec is here: the
+    /// packages service checks the spec checkout from its first draw on.
+    pub(super) fn sidebar_software(&self) {
+        let open = live!(self).bar.sidebar().is_some() && !self.store.state.data.sidebar_collapsed;
+        if open && self.store.activity.fspec.installed {
+            packages::send(packages::Cmd::Watch);
+        }
     }
 
     /// The live bar's layer holds the keyboard exactly while the minimap's

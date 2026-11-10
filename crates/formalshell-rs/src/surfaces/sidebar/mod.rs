@@ -31,17 +31,17 @@ use vello_cpu::kurbo::Rect;
 
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::compositor::Command;
+use crate::services::activity::Verb as ActivityVerb;
 use crate::services::{motion_art, packages};
 use crate::services::state::{self, Field};
 use crate::store::Store;
-use crate::surfaces::bar::cells::clock::clock_format;
 use crate::surfaces::activity;
 use crate::surfaces::bar::cell::Action;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::panel::center;
 use crate::text::TextStyle;
 use crate::ui::{El, Ink, Type, Ui, Weight, w};
-use crate::wayland::desktop_clock::{self as glass, Digits, FaceSettings, Glass, Under};
+use crate::surfaces::desktop_clock::{self as glass, Digits, FaceSettings, Glass, Under, clock_format};
 
 /// The cards in the order they give up their place when the column runs
 /// short: the first is the first to go.
@@ -623,8 +623,8 @@ fn action(on: &str, map: &minimap::Map) -> Action {
     if let Some(intent) = Intent::parse(on) {
         return intent.run();
     }
-    match activity::Verb::parse(on) {
-        Some((activity::Verb::Open, _)) => Action::Panel(PanelId::Activity),
+    match ActivityVerb::parse(on) {
+        Some((ActivityVerb::Open, _)) => Action::Panel(PanelId::Activity),
         _ => map.action(on),
     }
 }
@@ -796,9 +796,65 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
     if let Some(card) = activity::installs_card(store) {
         out.push(("activity", card));
     }
-    let software = crate::surfaces::packages::software_rows(theme, store);
+    let software = software_rows(theme, store);
     if !software.is_empty() {
         out.push(("software", w::card(w::column(s.row_gap, software)).fill()));
+    }
+    out
+}
+
+/// The Software card's rows (Plan 5.3): the upstream's commits the spec
+/// checkout lacks, with Apply, and the newest app change, with Undo. Each
+/// is a label over a caption so the words keep the sidebar's narrow width.
+/// The packages service checks the checkout while the column is open
+/// (`wayland/sidebar.rs`).
+fn software_rows(theme: &Theme, store: &Store) -> Vec<El> {
+    use crate::services::packages::{Change, NO_SPEC, Verb};
+    use crate::ui::Variant;
+    use fs_activity::{Origin, State as Run};
+    let s = &theme.space;
+    let row = |icon: &str, words: Vec<El>, button: Option<El>| {
+        let mut r = vec![w::icon(icon).ink(Ink::Muted), w::column(0.0, words).fill()];
+        r.extend(button);
+        w::row(s.icon_gap, r)
+    };
+    let dim = |text: String| w::para(text, Type::Caption, Weight::Normal, Ink::Muted, 3);
+    let button = |glyph: &str, tip: &str, on: &str| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on);
+    if !store.activity.fspec.installed {
+        return vec![row("refresh-cw", vec![dim("Updates need fspec".into())], None)];
+    }
+    let sw = &store.packages.software;
+    // No spec is nothing to track rather than a failure.
+    if matches!(&sw.behind, Some(Err(why)) if why == NO_SPEC) {
+        return Vec::new();
+    }
+    let retry = !sw.applying && matches!(sw.failed, Some((Change::Apply, _)));
+    let updates = match &sw.behind {
+        None => row("refresh-cw", vec![dim("Checking for updates\u{2026}".into())], None),
+        Some(Err(why)) => row("refresh-cw", vec![dim(why.clone())], None),
+        // The checkout already fast-forwarded, so only the apply failed:
+        // the row keeps its retry.
+        Some(Ok((0, _))) if retry => row("refresh-cw", vec![w::label("Failed").elide(), dim("Not applied".into())], Some(button("rotate-ccw", "Apply again", &Intent::Software(Change::Apply).on()))),
+        Some(Ok((0, _))) => row("refresh-cw", vec![dim("Up to date".into())], None),
+        Some(Ok((n, upstream))) => {
+            let label = if *n == 1 { "1 update".to_owned() } else { format!("{n} updates") };
+            let (caption, apply) = if sw.applying { ("Applying\u{2026}".to_owned(), None) } else { (upstream.clone(), Some(button("download", "Apply", &Intent::Software(Change::Apply).on()))) };
+            row("refresh-cw", vec![w::label(label).elide(), dim(caption)], apply)
+        }
+    };
+    let mut out = vec![updates];
+    if let Some((verb, name)) = &sw.last {
+        let app = store.menu.nodes().get(&format!("apps.{name}")).map_or(name.as_str(), |n| n.label.as_str());
+        let (icon, words) = match verb {
+            Verb::Install => ("package-plus", "Installed"),
+            Verb::Uninstall => ("package-minus", "Removed"),
+        };
+        let undoing = store.activity.activity.live().iter().any(|i| i.origin == Origin::Fspec && i.kind == "undo" && i.state == Run::Running);
+        let undo = (!undoing).then(|| button("undo-2", "Undo", &Intent::Software(Change::Undo).on()));
+        out.push(row(icon, vec![w::label(words), dim(app.to_owned())], undo));
+    }
+    if let Some((_, why)) = &sw.failed {
+        out.push(w::para(why.clone(), Type::Caption, Weight::Normal, Ink::Destructive, 3));
     }
     out
 }
@@ -949,7 +1005,7 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
                     .cell_state(bare)
                     .interactive()
                     .tip(lead.subject().to_owned())
-                    .on(activity::Verb::Open.on(grp.source))
+                    .on(ActivityVerb::Open.on(grp.source))
                     .height(r.button)
                     .fill()
             })

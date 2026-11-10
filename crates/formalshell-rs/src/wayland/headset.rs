@@ -29,6 +29,7 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 use super::{App, Target};
 use crate::services::wants::{Source, Want};
 use crate::services::compositor;
+use crate::services::devices::headsets;
 use crate::surfaces::card::{Card, CardSpec, Sizing, popover_theme};
 use crate::surfaces::headset;
 use crate::surfaces::popup::Popup;
@@ -127,12 +128,7 @@ impl App {
     /// The Bluetooth audio devices moved: a disconnected one that is now
     /// connected earns a card.
     pub(super) fn headset_devices(&mut self) {
-        let learned = headset::learned(&self.store);
-        if !learned.is_empty() {
-            let mut faces = self.store.state.data.earbuds_faces.clone();
-            faces.extend(learned);
-            crate::services::state::set(vec![crate::services::state::Field::EarbudsFaces(faces)]);
-        }
+        headsets::learn(&self.store);
         let Some(list) = self.store.bluetooth.headsets.clone() else { return };
         let now = Instant::now();
         let first = !std::mem::replace(&mut self.headset.primed, true);
@@ -160,7 +156,7 @@ impl App {
             self.headset_dismiss(now);
         }
         let done = self.headset.learning.as_ref().is_some_and(|l| {
-            !headset::face(&self.store, l.address).art.is_empty() || self.headset.known.get(&l.address).is_none_or(|k| !k.connected)
+            !headsets::identity(&self.store, l.address).art.is_empty() || self.headset.known.get(&l.address).is_none_or(|k| !k.connected)
         });
         if done {
             self.headset.learning = None;
@@ -175,8 +171,8 @@ impl App {
     }
 
     fn headset_show(&mut self, address: BtAddress, now: Instant) {
-        let unknown = headset::face(&self.store, address).art.is_empty();
-        if unknown && self.headset.learning.as_ref().is_none_or(|l| l.address != address) {
+        let face = headset::face(&headsets::identity(&self.store, address));
+        if face.art.is_empty() && self.headset.learning.as_ref().is_none_or(|l| l.address != address) {
             self.headset.learning = Some(Learning::new(address, now + LEARN));
         }
         if self.headset_down() {
@@ -196,7 +192,7 @@ impl App {
         let theme = popover_theme(&self.store.theme.theme);
         let chrome = self.chrome();
         let (length, line_at) = (chrome.output.0, chrome.inset(Edge::Top));
-        let size = headset::size(&headset::face(&self.store, address), &theme, &mut self.kit);
+        let size = headset::size(&face, &theme, &mut self.kit);
         let spec = CardSpec { capsule: true, ..CardSpec::new(Edge::Top, line_at, Sizing::Card { size, anchor: length / 2.0, length: length as i32 }) };
         let card = Card::new(&theme, spec, self.motion_scale, self.cast);
         let surface = self.popout_surface(&card, Layer::Top);
@@ -260,7 +256,7 @@ impl App {
             PointerEventKind::Press { .. } => c.pressed = true,
             PointerEventKind::Release { .. } => {
                 if std::mem::take(&mut c.pressed) && c.popup.is_open() {
-                    let panel = headset::face(&self.store, c.address).panel;
+                    let panel = headset::face(&headsets::identity(&self.store, c.address)).panel;
                     let anchor = live!(self).bar.length() as f64 / 2.0;
                     self.headset_dismiss(now);
                     self.set_panel(panel, true, Some(anchor));
@@ -287,7 +283,7 @@ impl App {
             self.headset_dismiss(now);
         }
         let Some(address) = self.headset.card.as_ref().map(|c| c.address) else { return };
-        let face = headset::face(&self.store, address);
+        let face = headset::face(&headsets::identity(&self.store, address));
         let Some(c) = &mut self.headset.card else { return };
         if c.popup.win.finished(now) {
             self.headset.card = None;
@@ -326,7 +322,7 @@ impl App {
             Some(c) => {
                 // The surface hangs from the output's top left, so its pixels are the output's.
                 let r = c.popup.win.card.rest_rect();
-                let face = headset::face(&self.store, c.address);
+                let face = headset::face(&headsets::identity(&self.store, c.address));
                 serde_json::json!({"open": c.popup.is_open(), "art": face.art, "name": face.name, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}, "radius": c.popup.win.card.radius(), "learning": learning})
             }
             None => serde_json::json!({"learning": learning}),

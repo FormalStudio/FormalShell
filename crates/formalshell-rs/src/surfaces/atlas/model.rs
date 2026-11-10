@@ -921,6 +921,34 @@ pub fn index_by_uuid(stations: &[Station], uuid: &str) -> Option<usize> {
     stations.iter().position(|s| s.uuid == uuid)
 }
 
+/// Camera-space light, x right, y up, z toward the viewer: upper left and a
+/// little in front, so the lit side faces the reader.
+pub(super) fn light() -> [f64; 3] {
+    let (x, y, z): (f64, f64, f64) = (-0.55, 0.6, 0.58);
+    let l = (x * x + y * y + z * z).sqrt();
+    [x / l, y / l, z / l]
+}
+
+pub(super) struct Rot {
+    pub(super) sin_lat: f64,
+    pub(super) cos_lat: f64,
+    pub(super) sin_lon: f64,
+    pub(super) cos_lon: f64,
+}
+
+impl Rot {
+    /// A world unit vector in the view frame: x right, y up, z toward the
+    /// camera.
+    pub(super) fn apply(&self, p: &[f64; 3]) -> [f64; 3] {
+        let horizontal = p[0] * self.cos_lon + p[1] * self.sin_lon;
+        [
+            p[1] * self.cos_lon - p[0] * self.sin_lon,
+            self.cos_lat * p[2] - self.sin_lat * horizontal,
+            self.sin_lat * p[2] + self.cos_lat * horizontal,
+        ]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

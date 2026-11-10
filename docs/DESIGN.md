@@ -966,7 +966,8 @@ the field, while something is playing or paused, the now-playing block: a
 cover, title and artist in that ink, a track, and the transport as a button
 group the field's own Tab reaches without the field ever losing focus.
 
-**Desktop clock** (`formalshell-rs/src/wayland/desktop_clock.rs`, faces in
+**Desktop clock** (`formalshell-rs/src/wayland/desktop_clock.rs`, its face
+and glass in `surfaces/desktop_clock.rs`, faces in
 `fs-chrome/src/clock_face.rs`). A Background layer per output over the
 wallpaper and the sculpture, no fill, no border, no card: big digits
 filled with the picture under them blurred and pulled 75% toward one ink

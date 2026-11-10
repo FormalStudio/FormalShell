@@ -8,6 +8,10 @@
 //! would reverse while it is a day old at most, checked once it is first
 //! drawn and every half hour after.
 //!
+//! On the UI thread it starts installs off what the store holds and acts
+//! once one lands ([`land`]): the apps scanned again, and a pick for the
+//! app an install brought.
+//!
 //! A search waits 250ms after the last query and a newer one drops the
 //! child still answering an older one. `--offline` keeps crates.io and npm
 //! out, so a keystroke never waits on the network.
@@ -21,12 +25,13 @@ use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use async_io::Timer;
+use fs_activity::State as Run;
 use fs_menu::providers::{self as p, Info, Owner, Package};
 use futures_lite::{FutureExt, future};
 
-use super::{http, proc};
+use super::{http, menu, proc, state};
 use crate::runtime::Ctx;
-use crate::store;
+use crate::store::{self, Store};
 
 const DEBOUNCE: Duration = Duration::from_millis(250);
 const RECHECK: Duration = Duration::from_secs(30 * 60);
@@ -468,6 +473,126 @@ fn spawn_change(ctx: &Ctx, change: Change) {
     });
 }
 
+/// What Install mode's rows for `q` need asked, on the UI thread: fspec's
+/// search once the query is two characters long, then the pictures of the
+/// packages it found that the index has not read yet.
+pub fn search_for(store: &Store, q: &str) {
+    if !store.activity.fspec.installed {
+        return;
+    }
+    let q = q.trim();
+    if q.chars().count() < 2 {
+        return;
+    }
+    send(Cmd::Search(q.to_owned()));
+    let Some((answered, Ok(found))) = &store.packages.search else { return };
+    if answered != q {
+        return;
+    }
+    let icons: Vec<String> = found.iter().filter_map(|f| f.icon.clone()).filter(|i| i.starts_with('/') && !store.menu.row_icons.contains_key(i)).collect();
+    if !icons.is_empty() {
+        menu::ask(menu::Ask::Icons(icons));
+    }
+}
+
+/// Starts an install of `id`, named off the search that listed it, the
+/// launcher's Enter and Activity's Retry alike.
+pub fn install(store: &Store, id: &str) {
+    let name = match &store.packages.search {
+        Some((_, Ok(found))) => found.iter().find(|f| f.id == id).map(|f| f.name.clone()),
+        _ => None,
+    };
+    let name = name.or_else(|| store.packages.started(id).map(|s| s.name.clone())).unwrap_or_default();
+    send(Cmd::Install(id.to_owned(), name, desktop_ids(store)));
+}
+
+/// The desktop ids the apps scan knows now, before an install.
+fn desktop_ids(store: &Store) -> HashSet<String> {
+    store.menu.exec.apps.keys().cloned().collect()
+}
+
+/// fspec operations that change what is installed.
+fn changes_apps(kind: &str) -> bool {
+    matches!(kind, "install" | "uninstall" | "undo")
+}
+
+/// What the shell does once an fspec install, uninstall or undo succeeds,
+/// whoever started it: the apps scanned again and every owner answer
+/// dropped. An install the launcher started also records a pick for the
+/// app it brought, once the scan has it, so the app heads `Recent` once.
+/// Run on the UI thread for every Activity and Menu change; true when the
+/// launcher's rows may read differently.
+pub fn land(store: &mut Store) -> bool {
+    let done: Vec<String> = store
+        .activity
+        .activity
+        .live()
+        .iter()
+        .chain(store.activity.activity.history())
+        .filter(|i| i.origin == fs_activity::Origin::Fspec && changes_apps(&i.kind) && matches!(i.state, Run::Succeeded | Run::Done))
+        .map(|i| i.id.clone())
+        .filter(|id| !store.packages.landed.contains(id))
+        .collect();
+    let mut moved = false;
+    if !done.is_empty() {
+        store.packages.landed.extend(done);
+        store.packages.owners.clear();
+        send(Cmd::Forget);
+        send(Cmd::Check);
+        menu::ask(menu::Ask::Rescan);
+        moved = true;
+    }
+    let now = desktop_ids(store);
+    let labels: HashMap<String, String> =
+        now.iter().filter_map(|id| store.menu.nodes().get(&format!("apps.{id}")).map(|n| (id.clone(), n.label.clone()))).collect();
+    let mut claimed: HashSet<String> = store.packages.started.iter().filter_map(|s| s.app.clone()).collect();
+    let mut picks = Vec::new();
+    for s in store.packages.started.iter_mut().filter(|s| s.verb == Verb::Install && s.app.is_none()) {
+        let Ok(Some(op)) = &s.op else { continue };
+        if !store.packages.landed.contains(&fs_activity::fspec::item_id(op)) {
+            continue;
+        }
+        let mut fresh: Vec<&String> = now
+            .iter()
+            .filter(|id| !s.before.contains(*id) && !claimed.contains(*id))
+            .filter(|id| brought_by(id, labels.get(*id).map_or("", String::as_str), &s.id, &s.name))
+            .collect();
+        fresh.sort();
+        if let Some(app) = fresh.first() {
+            claimed.insert((*app).clone());
+            s.app = Some((*app).clone());
+            picks.push(fs_menu::actions::SubjectId::App((*app).clone()).to_string());
+            moved = true;
+        }
+    }
+    if !picks.is_empty() {
+        let mut held = store.state.data.picks.clone();
+        let at = crate::runtime::now_ms() as f64;
+        for id in &picks {
+            held = fs_menu::frecency::record(&held, id, at, None);
+        }
+        state::set(vec![state::Field::Picks(held)]);
+    }
+    moved
+}
+
+/// Whether desktop entry `desktop` (shown as `label`) is the app package
+/// `id` (`<source>:<ref>`, catalog name `name`) brought: a Flathub app's
+/// entry is named after its ref, anything else matches by name.
+fn brought_by(desktop: &str, label: &str, id: &str, name: &str) -> bool {
+    let reference = id.split_once(':').map_or(id, |(_, r)| r);
+    let tail = |s: &str| s.rsplit(['.', '/']).next().unwrap_or(s).to_owned();
+    desktop.eq_ignore_ascii_case(reference)
+        || tail(desktop).eq_ignore_ascii_case(&tail(reference))
+        || (!name.is_empty() && (label.eq_ignore_ascii_case(name) || desktop.eq_ignore_ascii_case(name)))
+}
+
+/// The app an Activity install row's Open launches, once it landed.
+pub fn landed_app<'a>(store: &'a Store, source: &str) -> Option<&'a str> {
+    let id = fs_activity::FspecSource::arg_of(source, "install")?;
+    store.packages.started(id).filter(|s| s.verb == Verb::Install).and_then(|s| s.app.as_deref())
+}
+
 pub fn start(ctx: &Ctx) {
     ctx.spawn(run(ctx.clone()));
 }
@@ -603,6 +728,15 @@ mod tests {
         assert_eq!(recent_change(line, "g815", 1000000 + 3600), Some((Verb::Uninstall, "figlet".into())));
         assert_eq!(recent_change(line, "g815", 1000000 + 24 * 3600), None);
         assert_eq!(recent_change("feat(apps): uninstall figlet on g815", "g815", 1000000), None);
+    }
+
+    #[test]
+    fn an_install_claims_only_its_own_app() {
+        assert!(brought_by("org.mozilla.firefox", "Firefox", "flatpak:org.mozilla.firefox", "Firefox"));
+        assert!(brought_by("firefox", "Firefox", "zypper:firefox", "firefox"));
+        assert!(brought_by("org.gnome.Btop", "btop", "zypper:btop", "btop"));
+        assert!(!brought_by("org.gnome.Calculator", "Calculator", "zypper:btop", "btop"));
+        assert!(!brought_by("org.example.Other", "Other", "aqua:ripgrep", "ripgrep"));
     }
 
     #[test]

@@ -327,7 +327,8 @@ is the whole output and paints the ring under its cells.
 | `surfaces/switcher/` | the Alt+Tab card and its pure model |
 | `surfaces/panel/workspace_preview.rs` | the Spaces preview card |
 | `surfaces/capture/` | the region picker's model and sheet |
-| `surfaces/atlas/` | the radio atlas and its globe |
+| `surfaces/atlas/` | the radio atlas, its globe and the sampler drawing the satellite picture on it |
+| `surfaces/desktop_clock.rs` | the clock face and glass the desktop clock and the sidebar's time card draw, and the clock format every clock reads |
 | `surfaces/panel/gallery.rs` | the dev sheet of every widget against the live theme (`gallery` target) |
 
 ## Services
@@ -340,7 +341,7 @@ Each module under `src/services/` names its source in its header. Grouped:
   `appicon` (which desktop entry and icon a window has), `icons`.
 - Devices (`services/devices/`): `audio` over `fs-audio`, `bluetooth` over
   `fs-bluez`, `network` over `fs-network`, `power` over `fs-upower`,
-  `earbuds`, `headsets`. Also `display`, `brightness`, `nightlight`
+  `earbuds`, `headsets` (which device a connected headset is). Also `display`, `brightness`, `nightlight`
   (wlsunset), `lights` (asusd), `overnight`, `caffeinate`.
 - Readings (`services/info/`): calendar, weather and geoclue, GitHub,
   Tailscale, AI usage, flake updates, the system monitor, the process
@@ -351,11 +352,14 @@ Each module under `src/services/` names its source in its header. Grouped:
   centre with nothing open.
 - Media: `media` (one active pick across MPRIS via `fs-mpris`, the radio's
   mpv, the phone's AMS and AirPlay), `cover`, `motion_art`, `lyrics`,
-  `visualizer` (one shared `cava`), `radio`, `airplay` (UxPlay), `ams`.
+  `visualizer` (one shared `cava`), `radio`, `airplay` (UxPlay), `ams`,
+  `earth` (the radio atlas's satellite tiles and their cache).
 - Notifications: `notifications`, which runs `fs-notifd` on the service
   thread and keeps `fs-info`'s three-tier reducer on the UI thread.
 - Launcher and friends: `menu`, `clipboard`, `clipssh`, `picker`,
-  `localsend`, `mirror` (with `v4l2`).
+  `localsend`, `mirror` (with `v4l2`), `packages` (fspec's search and
+  installs, and what lands once one succeeds), `activity` (with a row's
+  verbs, which the panel, the toasts and IPC run).
 - Security: `polkit`, `sleep`, `screensaver`, `capture`, `recording`,
   `users` (who the shell runs as and the logind session the lock watches
   and polkit registers for), `battery` (the low-battery watcher).
