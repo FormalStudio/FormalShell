@@ -20,7 +20,7 @@ use crate::services::notifications::Op;
 use crate::surfaces::activity;
 use crate::store::Topic;
 use crate::ui::el::Kind;
-use crate::ui::{El, Event, Ink, On, Type, Variant, Weight, What, w};
+use crate::ui::{El, Event, Ink, On, Weight, What, w};
 
 /// A press on one entry, by the entry's group key.
 enum Press {
@@ -73,35 +73,17 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     let e = &g.entry;
     let key = model::group_key(g);
     let critical = e.urgency == Urgency::Critical;
-    let rel = fs_info::time::rel_time(now, e.arrived_at);
-    let meta = if g.count > 1 { format!("{rel}  x{}", g.count) } else { rel };
     let mut head = Vec::new();
     if unread {
         let d = s.sm;
         head.push(El::new(Kind::Swatch { color: v.theme.colors.get(ColorRole::Primary), w: d, h: d, radius: d / 2.0, border: false }));
     }
-    let mut chip = if critical { w::panel_chip_ink(s, "triangle-alert", false, Ink::Destructive) } else { w::panel_chip(s, "bell", false) };
-    if e.source == "iphone" {
-        chip = chip.badge("smartphone");
-    }
+    let chip = if critical { w::panel_chip_ink(s, "triangle-alert", false, Ink::Destructive) } else { w::panel_chip(s, "bell", false) };
     head.push(w::caption(e.app_name.clone()).weight(Weight::Semibold).ink(Ink::Fg).elide());
-    head.push(w::caption(meta).mono());
+    head.push(w::caption(w::notification_meta(g, now)).mono());
     head.push(w::spacer());
     head.push(w::icon_button("x").tip("Dismiss").on(Press::Dismiss(key.to_owned())));
-    let mut parts = vec![w::row(s.icon_gap, head), w::para(e.summary.clone(), Type::Body, Weight::Medium, Ink::Fg, 2)];
-    let body = model::sanitize_body(&e.body, &e.app_name, &e.app_icon);
-    if !body.is_empty() {
-        parts.push(w::para(body, Type::BodySmall, Weight::Normal, Ink::Muted, 2));
-    }
-    let actions = model::button_actions(e);
-    if !actions.is_empty() {
-        let buttons = actions
-            .iter()
-            .map(|a| w::button(a.label.clone()).variant(Variant::Outline).on(Press::Action(a.key.clone(), key.to_owned())))
-            .collect();
-        parts.push(w::row(s.sm, buttons));
-    }
-    let words = w::column(s.row_gap, parts).fill();
+    let (chip, words) = w::notification(s, g, chip, w::row(s.icon_gap, head), None, |action| Press::Action(action.to_owned(), key.to_owned()));
     w::panel_cell(s, w::row(s.panel_gap, vec![chip, words]).fill().pad(0.0, s.md, 0.0, s.md)).on(Press::Row(key.to_owned())).stop(key)
 }
 

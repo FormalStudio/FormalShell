@@ -53,7 +53,7 @@ use crate::services::activity::Verb;
 use crate::surfaces::activity;
 use crate::paint::{Kit, Painter};
 use crate::paint::rim::{self, Lit, Rim};
-use crate::ui::{self, El, Ink, Type, Ui, Variant, Weight, w};
+use crate::ui::{self, El, Ink, Type, Ui, w};
 
 const MAX_PEEK_LEVELS: usize = 2;
 /// sonner's SWIPE_THRESHOLD: the travel past which a lift dismisses.
@@ -260,8 +260,6 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
     let s = &theme.space;
     let e = &g.entry;
     let critical = e.urgency == Urgency::Critical;
-    let rel = fs_info::time::rel_time(now, e.arrived_at);
-    let meta = if g.count > 1 { format!("{rel}  x{}", g.count) } else { rel };
     let slot = s.control_height;
     let mark = match picture.filter(|_| !critical) {
         Some(b) => w::picture(Some(b), slot),
@@ -274,8 +272,7 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
         .width(ui::Size::Px(slot))
         .centred(),
     };
-    let mark = if e.source == "iphone" { mark.badge("smartphone") } else { mark };
-    let mut head = vec![w::section_label(s, &e.app_name, None, false), w::caption(meta).mono().fill()];
+    let mut head = vec![w::section_label(s, &e.app_name, None, false), w::caption(w::notification_meta(g, now)).mono().fill()];
     // A bare caption-sized glyph rather than an icon button: the button is
     // `controlHeight` tall, so the header grew by it on hover.
     head.push(if hovered {
@@ -283,20 +280,9 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
     } else {
         w::space(slot)
     });
-    let mut words = vec![w::row(s.icon_gap, head), w::para(e.summary.clone(), Type::Body, Weight::Semibold, Ink::Fg, 2)];
-    let body = model::sanitize_body(&e.body, &e.app_name, &e.app_icon);
-    if !body.is_empty() {
-        words.push(w::para(body, Type::BodySmall, Weight::Normal, Ink::Muted, 2));
-    }
-    if let Some(item) = progress {
-        words.push(w::row(s.sm, vec![w::ring(activity::ring(item)), w::caption(item.progress.words().unwrap_or_default()).mono().ink(Ink::Muted)]));
-    }
-    let actions = model::button_actions(e);
-    if !actions.is_empty() {
-        let buttons = actions.iter().map(|a| w::button(a.label.clone()).variant(Variant::Outline).on(Press::Action(a.key.clone()))).collect();
-        words.push(w::row(s.sm, buttons).pad(0.0, s.row_gap, 0.0, 0.0));
-    }
-    w::row(s.sm, vec![mark, w::column(s.row_gap, words).fill()]).top().on(Press::Body)
+    let ring = progress.map(|item| w::row(s.sm, vec![w::ring(activity::ring(item)), w::caption(item.progress.words().unwrap_or_default()).mono().ink(Ink::Muted)]));
+    let (mark, words) = w::notification(s, g, mark, w::row(s.icon_gap, head), ring, |key| Press::Action(key.to_owned()));
+    w::row(s.sm, vec![mark, words]).top().on(Press::Body)
 }
 
 pub fn card_width(theme: &Theme) -> f64 {

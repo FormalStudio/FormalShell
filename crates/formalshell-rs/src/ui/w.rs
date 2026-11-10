@@ -3,6 +3,7 @@
 //! Tokens come from `Space`; nothing here writes a literal size.
 
 use crate::ui::field::{Buffer, Field};
+use fs_info::notifications::{self, Group};
 use fs_theme::color::Rgba;
 use fs_theme::tokens::Space;
 
@@ -644,4 +645,31 @@ pub fn menu_item(s: &Space, glyph: &str, text: impl Into<String>, current: bool,
 pub fn panel_footer(s: &Space, glyph: &str, text: &str) -> El {
     let parts = vec![icon(glyph).size(Type::Heading).ink(Ink::Muted), text_el(text, Type::Body, Weight::Medium, false, Ink::Muted).elide().fill()];
     panel_cell(s, row(s.panel_gap, parts).fill()).height(s.panel_row)
+}
+
+/// When a notification group arrived, and how many it holds past one.
+pub fn notification_meta(g: &Group, now: i64) -> String {
+    let rel = fs_info::time::rel_time(now, g.entry.arrived_at);
+    if g.count > 1 { format!("{rel}  x{}", g.count) } else { rel }
+}
+
+/// A notification's lead and its words, for the caller to set side by
+/// side: `lead` (a picture or a chip) carrying the phone's mark for one
+/// from the iPhone, then `head` (the app line), the summary, the body,
+/// `extra` and the sender's action buttons, each pressing `action(key)`.
+pub fn notification<P: Into<super::On>>(s: &Space, g: &Group, lead: El, head: El, extra: Option<El>, action: impl Fn(&str) -> P) -> (El, El) {
+    let e = &g.entry;
+    let lead = if e.source == "iphone" { lead.badge("smartphone") } else { lead };
+    let mut words = vec![head, para(e.summary.clone(), Type::Body, Weight::Semibold, Ink::Fg, 2)];
+    let body = notifications::sanitize_body(&e.body, &e.app_name, &e.app_icon);
+    if !body.is_empty() {
+        words.push(para(body, Type::BodySmall, Weight::Normal, Ink::Muted, 2));
+    }
+    words.extend(extra);
+    let actions = notifications::button_actions(e);
+    if !actions.is_empty() {
+        let buttons = actions.iter().map(|a| button(a.label.clone()).variant(Variant::Outline).on(action(&a.key))).collect();
+        words.push(row(s.sm, buttons).pad(0.0, s.row_gap, 0.0, 0.0));
+    }
+    (lead, column(s.row_gap, words).fill())
 }
