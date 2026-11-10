@@ -76,7 +76,7 @@ impl App {
     pub(super) fn polkit_event(&mut self, event: Event) {
         match event {
             Event::Begin { request, message, identity } => {
-                let own = !identity.is_empty() && std::env::var("USER").is_ok_and(|u| u == identity);
+                let own = !identity.is_empty() && crate::services::users::login() == Some(identity.as_str());
                 let names = ["polkit", "polkit-scrim-band", "polkit-scrim"];
                 let mut modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Overlay, Some("dialog"), DEFORM_AMOUNT, true);
                 let content = self.content_layer("polkit-content", &modal.win.surface);

@@ -4,7 +4,6 @@
 pub mod activity;
 pub mod atlas;
 pub mod bar;
-pub mod battery;
 pub mod capture;
 pub mod card;
 pub mod card_window;
@@ -61,20 +60,7 @@ pub fn changed(app: &mut App, topic: Topic) {
             // A sky step the engine published moves the desktop's source.
             theme_inputs(app);
         }
-        Topic::Bluetooth
-        | Topic::Network
-        | Topic::Audio
-        | Topic::Power
-        | Topic::Earbuds
-        | Topic::PadLights
-        | Topic::Profiles
-        | Topic::Revealed
-        | Topic::Logind => {
-            if let Some(diff) = app.battery_watch.check(&app.store) {
-                app.apply(diff);
-            }
-        }
-        Topic::Capture => capture::events(app),
+        Topic::Capture => crate::wayland::capture_host::events(app),
         Topic::Clipboard => app.field_paste(),
         Topic::Display => {
             let scales = &app.store.display.scales;

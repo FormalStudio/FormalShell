@@ -753,8 +753,8 @@ impl App {
         let spawned = std::thread::Builder::new().name("fs-lock-auth".into()).spawn(move || {
             let keyring_password = password.clone();
             let prompter = prompter_slot;
-            let outcome = match pam::current_user() {
-                Some(user) => pam::check(pam::LOCK_SERVICE, &user, password),
+            let outcome = match crate::services::users::login() {
+                Some(user) => pam::check(pam::LOCK_SERVICE, user, password),
                 None => Outcome::StartFailed("no user".into()),
             };
             let unlocked = outcome == Outcome::Success;
@@ -1249,7 +1249,7 @@ impl App {
         let has_wallpaper = !self.store.desktop().is_empty();
         let shared = Shared {
             now: Local::now(),
-            name: crate::greeter::users::own_name(),
+            name: crate::services::users::name(),
             prompt: view::Prompt::password(self.lock.password.text().chars().count(), self.lock.password.caret_chars(), self.lock.checking),
             error: &self.lock.error,
             has_wallpaper,

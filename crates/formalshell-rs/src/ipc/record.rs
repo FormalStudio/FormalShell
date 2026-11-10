@@ -1,8 +1,8 @@
-//! `record`: thin over `surfaces::capture::record`, so a
+//! `record`: thin over `wayland::capture_host::record`, so a
 //! keybind, a menu row and the smoke rig all drive one implementation.
 
 use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
-use crate::surfaces::capture::record as rec;
+use crate::wayland::capture_host::record as rec;
 use crate::wayland::App;
 
 const SCOPE: (&str, Type) = ("scope", Type::String);

@@ -2,7 +2,7 @@
 //! or a geometry the caller already has, cancel and status.
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
-use crate::surfaces::capture as cap;
+use crate::wayland::capture_host as cap;
 use crate::wayland::App;
 
 fn grab_text(app: &mut App, _: &[Value]) -> Reply {

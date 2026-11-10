@@ -103,19 +103,6 @@ pub fn check(service: &str, user: &str, password: Zeroizing<String>) -> Outcome 
     authenticate(service, user, &events, responses)
 }
 
-/// The login name of the user this process runs as.
-pub fn current_user() -> Option<String> {
-    let mut buf = vec![0 as c_char; 4096];
-    let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
-    let mut found: *mut libc::passwd = ptr::null_mut();
-    // SAFETY: getpwuid_r writes into `pwd` and `buf`, both sized as passed.
-    let rc = unsafe { libc::getpwuid_r(libc::getuid(), &mut pwd, buf.as_mut_ptr(), buf.len(), &mut found) };
-    if rc != 0 || found.is_null() || pwd.pw_name.is_null() {
-        return None;
-    }
-    Some(unsafe { CStr::from_ptr(pwd.pw_name) }.to_string_lossy().into_owned())
-}
-
 struct Handler {
     events: Sender<Event>,
     responses: Receiver<Zeroizing<String>>,

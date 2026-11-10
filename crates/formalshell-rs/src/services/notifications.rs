@@ -67,13 +67,23 @@ pub enum Diff {
     DropPhone(i64),
 }
 
-/// A shell-authored toast's action: its key, its label, and the argv the
-/// compositor spawns when it is picked.
+/// A shell-authored toast's action: its key, its label, and what picking it
+/// runs.
 #[derive(Clone, Debug)]
 pub struct LocalAction {
     pub key: String,
     pub label: String,
-    pub argv: Vec<String>,
+    pub run: Local,
+}
+
+/// What a shell-authored action runs once picked.
+#[derive(Clone, Debug)]
+pub enum Local {
+    /// An argv the compositor spawns.
+    Spawn(Vec<String>),
+    /// A capture follow-up, which `wayland::capture_host` runs on the next
+    /// pass of the loop.
+    Capture(super::capture::Act),
 }
 
 pub enum Op {
@@ -103,10 +113,9 @@ pub struct State {
     /// Each entry's picture, keyed by its id; none means the bell.
     pub icons: HashMap<NotificationId, icons::Raw>,
     local_serial: u64,
-    /// Actions picked on the shell's own entries, `(id, key)`, for the
-    /// surface that posted them to act on.
-    pub local_invoked: Vec<(NotificationId, String)>,
-    /// Commands behind shell-authored toasts' actions, by entry id.
+    /// [`Local::Capture`] actions picked, in the order they were picked.
+    pub capture_picked: Vec<super::capture::Act>,
+    /// What shell-authored toasts' actions run, by entry id.
     local_commands: HashMap<NotificationId, Vec<LocalAction>>,
     /// state.json's dnd as last seen, so a setDnd answered here before its
     /// write lands is not rolled back by the old value.
@@ -179,9 +188,7 @@ impl State {
                     Op::Invoke(id, key) => self.invoke_action(id, &key),
                     Op::Notify(summary, body, urgency) => self.notify(&summary, &body, urgency),
                     Op::NotifyRunning(summary, body, urgency, actions) => {
-                        let shown = actions.iter().map(|a| Action { key: a.key.clone(), label: a.label.clone() }).collect();
-                        let id = self.notify_with(&summary, &body, urgency, shown, String::new());
-                        self.local_commands.insert(id, actions);
+                        self.notify_local(&summary, &body, urgency, actions, String::new());
                     }
                     Op::ShowReminders => self.show_reminders(),
                 }
@@ -260,6 +267,16 @@ impl State {
         id
     }
 
+    /// [`State::notify_with`] whose actions run what they carry when picked.
+    pub fn notify_local(&mut self, summary: &str, body: &str, urgency: Urgency, actions: Vec<LocalAction>, image: String) -> NotificationId {
+        let shown = actions.iter().map(|a| Action { key: a.key.clone(), label: a.label.clone() }).collect();
+        let id = self.notify_with(summary, body, urgency, shown, image);
+        if !actions.is_empty() {
+            self.local_commands.insert(id, actions);
+        }
+        id
+    }
+
     pub fn dismiss_popup(&mut self, id: NotificationId) {
         self.hovered.remove(&id);
         if self.model.popups.iter().any(|p| p.id == id) {
@@ -314,11 +331,11 @@ impl State {
     pub fn invoke_action(&mut self, id: NotificationId, key: &str) {
         match id {
             NotificationId::Local(_) => {
-                if let Some(a) = self.local_commands.get(&id).and_then(|acts| acts.iter().find(|a| a.key == key)) {
-                    super::compositor::spawn(&a.argv);
-                    return;
+                let Some(a) = self.local_commands.get(&id).and_then(|acts| acts.iter().find(|a| a.key == key)) else { return };
+                match &a.run {
+                    Local::Spawn(argv) => super::compositor::spawn(argv),
+                    Local::Capture(act) => self.capture_picked.push(act.clone()),
                 }
-                self.local_invoked.push((id, key.to_owned()));
             }
             NotificationId::Phone { .. } => {
                 if let Some(phone) = self.find(id).and_then(iphone::phone_of) {

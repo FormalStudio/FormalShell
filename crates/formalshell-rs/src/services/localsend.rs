@@ -183,7 +183,7 @@ async fn run(ctx: Ctx) {
                     let open = |key: &str, label: &str, target: &str| notifications::LocalAction {
                         key: key.into(),
                         label: label.into(),
-                        argv: vec!["xdg-open".into(), target.into()],
+                        run: notifications::Local::Spawn(vec!["xdg-open".into(), target.into()]),
                     };
                     let actions = vec![open("open", "Open", &path.to_string_lossy()), open("reveal", "Show in Folder", &s.dir)];
                     ctx.publish(store::Diff::Notifications(notifications::Diff::Op(Op::NotifyRunning(

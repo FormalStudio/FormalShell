@@ -1,7 +1,9 @@
 //! The children the capture family runs (slurp, grim, tesseract, wf-recorder,
 //! ffmpeg, the editor), spawned and read on the service thread. Each one
 //! reports its pid as it starts and its whole answer as it exits; the UI
-//! thread owns every decision about both, in `surfaces::capture`.
+//! thread owns every decision about both, in `wayland::capture_host`. The
+//! pool jobs that read and write files (a shot's crop, a notification's
+//! picture) run here too.
 
 use std::cell::RefCell;
 use std::time::Duration;
@@ -64,6 +66,14 @@ pub enum Event {
     Cropped { generation: u64, result: Result<String, String> },
     /// A notification's picture, loaded off the UI thread.
     Image { id: fs_types::NotificationId, raw: Option<crate::services::icons::Raw> },
+}
+
+/// What one of the family's notification actions does once picked.
+#[derive(Clone, Debug)]
+pub enum Act {
+    Edit(String),
+    Play(String),
+    Gif(String),
 }
 
 /// Events waiting for the UI thread to act on them, in arrival order.
@@ -201,6 +211,56 @@ async fn pump<R: futures_lite::AsyncRead + Unpin>(reader: Option<&mut R>, into: 
             Ok(0) | Err(_) => return,
             Ok(n) => into.borrow_mut().extend_from_slice(&chunk[..n]),
         }
+    }
+}
+
+/// A shot's selection, in the freeze's own pixels, and where it goes.
+pub struct Crop {
+    pub src: String,
+    pub dest: String,
+    pub x0: u32,
+    pub y0: u32,
+    pub x1: u32,
+    pub y1: u32,
+}
+
+/// Cuts the selection out of its freeze on the pool, landing as
+/// [`Event::Cropped`]: the file, or why not.
+pub fn crop(ctx: &Ctx, generation: u64, crop: Crop) {
+    let Crop { src, dest, x0, y0, x1, y1 } = crop;
+    let job = ctx.pool().run(move || -> Result<String, String> {
+        if x1 <= x0 || y1 <= y0 {
+            return Err("the selection is empty".into());
+        }
+        let img = image::open(&src).map_err(|e| format!("{src}: {e}"))?;
+        if let Some(dir) = std::path::Path::new(&dest).parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        img.crop_imm(x0, y0, x1 - x0, y1 - y0).save(&dest).map_err(|e| format!("{dest}: {e}"))?;
+        Ok(dest)
+    });
+    let publisher = ctx.publisher().clone();
+    ctx.spawn(async move {
+        let result = job.await.unwrap_or_else(|| Err("the crop did not run".into()));
+        publisher.publish(Diff::Capture(Event::Cropped { generation, result }));
+    });
+}
+
+/// A notification's picture loaded on the pool, landing as [`Event::Image`].
+pub fn picture(ctx: &Ctx, id: fs_types::NotificationId, path: String) {
+    let job = ctx.pool().run(move || crate::services::icons::load(std::path::Path::new(&path)));
+    let publisher = ctx.publisher().clone();
+    ctx.spawn(async move {
+        let raw = job.await.flatten();
+        publisher.publish(Diff::Capture(Event::Image { id, raw }));
+    });
+}
+
+/// A child's stderr as the reason it failed, else `fallback`.
+pub fn or_code(text: &str, fallback: String) -> String {
+    match text.trim() {
+        "" => fallback,
+        t => t.to_owned(),
     }
 }
 

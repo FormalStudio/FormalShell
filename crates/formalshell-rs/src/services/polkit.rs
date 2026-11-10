@@ -57,11 +57,15 @@ async fn run(publisher: Publisher, cmds: async_channel::Receiver<Cmd>) {
         Ok(c) => c,
         Err(err) => return eprintln!("polkit: system bus: {err}"),
     };
-    let agent = match Agent::register(&conn).await {
+    let session = match crate::services::users::session(&conn).await {
+        Ok(s) => s,
+        Err(err) => return eprintln!("polkit: no logind session: {err}"),
+    };
+    let agent = match Agent::register(&conn, &session.id).await {
         Ok(a) => a,
         Err(err) => return eprintln!("polkit: registering the agent: {err}"),
     };
-    eprintln!("polkit: agent registered");
+    eprintln!("polkit: agent registered for logind session {}", session.id);
     let ui = |e: Event| publisher.send(Msg::Polkit(e));
     let mut next = 0u64;
     while let Ok(request) = agent.requests.recv().await {

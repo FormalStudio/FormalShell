@@ -11,8 +11,8 @@ use fs_theme::palette::ColorRole;
 use fs_types::WindowId;
 use serde_json::json;
 
-use super::{Act, App, notify, notify_with, now, runtime_dir, slurp_run, spawn, SLURP_REGION};
-use crate::services::capture::{Exit, Job, Run};
+use super::{App, notify, notify_with, now, runtime_dir, slurp_run, spawn, SLURP_REGION};
+use crate::services::capture::{Act, Exit, Job, Run, or_code};
 use crate::services::compositor::{self, Command};
 use crate::services::recording;
 use crate::settings;
@@ -168,7 +168,7 @@ pub fn start(app: &mut App, scope: &str, audio: &str, max_height: Option<&str>) 
             let slurp = app.capture.rec.slurp.take();
             app.capture.stop(slurp);
             app.capture.rec.pending_path.clear();
-            notify("RECORDING CANCELLED", &format!("no region after {}s", secs.round()));
+            notify(app, "RECORDING CANCELLED", &format!("no region after {}s", secs.round()));
         });
         return Ok(path);
     }
@@ -362,7 +362,7 @@ fn setup_webcam(app: &mut App, device: String) {
     }
     let Some(region) = webcam_region(app) else {
         eprintln!("RecordingService: webcam overlay unavailable: could not resolve the captured region");
-        notify("WEBCAM UNAVAILABLE", "could not resolve the captured region");
+        notify(app, "WEBCAM UNAVAILABLE", "could not resolve the captured region");
         launch(app, device);
         return;
     };
@@ -440,8 +440,8 @@ fn webcam_map_poll(app: &mut App, g: u64) {
             model::MapPollAction::GiveUp => {
                 r.webcam_gave_up = true;
                 eprintln!("RecordingService: webcam overlay unavailable: camera did not open in time");
-                notify("WEBCAM UNAVAILABLE", "camera did not open in time");
                 let device = r.webcam_audio_device.clone();
+                notify(app, "WEBCAM UNAVAILABLE", "camera did not open in time");
                 launch(app, device);
             }
             model::MapPollAction::Stop => {
@@ -484,8 +484,8 @@ fn webcam_settle_poll(app: &mut App, g: u64) {
         if r.webcam_attempts >= 40 {
             r.webcam_settle = None;
             eprintln!("RecordingService: webcam overlay did not settle in time, recording anyway");
-            notify("WEBCAM UNPLACED", "the camera did not settle in time");
             let device = r.webcam_audio_device.clone();
+            notify(app, "WEBCAM UNPLACED", "the camera did not settle in time");
             launch(app, device);
             return;
         }
@@ -520,8 +520,8 @@ fn fail(app: &mut App, why: String) {
     r.pending_geometry.clear();
     r.pending_output.clear();
     eprintln!("RecordingService: {why}");
-    notify("RECORDING FAILED", &why);
-    r.last_error = why;
+    r.last_error = why.clone();
+    notify(app, "RECORDING FAILED", &why);
     release_audio(app);
 }
 
@@ -545,13 +545,6 @@ fn announce_saved(app: &mut App, path: String) {
     app.capture.rec.preview = Some(g);
     let argv = model::preview_frame_argv(&path, &model::preview_frame_path(&path));
     spawn(app, Run::new(Job::Preview, g, argv).tag(path));
-}
-
-fn or_code(text: &str, fallback: String) -> String {
-    match text.trim() {
-        "" => fallback,
-        t => t.to_owned(),
-    }
 }
 
 pub fn exit(app: &mut App, e: Exit) {
@@ -617,7 +610,7 @@ pub fn exit(app: &mut App, e: Exit) {
             let devices = model::parse_webcam_devices(&e.stdout);
             let Some(first) = devices.first() else {
                 eprintln!("RecordingService: webcam overlay unavailable: no /dev/video* device");
-                notify("WEBCAM UNAVAILABLE", "no video capture device found");
+                notify(app, "WEBCAM UNAVAILABLE", "no video capture device found");
                 let device = app.capture.rec.webcam_audio_device.clone();
                 launch(app, device);
                 return;
@@ -646,14 +639,16 @@ pub fn exit(app: &mut App, e: Exit) {
                 r.last_path = saved.clone();
                 r.last_error = format!("wf-recorder ignored SIGTERM and was killed; {saved} may be truncated");
                 eprintln!("RecordingService: {}", r.last_error);
-                notify("RECORDING TRUNCATED", &r.last_error.clone());
+                let why = r.last_error.clone();
+                notify(app, "RECORDING TRUNCATED", &why);
                 sync_bar(app);
                 return;
             }
             if e.code != 0 && !was_stopping {
                 r.last_error = or_code(&e.stderr, format!("wf-recorder exited {}", e.code));
                 eprintln!("RecordingService: {}", r.last_error);
-                notify("RECORDING FAILED", &r.last_error.clone());
+                let why = r.last_error.clone();
+                notify(app, "RECORDING FAILED", &why);
                 sync_bar(app);
                 return;
             }
@@ -734,7 +729,7 @@ pub fn exit(app: &mut App, e: Exit) {
             let preview = model::preview_frame_path(&path);
             let image = if e.started && e.code == 0 { preview.as_str() } else { "" };
             let actions = vec![("default", "PLAY", Act::Play(path.clone())), ("gif", "GIF", Act::Gif(path.clone()))];
-            notify_with("RECORDING SAVED", &path, actions, image);
+            notify_with(app, "RECORDING SAVED", &path, actions, image);
             if e.started && e.code == 0 {
                 app.capture_after(2000, move |app| {
                     let g = app.capture.generation();
@@ -748,7 +743,7 @@ pub fn exit(app: &mut App, e: Exit) {
             }
             let why = or_code(&e.stderr, format!("player exited {}", e.code));
             eprintln!("RecordingService: player launch failed: {why}");
-            notify("PLAYER FAILED", &why);
+            notify(app, "PLAYER FAILED", &why);
         }
         Job::Palette => {
             if !mine(r.palette) {
@@ -764,8 +759,8 @@ pub fn exit(app: &mut App, e: Exit) {
             }
             let why = or_code(&e.stderr, format!("palettegen exited {}", e.code));
             eprintln!("RecordingService: {why}");
-            notify("GIF FAILED", &why);
-            app.capture.rec.last_error = why;
+            app.capture.rec.last_error = why.clone();
+            notify(app, "GIF FAILED", &why);
         }
         Job::Gif => {
             if !mine(r.gif) {
@@ -777,12 +772,13 @@ pub fn exit(app: &mut App, e: Exit) {
                 r.last_gif_path = r.pending_gif_path.clone();
                 r.last_error.clear();
                 let gif = r.last_gif_path.clone();
-                notify_with("GIF SAVED", &gif, Vec::new(), &gif);
+                notify_with(app, "GIF SAVED", &gif, Vec::new(), &gif);
                 return;
             }
             r.last_error = or_code(&e.stderr, format!("paletteuse exited {}", e.code));
             eprintln!("RecordingService: {}", r.last_error);
-            notify("GIF FAILED", &r.last_error.clone());
+            let why = r.last_error.clone();
+            notify(app, "GIF FAILED", &why);
         }
         _ => {}
     }

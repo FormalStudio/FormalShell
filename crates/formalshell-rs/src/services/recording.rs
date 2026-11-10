@@ -1,5 +1,5 @@
 //! Whether a screen recording is running, for the bar's recording indicator.
-//! `surfaces::capture::record` owns the recorder and writes this slice.
+//! `wayland::capture_host::record` owns the recorder and writes this slice.
 
 #[derive(Default)]
 pub struct State {

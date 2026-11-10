@@ -2,7 +2,7 @@
 //! its headless keys and status, the editor, and cancel.
 
 use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
-use crate::surfaces::capture as cap;
+use crate::wayland::capture_host as cap;
 use crate::wayland::App;
 
 const PROCESSING: (&str, Type) = ("processing", Type::String);

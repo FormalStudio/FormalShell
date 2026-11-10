@@ -21,7 +21,7 @@ use crate::store::Diff;
 use crate::surface::{Backend, Surface};
 use crate::surfaces::capture::draw::Sheet;
 use crate::surfaces::capture::picker::Screen;
-use crate::surfaces::capture::{self as cap};
+use super::capture_host as cap;
 
 const NAMESPACE: &str = "formalshell:capture";
 

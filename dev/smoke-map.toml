@@ -448,7 +448,7 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalsh
 runs = ["--monitor", "--processes", "--gpu"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/power.rs", "crates/formalshell-rs/src/surfaces/panel/power/diagram.rs", "crates/formalshell-rs/src/surfaces/battery.rs", "crates/formalshell-rs/src/services/devices/power.rs", "crates/formalshell-rs/src/services/info/powerflow.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/power.rs", "crates/formalshell-rs/src/surfaces/panel/power/diagram.rs", "crates/formalshell-rs/src/services/battery.rs", "crates/formalshell-rs/src/services/devices/power.rs", "crates/formalshell-rs/src/services/info/powerflow.rs"]
 runs = ["--gallery", "--panel power"]
 
 [[rule]]
@@ -576,6 +576,13 @@ runs = ["--sleep"]
 paths = ["crates/formalshell-rs/src/services/session.rs"]
 runs = ["--logind-lock", "--sleep", "--login-lock"]
 
+# Who the shell runs as and the logind session it acts for: the lock's PAM
+# user and name, the session the lock watches and polkit registers for, and
+# NetworkManager's owner for a saved profile.
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/users.rs", "crates/fs-auth/src/user.rs"]
+runs = ["--lock", "--logind-lock", "--sleep", "--login-lock", "--polkit", "--wifi"]
+
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/screensaver.rs", "crates/formalshell-rs/src/wayland/screensaver.rs", "crates/formalshell-rs/src/ipc/screensaver.rs", "crates/fs-screensaver/**"]
 runs = ["--screensaver", "--idle", "--caffeinate"]
@@ -639,11 +646,11 @@ runs = ["--lights"]
 
 # Capture, recording, console
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/capture/**", "crates/formalshell-rs/src/wayland/region.rs", "crates/formalshell-rs/src/services/capture.rs", "crates/formalshell-rs/src/ipc/capture.rs", "crates/formalshell-rs/src/ipc/screenshot.rs", "crates/fs-system/src/capture.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/capture/**", "crates/formalshell-rs/src/wayland/capture_host.rs", "crates/formalshell-rs/src/wayland/capture_host/**", "crates/formalshell-rs/src/wayland/region.rs", "crates/formalshell-rs/src/services/capture.rs", "crates/formalshell-rs/src/ipc/capture.rs", "crates/formalshell-rs/src/ipc/screenshot.rs", "crates/fs-system/src/capture.rs"]
 runs = ["--capture", "--capture-edit", "--screenshot", "--ocr"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/recording.rs", "crates/formalshell-rs/src/ipc/record.rs"]
+paths = ["crates/formalshell-rs/src/services/recording.rs", "crates/formalshell-rs/src/wayland/capture_host/record.rs", "crates/formalshell-rs/src/ipc/record.rs"]
 runs = ["--record", "--capture"]
 
 [[rule]]

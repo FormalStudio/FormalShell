@@ -245,7 +245,7 @@ async fn run(ctx: Ctx) {
     // A connect awaits NetworkManager's replies while its StateChanged
     // stream waits, so NetworkManager gets a connection of its own.
     let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish_none() };
-    let nm = match NetworkManager::connect(&conn, fs_auth::pam::current_user()).await {
+    let nm = match NetworkManager::connect(&conn, crate::services::users::login().map(str::to_owned)).await {
         Ok(nm) => nm,
         Err(err) => {
             eprintln!("network: {err}");

@@ -70,7 +70,7 @@ use crate::surfaces::veil::{Layers, Veil};
 use crate::ui::{Ui, What};
 use greetd::{Conversation, Phase, Request, Response, Step};
 use sessions::Session;
-use users::User;
+use crate::services::users::{self as accounts, User};
 use crate::surfaces::login::{self, Card, Controls, Menu, View};
 
 /// AuthPrompt's `unavailableText` with no socket to talk to.
@@ -283,7 +283,7 @@ pub fn main(args: &[String]) {
 
     let theme = resolve(&doc, &env);
     let sessions = sessions::scan(&settings::greeter_session_dirs(&doc, &sessions::DIRS));
-    let users = users::scan();
+    let users = accounts::people();
     eprintln!("greeter: {} sessions, {} users", sessions.len(), users.len());
     crate::surface::bind_scaling(&globals, &qh);
     let mut g = Greeter {
@@ -333,7 +333,7 @@ pub fn main(args: &[String]) {
     let last = sessions::remembered(&g.state_dir, None);
     g.select(sessions::pick(&g.sessions, last.as_deref()));
     let last_user = sessions::last_user(&g.state_dir);
-    g.user = g.users.iter().position(|u| Some(&u.login) == last_user.as_ref()).unwrap_or_else(|| users::first_account(&g.users));
+    g.user = g.users.iter().position(|u| Some(&u.login) == last_user.as_ref()).unwrap_or_else(|| accounts::first_account(&g.users));
     g.open_user();
     g.arm_clock();
     let _ = handle.insert_source(Timer::from_deadline(started + SHOW_WAIT), |_, _, g: &mut Greeter| {

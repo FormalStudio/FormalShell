@@ -12,6 +12,7 @@ pub mod airplay;
 pub mod ams;
 pub mod appicon;
 pub mod barpaint;
+pub mod battery;
 pub mod brightness;
 pub mod bus;
 pub mod caffeinate;
@@ -62,6 +63,7 @@ mod watch;
 pub mod theme;
 pub mod thumbnails;
 pub mod tray;
+pub mod users;
 pub mod v4l2;
 pub mod visualizer;
 pub mod wallpaper;
@@ -145,6 +147,15 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
             None
         }
         Topic::Compositor | Topic::Launch => launch::windows_changed(store),
+        Topic::Bluetooth
+        | Topic::Network
+        | Topic::Audio
+        | Topic::Power
+        | Topic::Earbuds
+        | Topic::PadLights
+        | Topic::Profiles
+        | Topic::Revealed
+        | Topic::Logind => battery::check(store),
         _ => None,
     }
 }

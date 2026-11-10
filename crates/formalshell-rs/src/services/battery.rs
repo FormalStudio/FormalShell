@@ -1,6 +1,8 @@
-//! The low-battery watcher, which runs for the shell's whole
-//! lifetime. The notification
-//! is a local one, so critical earns the DND bypass.
+//! The low-battery watcher, which runs for the shell's whole lifetime off
+//! the device slices (`services::react`). The notification is a local one,
+//! so critical earns the DND bypass.
+
+use std::cell::RefCell;
 
 use fs_info::notifications::Urgency;
 use fs_system::power::model::{Fired, Low, warn_event};
@@ -10,15 +12,23 @@ use fs_upower::DeviceState;
 use crate::services::notifications::{Diff, Op};
 use crate::store::{self, Store};
 
+thread_local! {
+    static WATCH: RefCell<Watch> = RefCell::default();
+}
+
+/// Reads the battery once; the notification it raises, if any.
+pub fn check(store: &Store) -> Option<store::Diff> {
+    WATCH.with_borrow_mut(|w| w.check(store))
+}
+
 #[derive(Default)]
-pub struct Watch {
+struct Watch {
     last: Option<Percent>,
     fired: Fired,
 }
 
 impl Watch {
-    /// Reads the battery once; the notification it raises, if any.
-    pub fn check(&mut self, store: &Store) -> Option<store::Diff> {
+    fn check(&mut self, store: &Store) -> Option<store::Diff> {
         let b = store.power.battery.as_ref()?;
         // UPower has not populated yet: the percent can still read 0, and
         // recording it would arm the rising guard against a bogus value.

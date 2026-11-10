@@ -23,8 +23,9 @@ fn main() {
 
     let ok = futures_lite::future::block_on(async {
         let connection = zbus::Connection::system().await.expect("system bus");
-        let agent = Agent::register(&connection).await.expect("register agent");
-        println!("registered");
+        let session = fs_auth::user::session(&connection).await.expect("logind session");
+        let agent = Agent::register(&connection, &session.id).await.expect("register agent");
+        println!("registered session={}", session.id);
 
         let rc = pkexec(&command);
         let mut flow = AuthFlow::start(request(&agent, &rc).await).await;

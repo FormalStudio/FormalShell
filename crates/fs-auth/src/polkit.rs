@@ -4,7 +4,6 @@
 //! `AuthFlow` then runs the conversation through polkit's agent helper.
 
 use std::collections::HashMap;
-use std::ffi::CStr;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -14,7 +13,7 @@ use async_channel::{Receiver, Sender};
 use async_io::Async;
 use futures_lite::future;
 use futures_lite::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
+use zbus::zvariant::{OwnedValue, Value};
 use zbus::{Connection, interface};
 use zeroize::Zeroizing;
 
@@ -141,23 +140,16 @@ type Subject = (String, HashMap<String, Value<'static>>);
 
 impl Agent {
     /// Serves the agent at [`AGENT_PATH`] on `connection` (the system bus) and
-    /// registers it for the logind session this process belongs to, or the
-    /// user's display session when it belongs to none.
-    pub async fn register(connection: &Connection) -> zbus::Result<Self> {
+    /// registers it for the logind session `session_id`
+    /// ([`crate::user::session`]).
+    pub async fn register(connection: &Connection, session_id: &str) -> zbus::Result<Self> {
         let path = AGENT_PATH;
         let (tx, requests) = async_channel::unbounded();
         let iface = AgentIface { requests: tx, pending: Arc::default() };
         connection.object_server().at(path, iface).await?;
-        let session_id = match session_id(connection).await {
-            Ok(id) => id,
-            Err(err) => {
-                let _ = connection.object_server().remove::<AgentIface, _>(path).await;
-                return Err(err);
-            }
-        };
         let subject: Subject = (
             "unix-session".into(),
-            HashMap::from([("session-id".to_owned(), Value::from(session_id))]),
+            HashMap::from([("session-id".to_owned(), Value::from(session_id.to_owned()))]),
         );
         let locale = std::env::var("LANG").unwrap_or_else(|_| "C".into());
         let registered = connection
@@ -191,33 +183,6 @@ impl Agent {
     }
 }
 
-async fn session_id(connection: &Connection) -> zbus::Result<String> {
-    const LOGIN1: &str = "org.freedesktop.login1";
-    let manager = zbus::Proxy::new(
-        connection,
-        LOGIN1,
-        "/org/freedesktop/login1",
-        "org.freedesktop.login1.Manager",
-    )
-    .await?;
-    let by_pid: zbus::Result<OwnedObjectPath> =
-        manager.call("GetSessionByPID", &(std::process::id(),)).await;
-    if let Ok(path) = by_pid {
-        let session =
-            zbus::Proxy::new(connection, LOGIN1, path, "org.freedesktop.login1.Session").await?;
-        return session.get_property("Id").await;
-    }
-    // SAFETY: getuid cannot fail.
-    let uid = unsafe { libc::getuid() };
-    let user: OwnedObjectPath = manager.call("GetUser", &(uid,)).await?;
-    let user = zbus::Proxy::new(connection, LOGIN1, user, "org.freedesktop.login1.User").await?;
-    let (id, _): (String, OwnedObjectPath) = user.get_property("Display").await?;
-    if id.is_empty() {
-        return Err(zbus::Error::Failure("no logind session for this process".into()));
-    }
-    Ok(id)
-}
-
 fn user_identities(identities: &[(String, HashMap<String, OwnedValue>)]) -> Vec<Identity> {
     let mut out: Vec<Identity> = Vec::new();
     for (kind, props) in identities {
@@ -230,34 +195,11 @@ fn user_identities(identities: &[(String, HashMap<String, OwnedValue>)]) -> Vec<
         if out.iter().any(|i| i.uid == uid) {
             continue;
         }
-        if let Some(name) = user_name(uid) {
-            out.push(Identity { uid, name });
+        if let Some(account) = crate::user::account(uid) {
+            out.push(Identity { uid, name: account.login });
         }
     }
     out
-}
-
-fn user_name(uid: u32) -> Option<String> {
-    let mut buf = vec![0u8; 4096];
-    loop {
-        let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
-        let mut result: *mut libc::passwd = std::ptr::null_mut();
-        // SAFETY: every pointer is valid for the call and buf outlives the read
-        // of pw_name below.
-        let rc = unsafe {
-            libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr().cast(), buf.len(), &mut result)
-        };
-        if rc == libc::ERANGE && buf.len() < 1 << 20 {
-            buf.resize(buf.len() * 2, 0);
-            continue;
-        }
-        if rc != 0 || result.is_null() || pwd.pw_name.is_null() {
-            return None;
-        }
-        // SAFETY: getpwuid_r succeeded, so pw_name points into buf.
-        let name = unsafe { CStr::from_ptr(pwd.pw_name) };
-        return name.to_str().ok().map(str::to_owned);
-    }
 }
 
 /// The conversation for one `AuthRequest`: a wrong answer restarts the helper for a retry, a right

@@ -160,6 +160,7 @@ The other windows are one module each under `src/wayland/`:
 | `caffeinate.rs` | the idle inhibitor surface and the ext-idle-notify listener |
 | `hotcorners.rs` | the hot corner squares |
 | `picker.rs` | the capture region picker, one overlay per output |
+| `capture_host.rs` | the screenshot, capture and record family that drives the picker |
 | `switcher.rs`, `preview.rs`, `capture.rs` | the Alt+Tab switcher, the Spaces preview, and their window thumbnails over ext-image-copy-capture-v1 |
 | `console.rs` | the quake console's park and recall |
 | `atlas.rs` | the radio atlas window |
@@ -325,10 +326,9 @@ is the whole output and paints the ring under its cells.
 | `surfaces/lock.rs` | one output's lock screen |
 | `surfaces/switcher/` | the Alt+Tab card and its pure model |
 | `surfaces/panel/workspace_preview.rs` | the Spaces preview card |
-| `surfaces/capture/` | the screenshot, capture and record family and its region picker |
+| `surfaces/capture/` | the region picker's model and sheet |
 | `surfaces/atlas/` | the radio atlas and its globe |
 | `surfaces/panel/gallery.rs` | the dev sheet of every widget against the live theme (`gallery` target) |
-| `surfaces/battery.rs` | the low-battery watcher |
 
 ## Services
 
@@ -356,7 +356,9 @@ Each module under `src/services/` names its source in its header. Grouped:
   thread and keeps `fs-info`'s three-tier reducer on the UI thread.
 - Launcher and friends: `menu`, `clipboard`, `clipssh`, `picker`,
   `localsend`, `mirror` (with `v4l2`).
-- Security: `polkit`, `sleep`, `screensaver`, `capture`, `recording`.
+- Security: `polkit`, `sleep`, `screensaver`, `capture`, `recording`,
+  `users` (who the shell runs as and the logind session the lock watches
+  and polkit registers for), `battery` (the low-battery watcher).
 - `proc`: one child run and read whole, a missing binary reading as exit 127.
 
 Child processes (matugen, cava, grim, wf-recorder, ttfx, localsend-cli,
@@ -381,7 +383,7 @@ spawn nothing, so they run on the shell's executor.
 | `fs-screensaver` | built-in effects, the ttfx wire protocol, block geometry |
 | `fs-js` | JavaScript's number and string formatting, so output strings match byte for byte |
 | `fs-audio` | the PipeWire graph model and its client thread |
-| `fs-auth` | the lock's PAM conversation and the polkit agent |
+| `fs-auth` | the lock's PAM conversation, the polkit agent, and the account and logind session both act for |
 | `fs-bluez`, `fs-network`, `fs-upower`, `fs-mpris`, `fs-tray` | BlueZ, NetworkManager, UPower and power-profiles-daemon, MPRIS, StatusNotifier with dbusmenu |
 | `fs-notifd` | the `org.freedesktop.Notifications` server |
 
@@ -476,11 +478,13 @@ built-in effects when it is not. The overlay fades through
 
 ### Capture
 
-`surfaces/capture/` makes every decision for screenshot, capture and record
-on the UI thread, next to the region picker it drives
-(`wayland/region.rs`). The children (slurp, grim, tesseract, wf-recorder,
-ffmpeg, the editor) run in `services::capture` and report their pid on
-start and their answer on exit. `services::recording` is the slice the bar's
+`wayland/capture_host.rs` makes every decision for screenshot, capture and
+record on the UI thread, next to the region picker it drives
+(`wayland/region.rs`, drawing `surfaces/capture/`). The children (slurp,
+grim, tesseract, wf-recorder, ffmpeg, the editor) run in `services::capture`
+and report their pid on start and their answer on exit; a shot's crop and a
+notification's picture run on its pool. The family's notification actions
+are `services::notifications` local actions like any other. `services::recording` is the slice the bar's
 recording indicator reads.
 
 ### Plugins

@@ -17,6 +17,7 @@ mod atlas;
 pub mod backdrop;
 mod caffeinate;
 pub mod capture;
+pub mod capture_host;
 mod console;
 pub(crate) mod desktop_clock;
 mod headset;
@@ -284,7 +285,6 @@ pub struct App {
     pressed: Option<(Target, Press)>,
     /// Panel surfaces dropped since the pointer last entered one.
     dropped: Vec<wl_surface::WlSurface>,
-    pub battery_watch: surfaces::battery::Watch,
     pub hdr: crate::services::display::Hdr,
     wake: Option<Instant>,
     rims: rims::Rims,
@@ -338,7 +338,7 @@ pub struct App {
     /// The Install row whose `fspec info` was last asked for.
     info_asked: Option<String>,
     menu_launches: Option<Vec<fs_menu::frecency::Record>>,
-    pub capture: crate::surfaces::capture::Capture,
+    pub capture: capture_host::Capture,
     pickers: region::Pickers,
     desktop_clock: desktop_clock::State,
     veil: veil::State,
@@ -409,7 +409,6 @@ impl App {
             pointer_on: None,
             pressed: None,
             dropped: Vec::new(),
-            battery_watch: Default::default(),
             wake: None,
             rims: Default::default(),
             motion_scale,
@@ -1444,7 +1443,7 @@ impl App {
                 }
             }
             Action::RecordStop => {
-                let _ = surfaces::capture::record::stop(self);
+                let _ = capture_host::record::stop(self);
             }
             Action::ReminderSummary => {
                 self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::ShowReminders)));
@@ -1469,7 +1468,7 @@ impl App {
         }
         self.released.sweep();
         self.preview_present();
-        crate::surfaces::capture::flush(self);
+        capture_host::flush(self);
         let now = Instant::now();
         self.tick_notifications();
         for o in owner::LIFECYCLE {
@@ -1983,7 +1982,7 @@ impl App {
         use crate::services::{ipad, lights, nightlight};
         use quick::Run;
         let done = match &run {
-            Run::Screenshot => surfaces::capture::shot_pick(self, "smart", "default").map(drop),
+            Run::Screenshot => capture_host::shot_pick(self, "smart", "default").map(drop),
             Run::Lock => self.lock(),
             Run::Logout => {
                 self.logout();
@@ -2021,7 +2020,7 @@ impl App {
             Run::IpadSwitch => ipad::send(&self.store.ipad, |_| Ok(ipad::Cmd::Switch)),
             Run::IpadReconnect => ipad::send(&self.store.ipad, |_| Ok(ipad::Cmd::Reconnect)),
             Run::IpadEdge(edge) => ipad::send(&self.store.ipad, |i| Ok(ipad::Cmd::Position(*edge, i.stretch))),
-            Run::RecordStop => surfaces::capture::record::stop(self),
+            Run::RecordStop => capture_host::record::stop(self),
             Run::ClearReminders => {
                 self.clear_reminders();
                 Ok(())
