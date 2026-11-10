@@ -98,7 +98,7 @@ between has to equal the same scene drawn whole (`debug staleAudit`).
 
 Exported: `shot_dir`, `iso_home`, `settings_path`, `rig_password` (the
 password PAM takes on the rig), `drive_lib`, `shell_bin`, `shell_log_path`,
-`*_bin`, `ipc`, `write_script`, `leg_on <n>`,
+`*_bin`, `ipc`, `write_script`, `slot_port <base>`, `leg_on <n>`,
 `host_notifications_owner_after`. A session that runs past its timeout
 fails the run.
 

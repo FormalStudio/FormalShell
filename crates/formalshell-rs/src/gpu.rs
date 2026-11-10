@@ -1154,8 +1154,8 @@ impl Canvas {
         with(|g| {
             let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell read") });
             let out = copy_out(g, &mut encoder, &self.texture);
-            let index = g.queue.submit([encoder.finish()]);
-            mapped(g, &out, index, self.size)
+            g.queue.submit([encoder.finish()]);
+            mapped(g, &out, self.size)
         })
         .flatten()
     }
@@ -1262,17 +1262,17 @@ impl Buffer {
         .unwrap_or(false)
     }
 
-    /// What the compositor will read, back on the CPU as RGBA rows.
+    /// What the compositor will read, back on the CPU as RGBA rows, the
+    /// buffer handed over again and fenced as [`Buffer::fill`] leaves it.
+    /// None when the GPU did not give it back in time.
     pub fn read(&self) -> Option<Vec<u8>> {
         with(|g| {
             let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell read") });
             let out = copy_out(g, &mut encoder, &self.texture);
-            let acquire = self.held.take().map(|was| g.ownership(self.image, false, was));
-            let layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-            let release = g.ownership(self.image, true, layout);
-            self.held.set(Some(layout));
-            let index = g.queue.submit(acquire.into_iter().chain([encoder.finish(), release]));
-            mapped(g, &out, index, (self.texture.width(), self.texture.height()))
+            if !self.hand_over(g, encoder, vk::ImageLayout::TRANSFER_SRC_OPTIMAL) {
+                return None;
+            }
+            mapped(g, &out, (self.texture.width(), self.texture.height()))
         })
         .flatten()
     }
@@ -1368,13 +1368,13 @@ fn copy_out(g: &Gpu, encoder: &mut wgpu::CommandEncoder, texture: &wgpu::Texture
     out
 }
 
-/// `out` once submission `index` is done, the padding cut off its rows.
-fn mapped(g: &Gpu, out: &wgpu::Buffer, index: wgpu::SubmissionIndex, (w, h): (u32, u32)) -> Option<Vec<u8>> {
+/// `out` once the last submission is done, the padding cut off its rows.
+fn mapped(g: &Gpu, out: &wgpu::Buffer, (w, h): (u32, u32)) -> Option<Vec<u8>> {
     let (tx, rx) = std::sync::mpsc::channel();
     out.slice(..).map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    g.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: Some(std::time::Duration::from_secs(1)) }).ok()?;
+    g.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(1)) }).ok()?;
     rx.try_recv().ok()?.ok()?;
     let stride = (w * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) as usize;
     let rows = out.slice(..).get_mapped_range();

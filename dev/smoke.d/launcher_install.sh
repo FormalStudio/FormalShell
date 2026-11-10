@@ -41,7 +41,7 @@ li_shim_dir="$li_dir/shim"
 li_apps="$iso_home/.local/share/applications"
 li_icon="$li_dir/foxglove.png"
 # The screenshot's loopback server, a port per slot user.
-li_port=$((18000 + $(id -u) % 1000))
+li_port=$(slot_port 40000)
 
 leg_launcher_install_fixture() {
   mkdir -p "$li_shim_dir" "$li_apps"

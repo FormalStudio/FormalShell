@@ -122,6 +122,16 @@ write_script() {
   chmod +x "$path"
 }
 
+# A loopback port of this run's own past `base`: the slot users share one
+# host's loopback, so a leg's listener sits at base plus the slot's digit
+# (fstest0 to fstest7), or past base+100 off the uid for any other user.
+slot_port() {
+  case "${USER:-}" in
+    fstest[0-9]) echo $(($1 + ${USER#fstest})) ;;
+    *) echo $(($1 + 100 + $(id -u) % 9000)) ;;
+  esac
+}
+
 # The session's output scale: the g815 panel's 1.25 unless the run asks
 # for one (FS_SMOKE_SCALE) or carries a leg declaring leg_<n>_scale1, one
 # whose probes still read fixed pixels. Set before the legs are sourced,

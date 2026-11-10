@@ -1214,9 +1214,13 @@ impl<R: Role> Surface<R> {
         if !self.dmabufs[at].fill(canvas, &copy, opacity) {
             return None;
         }
-        if let Some(reference) = self.audit.take()
-            && let Some(bytes) = self.dmabufs[at].read()
-        {
+        if let Some(reference) = self.audit.take() {
+            // A readback the GPU never finished leaves the buffer's handover
+            // in flight: the frame goes to a buffer of the next present.
+            let Some(bytes) = self.dmabufs[at].read() else {
+                eprintln!("formalshell: stale audit: {} commit {} not read back; frame skipped", self.name, self.commits + 1);
+                return None;
+            };
             audit::compare(self.name, self.commits + 1, &reference, &bytes, Format::Rgba, opacity);
         }
         Some(at)
