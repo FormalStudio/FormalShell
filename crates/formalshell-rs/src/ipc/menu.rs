@@ -126,7 +126,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 fn abbreviations(app: &mut App, _: &[Value]) -> Reply {
     use crate::services::menu as index;
     let now = crate::runtime::now_ms() as f64;
-    Ok(fs_menu::abbrev::report(&index::configured_abbreviations(&app.store), &index::abbreviation_book(&app.store), now))
+    Ok(fs_menu::abbrev::report(&crate::settings::menu_abbreviations(&app.store.config), &index::abbreviation_book(&app.store), now))
 }
 
 fn select(app: &mut App, args: &[Value]) -> Reply {

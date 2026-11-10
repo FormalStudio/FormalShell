@@ -59,7 +59,7 @@ pub fn parse(code: i32, stdout: &str) -> State {
 }
 
 fn read() -> Duration {
-    config::current().interval("tailscale.intervalMs", 60_000)
+    crate::settings::TAILSCALE_INTERVAL.get(&config::current())
 }
 
 thread_local! {

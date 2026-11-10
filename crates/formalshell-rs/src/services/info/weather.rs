@@ -36,7 +36,7 @@ struct Cfg {
 
 fn read() -> Cfg {
     let s = config::current();
-    Cfg { at: crate::settings::location(&s), interval: s.interval("weather.intervalMs", 900_000) }
+    Cfg { at: crate::settings::location(&s), interval: crate::settings::WEATHER_INTERVAL.get(&s) }
 }
 
 /// The access points in range, off iwd when it owns the radio and

@@ -81,7 +81,7 @@ pub fn parse(code: i32, stdout: &str) -> State {
 }
 
 fn read() -> std::time::Duration {
-    config::current().interval("github.intervalMs", 300_000)
+    crate::settings::GITHUB_INTERVAL.get(&config::current())
 }
 
 pub async fn run(ctx: Ctx) {

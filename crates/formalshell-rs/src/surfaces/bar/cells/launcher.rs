@@ -18,7 +18,7 @@ impl Cell for Launcher {
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let configured = env.store.config.str("bar.launcherIcon").unwrap_or("").trim().to_owned();
+        let configured = crate::settings::LAUNCHER_ICON.get(&env.store.config).trim().to_owned();
         if self.os_id.is_none() {
             self.os_id = Some(fs_info::about::os_id().unwrap_or_default());
         }

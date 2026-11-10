@@ -18,15 +18,12 @@ use crate::motion::{Animated, Kind, PULSE_MS, breathe};
 use crate::scene::IRect;
 use crate::services::appicon::{self, Icon};
 use crate::services::agents;
+use crate::settings;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Summary, View};
 use crate::paint::{Ink, Kit, Look, Painter, Tone};
 use crate::text::{Family, TextStyle};
 
-/// `workspaces.persistent`'s default: slots 1..n show even when empty.
-const PERSISTENT: i64 = 5;
-const MAX_ICONS: i64 = 8;
-const SHOW_APPS: &str = "all";
 
 fn badge_glyph(state: &str) -> &'static str {
     match state {
@@ -154,7 +151,7 @@ impl Default for Workspaces {
         Self {
             output: String::new(),
             slots: Vec::new(),
-            show_apps: SHOW_APPS.into(),
+            show_apps: settings::WORKSPACES_SHOW_APPS.default.into(),
             agents: true,
             wheel_sum: 0.0,
             agent_state: HashMap::new(),
@@ -183,10 +180,6 @@ impl Default for Workspaces {
 }
 
 /// Rounded, clamped, the default for a non-number.
-fn int(env: &Env, key: &str, low: i64, high: i64, default: i64) -> i64 {
-    env.store.config.f64(key).filter(|n| n.is_finite()).map_or(default, |n| (n.round() as i64).clamp(low, high))
-}
-
 fn label_style(look: &Look, band: bool) -> TextStyle {
     look.label(if band { WEIGHTS.semibold } else { WEIGHTS.medium } as f32)
 }
@@ -393,10 +386,11 @@ impl Cell for Workspaces {
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let persistent = int(env, "workspaces.persistent", 0, 10, PERSISTENT);
-        let max_icons = int(env, "workspaces.maxIcons", 1, 20, MAX_ICONS) as usize;
-        let show_apps = env.store.config.str("workspaces.showApps").unwrap_or(SHOW_APPS).to_owned();
-        let agents = env.store.config.bool("workspaces.agents") != Some(false);
+        let config = &env.store.config;
+        let persistent = settings::WORKSPACES_PERSISTENT.rounded(config, 0.0, 10.0) as i64;
+        let max_icons = settings::WORKSPACES_MAX_ICONS.rounded(config, 1.0, 20.0) as usize;
+        let show_apps = settings::WORKSPACES_SHOW_APPS.get(config).to_owned();
+        let agents = settings::WORKSPACES_AGENTS.get(config);
         let c = &env.store.compositor.snapshot;
         let slots = workspaces::slots(&c.workspaces, &c.windows, env.output, SlotOpts { persistent, max_icons });
 
@@ -428,9 +422,7 @@ impl Cell for Workspaces {
                     .filter(|w| fs_info::agents::is_app(&w.app_id, &w.initial_class))
                     .map(|w| w.id.to_string())
                     .collect(),
-                hosts: env.store.config.get("workspaces.agentHosts").and_then(Value::as_array).map_or_else(Vec::new, |hosts| {
-                    hosts.iter().filter_map(Value::as_str).map(str::to_owned).collect()
-                }),
+                hosts: settings::agent_hosts(&env.store.config),
             }
         } else {
             agents::Watch::default()

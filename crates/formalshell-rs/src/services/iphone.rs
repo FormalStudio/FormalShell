@@ -279,7 +279,7 @@ fn now_ms() -> f64 {
 }
 
 fn focus_window() -> f64 {
-    config::current().f64("iphone.notifications.focusWindow").filter(|n| *n > 0.0).unwrap_or(iphone::DEFAULT_FOCUS_WINDOW)
+    crate::settings::IPHONE_FOCUS_WINDOW.positive(&config::current())
 }
 
 impl Session {
@@ -308,7 +308,7 @@ impl Session {
             }
             Event::History(items) => {
                 self.known = items.iter().map(|n| n.id).collect();
-                let block = block_list();
+                let block = crate::settings::iphone_block(&config::current());
                 // The bridge appends every resend of an id to its history file,
                 // oldest first, so the last record per id is the live one.
                 let mut seen = HashSet::new();
@@ -320,9 +320,9 @@ impl Session {
             Event::Notification(entry) => {
                 let cfg = config::current();
                 let route = iphone::RouteConfig {
-                    enable: cfg.flag("iphone.notifications.enable", true),
-                    block: block_list(),
-                    focus: cfg.str("iphone.notifications.focus").unwrap_or("respect").to_owned(),
+                    enable: crate::settings::IPHONE_NOTIFICATIONS.get(&cfg),
+                    block: crate::settings::iphone_block(&cfg),
+                    focus: crate::settings::IPHONE_FOCUS.get(&cfg).to_owned(),
                 };
                 match iphone::route(&entry, &route) {
                     Verdict::Drop => {}
@@ -384,14 +384,6 @@ impl Session {
         self.arrivals.retain(|a| a.at >= horizon);
         self.state.in_focus = iphone::in_focus(&self.arrivals, now_ms(), focus_window());
     }
-}
-
-fn block_list() -> Vec<String> {
-    config::current()
-        .get("iphone.notifications.block")
-        .and_then(|b| b.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
-        .unwrap_or_default()
 }
 
 fn on_path(name: &str) -> bool {

@@ -93,7 +93,7 @@ impl State {
 }
 
 fn interval() -> Duration {
-    Duration::from_millis(config::current().interval("monitor.processIntervalMs", 2000).as_millis().max(500) as u64)
+    Duration::from_millis(crate::settings::PROCESS_INTERVAL.get(&config::current()).as_millis().max(500) as u64)
 }
 
 /// What a tick compares itself to.

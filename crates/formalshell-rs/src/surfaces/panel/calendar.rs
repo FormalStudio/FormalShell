@@ -86,8 +86,9 @@ impl Calendar {
 
     /// settings.json over state.json, then the fraction both give.
     fn life(store: &Store, now: chrono::DateTime<Local>) -> Option<f64> {
-        let birth = progress::resolve_override(store.config.f64("calendar.birthYear"), Some(store.state.data.calendar_birth_year as f64));
-        let life = progress::resolve_override(store.config.f64("calendar.lifeExpectancy"), Some(store.state.data.calendar_life_expectancy as f64));
+        let (birth, life) = crate::settings::calendar_life(&store.config);
+        let birth = progress::resolve_override(birth, Some(store.state.data.calendar_birth_year as f64));
+        let life = progress::resolve_override(life, Some(store.state.data.calendar_life_expectancy as f64));
         progress::life_fraction(&now, birth, life)
     }
 }

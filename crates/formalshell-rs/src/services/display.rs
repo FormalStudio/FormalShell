@@ -481,8 +481,8 @@ fn rows(store: &Store) -> &[Output] {
 /// panel's HDR white.
 fn on_color(store: &Store) -> outputs::Color {
     hdr::on_color(
-        store.config.f64("display.hdr.sdrBrightness").unwrap_or(1.2),
-        store.config.f64("display.hdr.sdrSaturation").unwrap_or(1.0),
+        crate::settings::HDR_SDR_BRIGHTNESS.get(&store.config),
+        crate::settings::HDR_SDR_SATURATION.get(&store.config),
     )
 }
 
@@ -667,8 +667,8 @@ impl Hdr {
 /// The main output among the lit outputs.
 pub fn main_output(store: &Store) -> String {
     let names: Vec<String> = rows(store).iter().filter(|r| r.enabled).map(|r| r.name.clone()).collect();
-    let prio = store.config.get("display.outputPriority").cloned().unwrap_or(Value::Array(Vec::new()));
-    priority::resolve_main_output(&names, &priority::priority_list(&prio), &store.compositor.snapshot.focused_output_name, "")
+    let prio = crate::settings::output_priority(&store.config);
+    priority::resolve_main_output(&names, &prio, &store.compositor.snapshot.focused_output_name, "")
 }
 
 #[cfg(test)]

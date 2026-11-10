@@ -376,7 +376,7 @@ fn collect() -> HashMap<String, String> {
 }
 
 fn read() -> std::time::Duration {
-    let ms = config::current().interval("monitor.intervalMs", 2000).as_millis().max(500);
+    let ms = crate::settings::MONITOR_INTERVAL.get(&config::current()).as_millis().max(500);
     std::time::Duration::from_millis(ms as u64)
 }
 

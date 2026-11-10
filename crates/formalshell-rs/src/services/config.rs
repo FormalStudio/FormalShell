@@ -7,7 +7,6 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::Duration;
 
 use futures_lite::future;
 
@@ -85,10 +84,6 @@ impl State {
     /// has a value that is not an object on the way to it.
     pub fn pinned(&self, path: &str) -> bool {
         pinned(&self.file, path)
-    }
-
-    pub fn str(&self, path: &str) -> Option<&str> {
-        self.get(path)?.as_str()
     }
 
     pub fn bool(&self, path: &str) -> Option<bool> {
@@ -284,25 +279,6 @@ impl crate::settings::Doc for Settings {
 impl Settings {
     pub fn get(&self, path: &str) -> Option<&Value> {
         lookup(&self.0, path)
-    }
-
-    pub fn str(&self, path: &str) -> Option<&str> {
-        self.get(path)?.as_str()
-    }
-
-    pub fn f64(&self, path: &str) -> Option<f64> {
-        self.get(path)?.as_f64()
-    }
-
-    /// `default` unless the key is exactly `false` or `true`.
-    pub fn flag(&self, path: &str, default: bool) -> bool {
-        self.get(path).and_then(Value::as_bool).unwrap_or(default)
-    }
-
-    /// A poll interval: the key when it is a positive number, else `default_ms`.
-    pub fn interval(&self, path: &str, default_ms: u64) -> Duration {
-        let ms = self.f64(path).filter(|n| *n > 0.0).map_or(default_ms, |n| n as u64);
-        Duration::from_millis(ms)
     }
 }
 
@@ -607,16 +583,6 @@ mod tests {
         let late = hub.subscribe();
         assert_eq!(late.try_recv().unwrap().get("a"), Some(&json!(1)), "a late subscriber starts on the last publish");
         assert!(late.try_recv().is_err());
-    }
-
-    #[test]
-    fn settings_read_dotted_keys_with_defaults() {
-        let s = Settings(Arc::new(json!({"github": {"intervalMs": 1000}, "weather": {"intervalMs": 0}, "usage": {"claude": false}})));
-        assert_eq!(s.interval("github.intervalMs", 300_000), Duration::from_millis(1000));
-        assert_eq!(s.interval("weather.intervalMs", 900_000), Duration::from_millis(900_000));
-        assert_eq!(s.interval("tailscale.intervalMs", 60_000), Duration::from_millis(60_000));
-        assert!(!s.flag("usage.claude", true));
-        assert!(s.flag("usage.codex", true));
     }
 
     #[test]

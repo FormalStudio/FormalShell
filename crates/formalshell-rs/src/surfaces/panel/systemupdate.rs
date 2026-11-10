@@ -17,7 +17,7 @@ use crate::ui::{El, Event, Ink, Variant, w};
 pub struct SystemUpdate;
 
 fn flake_dir<'a>(v: &'a View) -> &'a str {
-    v.store.config.str("systemUpdate.flakeDir").unwrap_or("")
+    crate::settings::UPDATE_FLAKE_DIR.get(&v.store.config)
 }
 
 fn check() {

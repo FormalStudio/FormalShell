@@ -5,7 +5,9 @@
 //! whole subtree of its own (the bar's layout, the hot corners, the theme)
 //! keeps doing so; this module only names, types and defaults keys.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use fs_chrome::hot_corners::corners::{self, Corner};
 use fs_menu::actions::Run;
@@ -89,9 +91,34 @@ impl Number {
     }
 
     /// Rounded and held to `lo..=hi`.
-    fn rounded(self, doc: &(impl Doc + ?Sized), lo: f64, hi: f64) -> f64 {
+    pub fn rounded(self, doc: &(impl Doc + ?Sized), lo: f64, hi: f64) -> f64 {
         self.get(doc).round().clamp(lo, hi)
     }
+}
+
+/// A poll interval in milliseconds: anything but a positive number reads
+/// as the default.
+#[derive(Clone, Copy, Debug)]
+pub struct Interval {
+    pub key: &'static str,
+    pub default_ms: u64,
+}
+
+impl Interval {
+    const fn new(key: &'static str, default_ms: u64) -> Self {
+        Self { key, default_ms }
+    }
+
+    pub fn get(self, doc: &(impl Doc + ?Sized)) -> Duration {
+        let ms = lookup(doc.doc(), self.key).and_then(Value::as_f64).filter(|n| *n > 0.0).map_or(self.default_ms, |n| n as u64);
+        Duration::from_millis(ms)
+    }
+}
+
+/// A list of strings, its other items skipped; anything but a list is
+/// empty.
+fn strings(doc: &(impl Doc + ?Sized), key: &str) -> Vec<String> {
+    lookup(doc.doc(), key).and_then(Value::as_array).map_or_else(Vec::new, |items| items.iter().filter_map(Value::as_str).map(str::to_owned).collect())
 }
 
 // Appearance
@@ -166,6 +193,20 @@ impl Backend {
     }
 }
 
+pub const LAUNCHER_ICON: Word = Word::new("bar.launcherIcon", "");
+/// Zero keeps every tray item behind the dots, -1 none.
+pub const TRAY_MAX_VISIBLE: Number = Number::new("tray.maxVisible", 0.0);
+/// Slots 1..n show even when empty.
+pub const WORKSPACES_PERSISTENT: Number = Number::new("workspaces.persistent", 5.0);
+pub const WORKSPACES_MAX_ICONS: Number = Number::new("workspaces.maxIcons", 8.0);
+pub const WORKSPACES_SHOW_APPS: Word = Word::new("workspaces.showApps", "all");
+pub const WORKSPACES_AGENTS: Flag = Flag::new("workspaces.agents", true);
+
+/// `workspaces.agentHosts`, the hosts T3 Code agents are asked about.
+pub fn agent_hosts(doc: &(impl Doc + ?Sized)) -> Vec<String> {
+    strings(doc, "workspaces.agentHosts")
+}
+
 /// `layout`: an unknown value reads as the default.
 pub fn layout(doc: &(impl Doc + ?Sized)) -> Layout {
     Layout::parse(lookup(doc.doc(), LAYOUT.key))
@@ -217,6 +258,7 @@ pub const CLOCK_ENABLED: Flag = Flag::new("desktopClock.enabled", false);
 pub const CLOCK_FACE: Word = Word::new("desktopClock.face", "pixel");
 pub const CLOCK_WIDTH: Word = Word::new("desktopClock.width", "wide");
 pub const CLOCK_HOUR12: Flag = Flag::new("desktopClock.hour12", false);
+pub const CLOCK_COLOR: Word = Word::new("desktopClock.color", "auto");
 /// Read by `services::wallpaper::DepthCut` under each of its prefixes.
 pub const CLOCK_DEPTH: Flag = Flag::new("desktopClock.depth", true);
 pub const DEPTH_GENERATE: Flag = Flag::new("wallpaper.depthGenerate", false);
@@ -288,6 +330,15 @@ pub const LOCALSEND_RECEIVE: Flag = Flag::new("localsend.receive", false);
 pub const LOCALSEND_ALIAS: Word = Word::new("localsend.alias", "");
 pub const LOCALSEND_DIR: Word = Word::new("localsend.dir", "");
 
+/// `menu.abbreviations`, query to subject id, the queries in their
+/// matching form.
+pub fn menu_abbreviations(doc: &(impl Doc + ?Sized)) -> HashMap<String, String> {
+    match lookup(doc.doc(), "menu.abbreviations") {
+        Some(Value::Object(map)) => map.iter().filter_map(|(q, id)| Some((fs_menu::abbrev::key(q)?, id.as_str()?.to_owned()))).collect(),
+        _ => HashMap::new(),
+    }
+}
+
 // Media
 
 pub const LYRICS: Flag = Flag::new("media.lyrics", true);
@@ -303,6 +354,15 @@ pub const VISUALIZER_STYLE: Word = Word::new("media.visualizerStyle", "bars");
 pub const AIRPLAY_ENABLE: Flag = Flag::new("airplay.enable", false);
 pub const AIRPLAY_NAME: Word = Word::new("airplay.name", "");
 pub const IPHONE_ENABLE: Flag = Flag::new("iphone.enable", true);
+pub const IPHONE_NOTIFICATIONS: Flag = Flag::new("iphone.notifications.enable", true);
+pub const IPHONE_FOCUS: Word = Word::new("iphone.notifications.focus", "respect");
+/// Seconds, read with [`Number::positive`].
+pub const IPHONE_FOCUS_WINDOW: Number = Number::new("iphone.notifications.focusWindow", fs_devices::iphone::DEFAULT_FOCUS_WINDOW);
+
+/// `iphone.notifications.block`, the bundle ids kept off this machine.
+pub fn iphone_block(doc: &(impl Doc + ?Sized)) -> Vec<String> {
+    strings(doc, "iphone.notifications.block")
+}
 
 /// `media.lyricsOffsetMs`, -5000 to 5000.
 pub fn lyrics_offset_ms(doc: &(impl Doc + ?Sized)) -> f64 {
@@ -334,6 +394,38 @@ pub const NIGHTLIGHT_TEMP: Number = Number::new("nightlight.temp", 4000.0);
 /// `nightlight.temp` in kelvin, truncated.
 pub fn nightlight_temp(doc: &(impl Doc + ?Sized)) -> i64 {
     NIGHTLIGHT_TEMP.get(doc) as i64
+}
+
+// Display
+
+pub const HDR_SDR_BRIGHTNESS: Number = Number::new("display.hdr.sdrBrightness", 1.2);
+pub const HDR_SDR_SATURATION: Number = Number::new("display.hdr.sdrSaturation", 1.0);
+
+/// `display.outputPriority`, a list of output names or a lone one.
+pub fn output_priority(doc: &(impl Doc + ?Sized)) -> Vec<String> {
+    lookup(doc.doc(), "display.outputPriority").map_or_else(Vec::new, fs_system::display::priority::priority_list)
+}
+
+// Information
+
+pub const GITHUB_INTERVAL: Interval = Interval::new("github.intervalMs", 300_000);
+pub const MONITOR_INTERVAL: Interval = Interval::new("monitor.intervalMs", 2000);
+pub const PROCESS_INTERVAL: Interval = Interval::new("monitor.processIntervalMs", 2000);
+pub const TAILSCALE_INTERVAL: Interval = Interval::new("tailscale.intervalMs", 60_000);
+pub const UPDATE_INTERVAL: Interval = Interval::new("systemUpdate.intervalMs", 10_800_000);
+pub const UPDATE_FLAKE_DIR: Word = Word::new("systemUpdate.flakeDir", "");
+pub const USAGE_INTERVAL: Interval = Interval::new("usage.intervalMs", 900_000);
+pub const USAGE_CLAUDE: Flag = Flag::new("usage.claude", true);
+pub const USAGE_CODEX: Flag = Flag::new("usage.codex", true);
+pub const WEATHER_INTERVAL: Interval = Interval::new("weather.intervalMs", 900_000);
+pub const CALENDAR_ICS_DIR: Word = Word::new("calendar.icsDir", "");
+pub const CALENDAR_EDS: Flag = Flag::new("calendar.eds", true);
+
+/// `calendar.birthYear` and `calendar.lifeExpectancy`, each none while
+/// unset, which leaves it to state.json.
+pub fn calendar_life(doc: &(impl Doc + ?Sized)) -> (Option<f64>, Option<f64>) {
+    let num = |key| lookup(doc.doc(), key).and_then(Value::as_f64);
+    (num("calendar.birthYear"), num("calendar.lifeExpectancy"))
 }
 
 // Capture
@@ -403,6 +495,14 @@ mod tests {
         use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn an_interval_that_is_not_positive_reads_as_the_default() {
+        let doc = json!({"github": {"intervalMs": 1000}, "weather": {"intervalMs": 0}});
+        assert_eq!(GITHUB_INTERVAL.get(&doc), Duration::from_millis(1000));
+        assert_eq!(WEATHER_INTERVAL.get(&doc), Duration::from_millis(WEATHER_INTERVAL.default_ms));
+        assert_eq!(TAILSCALE_INTERVAL.get(&doc), Duration::from_millis(TAILSCALE_INTERVAL.default_ms));
+    }
 
     #[test]
     fn a_malformed_value_reads_as_the_default() {

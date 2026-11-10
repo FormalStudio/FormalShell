@@ -747,16 +747,6 @@ pub fn plugin_rows(id: &str, route: &str, rows: &[super::plugins::Row]) -> Vec<N
     out
 }
 
-/// `menu.abbreviations` in settings.json, query to subject id.
-pub fn configured_abbreviations(store: &store::Store) -> HashMap<String, String> {
-    match store.config.get("menu.abbreviations") {
-        Some(serde_json::Value::Object(map)) => {
-            map.iter().filter_map(|(q, id)| Some((fs_menu::abbrev::key(q)?, id.as_str()?.to_owned()))).collect()
-        }
-        _ => Default::default(),
-    }
-}
-
 /// Whether a subject id names something now: in the tree, or a file still
 /// on disk, or an emoji in the dataset.
 pub fn resolves(store: &store::Store, id: &str) -> bool {
@@ -782,7 +772,7 @@ pub fn outside_subject(store: &store::Store, id: &str) -> Option<Node> {
 /// What typing `q` resolves to: the configured abbreviations over the
 /// learned ones, a subject that no longer resolves dropped.
 pub fn abbreviation_lookup(store: &store::Store, q: &str, now: f64) -> fs_menu::abbrev::Lookup {
-    fs_menu::abbrev::lookup(&configured_abbreviations(store), &abbreviation_book(store), q, now, |id| resolves(store, id))
+    fs_menu::abbrev::lookup(&crate::settings::menu_abbreviations(&store.config), &abbreviation_book(store), q, now, |id| resolves(store, id))
 }
 
 /// `subject` pinned under `q`, or forgotten from it.

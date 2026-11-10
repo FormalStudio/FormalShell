@@ -15,6 +15,7 @@ use futures_lite::FutureExt;
 use super::{idle, kicked};
 use crate::runtime::Ctx;
 use crate::services::config;
+use crate::settings;
 use crate::services::proc;
 use crate::services::wants::Source;
 use crate::store;
@@ -32,7 +33,7 @@ struct Cfg {
 
 fn read() -> Cfg {
     let s = config::current();
-    Cfg { dir: s.str("calendar.icsDir").unwrap_or_default().to_owned(), eds: s.flag("calendar.eds", true) }
+    Cfg { dir: settings::CALENDAR_ICS_DIR.get(&s).to_owned(), eds: settings::CALENDAR_EDS.get(&s) }
 }
 
 static EDS_DOWN: AtomicBool = AtomicBool::new(false);

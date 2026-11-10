@@ -87,7 +87,7 @@ impl FaceSettings {
         Self {
             face: Face::parse(settings::CLOCK_FACE.get(config)).unwrap_or(Face::Pixel),
             width: Width::parse(settings::CLOCK_WIDTH.get(config)).unwrap_or(Width::Wide),
-            color: config.str("desktopClock.color").unwrap_or("auto").to_owned(),
+            color: settings::CLOCK_COLOR.get(config).to_owned(),
             cut: DepthCut::read(config, "desktopClock", None),
         }
     }

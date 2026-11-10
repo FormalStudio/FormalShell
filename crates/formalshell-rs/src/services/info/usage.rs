@@ -19,6 +19,7 @@ use serde_json::json;
 use super::{idle, kicked};
 use crate::runtime::Ctx;
 use crate::services::config;
+use crate::settings;
 use crate::services::http;
 use crate::services::proc;
 use crate::services::wants::Source;
@@ -122,7 +123,7 @@ struct Cfg {
 
 fn read() -> Cfg {
     let s = config::current();
-    Cfg { claude: s.flag("usage.claude", true), codex: s.flag("usage.codex", true), interval: s.interval("usage.intervalMs", 900_000) }
+    Cfg { claude: settings::USAGE_CLAUDE.get(&s), codex: settings::USAGE_CODEX.get(&s), interval: settings::USAGE_INTERVAL.get(&s) }
 }
 
 /// The `claude` CLI rewrites its credentials file in place, which leaves it

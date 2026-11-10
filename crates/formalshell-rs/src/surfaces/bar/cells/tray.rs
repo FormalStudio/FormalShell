@@ -136,7 +136,7 @@ impl Cell for Tray {
 
     fn read(&mut self, env: &Env) -> bool {
         let items = env.store.tray.items.clone();
-        let max_visible = env.store.config.f64("tray.maxVisible").map_or(0, |n| n as i64);
+        let max_visible = crate::settings::TRAY_MAX_VISIBLE.get(&env.store.config) as i64;
         let vertical = env.edge.is_vertical();
         self.raster = env.raster;
         let changed = items != self.items || max_visible != self.max_visible || vertical != self.vertical;

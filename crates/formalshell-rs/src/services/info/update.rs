@@ -13,6 +13,7 @@ use fs_info::system_update::{self, Counts, FlakeInput, PollState};
 use super::{idle, kicked};
 use crate::runtime::Ctx;
 use crate::services::config;
+use crate::settings;
 use crate::services::http;
 use crate::services::proc;
 use crate::services::wants::Source;
@@ -50,7 +51,7 @@ struct Cfg {
 
 fn read() -> Cfg {
     let s = config::current();
-    Cfg { dir: s.str("systemUpdate.flakeDir").unwrap_or("").to_owned(), interval: s.interval("systemUpdate.intervalMs", 10_800_000) }
+    Cfg { dir: settings::UPDATE_FLAKE_DIR.get(&s).to_owned(), interval: settings::UPDATE_INTERVAL.get(&s) }
 }
 
 fn publish(ctx: &Ctx, state: State) {

@@ -51,7 +51,7 @@ fn metrics(v: &View) -> Vec<Metric> {
 
 fn main_output(v: &View) -> String {
     let names: Vec<String> = v.store.compositor.outputs.iter().filter(|o| o.enabled).map(|o| o.name.clone()).collect();
-    let list = priority::priority_list(v.store.config.get("display.outputPriority").unwrap_or(&serde_json::Value::Null));
+    let list = crate::settings::output_priority(&v.store.config);
     priority::resolve_main_output(&names, &list, &v.store.compositor.snapshot.focused_output_name, "")
 }
 
