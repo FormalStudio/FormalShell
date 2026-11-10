@@ -1,6 +1,11 @@
 //! A colour as the renderer takes it, and the two pieces of Qt colour
 //! arithmetic the chrome tables lean on: `Qt.alpha` and `Qt.tint`.
 
+/// Rec. 601 luma, on the channels' own scale.
+pub fn luma601(r: f64, g: f64, b: f64) -> f64 {
+    0.299 * r + 0.587 * g + 0.114 * b
+}
+
 /// Straight (not premultiplied) RGBA, each channel 0..1.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rgba {
@@ -96,7 +101,7 @@ impl Rgba {
 
     /// Rec. 601 luma of the colour, scaled to 0..255.
     pub fn luma601(self) -> f64 {
-        255.0 * (0.299 * f64::from(self.r) + 0.587 * f64::from(self.g) + 0.114 * f64::from(self.b))
+        255.0 * luma601(f64::from(self.r), f64::from(self.g), f64::from(self.b))
     }
 
     /// `#rrggbb`, alpha dropped.

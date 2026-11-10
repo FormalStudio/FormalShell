@@ -402,14 +402,14 @@ fn ink(s: &Shared, theme: &Theme, rect: IRect, size: (i32, i32)) -> (&'static st
     let mean = s.picture.and_then(|p| {
         let (pw, ph) = (p.width as i32, p.height as i32);
         if (pw, ph) == size {
-            return mean_luma(p, rect);
+            return p.mean_luma(rect, 1);
         }
         if !login::fills_size((pw, ph), size) {
             return None;
         }
         let k = f64::from(pw) / f64::from(size.0.max(1));
         let at = |v: i32| (f64::from(v) * k).round() as i32;
-        mean_luma(p, IRect::new(at(rect.x), at(rect.y), at(rect.right()) - at(rect.x), at(rect.bottom()) - at(rect.y)))
+        p.mean_luma(IRect::new(at(rect.x), at(rect.y), at(rect.right()) - at(rect.x), at(rect.bottom()) - at(rect.y)), 1)
     });
     let scrim = if s.has_wallpaper { SCRIM } else { 0.0 };
     match mean {
@@ -419,22 +419,6 @@ fn ink(s: &Shared, theme: &Theme, rect: IRect, size: (i32, i32)) -> (&'static st
         }
         None => (ink_of(fallback), fallback, false),
     }
-}
-
-/// The mean luma (0..255) of the picture under `rect`, every pixel read.
-fn mean_luma(p: &Picture, rect: IRect) -> Option<f64> {
-    let r = rect.intersect(&IRect::new(0, 0, p.width as i32, p.height as i32));
-    if r.is_empty() {
-        return None;
-    }
-    let mut sum = 0.0;
-    for y in r.y..r.bottom() {
-        let row = &p.bgra[(y as usize * p.width as usize + r.x as usize) * 4..(y as usize * p.width as usize + r.right() as usize) * 4];
-        for px in row.chunks_exact(4) {
-            sum += 0.299 * px[2] as f64 + 0.587 * px[1] as f64 + 0.114 * px[0] as f64;
-        }
-    }
-    Some(sum / r.area() as f64)
 }
 
 /// The desktop's picture with the scrim baked in, for the pool, and with

@@ -13,13 +13,10 @@
 
 use fs_types::{Edge, Rect};
 
-/// Rec. 601 luma, the weighting gala reads a wallpaper's brightness with,
-/// on 0..255.
-const LUMA_R: f64 = 0.299;
-const LUMA_G: f64 = 0.587;
-const LUMA_B: f64 = 0.114;
+use crate::color::luma601;
 
-/// A band is bright above the mean threshold, and wears dark ink then.
+/// A band is bright above the mean Rec. 601 luma (0..255, the weighting
+/// gala reads a wallpaper's brightness with), and wears dark ink then.
 pub const LUMA_THRESHOLD: f64 = 180.0;
 
 /// How wide the whole wallpaper is sampled, the band's rows taken out of
@@ -77,7 +74,7 @@ pub struct Stats {
 impl Stats {
     /// The reading of one flat colour: the bare desktop's `background`.
     pub fn flat([r, g, b]: [u8; 3]) -> Stats {
-        let mean = LUMA_R * f64::from(r) + LUMA_G * f64::from(g) + LUMA_B * f64::from(b);
+        let mean = luma601(f64::from(r), f64::from(g), f64::from(b));
         Stats { mean, std: 0.0, acutance: 0.0, sampled: true }
     }
 }
@@ -154,9 +151,7 @@ impl Profile {
             let mut prev = -1.0;
             for x in 0..width {
                 let i = (y * width + x) * 4;
-                let luma = LUMA_R * data[i] as f64
-                    + LUMA_G * data[i + 1] as f64
-                    + LUMA_B * data[i + 2] as f64;
+                let luma = luma601(f64::from(data[i]), f64::from(data[i + 1]), f64::from(data[i + 2]));
                 let c = &mut columns[if along_x { x } else { y }];
                 c.sum += luma;
                 c.square += luma * luma;

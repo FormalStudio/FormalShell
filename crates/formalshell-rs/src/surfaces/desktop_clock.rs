@@ -147,7 +147,7 @@ impl Under {
 
     /// The mean luma of the picture under `r`.
     pub(crate) fn luma(&self, r: IRect) -> f64 {
-        mean_luma(&self.picture, self.device(r))
+        self.picture.mean_luma(self.device(r), 2).unwrap_or(0.0)
     }
 
     pub(crate) fn same(&self, o: &Under) -> bool {
@@ -285,19 +285,6 @@ impl Digits {
 const SERIF_FIGURE: f64 = 0.7;
 /// How far the serif colon sits over the figures' baseline, of their height.
 const COLON_RAISE: f64 = 0.16;
-/// The mean Rec. 601 luma of `p` over `r`, every other pixel each way.
-fn mean_luma(p: &Picture, r: IRect) -> f64 {
-    let (mut sum, mut n) = (0.0, 0u64);
-    for y in (r.y..r.bottom()).step_by(2) {
-        for x in (r.x..r.right()).step_by(2) {
-            let i = ((y as usize) * p.width as usize + x as usize) * 4;
-            let Some(px) = p.bgra.get(i..i + 3) else { continue };
-            sum += 0.114 * f64::from(px[0]) + 0.587 * f64::from(px[1]) + 0.299 * f64::from(px[2]);
-            n += 1;
-        }
-    }
-    if n == 0 { 0.0 } else { sum / n as f64 }
-}
 
 /// How opaque the digits are, and how far their fill is drawn from the
 /// blurred picture toward the ink.

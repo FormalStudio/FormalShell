@@ -33,6 +33,27 @@ pub struct Picture {
     pub bgra: Vec<u8>,
 }
 
+impl Picture {
+    /// The mean Rec. 601 luma (0..255) under `rect`, every `step`th pixel
+    /// each way; none where `rect` misses the picture.
+    pub fn mean_luma(&self, rect: crate::scene::IRect, step: usize) -> Option<f64> {
+        let r = rect.intersect(&crate::scene::IRect::new(0, 0, self.width as i32, self.height as i32));
+        if r.is_empty() {
+            return None;
+        }
+        let (mut sum, mut n) = (0.0, 0u64);
+        for y in (r.y..r.bottom()).step_by(step) {
+            let row = (y as usize) * self.width as usize;
+            for x in (r.x..r.right()).step_by(step) {
+                let px = &self.bgra[(row + x as usize) * 4..][..3];
+                sum += fs_theme::color::luma601(f64::from(px[2]), f64::from(px[1]), f64::from(px[0]));
+                n += 1;
+            }
+        }
+        Some(sum / n as f64)
+    }
+}
+
 const FLAT: &str = "color:";
 const SKY: &str = "sky:";
 

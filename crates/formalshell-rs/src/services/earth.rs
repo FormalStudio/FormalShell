@@ -481,7 +481,7 @@ fn tone(rgb: &mut [u8]) {
     let lut: [f32; 256] = std::array::from_fn(|i| (i as f32 / 255.0).powf(TONE_GAMMA) * 255.0);
     for px in rgb.chunks_exact_mut(3) {
         let [r, g, b] = [lut[px[0] as usize], lut[px[1] as usize], lut[px[2] as usize]];
-        let y = 0.299 * r + 0.587 * g + 0.114 * b;
+        let y = fs_theme::color::luma601(r.into(), g.into(), b.into()) as f32;
         for (out, c) in px.iter_mut().zip([r, g, b]) {
             *out = (y + (c - y) * TONE_SATURATION).round().clamp(0.0, 255.0) as u8;
         }
