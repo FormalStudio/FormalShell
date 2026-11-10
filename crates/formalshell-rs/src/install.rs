@@ -160,7 +160,7 @@ fn install(l: &Layout, opts: &Opts) -> Result<(), String> {
     }
 
     let example = fs::read_to_string(l.share().join("examples/hyprland/formalshell.lua")).map_err(|e| format!("reading the Hyprland example: {e}"))?;
-    write_owned(&l.hypr("formalshell.lua"), &hypr_include(&example, &l.bin("formalshell-ipc")))?;
+    write_owned(&l.hypr("formalshell.lua"), &hypr_include(&example, &l.bin("formalshell-ipc"))?)?;
     hypr_entry(l)?;
 
     if opts.no_system {
@@ -307,10 +307,16 @@ fn unit_marker() -> &'static str {
     UNIT_TIMER.lines().next().unwrap_or_default()
 }
 
+/// The example's one spelling of the client, which every bind goes through.
+pub(crate) const IPC_CALL: &str = "\"formalshell-ipc call \"";
+
 /// The binds call `formalshell-ipc` by name, and Hyprland's PATH need not
 /// carry `~/.local/bin`.
-fn hypr_include(example: &str, ipc: &Path) -> String {
-    format!("{MARKER}\n{}", example.replace("\"formalshell-ipc call \"", &format!("\"{} call \"", ipc.display())))
+fn hypr_include(example: &str, ipc: &Path) -> Result<String, String> {
+    if !example.contains(IPC_CALL) {
+        return Err(format!("the Hyprland example no longer spells the client {IPC_CALL}, so its binds would call it by name"));
+    }
+    Ok(format!("{MARKER}\n{}", example.replace(IPC_CALL, &format!("\"{} call \"", ipc.display()))))
 }
 
 /// How a session starts the shell: the include's `hyprland.start` hook, and
@@ -701,9 +707,14 @@ mod tests {
 
     #[test]
     fn include_calls_ipc_by_path() {
-        let out = hypr_include("local fs_call = \"formalshell-ipc call \"\n", Path::new("/opt/x/bin/formalshell-ipc"));
+        let out = hypr_include("local fs_call = \"formalshell-ipc call \"\n", Path::new("/opt/x/bin/formalshell-ipc")).unwrap();
         assert!(out.starts_with(MARKER));
         assert!(out.contains("\"/opt/x/bin/formalshell-ipc call \""));
+    }
+
+    #[test]
+    fn include_refuses_an_example_without_the_client_literal() {
+        assert!(hypr_include("local fs_call = 'formalshell-ipc call '\n", Path::new("/x")).is_err());
     }
 
     #[test]

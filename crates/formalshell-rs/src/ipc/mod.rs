@@ -31,6 +31,8 @@ mod lights;
 mod localsend;
 mod lock;
 #[cfg(test)]
+mod example_binds;
+#[cfg(test)]
 mod golden;
 mod media;
 mod menu;
