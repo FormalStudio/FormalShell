@@ -7,18 +7,19 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[cfg(test)]
 use fs_system::monitor::collect::split_sections;
 use fs_system::monitor::gpu::{self, GfxMode, GpuRecord};
 use fs_system::monitor::sysinfo::{self, CoreLoad, CpuRecord, Disk, Fan, Load, Mem, NetRate, NetRow, Temp, Uptime};
+use futures_lite::future;
 use serde_json::{Value, json};
 
 use super::idle;
 use crate::runtime::Ctx;
 use crate::services::config;
-use crate::services::proc::on_path;
+use crate::services::proc::{self, on_path};
 use crate::store;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -324,32 +325,10 @@ fn drm_rows() -> String {
     rows.join("\n")
 }
 
-/// A program's stdout when it is installed, empty otherwise.
-fn output_of(program: &str, args: &[&str]) -> String {
-    if !on_path(program) {
-        return String::new();
-    }
-    crate::services::proc::std_command(program)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim_end_matches('\n').to_owned())
-        .unwrap_or_default()
-}
-
 /// One tick's reads, on a pool thread.
 fn collect() -> HashMap<String, String> {
     let net = std::fs::read_to_string("/proc/net/dev").unwrap_or_default().lines().skip(2).collect::<Vec<_>>().join("\n");
-    let disk = crate::services::proc::std_command("df")
-        .args(["-B1", "-x", "tmpfs", "-x", "devtmpfs", "-x", "efivarfs", "--output=source,target,size,used"])
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).lines().skip(1).collect::<Vec<_>>().join("\n"))
-        .unwrap_or_default();
     let meminfo = ["MemTotal:", "MemAvailable:", "MemFree:", "SwapTotal:", "SwapFree:"];
-    let nvidia_query = "--query-gpu=index,name,utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw,fan.speed";
     [
         ("stat", lines_of("/proc/stat", |l| l.starts_with("cpu"))),
         ("mem", lines_of("/proc/meminfo", |l| meminfo.iter().any(|k| l.starts_with(k)))),
@@ -358,15 +337,29 @@ fn collect() -> HashMap<String, String> {
         ("net", net),
         ("temp", hwmon_rows("temp")),
         ("fan", hwmon_rows("fan")),
-        ("disk", disk),
         ("drm", drm_rows()),
-        ("nvidia", output_of("nvidia-smi", &[nvidia_query, "--format=csv,noheader,nounits"])),
-        ("gfx", if on_path("supergfxctl") { output_of("timeout", &["1", "supergfxctl", "-g"]) } else { String::new() }),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
     .collect()
 }
+
+/// One tick's tool reads, empty for a tool that is missing or hangs.
+async fn tools_output() -> [(String, String); 3] {
+    let stdout = |argv: &[&str], timeout| {
+        let argv = proc::argv(argv);
+        async move { proc::capture(&argv, timeout).await.stdout.trim_end_matches('\n').to_owned() }
+    };
+    let df = stdout(&["df", "-B1", "-x", "tmpfs", "-x", "devtmpfs", "-x", "efivarfs", "--output=source,target,size,used"], TOOL_TIMEOUT);
+    let nvidia_query = "--query-gpu=index,name,utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw,fan.speed";
+    let nvidia = stdout(&["nvidia-smi", nvidia_query, "--format=csv,noheader,nounits"], TOOL_TIMEOUT);
+    let gfx = stdout(&["supergfxctl", "-g"], Duration::from_secs(1));
+    let (disk, (nvidia, gfx)) = future::zip(df, future::zip(nvidia, gfx)).await;
+    let disk = disk.lines().skip(1).collect::<Vec<_>>().join("\n");
+    [("disk".into(), disk), ("nvidia".into(), nvidia), ("gfx".into(), gfx)]
+}
+
+const TOOL_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn read() -> std::time::Duration {
     let ms = crate::settings::MONITOR_INTERVAL.get(&config::current()).as_millis().max(500);
@@ -379,7 +372,8 @@ pub async fn run(ctx: Ctx) {
     let tools = ctx.pool().run(|| (on_path("nvidia-offload"), on_path("prime-run"))).await.unwrap_or_default();
     loop {
         let interval = read();
-        let sections = ctx.pool().run(collect).await.unwrap_or_default();
+        let mut sections = ctx.pool().run(collect).await.unwrap_or_default();
+        sections.extend(tools_output().await);
         let state = State { tools, ..sample(&mut prev, &sections, Instant::now()) };
         ctx.publish(store::Diff::Monitor(Box::new(state)));
         idle(interval, &rx, &interval, read).await;

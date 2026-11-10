@@ -29,12 +29,14 @@ use fs_types::{Bind, WindowId};
 use self::outputs::RuleOverrides;
 use super::{Command, Diff, OutputsState, Snapshot};
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::store;
 
 /// The wait before the next attempt at a socket that is gone, doubling up
 /// to the ceiling while it stays gone.
 const RETRY_FIRST: Duration = Duration::from_millis(250);
 const RETRY_MAX: Duration = Duration::from_secs(5);
+const HYPRCTL_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub fn instance() -> Option<String> {
     std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok()
@@ -282,16 +284,14 @@ async fn dispatch(lua: &str) {
 
 /// Monitor rules are config calls rather than dispatchers; `hyprctl eval`
 /// is the documented way in under a Lua config.
-async fn eval(ctx: &Ctx, lua: &str) {
-    let lua = lua.to_owned();
-    let out = ctx.pool().run(move || crate::services::proc::std_command("hyprctl").args(["eval", &lua]).output()).await;
-    let answer = match out {
-        Some(Ok(out)) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).into_owned()),
-        Some(Ok(out)) => Ok(String::from_utf8_lossy(&out.stderr).into_owned()),
-        Some(Err(err)) => Err(err),
-        None => Err(io::Error::other("the blocking pool is gone")),
+async fn eval(lua: &str) {
+    let done = proc::capture_err(&proc::argv(&["hyprctl", "eval", lua]), HYPRCTL_TIMEOUT).await;
+    let answer = match (done.code, done.stderr.trim()) {
+        (0, _) => done.stdout,
+        (code, "") => format!("hyprctl exited {code}"),
+        (_, err) => err.to_owned(),
     };
-    report("eval", answer);
+    report("eval", Ok(answer));
 }
 
 /// `hyprctl reload` on a task of its own, so the writes queued behind it do
@@ -302,14 +302,7 @@ fn reload(ctx: &Ctx, shared: &Shared) {
     }
     let shared = shared.clone();
     ctx.spawn(async move {
-        let status = crate::services::proc::command("hyprctl")
-            .arg("reload")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await;
-        if !status.is_ok_and(|s| s.success()) {
+        if proc::capture(&proc::argv(&["hyprctl", "reload"]), HYPRCTL_TIMEOUT).await.code != 0 {
             eprintln!("hyprland: hyprctl reload failed");
         }
         shared.borrow_mut().reloading = false;
@@ -352,9 +345,9 @@ async fn commands(
                     Some(argv) => lua::bind_escape(name, &argv),
                     None => lua::unbind(name),
                 };
-                eval(&ctx, &lua).await;
+                eval(&lua).await;
             }
-            Command::Cursor { hidden } => eval(&ctx, &lua::cursor(hidden)).await,
+            Command::Cursor { hidden } => eval(&lua::cursor(hidden)).await,
             Command::Reload => reload(&ctx, &shared),
             Command::Exit => dispatch(&lua::exit()).await,
             Command::FloatWindow(id) => {
@@ -376,7 +369,7 @@ async fn commands(
                 let _ = dirty.try_send(());
             }
             Command::MoveColumn { id, before } => {
-                eval(&ctx, &lua::move_column(&id, before.as_ref())).await;
+                eval(&lua::move_column(&id, before.as_ref())).await;
                 let _ = dirty.try_send(());
             }
             Command::PlaceFloatingWindow { id, x, y, width, height } => {
@@ -388,18 +381,18 @@ async fn commands(
                 let _ = dirty.try_send(());
             }
             Command::Zen { id, rect } => {
-                eval(&ctx, &lua::zen(&id, rect)).await;
+                eval(&lua::zen(&id, rect)).await;
                 let _ = dirty.try_send(());
             }
             Command::Unzen { id, floating, before } => {
-                eval(&ctx, &lua::unzen(&id, floating)).await;
+                eval(&lua::unzen(&id, floating)).await;
                 if let Some(before) = before {
-                    eval(&ctx, &lua::move_column(&id, Some(&before))).await;
+                    eval(&lua::move_column(&id, Some(&before))).await;
                 }
                 dispatch(&lua::focus_window(&id)).await;
                 let _ = dirty.try_send(());
             }
-            Command::ZenRelease => eval(&ctx, &lua::zen_release()).await,
+            Command::ZenRelease => eval(&lua::zen_release()).await,
             Command::ParkWindow(id) => park(&ctx, &shared, &id, false).await,
             Command::UnparkWindow(id) => park(&ctx, &shared, &id, true).await,
             // Hyprland posts no event for a window moved inside its
@@ -411,14 +404,14 @@ async fn commands(
             }
             Command::RefreshOutputs => refresh_outputs(&ctx, &shared).await,
             Command::SetOutputEnabled(name, enabled) => {
-                eval(&ctx, &outputs::enabled_lua(&name, enabled)).await;
+                eval(&outputs::enabled_lua(&name, enabled)).await;
                 refresh_outputs(&ctx, &shared).await;
             }
             Command::SetOutputScale(name, scale) => {
                 let row = find_output(&shared.borrow().outputs, &name).cloned();
                 if let Some(row) = row {
                     let overrides = RuleOverrides { scale: Some(scale), mirror_of: None };
-                    eval(&ctx, &outputs::rule_lua(&outputs::monitor_rule(&row, &overrides))).await;
+                    eval(&outputs::rule_lua(&outputs::monitor_rule(&row, &overrides))).await;
                     refresh_outputs(&ctx, &shared).await;
                 }
             }
@@ -426,14 +419,14 @@ async fn commands(
                 let row = find_output(&shared.borrow().outputs, &name).cloned();
                 if let Some(row) = row {
                     let overrides = RuleOverrides { scale: None, mirror_of: Some(source) };
-                    eval(&ctx, &outputs::rule_lua(&outputs::monitor_rule(&row, &overrides))).await;
+                    eval(&outputs::rule_lua(&outputs::monitor_rule(&row, &overrides))).await;
                     refresh_outputs(&ctx, &shared).await;
                 }
             }
             Command::SetOutputColor(name, color) => {
                 let row = find_output(&shared.borrow().outputs, &name).cloned();
                 if let Some(row) = row.filter(|r| r.enabled) {
-                    eval(&ctx, &outputs::rule_lua(&outputs::color_rule(&row, &color))).await;
+                    eval(&outputs::rule_lua(&outputs::color_rule(&row, &color))).await;
                     refresh_outputs(&ctx, &shared).await;
                 }
             }

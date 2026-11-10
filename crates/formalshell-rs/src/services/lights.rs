@@ -29,11 +29,10 @@ use crate::store;
 /// Theme.color.primary crossfades over `motion.reveal`, so every frame of
 /// the fade is a new value; the repaint waits for the last one.
 const PALETTE_SETTLE: Duration = Duration::from_secs(1);
-const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+const ASUSD_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Exit 3 is this script's own "no asusctl", 4 "no Aura object".
-const PROBE: &str = "command -v asusctl >/dev/null || exit 3; \
-    p=$(busctl --system --list tree xyz.ljones.Asusd 2>/dev/null | grep -m1 \"^/xyz/ljones/aura/\"); \
+/// Exit 4 is this script's own "no Aura object".
+const PROBE: &str = "p=$(busctl --system --list tree xyz.ljones.Asusd 2>/dev/null | grep -m1 \"^/xyz/ljones/aura/\"); \
     [ -n \"$p\" ] || exit 4; \
     g() { busctl --system get-property xyz.ljones.Asusd \"$p\" xyz.ljones.Aura \"$1\" 2>/dev/null; }; \
     echo \"MODE=$(g LedMode)\"; echo \"DATA=$(g LedModeData)\"; \
@@ -187,7 +186,7 @@ pub fn colour(state: &State, hex: &str) -> Result<(), String> {
 pub async fn aura_power(off: bool) -> bool {
     let mut ran = true;
     for zone in model::AURA_ZONES {
-        if proc::capture(&model::aura_power_argv(zone, off), PROBE_TIMEOUT).await.code == proc::MISSING {
+        if proc::capture(&model::aura_power_argv(zone, off), ASUSD_TIMEOUT).await.code == proc::MISSING {
             ran = false;
             break;
         }
@@ -283,19 +282,13 @@ impl Machine {
         self.writing = true;
         let tx = CHANNEL.0.clone();
         self.ctx.spawn(async move {
-            let out = crate::services::proc::command(&args[0])
-                .args(&args[1..])
-                .stdin(async_process::Stdio::null())
-                .stdout(async_process::Stdio::null())
-                .output()
-                .await;
-            let error = match out {
-                Ok(o) if o.status.success() => String::new(),
-                Ok(o) => {
-                    let text = String::from_utf8_lossy(&o.stderr).trim().to_owned();
-                    if text.is_empty() { format!("asusctl exited {}", o.status.code().unwrap_or(-1)) } else { text }
-                }
-                Err(_) => "asusctl exited 127".to_owned(),
+            let done = proc::capture_err(&args, ASUSD_TIMEOUT).await;
+            let error = match done.code {
+                0 => String::new(),
+                code => match done.stderr.trim() {
+                    "" => format!("asusctl exited {code}"),
+                    text => text.to_owned(),
+                },
             };
             let _ = tx.send(Msg::Written(error)).await;
         });
@@ -308,8 +301,12 @@ impl Machine {
         self.probing = true;
         let tx = CHANNEL.0.clone();
         self.ctx.spawn(async move {
-            let done = proc::capture(&argv(&["sh", "-c", PROBE]), PROBE_TIMEOUT).await;
-            let probe = (done.code == 0).then(|| model::parse_probe(&done.stdout));
+            let probe = if proc::on_path("asusctl") {
+                let done = proc::capture(&argv(&["sh", "-c", PROBE]), ASUSD_TIMEOUT).await;
+                (done.code == 0).then(|| model::parse_probe(&done.stdout))
+            } else {
+                None
+            };
             let _ = tx.send(Msg::Probed(probe)).await;
         });
     }

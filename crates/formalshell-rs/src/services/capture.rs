@@ -5,12 +5,11 @@
 //! pool jobs that read and write files (a shot's crop, a notification's
 //! picture) run here too.
 
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::time::Duration;
 
-use futures_lite::{AsyncReadExt, FutureExt};
-
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::store::Diff;
 
 /// Which step a child is. The UI matches an answer to the step that is
@@ -150,68 +149,21 @@ pub fn start(ctx: &Ctx, run: Run) {
 
 async fn child(ctx: Ctx, run: Run) {
     let Run { job, generation, argv, env, tag } = run;
-    let exit = |started: bool, code: i32, stdout: String, stderr: String| {
-        Diff::Capture(Event::Exited(Exit { job, generation, started, code, stdout, stderr, tag: tag.clone() }))
-    };
-    let Some((program, args)) = argv.split_first() else {
-        ctx.publish(exit(false, -1, String::new(), String::new()));
-        return;
-    };
-    let spawned = crate::services::proc::command(program)
-        .args(args)
-        .envs(env)
-        .stdin(async_process::Stdio::null())
-        .stdout(async_process::Stdio::piped())
-        .stderr(async_process::Stdio::piped())
-        .spawn();
-    let mut child = match spawned {
-        Ok(child) => child,
-        Err(_) => {
-            ctx.publish(exit(false, -1, String::new(), String::new()));
-            return;
-        }
-    };
-    ctx.publish(Diff::Capture(Event::Spawned { generation, pid: child.id() }));
-    let (mut out, mut err) = (child.stdout.take(), child.stderr.take());
-    let (buf_out, buf_err) = (RefCell::new(Vec::new()), RefCell::new(Vec::new()));
-    // A child that forks a daemon onto its own pipes (wl-copy does) keeps
-    // them open past its exit, so the pipes are read until they close or
-    // until shortly after the child itself has gone, whichever is first.
-    let finished = {
-        let pumps = async {
-            futures_lite::future::zip(pump(out.as_mut(), &buf_out), pump(err.as_mut(), &buf_err)).await;
-            None
-        };
-        let status = async { Some(child.status().await.ok().and_then(|s| s.code()).unwrap_or(-1)) };
-        pumps.or(status).await
-    };
-    let code = match finished {
-        Some(code) => {
-            let drain = async {
-                futures_lite::future::zip(pump(out.as_mut(), &buf_out), pump(err.as_mut(), &buf_err)).await;
-            };
-            drain
-                .or(async {
-                    async_io::Timer::after(Duration::from_millis(200)).await;
-                })
-                .await;
-            code
-        }
-        None => child.status().await.ok().and_then(|s| s.code()).unwrap_or(-1),
-    };
-    let text = |b: RefCell<Vec<u8>>| String::from_utf8_lossy(&b.into_inner()).into_owned();
-    ctx.publish(exit(true, code, text(buf_out), text(buf_err)));
-}
-
-async fn pump<R: futures_lite::AsyncRead + Unpin>(reader: Option<&mut R>, into: &RefCell<Vec<u8>>) {
-    let Some(reader) = reader else { return };
-    let mut chunk = [0u8; 4096];
-    loop {
-        match reader.read(&mut chunk).await {
-            Ok(0) | Err(_) => return,
-            Ok(n) => into.borrow_mut().extend_from_slice(&chunk[..n]),
-        }
-    }
+    let started = Cell::new(false);
+    // A recording or an editor runs for as long as the user keeps it.
+    let done = proc::Run::new(&argv, Duration::MAX)
+        .env(env)
+        .stderr()
+        .until_exit()
+        .on_spawn(|pid| {
+            started.set(true);
+            ctx.publish(Diff::Capture(Event::Spawned { generation, pid }));
+        })
+        .run()
+        .await;
+    let started = started.get();
+    let code = if started { done.code } else { -1 };
+    ctx.publish(Diff::Capture(Event::Exited(Exit { job, generation, started, code, stdout: done.stdout, stderr: done.stderr, tag })));
 }
 
 /// A shot's selection, in the freeze's own pixels, and where it goes.

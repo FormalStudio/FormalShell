@@ -9,11 +9,12 @@ use std::time::Duration;
 use async_io::Timer;
 use fs_chrome::bar::layout::EntryKind;
 use fs_types::Region;
-use futures_lite::{AsyncReadExt, FutureExt};
+use futures_lite::FutureExt;
 use serde_json::Value;
 
 use super::config::{self, Settings};
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::store;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -96,31 +97,8 @@ fn placed(settings: &Settings) -> Vec<Module> {
 }
 
 async fn once(module: &Module) -> Output {
-    if module.argv.is_empty() {
-        return Output::error();
-    }
-    let child = crate::services::proc::command(&module.argv[0])
-        .args(&module.argv[1..])
-        .stdin(async_process::Stdio::null())
-        .stdout(async_process::Stdio::piped())
-        .stderr(async_process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn();
-    let Ok(mut child) = child else { return Output::error() };
-    let mut stdout = child.stdout.take();
-    let run = async {
-        let mut raw = String::new();
-        if let Some(out) = stdout.as_mut() {
-            let _ = out.read_to_string(&mut raw).await;
-        }
-        let status = child.status().await;
-        Some(Output::resolve(status.map(|s| s.success()).unwrap_or(false), &raw))
-    };
-    let timeout = async {
-        Timer::after(module.timeout).await;
-        None
-    };
-    run.or(timeout).await.unwrap_or_else(Output::error)
+    let done = proc::capture(&module.argv, module.timeout).await;
+    Output::resolve(done.code == 0, &done.stdout)
 }
 
 async fn poll(ctx: Ctx, module: Module, generation: async_channel::Receiver<()>) {

@@ -10,7 +10,7 @@ use fs_devices::network::speedtest;
 use futures_lite::FutureExt;
 
 use super::{INNER, publish};
-use crate::services::http;
+use crate::services::{http, proc};
 use crate::runtime::Ctx;
 
 const ST_PHASE: Duration = Duration::from_millis(5000);
@@ -116,17 +116,6 @@ fn speed_abort(message: &str) {
     INNER.with_borrow_mut(|i| i.speed_stop = None);
 }
 
-async fn sh(script: &str) -> Option<(bool, String)> {
-    let out = crate::services::proc::command("sh")
-        .args(["-c", script])
-        .stdin(async_process::Stdio::null())
-        .stderr(async_process::Stdio::null())
-        .output()
-        .await
-        .ok()?;
-    Some((out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned()))
-}
-
 /// `(rx, tx)` off the interface's own counters; a missing interface is
 /// `None`, which ends the test honestly rather than reporting a stale rate.
 fn stat_bytes(iface: &str) -> Option<(f64, f64)> {
@@ -181,9 +170,9 @@ async fn phase(iface: &str, up: bool) -> bool {
 }
 
 async fn speed_run() {
-    let iface = sh("ip route get 1.1.1.1 2>/dev/null").await.and_then(|(_, out)| speedtest::parse_iface(&out));
+    let iface = speedtest::parse_iface(&proc::capture(&proc::argv(&["ip", "route", "get", "1.1.1.1"]), Duration::from_secs(5)).await.stdout);
     let Some(iface) = iface else { return speed_abort("NO NETWORK") };
-    if !crate::services::proc::on_path("curl") {
+    if !proc::on_path("curl") {
         return speed_abort("NO CURL");
     }
     speed_set(|s| s.phase = Phase::Down);

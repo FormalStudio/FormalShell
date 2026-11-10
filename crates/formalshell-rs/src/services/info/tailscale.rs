@@ -107,8 +107,7 @@ pub fn toggle(ctx: &Ctx, running: bool) {
     publish(ctx);
     let task = ctx.clone();
     ctx.spawn(async move {
-        let script = format!("command -v tailscale >/dev/null 2>&1 || exit 127; exec tailscale {verb}");
-        let done = proc::capture_err(&["sh".into(), "-c".into(), script], Duration::from_secs(15)).await;
+        let done = proc::capture_err(&proc::argv(&["tailscale", verb]), Duration::from_secs(15)).await;
         ERROR.set(match done.code {
             0 => "",
             TIMED_OUT => "TIMED OUT",

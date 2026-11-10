@@ -37,6 +37,7 @@ use futures_lite::io::{BufReader, Lines};
 use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, FutureExt, StreamExt, future};
 
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::services::wants::{self, Source};
 use crate::services::watch::Watch;
 use crate::store;
@@ -369,16 +370,9 @@ pub fn start(ctx: &Ctx) {
     });
 }
 
-/// One short CLI call: its exit code and stdout. -1 when it could not start
-/// (no binary on PATH), -2 for an argv an adapter refused to build.
-async fn run_cli(argv: Option<Vec<String>>) -> (i32, String) {
-    let Some(argv) = argv.filter(|a| !a.is_empty()) else { return (-2, String::new()) };
-    let out = crate::services::proc::command(&argv[0]).args(&argv[1..]).stdin(Stdio::null()).stderr(Stdio::null()).output().await;
-    match out {
-        Ok(out) => (out.status.code().unwrap_or(-3), String::from_utf8_lossy(&out.stdout).into_owned()),
-        Err(_) => (-1, String::new()),
-    }
-}
+/// One short CLI call. Each opens an RFCOMM link to the buds, which takes
+/// a second or two on a live one.
+const CLI_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long the daemon gets to take a verb and hang up. It answers from its
 /// own event loop, so a live one is done in milliseconds.
@@ -918,8 +912,7 @@ async fn run_poll(ctx: Ctx, kind: Poller, rx: Receiver<Event>, epoch: Rc<Cell<u6
             }
             Some(Event::Bluetooth(devices)) => bt = devices,
             Some(Event::Op(Op::Run { argv, .. })) if held => {
-                let (code, _) = run_cli(Some(argv)).await;
-                backend.available = code != -1;
+                backend.available = proc::capture(&argv, CLI_TIMEOUT).await.code != proc::MISSING;
                 poll = true;
             }
             Some(Event::Op(_) | Event::Panel(_) | Event::Mic(_) | Event::Recenter) => {}
@@ -950,25 +943,27 @@ async fn poll_soundcore(bt: &[BtDevice], backend: &mut Backend) -> Vec<Device> {
         backend.caps.clear();
         return Vec::new();
     }
-    let (code, text) = run_cli(Some(soundcore::paired_argv())).await;
-    backend.available = code != -1;
-    let targets = if code == 0 { soundcore::connected_paired(&soundcore::parse_paired(&text), bt) } else { Vec::new() };
+    let done = proc::capture(&soundcore::paired_argv(), CLI_TIMEOUT).await;
+    backend.available = done.code != proc::MISSING;
+    let targets = if done.code == 0 { soundcore::connected_paired(&soundcore::parse_paired(&done.stdout), bt) } else { Vec::new() };
     backend.caps.retain(|address, _| targets.iter().any(|t| t.address == *address));
     let mut found = Vec::new();
     for info in targets {
         if !backend.caps.contains_key(&info.address) {
-            let (code, text) = run_cli(Some(soundcore::settings_argv(info.address))).await;
-            backend.available = code != -1;
-            let Some(caps) = (code == 0).then(|| soundcore::parse_capabilities(&text)).flatten() else { continue };
+            let done = proc::capture(&soundcore::settings_argv(info.address), CLI_TIMEOUT).await;
+            backend.available = done.code != proc::MISSING;
+            let Some(caps) = (done.code == 0).then(|| soundcore::parse_capabilities(&done.stdout)).flatten() else { continue };
             backend.caps.insert(info.address, caps);
         }
         let caps = backend.caps[&info.address].clone();
-        let argv = (!caps.ids.is_empty()).then(|| soundcore::setting_argv(info.address, &soundcore::get_args(&caps)));
-        let (code, text) = run_cli(argv).await;
-        if code != -2 {
-            backend.available = code != -1;
+        let mut values = Default::default();
+        if !caps.ids.is_empty() {
+            let done = proc::capture(&soundcore::setting_argv(info.address, &soundcore::get_args(&caps)), CLI_TIMEOUT).await;
+            backend.available = done.code != proc::MISSING;
+            if done.code == 0 {
+                values = soundcore::parse_values(&done.stdout);
+            }
         }
-        let values = if code == 0 { soundcore::parse_values(&text) } else { Default::default() };
         found.push(soundcore::normalise(&info, &caps, &values));
     }
     found
@@ -977,12 +972,10 @@ async fn poll_soundcore(bt: &[BtDevice], backend: &mut Backend) -> Vec<Device> {
 async fn poll_samsung(bt: &[BtDevice], backend: &mut Backend) -> Vec<Device> {
     let mut found = Vec::new();
     for buds in samsung::connected_buds(bt) {
-        let (code, text) = run_cli(Some(samsung::status_argv(buds.address))).await;
-        if code != -2 {
-            backend.available = code != -1;
-        }
-        if code == 0 {
-            found.extend(samsung::normalise(&samsung::parse_status(&text), &buds.name));
+        let done = proc::capture(&samsung::status_argv(buds.address), CLI_TIMEOUT).await;
+        backend.available = done.code != proc::MISSING;
+        if done.code == 0 {
+            found.extend(samsung::normalise(&samsung::parse_status(&done.stdout), &buds.name));
         }
     }
     found
@@ -1115,14 +1108,14 @@ impl Nothing {
         self.listing = true;
         let tx = tx.clone();
         ctx.spawn(async move {
-            let (code, text) = run_cli(Some(nothing::list_argv())).await;
-            let _ = tx.send(NEvent::List(code, text)).await;
+            let done = proc::capture(&nothing::list_argv(), CLI_TIMEOUT).await;
+            let _ = tx.send(NEvent::List(done.code, done.stdout)).await;
         });
     }
 
     fn on_list(&mut self, ctx: &Ctx, tx: &Sender<NEvent>, code: i32, text: &str) {
         self.listing = false;
-        let available = code != -1;
+        let available = code != proc::MISSING;
         if available != self.available {
             self.available = available;
             self.publish(ctx);

@@ -17,6 +17,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use fs_system::overnight::{self, SCREEN_PERCENT};
 use fs_upower::Profile;
@@ -28,6 +29,7 @@ use crate::runtime::Ctx;
 use crate::services::devices::power;
 use crate::services::display;
 use crate::services::lights;
+use crate::services::proc;
 use crate::services::state::{self, Field};
 
 /// state.json's `overnight`, present while it is on. Empty from the enable
@@ -112,10 +114,7 @@ fn merge(change: impl FnOnce(&mut Record)) {
     }
 }
 
-async fn output(argv: &[&str]) -> Option<(i32, String)> {
-    let out = crate::services::proc::command(argv[0]).args(&argv[1..]).stderr(async_process::Stdio::null()).output().await.ok()?;
-    Some((out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned()))
-}
+const LED_TIMEOUT: Duration = Duration::from_secs(10);
 
 const LED_LIST: &str = "for d in /sys/class/leds/*; do printf '%s\\t%s\\t%s\\n' \"${d##*/}\" \"$(cat \"$d/trigger\" 2>/dev/null)\" \"$(cat \"$d/brightness\" 2>/dev/null)\"; done";
 const LED_OFF: &str = "for n; do brightnessctl -q -d \"$n\" set 0; done";
@@ -126,10 +125,6 @@ fn sh(script: &str, args: &[String]) -> Vec<String> {
     argv
 }
 
-async fn run(argv: Vec<String>) -> Option<(i32, String)> {
-    let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-    output(&refs).await
-}
 
 /// Overnight turned on or off from the UI thread; nothing while it already is.
 pub fn set(store: &crate::store::Store, runtime: Option<&crate::runtime::Runtime>, want: bool) {
@@ -187,7 +182,7 @@ pub fn enable(ctx: &Ctx) {
             let _ = p.set_active(Profile::Balanced).await;
         }
         let leds = async {
-            let Some((_, text)) = run(sh(LED_LIST, &[])).await else { return };
+            let text = proc::capture(&sh(LED_LIST, &[]), LED_TIMEOUT).await.stdout;
             let leds = overnight::parse_leds(&text);
             if leds.is_empty() || !current(generation) {
                 return;
@@ -195,7 +190,7 @@ pub fn enable(ctx: &Ctx) {
             let snapshot = overnight::led_snapshot(&leds).into_iter().map(|(n, b)| (n, json!(b))).collect();
             merge(|rec| rec.leds = Some(snapshot));
             let names: Vec<String> = leds.into_iter().map(|l| l.name).collect();
-            let _ = run(sh(LED_OFF, &names)).await;
+            proc::capture(&sh(LED_OFF, &names), LED_TIMEOUT).await;
         };
         let aura = async {
             if lights::aura_power(true).await && current(generation)
@@ -237,7 +232,7 @@ pub fn disable(ctx: &Ctx, snap: Record) {
             lights::aura_power(false).await;
         }
         if !restore.is_empty() {
-            let _ = run(sh(LED_RESTORE, &restore)).await;
+            proc::capture(&sh(LED_RESTORE, &restore), LED_TIMEOUT).await;
         }
     });
 }

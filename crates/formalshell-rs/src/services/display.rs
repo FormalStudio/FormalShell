@@ -28,6 +28,7 @@ use serde_json::{Value, json};
 
 use crate::runtime::Ctx;
 use crate::services::compositor::{self, Command, hyprland};
+use crate::services::proc;
 use crate::services::state::{self, Field};
 use crate::store::{self, Store};
 
@@ -141,9 +142,14 @@ async fn i2c_turn() -> I2cTurn {
     I2cTurn
 }
 
-async fn ddcutil(argv: &[String]) -> Option<(i32, String)> {
+/// A turn for one ddcutil call. A detection over many buses takes seconds;
+/// past this the bus is taken as hung and the turn handed on.
+const DDC_TIMEOUT: Duration = Duration::from_secs(20);
+const BRIGHTNESSCTL_TIMEOUT: Duration = Duration::from_secs(5);
+
+async fn ddcutil(argv: &[String]) -> String {
     let _turn = i2c_turn().await;
-    output(argv).await
+    proc::capture(argv, DDC_TIMEOUT).await.stdout
 }
 
 /// A device's write queue: the percent last asked for, and its row's max.
@@ -240,21 +246,11 @@ fn read_cards() -> Vec<gpu::Card> {
     gpu::parse_cards(&text)
 }
 
-async fn output(argv: &[String]) -> Option<(i32, String)> {
-    let out = crate::services::proc::command(&argv[0])
-        .args(&argv[1..])
-        .stderr(async_process::Stdio::null())
-        .output()
-        .await
-        .ok()?;
-    Some((out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned()))
-}
-
 /// `brightnessctl -m -c backlight -l`; its first CSV row (`name,class,
 /// current,percent%,max`) is the backlight now.
 async fn backlight(ctx: Ctx) {
     let argv: Vec<String> = ["brightnessctl", "-m", "-c", "backlight", "-l"].map(String::from).into();
-    let text = output(&argv).await.map(|(_, t)| t).unwrap_or_default();
+    let text = proc::capture(&argv, BRIGHTNESSCTL_TIMEOUT).await.stdout;
     let line = text.lines().next().unwrap_or("").trim();
     let fields: Vec<&str> = line.split(',').collect();
     let device = if fields.len() >= 4 && !fields[0].is_empty() {
@@ -361,10 +357,7 @@ pub fn set_level(ctx: &Ctx, id: &str, percent: i64) {
 
 async fn detect(ctx: Ctx) {
     let argv: Vec<String> = ["ddcutil", "--skip-ddc-checks", "detect", "--brief"].map(String::from).into();
-    let found = match ddcutil(&argv).await {
-        Some((_, text)) => parse_detect(&text),
-        None => Vec::new(),
-    };
+    let found = parse_detect(&ddcutil(&argv).await);
     BUSES.with_borrow_mut(|b| *b = found.iter().cloned().collect());
     // The old rows stand until the first read replaces them, so a step
     // landing mid-detection still finds its monitor.
@@ -372,7 +365,7 @@ async fn detect(ctx: Ctx) {
     // One bus at a time: they share the I2C controller.
     for (connector, bus) in found {
         let argv: Vec<String> = ["ddcutil", "--bus", &bus, "--skip-ddc-checks", "getvcp", "10", "--brief"].map(String::from).into();
-        if let Some((current, max)) = ddcutil(&argv).await.and_then(|(_, t)| parse_vcp(&t)) {
+        if let Some((current, max)) = parse_vcp(&ddcutil(&argv).await) {
             let read = if max > 0 { (current as f64 * 100.0 / max as f64).round() as i64 } else { 0 };
             let percent = pending(&connector).unwrap_or(read);
             LEVELS.with_borrow_mut(|l| l.insert(connector.clone(), (percent, max)));
@@ -442,13 +435,13 @@ async fn write(id: &str, pct: i64, max: i64) {
     if id == "backlight" {
         let device = BACKLIGHT.with_borrow(Clone::clone);
         let argv: Vec<String> = ["brightnessctl", "-q", "-d", &device, "set", &format!("{pct}%")].map(String::from).into();
-        let _ = output(&argv).await;
+        proc::capture(&argv, BRIGHTNESSCTL_TIMEOUT).await;
     } else {
         let Some(bus) = BUSES.with_borrow(|b| b.get(id).cloned()) else { return };
         let raw = (pct as f64 * max as f64 / 100.0).round() as i64;
         // --noverify: setvcp reads nothing back, so a write is one round trip.
         let argv: Vec<String> = ["ddcutil", "--bus", &bus, "--skip-ddc-checks", "--noverify", "setvcp", "10", &raw.to_string()].map(String::from).into();
-        let _ = ddcutil(&argv).await;
+        ddcutil(&argv).await;
     }
 }
 

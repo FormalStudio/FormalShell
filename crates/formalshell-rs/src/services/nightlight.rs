@@ -30,6 +30,7 @@ use serde_json::Value;
 
 use super::config;
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::store;
 
 const DEFAULT_TEMP: i64 = crate::settings::NIGHTLIGHT_TEMP.default as i64;
@@ -241,7 +242,7 @@ impl Machine {
     fn signal(&self, name: &'static str) {
         let Some(pid) = self.run.as_ref().and_then(|r| r.pid) else { return };
         self.ctx.spawn(async move {
-            let _ = crate::services::proc::command("kill").arg(format!("-{name}")).arg(pid.to_string()).stdout(Stdio::null()).stderr(Stdio::null()).status().await;
+            proc::capture(&proc::argv(&["kill", &format!("-{name}"), &pid.to_string()]), Duration::from_secs(5)).await;
         });
     }
 

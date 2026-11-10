@@ -65,6 +65,7 @@ use futures_lite::future;
 use serde_json::{Map, Value};
 
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::store;
 use super::compositor::{self, Command};
 use super::state;
@@ -381,6 +382,10 @@ pub fn status(store: &store::Store) -> Value {
         "override": data.mode_override,
     })
 }
+
+/// matugen renders every template and runs their post hooks before it exits.
+const MATUGEN_TIMEOUT: Duration = Duration::from_secs(60);
+const MATUGEN_MISSING: &str = "matugen not found (failed to start)";
 
 fn warn(what: impl std::fmt::Display) {
     eprintln!("theme: {what}");
@@ -800,22 +805,14 @@ impl Engine {
                 // Extraction only: --dry-run writes no template and runs no
                 // command, and -d is what prints the ranking (-q would
                 // silence it).
-                let probe = crate::services::proc::command(&self.env.matugen)
-                    .args(["-d", "image", picture.as_str(), "--dry-run", "--prefer", "saturation"])
-                    .stdin(std::process::Stdio::null())
-                    .output()
-                    .await
-                    .map_err(|e| format!("matugen not found (failed to start): {e}"))?;
-                let source = probe
-                    .status
-                    .success()
-                    .then(|| matugen::ranked_source_color(&String::from_utf8_lossy(&probe.stderr)))
-                    .flatten();
+                let bin = self.env.matugen.to_string_lossy();
+                let probe = proc::capture_err(&proc::argv(&[&bin, "-d", "image", picture.as_str(), "--dry-run", "--prefer", "saturation"]), MATUGEN_TIMEOUT).await;
+                if probe.code == proc::MISSING {
+                    return Err(MATUGEN_MISSING.into());
+                }
+                let source = (probe.code == 0).then(|| matugen::ranked_source_color(&probe.stderr)).flatten();
                 if source.is_none() {
-                    warn(format!(
-                        "no source-color ranking from matugen ({}), falling back to --prefer saturation",
-                        probe.status
-                    ));
+                    warn(format!("no source-color ranking from matugen (exit status: {}), falling back to --prefer saturation", probe.code));
                 }
                 let pick: Vec<String> = match source {
                     Some(s) => vec!["--prefer".into(), "closest-to-fallback".into(), "--fallback-color".into(), s],
@@ -828,14 +825,17 @@ impl Engine {
                     .collect()
             }
         };
-        let status = crate::services::proc::command(&self.env.matugen)
-            .args(&args)
-            .stdin(std::process::Stdio::null())
-            .status()
-            .await
-            .map_err(|e| format!("matugen not found (failed to start): {e}"))?;
-        if !status.success() {
-            return Err(format!("matugen exited with {status}"));
+        let argv: Vec<String> = std::iter::once(self.env.matugen.to_string_lossy().into_owned()).chain(args).collect();
+        let done = proc::capture_err(&argv, MATUGEN_TIMEOUT).await;
+        match done.code {
+            0 => {}
+            proc::MISSING => return Err(MATUGEN_MISSING.into()),
+            code => {
+                if !done.stderr.trim().is_empty() {
+                    warn(done.stderr.trim());
+                }
+                return Err(format!("matugen exited with exit status: {code}"));
+            }
         }
 
         if let Some(pin) = pin {
@@ -975,14 +975,8 @@ fn read_user_configs(user: &Path, drop_ins: &Path) -> (Option<String>, Option<St
 }
 
 async fn run_status(bin: &OsString, args: &[&str]) -> bool {
-    crate::services::proc::command(bin)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .is_ok_and(|s| s.success())
+    let argv: Vec<String> = std::iter::once(bin.to_string_lossy().into_owned()).chain(args.iter().map(|a| (*a).to_owned())).collect();
+    proc::capture(&argv, Duration::from_secs(5)).await.code == 0
 }
 
 #[cfg(test)]

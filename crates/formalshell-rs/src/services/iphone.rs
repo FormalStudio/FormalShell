@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 use crate::runtime::Ctx;
 use crate::services::config;
 use crate::services::notifications;
-use crate::services::proc::{MISSING, on_path};
+use crate::services::proc::{self, MISSING, on_path};
 use crate::services::ams;
 use crate::store;
 
@@ -420,16 +420,8 @@ async fn run_child(args: Vec<String>, inbox: async_channel::Sender<Msg>, report_
     }
 }
 
-/// One bridge run to its exit with nothing read back.
-async fn run_quiet(args: Vec<String>) {
-    let _ = crate::services::proc::command(BRIDGE)
-        .args(&args[1..])
-        .stdin(async_process::Stdio::null())
-        .stdout(async_process::Stdio::null())
-        .stderr(async_process::Stdio::null())
-        .status()
-        .await;
-}
+/// Card actions run one at a time, so a hung one holds the queue this long.
+const ACTION_TIMEOUT: Duration = Duration::from_secs(15);
 
 async fn listen(ctx: &Ctx, session: &mut Session, inbox: &(async_channel::Sender<Msg>, async_channel::Receiver<Msg>)) -> i32 {
     let child = crate::services::proc::command(BRIDGE)
@@ -614,12 +606,8 @@ fn end_pairing(ctx: &Ctx, session: &mut Session) {
     if !session.advertising_hci.is_empty() {
         let hci = std::mem::take(&mut session.advertising_hci);
         ctx.spawn(async move {
-            let _ = crate::services::proc::command("busctl")
-                .args(["call", "--system", "ancs4linux.Advertising", "/", "ancs4linux.Advertising", "DisableAdvertising", "s", &hci])
-                .stdout(async_process::Stdio::null())
-                .stderr(async_process::Stdio::null())
-                .status()
-                .await;
+            let argv = proc::argv(&["busctl", "call", "--system", "ancs4linux.Advertising", "/", "ancs4linux.Advertising", "DisableAdvertising", "s", &hci]);
+            proc::capture(&argv, Duration::from_secs(5)).await;
         });
     }
     if session.state.advertising
@@ -654,7 +642,7 @@ async fn run(ctx: Ctx) {
     });
     ctx.spawn(async move {
         while let Ok(argv) = card_queue().1.recv().await {
-            run_quiet(argv).await;
+            proc::capture(&argv, ACTION_TIMEOUT).await;
         }
     });
     let mut session = Session::default();

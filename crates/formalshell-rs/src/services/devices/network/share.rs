@@ -8,7 +8,6 @@ use std::time::Duration;
 
 use fs_devices::network::wifiqr::{self, Fields, PayloadError};
 use fs_network::{NetworkManager, SavedSecret, Security, WepKeyType};
-use futures_lite::AsyncWriteExt;
 
 use super::{INNER, Inner, publish};
 use crate::runtime::Ctx;
@@ -213,22 +212,12 @@ fn on_qr(ctx: &Ctx, read: Read) {
     drop(fields);
     // The payload reaches qrencode over stdin, never argv.
     ctx.spawn(async move {
-        let child = proc::command("qrencode")
-            .args(["--type", "ASCII", "--margin", "4", "--output", "-"])
-            .stdin(async_process::Stdio::piped())
-            .stdout(async_process::Stdio::piped())
-            .stderr(async_process::Stdio::null())
-            .spawn();
-        let Ok(mut child) = child else { return qr_fail("ERROR") };
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(payload.as_bytes()).await;
-        }
-        drop(payload);
-        let Ok(out) = child.output().await else { return qr_fail("ERROR") };
-        if !out.status.success() {
+        let argv = proc::argv(&["qrencode", "--type", "ASCII", "--margin", "4", "--output", "-"]);
+        let done = proc::Run::new(&argv, Duration::from_secs(5)).stdin(payload).run().await;
+        if done.code != 0 {
             return qr_fail("ERROR");
         }
-        let matrix = wifiqr::parse_matrix(&String::from_utf8_lossy(&out.stdout));
+        let matrix = wifiqr::parse_matrix(&done.stdout);
         if matrix.is_empty() {
             return qr_fail("ERROR");
         }

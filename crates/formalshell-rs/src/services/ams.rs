@@ -17,12 +17,15 @@ use futures_lite::{FutureExt, StreamExt};
 
 use super::config::{self, Settings};
 use crate::runtime::Ctx;
+use crate::services::proc;
 use crate::settings::IPHONE_ENABLE;
 use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(2);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
 const AMS: &str = "omarchy-iphone-ams";
+/// One media command written over the phone's GATT link.
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct State {
@@ -391,17 +394,9 @@ async fn run(ctx: Ctx) {
             Ev::Command(Some(cmd)) => {
                 let reply_tx = reply_tx.clone();
                 ctx.spawn(async move {
-                    let out = crate::services::proc::command(AMS)
-                        .args(["command", cmd.verb()])
-                        .stdin(async_process::Stdio::null())
-                        .stderr(async_process::Stdio::null())
-                        .kill_on_drop(true)
-                        .output()
-                        .await;
-                    if let Ok(out) = out {
-                        for line in String::from_utf8_lossy(&out.stdout).lines() {
-                            let _ = reply_tx.send(line.to_owned()).await;
-                        }
+                    let done = proc::capture(&proc::argv(&[AMS, "command", cmd.verb()]), COMMAND_TIMEOUT).await;
+                    for line in done.stdout.lines() {
+                        let _ = reply_tx.send(line.to_owned()).await;
                     }
                     COMMANDING.store(false, Ordering::Release);
                 });
