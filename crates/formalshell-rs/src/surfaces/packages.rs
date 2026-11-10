@@ -6,7 +6,8 @@ use fs_activity::{Item, State as Run};
 use fs_menu::node::{Kind as NodeKind, Node};
 use fs_menu::providers as p;
 
-use crate::services::packages::{NO_FSPEC, Verb};
+use crate::services::packages::NO_FSPEC;
+use fs_types::fspec::AppVerb;
 use crate::store::Store;
 use crate::ui::el::Ring;
 
@@ -66,16 +67,16 @@ pub fn op_item<'a>(store: &'a Store, op: &str) -> Option<&'a Item> {
 }
 
 /// fspec's phase as the row says it (`Downloading 40%`).
-fn phase_words(verb: Verb, item: &Item) -> String {
+fn phase_words(verb: AppVerb, item: &Item) -> String {
     let phase = match item.phase.as_deref().unwrap_or("") {
         "queued" => "Queued",
         "resolving" => "Resolving",
         "evaluating" | "planning" => "Preparing",
         "preparing" => "Downloading",
-        "committing" if verb == Verb::Uninstall => "Removing",
+        "committing" if verb == AppVerb::Uninstall => "Removing",
         "committing" => "Installing",
         "pushing" => "Saving",
-        _ if verb == Verb::Uninstall => "Removing",
+        _ if verb == AppVerb::Uninstall => "Removing",
         _ => "Installing",
     };
     match item.progress.fraction() {
@@ -97,7 +98,7 @@ pub fn live(store: &Store, id: &str) -> Option<Live> {
         Run::Running => Live { ring: Some(crate::surfaces::activity::ring(item)), value: phase_words(started.verb, item), installed: None },
         Run::Failed => Live { ring: None, value: item.summary.clone().unwrap_or_else(|| "Failed".into()), installed: None },
         Run::Succeeded | Run::Done => {
-            let installed = started.verb == Verb::Install;
+            let installed = started.verb == AppVerb::Install;
             Live { ring: None, value: if installed { "Installed" } else { "Removed" }.into(), installed: Some(installed) }
         }
     })

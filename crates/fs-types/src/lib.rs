@@ -1,7 +1,8 @@
-//! Geometry, units and the compositor snapshot shared by every crate and the
-//! shell.
+//! Geometry, units, the compositor snapshot and the fspec command lines
+//! shared by every crate and the shell.
 
 mod compositor;
+pub mod fspec;
 mod geometry;
 mod notification;
 mod units;

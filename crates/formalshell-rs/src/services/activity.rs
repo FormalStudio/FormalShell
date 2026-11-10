@@ -529,10 +529,10 @@ fn spawn(retry: Retry) {
         Some(dir) => {
             let mut argv: Vec<String> = ["sh", "-c", "cd \"$1\" && shift && exec \"$@\"", "sh"].map(String::from).to_vec();
             argv.push(dir);
-            argv.extend(retry.argv);
+            argv.extend(retry.command.argv());
             argv
         }
-        None => retry.argv,
+        None => retry.command.argv(),
     };
     compositor::spawn(&argv);
 }

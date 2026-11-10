@@ -3,6 +3,7 @@
 //! `{"op":"<id>"}` an `fspec app ... --detach` prints, and `fspec app
 //! owner --json`. The launcher never runs a package manager itself.
 
+use fs_types::fspec::Command;
 use serde::Deserialize;
 
 use super::id_part;
@@ -131,7 +132,7 @@ pub fn package_rows(found: &[Package]) -> Vec<Node> {
                 icon_source: p.icon.clone().unwrap_or_default(),
                 action: installable.then(|| Intent::PackageInstall(p.id.clone()).into()),
                 verb: installable.then(|| "Install".to_owned()),
-                alternate: runnable.then(|| Run::Spawn(["fspec", "run", "--detach", &p.id].map(String::from).to_vec())),
+                alternate: runnable.then(|| Run::Spawn(Command::Run(p.id.clone()).argv())),
                 alternate_label: runnable.then(|| "Run once".to_owned()),
                 checked: p.installed.then_some(Checked::Always),
                 keep_open: Some(true),

@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, VecDeque};
 use serde_json::{Value, json};
 
 use launcher::Entry;
+use fs_types::fspec::{AppVerb, Command};
 use fs_types::{Fraction, NotificationId};
 use progress::Progress;
 
@@ -253,7 +254,7 @@ impl<'a> FspecSource<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Retry {
     pub cwd: Option<String>,
-    pub argv: Vec<String>,
+    pub command: Command,
 }
 
 impl Retry {
@@ -263,12 +264,9 @@ impl Retry {
         }
         let arg = FspecSource::arg_of(&item.source, &item.kind)?;
         match item.kind.as_str() {
-            "run" => Some(Retry { cwd: None, argv: vec!["fspec".into(), "run".into(), "--detach".into(), arg.into()] }),
-            "update" => Some(Retry { cwd: Some(arg.into()), argv: vec!["fspec".into(), "update".into()] }),
-            "install" | "uninstall" => {
-                Some(Retry { cwd: None, argv: vec!["fspec".into(), "app".into(), item.kind.clone(), arg.into(), "--detach".into()] })
-            }
-            _ => None,
+            "run" => Some(Retry { cwd: None, command: Command::Run(arg.into()) }),
+            "update" => Some(Retry { cwd: Some(arg.into()), command: Command::Update }),
+            kind => Some(Retry { cwd: None, command: Command::App(AppVerb::parse(kind)?, arg.into()) }),
         }
     }
 }
@@ -813,8 +811,8 @@ mod tests {
         a.upsert(line("run", "fspec:run:jq"), 0);
         a.upsert(line("update", "fspec:update:/home/k/spec"), 0);
         a.upsert(line("apply", "fspec:apply:g815"), 0);
-        assert_eq!(a.retry("fspec:run:jq").unwrap().argv, ["fspec", "run", "--detach", "jq"]);
-        assert_eq!(a.retry("fspec:update:/home/k/spec"), Some(Retry { cwd: Some("/home/k/spec".into()), argv: vec!["fspec".into(), "update".into()] }));
+        assert_eq!(a.retry("fspec:run:jq").unwrap().command, Command::Run("jq".into()));
+        assert_eq!(a.retry("fspec:update:/home/k/spec"), Some(Retry { cwd: Some("/home/k/spec".into()), command: Command::Update }));
         assert_eq!(a.retry("fspec:apply:g815"), None);
     }
 

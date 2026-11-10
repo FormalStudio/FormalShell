@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 use async_channel::{Receiver, Sender};
 use async_io::Timer;
 use fs_activity::State as Run;
+use fs_types::fspec::{AppVerb, Command};
 use fs_menu::providers::{self as p, Info, Owner, Package};
 use futures_lite::{FutureExt, future};
 use serde_json::{Value, json};
@@ -38,26 +39,11 @@ const DEBOUNCE: Duration = Duration::from_millis(250);
 const RECHECK: Duration = Duration::from_secs(30 * 60);
 /// How long the card offers the last app change and its Undo.
 const LAST_SHOWN: Duration = Duration::from_secs(24 * 60 * 60);
-const SEARCH_LIMIT: &str = "30";
+const SEARCH_LIMIT: u32 = 30;
 /// What a search answers with no fspec to ask.
 pub const NO_FSPEC: &str = "Installing apps needs fspec";
 /// `check`'s answer on a machine whose fspec has no spec to read.
 pub const NO_SPEC: &str = "No spec on this machine";
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Verb {
-    Install,
-    Uninstall,
-}
-
-impl Verb {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Verb::Install => "install",
-            Verb::Uninstall => "uninstall",
-        }
-    }
-}
 
 /// One install or uninstall the shell started, by package id.
 #[derive(Clone, Debug, PartialEq)]
@@ -65,7 +51,7 @@ pub struct Started {
     pub id: String,
     /// The catalog's name for it, which the app it brings is matched on.
     pub name: String,
-    pub verb: Verb,
+    pub verb: AppVerb,
     /// The operation id once fspec printed one, `Ok(None)` while it starts,
     /// the reason it never started.
     pub op: Result<Option<String>, String>,
@@ -84,7 +70,7 @@ pub struct Software {
     pub behind: Option<Result<(u32, String), String>>,
     /// The newest app change on the upstream for this host, and the entry,
     /// while it is under [`LAST_SHOWN`] old.
-    pub last: Option<(Verb, String)>,
+    pub last: Option<(AppVerb, String)>,
     /// An Apply the card started that has not ended.
     pub applying: bool,
     /// The last Apply or Undo that did not go, and why.
@@ -128,7 +114,7 @@ pub enum Diff {
     Search(String, Result<Vec<Package>, String>),
     Started(Started),
     Owner(String, Owner),
-    Checked(Result<(u32, String), String>, Option<(Verb, String)>),
+    Checked(Result<(u32, String), String>, Option<(AppVerb, String)>),
     /// An Apply started or ended, and the change that did not go.
     Changing(bool, Option<(Change, String)>),
     Info(String, Result<Info, String>),
@@ -194,7 +180,7 @@ impl State {
                     if !s.name.is_empty() {
                         x.name = s.name;
                     }
-                    if s.verb == Verb::Install {
+                    if s.verb == AppVerb::Install {
                         x.before = s.before;
                         x.app = None;
                     }
@@ -297,10 +283,10 @@ fn searched(code: i32, stdout: &str, stderr: &str) -> Result<Vec<Package>, Strin
     }
 }
 
-fn spawn_app(ctx: &Ctx, verb: Verb, id: String, name: String, before: HashSet<String>) {
+fn spawn_app(ctx: &Ctx, verb: AppVerb, id: String, name: String, before: HashSet<String>) {
     let c = ctx.clone();
     ctx.spawn(async move {
-        let done = proc::capture_err(&proc::argv(&["fspec", "app", verb.as_str(), &id, "--detach"]), Duration::from_secs(300)).await;
+        let done = proc::capture_err(&Command::App(verb, id.clone()).argv(), Duration::from_secs(300)).await;
         let op = match (done.code, p::parse_op(&done.stdout)) {
             (0, Some(op)) => Ok(Some(op)),
             (0, None) => Err("fspec printed no operation".into()),
@@ -319,7 +305,7 @@ fn spawn_app(ctx: &Ctx, verb: Verb, id: String, name: String, before: HashSet<St
 fn spawn_info(ctx: &Ctx, id: String) {
     let c = ctx.clone();
     ctx.spawn(async move {
-        let done = proc::capture_err(&proc::argv(&["fspec", "info", &id, "--json"]), Duration::from_secs(20)).await;
+        let done = proc::capture_err(&Command::Info(id.clone()).argv(), Duration::from_secs(20)).await;
         let info = match done.code {
             0 => p::parse_info(&done.stdout).ok_or_else(|| "fspec printed no details".to_owned()),
             proc::MISSING => Err(NO_FSPEC.into()),
@@ -389,14 +375,10 @@ async fn git(dir: &Path, args: &[&str], timeout: Duration) -> proc::Done {
 }
 
 /// `feat(apps): install <name> on <host>`, fspec's commit for one change.
-fn app_change(subject: &str, host: &str) -> Option<(Verb, String)> {
+fn app_change(subject: &str, host: &str) -> Option<(AppVerb, String)> {
     let rest = subject.trim().strip_prefix("feat(apps): ")?;
     let (verb, rest) = rest.split_once(' ')?;
-    let verb = match verb {
-        "install" => Verb::Install,
-        "uninstall" => Verb::Uninstall,
-        _ => return None,
-    };
+    let verb = AppVerb::parse(verb)?;
     let name = rest.strip_suffix(&format!(" on {host}"))?;
     Some((verb, name.to_owned()))
 }
@@ -406,7 +388,7 @@ fn app_change(subject: &str, host: &str) -> Option<(Verb, String)> {
 /// machine's checkout never moves this one's HEAD, so HEAD says nothing of
 /// what runs here.
 async fn applied() -> Vec<String> {
-    let done = proc::capture(&proc::argv(&["fspec", "facts", "--json"]), Duration::from_secs(10)).await;
+    let done = proc::capture(&Command::Facts.argv(), Duration::from_secs(10)).await;
     if done.code != 0 {
         return Vec::new();
     }
@@ -429,7 +411,7 @@ async fn behind_of(dir: &Path, remote: &str, rev: &str) -> Option<u32> {
 /// fetch that fails leaves the last one's answer. Counted from the scope
 /// applied most recently, since an app change applies its own scope alone;
 /// from HEAD where no scope records a commit.
-async fn check() -> (Result<(u32, String), String>, Option<(Verb, String)>) {
+async fn check() -> (Result<(u32, String), String>, Option<(AppVerb, String)>) {
     let Some(dir) = spec_dir() else { return (Err(NO_SPEC.into()), None) };
     let _ = git(&dir, &["fetch", "--quiet"], Duration::from_secs(60)).await;
     let up = git(&dir, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], Duration::from_secs(10)).await;
@@ -461,7 +443,7 @@ async fn check() -> (Result<(u32, String), String>, Option<(Verb, String)>) {
 }
 
 /// One `%ct %s` line: the app change, while it is under [`LAST_SHOWN`] old.
-fn recent_change(line: &str, host: &str, now: u64) -> Option<(Verb, String)> {
+fn recent_change(line: &str, host: &str, now: u64) -> Option<(AppVerb, String)> {
     let (at, subject) = line.split_once(' ')?;
     let at = at.parse::<u64>().ok()?;
     if now.saturating_sub(at) >= LAST_SHOWN.as_secs() {
@@ -495,7 +477,7 @@ fn spawn_change(ctx: &Ctx, change: Change) {
                         if merged.code != 0 {
                             Some(p::failure(&merged.stderr, merged.code))
                         } else {
-                            let done = proc::capture_err(&proc::argv(&["fspec", "apply", "--rev", "HEAD"]), Duration::from_secs(2 * 60 * 60)).await;
+                            let done = proc::capture_err(&Command::ApplyHead.argv(), Duration::from_secs(2 * 60 * 60)).await;
                             match done.code {
                                 0 => None,
                                 proc::MISSING => Some(NO_FSPEC.into()),
@@ -506,7 +488,7 @@ fn spawn_change(ctx: &Ctx, change: Change) {
                 }
             }
             Change::Undo => {
-                let done = proc::capture_err(&proc::argv(&["fspec", "app", "undo", "--detach"]), Duration::from_secs(60)).await;
+                let done = proc::capture_err(&Command::Undo.argv(), Duration::from_secs(60)).await;
                 match (done.code, p::parse_op(&done.stdout)) {
                     (0, Some(_)) => None,
                     (0, None) => Some("fspec printed no operation".into()),
@@ -598,7 +580,7 @@ pub fn land(store: &mut Store) -> bool {
         now.iter().filter_map(|id| store.menu.nodes().get(&format!("apps.{id}")).map(|n| (id.clone(), n.label.clone()))).collect();
     let mut claimed: HashSet<String> = store.packages.started.iter().filter_map(|s| s.app.clone()).collect();
     let mut picks = Vec::new();
-    for s in store.packages.started.iter_mut().filter(|s| s.verb == Verb::Install && s.app.is_none()) {
+    for s in store.packages.started.iter_mut().filter(|s| s.verb == AppVerb::Install && s.app.is_none()) {
         let Ok(Some(op)) = &s.op else { continue };
         if !store.packages.landed.contains(&fs_activity::fspec::item_id(op)) {
             continue;
@@ -641,7 +623,7 @@ fn brought_by(desktop: &str, label: &str, id: &str, name: &str) -> bool {
 /// The app an Activity install row's Open launches, once it landed.
 pub fn landed_app<'a>(store: &'a Store, source: &str) -> Option<&'a str> {
     let id = fs_activity::FspecSource::arg_of(source, "install")?;
-    store.packages.started(id).filter(|s| s.verb == Verb::Install).and_then(|s| s.app.as_deref())
+    store.packages.started(id).filter(|s| s.verb == AppVerb::Install).and_then(|s| s.app.as_deref())
 }
 
 pub fn start(ctx: &Ctx) {
@@ -703,7 +685,7 @@ async fn run(ctx: Ctx) {
             Wake::Due => {
                 due = None;
                 let Some(q) = pending.take() else { continue };
-                let argv = proc::argv(&["fspec", "search", "--json", "--offline", "--limit", SEARCH_LIMIT, &q]);
+                let argv = Command::Search { query: q.clone(), limit: SEARCH_LIMIT }.argv();
                 searching = Some(Box::pin(async move {
                     let done = proc::capture_err(&argv, Duration::from_secs(30)).await;
                     (q, done)
@@ -714,14 +696,14 @@ async fn run(ctx: Ctx) {
                 ctx.publish(store::Diff::Packages(Diff::Search(q, searched(done.code, &done.stdout, &done.stderr))));
             }
             Wake::Cmd(Cmd::Install(id, name, before)) => {
-                let started = Started { id: id.clone(), name: name.clone(), verb: Verb::Install, op: Ok(None), before: before.clone(), app: None };
+                let started = Started { id: id.clone(), name: name.clone(), verb: AppVerb::Install, op: Ok(None), before: before.clone(), app: None };
                 ctx.publish(store::Diff::Packages(Diff::Started(started)));
-                spawn_app(&ctx, Verb::Install, id, name, before);
+                spawn_app(&ctx, AppVerb::Install, id, name, before);
             }
             Wake::Cmd(Cmd::Uninstall(id)) => {
-                let started = Started { id: id.clone(), name: String::new(), verb: Verb::Uninstall, op: Ok(None), before: HashSet::new(), app: None };
+                let started = Started { id: id.clone(), name: String::new(), verb: AppVerb::Uninstall, op: Ok(None), before: HashSet::new(), app: None };
                 ctx.publish(store::Diff::Packages(Diff::Started(started)));
-                spawn_app(&ctx, Verb::Uninstall, id, String::new(), HashSet::new());
+                spawn_app(&ctx, AppVerb::Uninstall, id, String::new(), HashSet::new());
             }
             Wake::Cmd(Cmd::Owner(desktop)) => {
                 if !asked.insert(desktop.clone()) {
@@ -729,7 +711,7 @@ async fn run(ctx: Ctx) {
                 }
                 let c = ctx.clone();
                 ctx.spawn(async move {
-                    let done = proc::capture(&proc::argv(&["fspec", "app", "owner", &desktop, "--json"]), Duration::from_secs(20)).await;
+                    let done = proc::capture(&Command::Owner(desktop.clone()).argv(), Duration::from_secs(20)).await;
                     let owner = if done.code == 0 { Owner::parse(&done.stdout) } else { Owner::default() };
                     c.publish(store::Diff::Packages(Diff::Owner(desktop, owner)));
                 });
@@ -767,8 +749,8 @@ mod tests {
 
     #[test]
     fn reads_fspecs_app_commits_for_this_host() {
-        assert_eq!(app_change("feat(apps): install org.mozilla.firefox on g815", "g815"), Some((Verb::Install, "org.mozilla.firefox".into())));
-        assert_eq!(app_change("feat(apps): uninstall btop on e1504g", "e1504g"), Some((Verb::Uninstall, "btop".into())));
+        assert_eq!(app_change("feat(apps): install org.mozilla.firefox on g815", "g815"), Some((AppVerb::Install, "org.mozilla.firefox".into())));
+        assert_eq!(app_change("feat(apps): uninstall btop on e1504g", "e1504g"), Some((AppVerb::Uninstall, "btop".into())));
         assert_eq!(app_change("feat(apps): install btop on e1504g", "g815"), None);
         assert_eq!(app_change("feat(apps): pin btop on g815", "g815"), None);
     }
@@ -776,7 +758,7 @@ mod tests {
     #[test]
     fn an_app_change_shows_for_a_day() {
         let line = "1000000 feat(apps): uninstall figlet on g815";
-        assert_eq!(recent_change(line, "g815", 1000000 + 3600), Some((Verb::Uninstall, "figlet".into())));
+        assert_eq!(recent_change(line, "g815", 1000000 + 3600), Some((AppVerb::Uninstall, "figlet".into())));
         assert_eq!(recent_change(line, "g815", 1000000 + 24 * 3600), None);
         assert_eq!(recent_change("feat(apps): uninstall figlet on g815", "g815", 1000000), None);
     }

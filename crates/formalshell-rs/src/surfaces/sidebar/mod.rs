@@ -800,7 +800,8 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
 /// The packages service checks the checkout while the column is open
 /// (`wayland/sidebar.rs`).
 fn software_rows(theme: &Theme, store: &Store) -> Vec<El> {
-    use crate::services::packages::{Change, NO_SPEC, Verb};
+    use crate::services::packages::{Change, NO_SPEC};
+    use fs_types::fspec::AppVerb;
     use crate::ui::Variant;
     use fs_activity::{Origin, State as Run};
     let s = &theme.space;
@@ -837,8 +838,8 @@ fn software_rows(theme: &Theme, store: &Store) -> Vec<El> {
     if let Some((verb, name)) = &sw.last {
         let app = store.menu.nodes().get(&format!("apps.{name}")).map_or(name.as_str(), |n| n.label.as_str());
         let (icon, words) = match verb {
-            Verb::Install => ("package-plus", "Installed"),
-            Verb::Uninstall => ("package-minus", "Removed"),
+            AppVerb::Install => ("package-plus", "Installed"),
+            AppVerb::Uninstall => ("package-minus", "Removed"),
         };
         let undoing = store.activity.activity.live().iter().any(|i| i.origin == Origin::Fspec && i.kind == "undo" && i.state == Run::Running);
         let undo = (!undoing).then(|| button("undo-2", "Undo", Intent::Software(Change::Undo)));
