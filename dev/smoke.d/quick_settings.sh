@@ -101,7 +101,7 @@ press() {
 }
 sha256sum "$quick_settings_settings" | cut -d' ' -f1 > "\$d/sha-before"
 $ipc call panel open quicksettings > "\$d/open.txt" 2>&1
-sleep 1.5
+until_settled
 $ipc call panel state > "\$d/panel-open.txt" 2>&1
 $ipc call debug dump > "\$d/dump-open.json" 2>&1
 shot open
@@ -137,13 +137,14 @@ sleep 1
 $ipc call panel state > "\$d/panel-closed.txt" 2>&1
 status quicksettings "\$d/status-closed.json"
 
-# The extras: their cells start as the card opens, so the weather reading
-# gets a few seconds to land.
+# The extras: their cells start as the card opens, so the module's first
+# line lands after it.
 $ipc call bar chevron status > "\$d/chevron-status.json" 2>&1
 $ipc call tray status > "\$d/tray-status.json" 2>&1
 $ipc call notifications status > "\$d/notifications-status.json" 2>&1
 $ipc call panel open quicksettings > /dev/null 2>&1
-sleep 4
+until_jq 15 "\$d/extras-ready.json" '[.rows[] | select(.id == "custom:qsmod" and .subtitle == "42 units")] | length == 1' call quicksettings status
+until_settled
 shot extras
 centre=\$("$jq_bin" -r '.rows[] | select(.id == "weather") | .rect | "\\(.x + (.width / 2 | floor)) \\(.y + (.height / 2 | floor))"' "\$d/status-shot-extras.json")
 echo "\$centre" > "\$d/weather-centre.txt"
@@ -171,7 +172,7 @@ echo \$! > "\$d/loopback.pid"
 sleep 1.5
 pactl set-default-source qs_mic
 $ipc call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 # The sinks reach the store off PipeWire's own events, a beat behind pactl.
 for i in \$(seq 1 20); do
   $ipc call quicksettings status 2>/dev/null | "$jq_bin" -e '.rows[] | select(.id == "volume") | .arrow != null' > /dev/null 2>&1 && break
@@ -195,7 +196,7 @@ status quicksettings "\$d/status-volume-stepped.json"
 sleep 1.2
 $ipc call debug motionScale 1000 > /dev/null 2>&1
 $ipc call panel open quicksettings > /dev/null 2>&1
-sleep 5
+until_settled
 walk power walk-power.txt
 "$wtype_bin" -k Down
 sleep 0.8
@@ -232,7 +233,7 @@ $ipc call panel state > "\$d/panel-closed-menu.txt" 2>&1
 $ipc call debug motionScale 100 > /dev/null 2>&1
 
 $ipc call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 walk power walk-power-menu.txt
 press 1.5
 status quicksettings "\$d/status-power-open.json"
@@ -248,14 +249,11 @@ sleep 1
 
 # Background: a real recording and a reminder as its two tasks.
 $ipc call record start screen desktop > "\$d/record-start.txt" 2>&1
-for i in \$(seq 1 20); do
-  $ipc call record status 2>/dev/null | grep -qF '"active":true' && break
-  sleep 0.5
-done
+until_jq 10 "\$d/record-started.json" '.active == true' call record status
 $ipc call reminder set 10m "Quick settings reminder" > "\$d/reminder-set.txt" 2>&1
 sleep 1
 $ipc call panel open quicksettings > /dev/null 2>&1
-sleep 1.5
+until_settled
 status quicksettings "\$d/status-bg-two.json"
 walk background walk-background.txt
 press 1.5
@@ -263,10 +261,7 @@ status quicksettings "\$d/status-bg-open.json"
 shot background-open
 walk m:background:recording walk-bg-recording.txt
 press 1.5
-for i in \$(seq 1 30); do
-  $ipc call record status 2>/dev/null | grep -qF '"active":false' && break
-  sleep 0.5
-done
+until_jq 15 "\$d/record-stopped.json" '.active == false' call record status
 $ipc call record status > "\$d/record-after.json" 2>&1
 sleep 0.5
 status quicksettings "\$d/status-bg-stopped.json"
