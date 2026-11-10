@@ -25,6 +25,7 @@
 //!   held here by its path.
 
 pub mod boxes;
+pub mod confirm;
 mod draw;
 pub use draw::{elided, icon, paint, resolve, ring_strokes, ring_turn, shape};
 pub mod el;

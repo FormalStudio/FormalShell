@@ -218,7 +218,7 @@ pub fn rank_with<'a>(
         *decl_index += 1;
         let parent_open = node.parent_id.as_ref().is_some_and(|p| w.open.contains(p));
         if !(node.local_only && !parent_open) {
-            let id = subject_id(node);
+            let id = subject_id(node).to_string();
             let abbrev = w.boost.abbrev.filter(|_| node.kind != Kind::Note);
             let leads = abbrev.and_then(|l| l.lead.as_ref()).filter(|(lead, _)| *lead == id).map(|(_, source)| *source);
             let tier = match leads {

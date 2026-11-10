@@ -6,6 +6,8 @@ use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
 use fs_menu::actions::IpcCall;
+use fs_menu::intent::Intent;
+use fs_menu::node::Provider;
 use fs_types::WindowId;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::dispatch2::Dispatch2;
@@ -40,39 +42,6 @@ impl Dispatch2<WlCallback, App> for AfterUnmap {
 
 /// Targets whose calls grab the screen.
 const SCREEN_READERS: [&str; 3] = ["screenshot", "capture", "record"];
-
-/// The `@ipc:` calls the App answers itself in [`App::run_call`], ahead of
-/// the IPC targets: `(target, function, arguments)`. `reminder.set` with no
-/// arguments is the launcher's input step; with two it is the target's.
-pub const SHELL_VERBS: &[(&str, &str, usize)] = &[
-    ("wifi", "enable", 0),
-    ("wifi", "activate", 1),
-    ("wifi", "forget", 1),
-    ("wifi", "reveal", 1),
-    ("bluetooth", "power", 1),
-    ("bluetooth", "toggle", 1),
-    ("bluetooth", "forget", 1),
-    ("audio", "sink", 1),
-    ("audio", "source", 1),
-    ("radio", "stop", 0),
-    ("radio", "fav", 1),
-    ("radio", "play", 1),
-    ("radio", "favorite", 1),
-    ("radio", "unfavorite", 1),
-    ("localsend", "send", 2),
-    ("nix", "run", 1),
-    ("clipssh", "image", 2),
-    ("clipssh", "send", 1),
-    ("app", "gpu", 1),
-    ("package", "install", 1),
-    ("package", "uninstall", 1),
-    ("power", "suspend", 0),
-    ("power", "reboot", 0),
-    ("power", "poweroff", 0),
-    ("theme", "toggleMode", 0),
-    ("lights", "colorInput", 0),
-    ("reminder", "set", 0),
-];
 
 /// The info slices the monitor view samples while it is the level.
 const INFO: &[Topic] = &[
@@ -398,7 +367,13 @@ impl App {
         match out {
             Out::None => {}
             Out::Close => self.hide_launcher(),
-            Out::Internal(call) => {
+            Out::Intent(intent) => {
+                if !self.launcher.open {
+                    self.hide_launcher();
+                }
+                self.run_intent(&intent);
+            }
+            Out::Call(call) => {
                 if self.launcher.open {
                     return self.run_call(&call);
                 }
@@ -412,35 +387,82 @@ impl App {
         }
     }
 
-    /// A configured `@ipc:` call: the App's own verbs ([`SHELL_VERBS`]),
-    /// else the IPC target it names, answered in process. A launcher row
-    /// reaches this past its own verbs, a hot corner directly.
+    /// A configured `@ipc:` call, answered in process.
     pub(super) fn run_call(&mut self, call: &IpcCall) {
+        let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
+        self.call_self(&call.target, &call.function, &args);
+    }
+
+    /// A launcher verb the App answers. A row's own ([`Intent::row_only`])
+    /// never gets here from a row; from anywhere else it is the IPC call
+    /// it reads as.
+    pub(super) fn run_intent(&mut self, intent: &Intent) {
+        use crate::services::devices::{audio, bluetooth, network as net};
+        use crate::services::radio::{self, Cmd};
         use crate::services::{clipssh, packages, power};
-        if !crate::surfaces::launcher::answers(SHELL_VERBS, call) {
-            let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
-            return self.call_self(&call.target, &call.function, &args);
-        }
-        let arg = call.at(0).to_owned();
-        match (call.target.as_str(), call.function.as_str()) {
-            (group @ ("wifi" | "bluetooth" | "audio" | "radio"), verb) => self.device_action(group, verb, &arg),
-            ("localsend", "send") => self.localsend_entry(&arg, call.at(1)),
-            ("nix", "run") => self.console_run_once(&format!("nix run nixpkgs#{arg}; read")),
-            ("clipssh", "image") => self.clipssh_image(&arg, call.at(1)),
-            ("clipssh", "send") => clipssh::command(clipssh::Cmd::Send(arg)),
-            ("app", "gpu") => self.call_self("monitor", "launch", &[&arg, ""]),
-            ("package", "install") => crate::surfaces::packages::install(&self.store, &arg),
-            ("package", "uninstall") => packages::send(packages::Cmd::Uninstall(arg)),
-            ("power", verb) => power::Action::parse(verb).into_iter().for_each(power::request),
-            ("theme", "toggleMode") => {
+        match intent {
+            Intent::WifiEnable => net::send(net::Cmd::Wifi(true)),
+            Intent::WifiForget(ssid) => net::send(net::Cmd::Forget(ssid.clone())),
+            Intent::WifiReveal(ssid) => {
+                self.wifi_reveals += 1;
+                let request = self.wifi_reveals;
+                self.wifi_reveal = Some((request, self.launcher.sessions));
+                net::send(net::Cmd::Reveal(ssid.clone(), request));
+            }
+            Intent::WifiActivate(ssid) => self.wifi_activate(ssid),
+            Intent::BluetoothPower(on) => {
+                if on == "on" {
+                    bluetooth::send(bluetooth::Cmd::Power(true));
+                }
+            }
+            Intent::BluetoothForget(address) => {
+                if let Some(address) = fs_types::BtAddress::parse(address) {
+                    bluetooth::send(bluetooth::Cmd::Run(address, bluetooth::ActionKind::Forget));
+                }
+            }
+            Intent::BluetoothToggle(address) => {
+                let Some(address) = fs_types::BtAddress::parse(address) else { return };
+                let Some(d) = self.store.bluetooth.devices.iter().find(|d| d.address == address) else { return };
+                let kind = if d.connected { bluetooth::ActionKind::Disconnect } else { bluetooth::ActionKind::Connect };
+                bluetooth::send(bluetooth::Cmd::Run(address, kind));
+            }
+            Intent::AudioSink(name) => audio::send(audio::Cmd::Default { source: false, name: name.clone() }),
+            Intent::AudioSource(name) => audio::send(audio::Cmd::Default { source: true, name: name.clone() }),
+            Intent::RadioStop => radio::send(Cmd::Stop),
+            Intent::RadioFav(uuid) | Intent::RadioPlay(uuid) | Intent::RadioFavorite(uuid) | Intent::RadioUnfavorite(uuid) => {
+                let r = &self.store.media.radio;
+                let results = r.search.as_ref().and_then(|(_, f)| f.clone()).unwrap_or_default();
+                let Some(s) = r.favorites.iter().chain(results.iter()).find(|s| s.uuid == *uuid).cloned() else { return };
+                match intent {
+                    Intent::RadioFav(_) => radio::send(Cmd::PlayFromSaved(s, r.favorites.clone())),
+                    Intent::RadioPlay(_) => radio::send(Cmd::PlayFromSaved(s, results)),
+                    _ => {
+                        let unfavorite = matches!(intent, Intent::RadioUnfavorite(_));
+                        if r.favorites.iter().any(|f| f.uuid == s.uuid) == unfavorite {
+                            radio::send(Cmd::ToggleFavorite(s));
+                        }
+                    }
+                }
+            }
+            Intent::LocalsendSend(peer, id) => self.localsend_entry(peer, id),
+            Intent::NixRun(package) => self.console_run_once(&format!("nix run nixpkgs#{package}; read")),
+            Intent::ClipsshImage(id, path) => self.clipssh_image(id, path),
+            Intent::ClipsshSend(alias) => clipssh::command(clipssh::Cmd::Send(alias.clone())),
+            Intent::AppGpu(id) => self.call_self("monitor", "launch", &[id, ""]),
+            Intent::PackageInstall(id) => crate::surfaces::packages::install(&self.store, id),
+            Intent::PackageUninstall(id) => packages::send(packages::Cmd::Uninstall(id.clone())),
+            Intent::PowerSuspend => power::request(power::Action::Suspend),
+            Intent::PowerReboot => power::request(power::Action::Reboot),
+            Intent::PowerOff => power::request(power::Action::PowerOff),
+            Intent::ThemeToggleMode => {
                 let key = crate::services::theme::mode_key(self.store.config.settings());
                 if let Ok(mode) = crate::services::theme::request_mode("toggle", &self.store.state.data.mode, key) {
                     crate::services::state::set(vec![crate::services::state::Field::Mode(mode)]);
                 }
             }
-            ("lights", "colorInput") => self.menu_input_as("Hex color (ff8800)", LIGHTS_COLOR, false),
-            ("reminder", "set") => self.menu_input_as("Reminder (25m coffee)", REMINDER_SET, false),
-            _ => eprintln!("Menu: {call} is in SHELL_VERBS with no arm"),
+            Intent::LightsColorInput => self.menu_input_as("Hex color (ff8800)", LIGHTS_COLOR, false),
+            Intent::ReminderSet => self.menu_input_as("Reminder (25m coffee)", REMINDER_SET, false),
+            row => self.run_call(&row.call()),
         }
     }
 
@@ -511,78 +533,31 @@ impl App {
         crate::surfaces::changed(self, crate::store::Topic::Notifications);
     }
 
-    /// The `wifi.`, `bluetooth.`, `audio.` and `radio.` actions.
-    fn device_action(&mut self, group: &str, verb: &str, value: &str) {
-        use crate::services::devices::{bluetooth, network as net};
-        use crate::services::radio::{self, Cmd};
-        let value = value.to_owned();
-        match (group, verb) {
-            ("wifi", "enable") => net::send(net::Cmd::Wifi(true)),
-            ("wifi", "forget") => net::send(net::Cmd::Forget(value)),
-            ("wifi", "reveal") => {
-                self.wifi_reveals += 1;
-                let request = self.wifi_reveals;
-                self.wifi_reveal = Some((request, self.launcher.sessions));
-                net::send(net::Cmd::Reveal(value, request));
-            }
-            ("wifi", "activate") => {
-                let n = &self.store.network;
-                let Some(row) = n.row(&value).cloned() else { return };
-                if n.action.is_some() {
-                    return;
-                }
-                if row.connected {
-                    return net::send(net::Cmd::Disconnect(value));
-                }
-                // A secured network nobody knows, or one whose last attempt
-                // failed on the secret, asks for it: a wrong password is
-                // retyped, never retried.
-                let retype = n.failure.as_ref().is_some_and(|f| f.ssid == value && f.secret);
-                if retype || (row.secured && !row.known) {
-                    let (prompt, token) = if row.enterprise {
-                        (format!("Identity for {value}"), WIFI_IDENTITY)
-                    } else {
-                        (format!("Password for {value}"), WIFI_PASSWORD)
-                    };
-                    self.wifi_pending = Some((value, String::new()));
-                    self.menu_input_as(&prompt, token, token == WIFI_PASSWORD);
-                } else {
-                    net::send(net::Cmd::Connect(value, net::Secret::Saved));
-                }
-            }
-            ("bluetooth", "power") if value == "on" => bluetooth::send(bluetooth::Cmd::Power(true)),
-            ("bluetooth", "forget") => {
-                if let Some(address) = fs_types::BtAddress::parse(&value) {
-                    bluetooth::send(bluetooth::Cmd::Run(address, bluetooth::ActionKind::Forget));
-                }
-            }
-            ("bluetooth", "toggle") => {
-                let Some(address) = fs_types::BtAddress::parse(&value) else { return };
-                let Some(d) = self.store.bluetooth.devices.iter().find(|d| d.address == address) else { return };
-                let kind = if d.connected { bluetooth::ActionKind::Disconnect } else { bluetooth::ActionKind::Connect };
-                bluetooth::send(bluetooth::Cmd::Run(address, kind));
-            }
-            ("audio", "sink" | "source") => {
-                use crate::services::devices::audio;
-                audio::send(audio::Cmd::Default { source: verb == "source", name: value });
-            }
-            ("radio", _) => {
-                let r = &self.store.media.radio;
-                let results = r.search.as_ref().and_then(|(_, f)| f.clone()).unwrap_or_default();
-                let station = r.favorites.iter().chain(results.iter()).find(|s| s.uuid == value).cloned();
-                match (verb, station) {
-                    ("stop", _) => radio::send(Cmd::Stop),
-                    ("fav", Some(s)) => radio::send(Cmd::PlayFromSaved(s, r.favorites.clone())),
-                    ("play", Some(s)) => radio::send(Cmd::PlayFromSaved(s, results)),
-                    ("favorite" | "unfavorite", Some(s)) => {
-                        if r.favorites.iter().any(|f| f.uuid == s.uuid) == (verb == "unfavorite") {
-                            radio::send(Cmd::ToggleFavorite(s));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => eprintln!("Menu: unknown internal action: {group}.{verb}"),
+    /// A Wi-Fi row's Enter: connected, it disconnects; a secured network
+    /// nobody knows, or one whose last attempt failed on the secret, asks
+    /// for it, since a wrong password is retyped, never retried.
+    fn wifi_activate(&mut self, ssid: &str) {
+        use crate::services::devices::network as net;
+        let n = &self.store.network;
+        let Some(row) = n.row(ssid).cloned() else { return };
+        if n.action.is_some() {
+            return;
+        }
+        let ssid = ssid.to_owned();
+        if row.connected {
+            return net::send(net::Cmd::Disconnect(ssid));
+        }
+        let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
+        if retype || (row.secured && !row.known) {
+            let (prompt, token) = if row.enterprise {
+                (format!("Identity for {ssid}"), WIFI_IDENTITY)
+            } else {
+                (format!("Password for {ssid}"), WIFI_PASSWORD)
+            };
+            self.wifi_pending = Some((ssid, String::new()));
+            self.menu_input_as(&prompt, token, token == WIFI_PASSWORD);
+        } else {
+            net::send(net::Cmd::Connect(ssid, net::Secret::Saved));
         }
     }
 
@@ -686,8 +661,8 @@ impl App {
         let paste = crate::settings::CLIPBOARD_PASTE.get(&self.store.config);
         let rows = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Copy, paste);
         let shared = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Share, paste);
-        self.apply(Diff::Menu(index::Diff::Source("clipboard".into(), rows)));
-        self.apply(Diff::Menu(index::Diff::Source("shareHistory".into(), shared)));
+        self.apply(Diff::Menu(index::Diff::Source(Provider::Clipboard, rows)));
+        self.apply(Diff::Menu(index::Diff::Source(Provider::ShareHistory, shared)));
     }
 
     /// The picker grid's pictures, asked for once the listing's thumbnails
@@ -886,7 +861,7 @@ impl App {
     /// The clipssh route's rows off the saved aliases.
     pub(super) fn launcher_clipssh(&mut self) {
         let rows = fs_menu::providers::clipssh_rows(&self.store.clipssh.aliases);
-        self.apply(Diff::Menu(index::Diff::Source("clipssh".into(), rows)));
+        self.apply(Diff::Menu(index::Diff::Source(Provider::Clipssh, rows)));
     }
 
     /// The device routes' rows, again from the store.
@@ -895,7 +870,7 @@ impl App {
             self.wifi_revealed(r);
         }
         for (name, rows) in crate::surfaces::launcher::device_sources(&self.store) {
-            self.apply(Diff::Menu(index::Diff::Source(name.into(), rows)));
+            self.apply(Diff::Menu(index::Diff::Source(name, rows)));
         }
         if self.launcher.open {
             self.launcher_store_changed();
@@ -1333,7 +1308,7 @@ impl App {
             .map(|i| fs_menu::providers::TrayItem { id: i.id.clone(), title: i.title.clone(), tooltip_title: i.tooltip.clone() })
             .collect();
         let rows = fs_menu::providers::tray_provider(&items);
-        self.apply(Diff::Menu(index::Diff::Source("tray".into(), rows)));
+        self.apply(Diff::Menu(index::Diff::Source(Provider::Tray, rows)));
     }
 
     /// What every store change the launcher's index reads asks of it.

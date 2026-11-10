@@ -31,7 +31,14 @@ pub fn parse_emoji_dataset(text: &str) -> Vec<EmojiEntry> {
 /// activation, so `state.json` stays readable ("emoji.<char>") and both sides
 /// spell it once.
 pub fn emoji_usage_id(entry: &EmojiEntry) -> String {
-    format!("emoji.{}", entry.ch)
+    format!("{EMOJI_ROW}{}", entry.ch)
+}
+
+const EMOJI_ROW: &str = "emoji.";
+
+/// The emoji an emoji row carries, off its id.
+pub fn emoji_of(node: &Node) -> Option<&str> {
+    node.id.strip_prefix(EMOJI_ROW)
 }
 
 struct Indexed {

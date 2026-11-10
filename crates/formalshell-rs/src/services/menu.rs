@@ -19,7 +19,7 @@ use fs_menu::frecency::Record;
 use fs_types::Bind;
 use fs_menu::model::{build_tree, entries_from_value, parse_jsonc};
 use fs_menu::actions::Run;
-use fs_menu::node::{DesktopEntry, Entries, Entry, Kind, Node, Tree};
+use fs_menu::node::{DesktopEntry, Entries, Entry, Kind, Node, Provider, Tree};
 use fs_menu::providers::{self, CustomPowerButton, Listed, Peeked};
 use serde_json::Value;
 
@@ -50,7 +50,7 @@ pub type Icon = (String, Option<Bitmap>, Option<Bitmap>);
 #[derive(Default)]
 pub struct State {
     base: Tree,
-    sources: HashMap<String, Vec<Node>>,
+    sources: HashMap<Provider, Vec<Node>>,
     /// The base with every source attached under its provider node.
     pub tree: Tree,
     /// `when` results by node id; absent is unresolved, which hides.
@@ -66,9 +66,7 @@ pub struct State {
     /// failed.
     pub binds: Option<Result<Arc<[Bind]>, ()>>,
     pub emoji: Option<Arc<fs_menu::providers::EmojiIndex>>,
-    /// Each desktop entry's `Exec` argv by entry id, and each of its
-    /// `[Desktop Action]`s' by [`action_key`].
-    pub exec: HashMap<String, Vec<String>>,
+    pub exec: Exec,
     /// The folder → last listed, by path: its sorted entries, or why it
     /// could not be read.
     pub folder: Option<(String, Listing)>,
@@ -84,12 +82,12 @@ pub type Listing = Result<Arc<[Listed]>, String>;
 
 pub enum Diff {
     Base(Tree),
-    Source(String, Vec<Node>),
+    Source(Provider, Vec<Node>),
     Cond { id: String, when: bool, ok: bool },
     Icons(Vec<Icon>),
     Binds(Result<Arc<[Bind]>, ()>),
     Emoji(Arc<fs_menu::providers::EmojiIndex>),
-    Exec(HashMap<String, Vec<String>>),
+    Exec(Exec),
     Folder(String, Listing),
     Peek(String, Peeked),
     Files(HashMap<String, Option<bool>>),
@@ -149,7 +147,7 @@ impl State {
     /// Providers.applyProviders over the base, one source at a time.
     fn assemble(&mut self) {
         let mut tree = self.base.clone();
-        let targets: Vec<(String, String)> = tree
+        let targets: Vec<(String, Provider)> = tree
             .nodes
             .values()
             .filter(|n| n.kind == Kind::Provider)
@@ -178,7 +176,7 @@ fn check_calls<'a>(nodes: impl Iterator<Item = &'a mut Node>) -> Vec<String> {
     let mut refused = Vec::new();
     let mut check = |id: &str, slot: &mut Option<Run>| {
         let Some(Run::Ipc(call)) = slot.as_ref() else { return true };
-        match crate::ipc::check(call, true) {
+        match crate::ipc::check(call) {
             Ok(fit) => {
                 *slot = Some(Run::Ipc(fit));
                 true
@@ -332,7 +330,7 @@ async fn run(ctx: Ctx) {
                 let done = ctx.pool().run(move || scan.lock().unwrap().apps(&launches, rescan.swap(false, Ordering::Relaxed), scale)).await;
                 if let Some((rows, icons, exec)) = done {
                     ctx.publish(store::Diff::Menu(Diff::Exec(exec)));
-                    ctx.publish(store::Diff::Menu(Diff::Source("apps".into(), rows)));
+                    ctx.publish(store::Diff::Menu(Diff::Source(Provider::Apps, rows)));
                     if !icons.is_empty() {
                         ctx.publish(store::Diff::Menu(Diff::Icons(icons)));
                     }
@@ -375,7 +373,7 @@ async fn run(ctx: Ctx) {
             }
             Ask::Files => {
                 if let Some(rows) = ctx.pool().run(files).await {
-                    ctx.publish(store::Diff::Menu(Diff::Source(providers::FILES_ROUTE.into(), rows)));
+                    ctx.publish(store::Diff::Menu(Diff::Source(Provider::Files, rows)));
                 }
             }
             // The pane's asks answer the row under the cursor, so they never
@@ -456,7 +454,7 @@ fn base_over(inputs: &BaseInputs, user: &Entries) -> Tree {
         merged.insert(k, v);
     }
     for (route, name) in &inputs.plugin_modes {
-        let entry = Entry { provider: Some(route.clone()), ..Entry::labelled(name).with_icon("puzzle") };
+        let entry = Entry { provider: Some(Provider::Plugin(route.clone())), ..Entry::labelled(name).with_icon("puzzle") };
         merged.insert(route.clone(), entry);
     }
     let mut tree = build_tree(&merged, user);
@@ -574,7 +572,7 @@ struct Scan {
 }
 
 impl Scan {
-    fn apps(&mut self, launches: &[Record], rescan: bool, scale: f64) -> (Vec<Node>, Vec<Icon>, HashMap<String, Vec<String>>) {
+    fn apps(&mut self, launches: &[Record], rescan: bool, scale: f64) -> (Vec<Node>, Vec<Icon>, Exec) {
         let dirs = appicon::applications_dirs();
         let stamp: Vec<Option<SystemTime>> = dirs.iter().map(|d| std::fs::metadata(d).and_then(|m| m.modified()).ok()).collect();
         if rescan || !self.scanned || stamp != self.stamp {
@@ -615,11 +613,11 @@ impl Scan {
         let rows = providers::apps_provider(&entries, Some(&|n: &str| (cell.borrow_mut())(n)), launches, None);
         let paths: Vec<String> = rows.iter().map(|r| r.icon_source.clone()).collect();
         let fresh = self.icons(&paths, scale);
-        let mut exec: HashMap<String, Vec<String>> = HashMap::new();
+        let mut exec = Exec::default();
         for l in &self.entries {
-            exec.insert(l.entry.id.clone(), l.entry.command.clone());
+            exec.apps.insert(l.entry.id.clone(), l.entry.command.clone());
             for a in &l.actions {
-                exec.insert(action_key(&l.entry.id, &a.key), a.command.clone());
+                exec.actions.insert((l.entry.id.clone(), a.key.clone()), a.command.clone());
             }
         }
         (rows, fresh, exec)
@@ -641,26 +639,42 @@ impl Scan {
     }
 }
 
-/// A desktop action's key in [`State::exec`].
-pub fn action_key(id: &str, action: &str) -> String {
-    format!("{id}\u{1}{action}")
+/// Each desktop entry's `Exec` argv by entry id, and each of its
+/// `[Desktop Action]`s' by entry id and action key.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Exec {
+    pub apps: HashMap<String, Vec<String>>,
+    pub actions: HashMap<(String, String), Vec<String>>,
+}
+
+fn uwsm() -> bool {
+    std::env::var_os("UWSM_FINALIZE_VARNAMES").is_some_and(|v| !v.is_empty())
 }
 
 /// Proc.appLaunch: under uwsm a plain entry goes by its id, so uwsm reads
 /// its Exec line; everything else runs its own argv.
 pub fn launch_argv(state: &State, id: &str) -> Option<Vec<String>> {
-    let command = state.exec.get(id).filter(|c| !c.is_empty())?;
-    if std::env::var_os("UWSM_FINALIZE_VARNAMES").is_some_and(|v| !v.is_empty()) {
-        let plain = id.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
-            && id.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
-        if plain {
-            return Some(proc::argv(&["uwsm", "app", "--", &format!("{id}.desktop")]));
-        }
-        let mut argv = proc::argv(&["uwsm", "app", "--"]);
-        argv.extend(command.iter().cloned());
-        return Some(argv);
+    let command = state.exec.apps.get(id).filter(|c| !c.is_empty())?;
+    let plain = id.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') && id.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    if uwsm() && plain {
+        return Some(proc::argv(&["uwsm", "app", "--", &format!("{id}.desktop")]));
     }
-    Some(command.clone())
+    Some(under_uwsm(command))
+}
+
+/// Desktop action `key` of entry `id`, run as its own argv.
+pub fn action_argv(state: &State, id: &str, key: &str) -> Option<Vec<String>> {
+    let command = state.exec.actions.get(&(id.to_owned(), key.to_owned())).filter(|c| !c.is_empty())?;
+    Some(under_uwsm(command))
+}
+
+fn under_uwsm(command: &[String]) -> Vec<String> {
+    if !uwsm() {
+        return command.to_vec();
+    }
+    let mut argv = proc::argv(&["uwsm", "app", "--"]);
+    argv.extend(command.iter().cloned());
+    argv
 }
 
 /// Desktop entries installed or removed while the shell runs reach the
@@ -686,7 +700,7 @@ mod tests {
     use std::collections::HashSet;
 
     use fs_devices::bluetooth::Device as BluetoothDevice;
-    use fs_menu::actions::{IpcCall, Subject, WINDOW_KIND, actions_for};
+    use fs_menu::actions::{IpcCall, Subject, actions_for};
     use fs_menu::clipboard::history::{Entry as ClipEntry, EntryKind};
     use fs_menu::providers::*;
     use serde_json::json;
@@ -738,11 +752,12 @@ mod tests {
     fn every_shipped_call_is_answered() {
         let mut tree = base_over(&inputs(), &Entries::new());
         let mut rows = sources();
-        let targets: HashSet<&str> = rows
+        let targets: HashSet<String> = rows
             .iter()
             .flat_map(|n| [&n.action, &n.alternate].into_iter().chain(n.actions.iter().map(|a| &a.action)))
             .filter_map(|run| match run {
-                Some(Run::Ipc(call)) => Some(call.target.as_str()),
+                Some(Run::Ipc(call)) => Some(call.target.clone()),
+                Some(Run::Intent(intent)) => Some(intent.call().target),
                 _ => None,
             })
             .collect();
@@ -758,22 +773,25 @@ mod tests {
     #[test]
     fn every_builtin_call_is_answered() {
         let app = apps_provider(&[DesktopEntry { id: "foot".into(), name: "Foot".into(), actions: vec![("new".into(), "New".into())], ..DesktopEntry::default() }], None, &[], None).remove(0);
-        let window = Node { path: "0xabc".into(), ..Node::new("w", "Window", Kind::Other(WINDOW_KIND.into())) };
+        let window = Node { path: "0xabc".into(), ..Node::new("w", "Window", Kind::Window) };
         let image = Node { path: "/w/a.png".into(), ..Node::new("img", "a", Kind::Image) };
         let submenu = Node::new("system", "System", Kind::Submenu);
-        let mut calls = Vec::new();
+        let (mut calls, mut intents) = (Vec::new(), 0);
         for node in [&app, &window, &image, &submenu] {
             for (pinned, abbrev) in [(false, None), (true, Some(("fx", fs_menu::abbrev::Source::Learned)))] {
                 let s = Subject { discrete_gpu: true, pinned, abbrev, removable: Some("flatpak:x"), single: true, ..Subject::of(node) };
-                calls.extend(actions_for(&s).into_iter().filter_map(|a| match a.run {
-                    Run::Ipc(call) => Some(call),
-                    _ => None,
-                }));
+                for a in actions_for(&s) {
+                    match a.run {
+                        Run::Ipc(call) => calls.push(call),
+                        Run::Intent(_) => intents += 1,
+                        _ => {}
+                    }
+                }
             }
         }
-        assert!(calls.len() > 15);
+        assert!(calls.len() + intents > 15);
         for call in calls {
-            assert!(crate::ipc::check(&call, true).is_ok(), "{call}: {:?}", crate::ipc::check(&call, true));
+            assert!(crate::ipc::check(&call).is_ok(), "{call}: {:?}", crate::ipc::check(&call));
         }
     }
 

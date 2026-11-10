@@ -6,11 +6,10 @@
 use serde::Deserialize;
 
 use super::id_part;
-use crate::actions::{IpcCall, Run};
+use crate::actions::Run;
+use crate::intent::Intent;
 use crate::node::{Kind, Node};
-
-/// A package row's kind: its `path` is the search id.
-pub const PACKAGE_KIND: &str = "package";
+use crate::toggles::Checked;
 
 /// The Install route's id, the level its rows are searched in.
 pub const INSTALL_ROUTE: &str = "install";
@@ -130,25 +129,21 @@ pub fn package_rows(found: &[Package]) -> Vec<Node> {
                 meta: Some(package_value(p)),
                 full_text: p.description.clone().unwrap_or_default(),
                 icon_source: p.icon.clone().unwrap_or_default(),
-                action: installable.then(|| IpcCall::new("package", "install").arg(&p.id).into()),
+                action: installable.then(|| Intent::PackageInstall(p.id.clone()).into()),
                 verb: installable.then(|| "Install".to_owned()),
                 alternate: runnable.then(|| Run::Spawn(["fspec", "run", "--detach", &p.id].map(String::from).to_vec())),
                 alternate_label: runnable.then(|| "Run once".to_owned()),
-                checked: p.installed.then(|| PACKAGE_INSTALLED.to_owned()),
+                checked: p.installed.then_some(Checked::Always),
                 keep_open: Some(true),
                 local_only: true,
-                ..Node::new(format!("install.pkg.{}", id_part(&p.id)), p.name.clone(), Kind::Other(PACKAGE_KIND.into()))
+                ..Node::new(format!("install.pkg.{}", id_part(&p.id)), p.name.clone(), Kind::Package)
             }
         })
         .collect()
 }
 
-/// The `checked` an installed package's row carries; the launcher ticks
-/// it off the row alone.
-pub const PACKAGE_INSTALLED: &str = "@package:installed";
-
 pub fn is_package(n: &Node) -> bool {
-    matches!(&n.kind, Kind::Other(k) if k == PACKAGE_KIND)
+    n.kind == Kind::Package
 }
 
 pub fn install_searching_row() -> Node {
@@ -196,12 +191,12 @@ mod tests {
         found.push(Package { id: "zypper:btop".into(), name: "btop".into(), installed: true, installable: true, ..Package::default() });
         found.push(Package { id: "cask:x".into(), name: "x".into(), installable: false, ..Package::default() });
         let rows = package_rows(&found);
-        assert_eq!(rows[0].action, Some(IpcCall::new("package", "install").arg("flatpak:org.mozilla.firefox").into()));
+        assert_eq!(rows[0].action, Some(Run::Intent(Intent::PackageInstall("flatpak:org.mozilla.firefox".into()))));
         assert_eq!(rows[0].path, "flatpak:org.mozilla.firefox");
         assert_eq!(rows[0].icon_source, "/c/firefox.png");
         assert!(is_package(&rows[0]));
         assert_eq!(rows[1].action, None);
-        assert_eq!(rows[1].checked.as_deref(), Some(PACKAGE_INSTALLED));
+        assert_eq!(rows[1].checked, Some(Checked::Always));
         assert_eq!(rows[2].action, None);
         assert_eq!(rows[0].id, "install.pkg.flatpak%3Aorg%2Emozilla%2Efirefox");
     }
@@ -213,7 +208,7 @@ mod tests {
         let first = crate::actions::first_action(&s).expect("an install");
         assert_eq!(first.id, "install");
         assert!(first.keep_open);
-        assert_eq!(first.run, IpcCall::new("package", "install").arg("flatpak:org.mozilla.firefox").into());
+        assert_eq!(first.run, Run::Intent(Intent::PackageInstall("flatpak:org.mozilla.firefox".into())));
         let ids: Vec<_> = crate::actions::actions_for(&s).into_iter().map(|a| (a.id, a.run)).collect();
         assert_eq!(ids[1], ("run-once".into(), Run::Spawn(["fspec", "run", "--detach", "flatpak:org.mozilla.firefox"].map(String::from).to_vec())));
         let installed = package_rows(&[Package { id: "zypper:btop".into(), installed: true, installable: true, ..Package::default() }]);

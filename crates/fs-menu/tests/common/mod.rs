@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use fs_menu::model::{build_tree, entries_from_value, parse_jsonc};
-use fs_menu::node::{DesktopEntry, Entries, Node, Tree};
+use fs_menu::node::{DesktopEntry, Entries, Node, Provider, Tree};
 use fs_menu::providers::{ProviderFn, TrayItem, apply_providers, panels_provider, tray_provider};
 use serde_json::Value;
 
@@ -32,9 +32,9 @@ pub fn default_menu() -> Entries {
 /// own registry does it.
 pub fn real_tree() -> Tree {
     let mut tree = build_tree(&default_menu(), &Entries::new());
-    let mut fns: HashMap<String, ProviderFn> = HashMap::new();
-    fns.insert("panels".into(), Box::new(panels_provider));
-    fns.insert("tray".into(), Box::new(|| tray_provider(&[] as &[TrayItem])));
+    let mut fns: HashMap<Provider, ProviderFn> = HashMap::new();
+    fns.insert(Provider::Panels, Box::new(panels_provider));
+    fns.insert(Provider::Tray, Box::new(|| tray_provider(&[] as &[TrayItem])));
     apply_providers(&mut tree, &fns);
     tree
 }

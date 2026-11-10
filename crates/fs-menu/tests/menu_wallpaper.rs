@@ -11,9 +11,8 @@ mod common;
 use std::collections::HashMap;
 
 use common::*;
-use fs_menu::icons::icon_for;
 use fs_menu::model::build_tree;
-use fs_menu::node::{Entries, Kind, Node};
+use fs_menu::node::{Entries, Kind, Provider};
 use fs_menu::providers::{
     Item, ItemKind, Mode, ProviderFn, apply_providers, catalog, image_basename, image_rows, items, tile_rows, title_of,
 };
@@ -28,9 +27,9 @@ fn shipped_default_declares_the_wallpaper_route() {
     let defaults = default_menu();
     let entry = defaults.get("wallpaper").expect("wallpaper entry");
     assert_eq!(entry.label.as_deref(), Some("Wallpaper"));
-    assert_eq!(entry.provider.as_deref(), Some("wallpaper"));
+    assert_eq!(entry.provider.as_ref().map(Provider::as_str), Some("wallpaper"));
     assert!(entry.aliases.as_ref().unwrap().contains(&"picker".to_string()));
-    assert_eq!(icon_for(Some(&Node::new("wallpaper", "", Kind::Submenu))), "image");
+    assert_eq!(entry.icon_name.as_deref(), Some("image"));
 }
 
 // "provider" is what makes the node a descendable level rather than an action
@@ -52,7 +51,7 @@ fn it_builds_as_a_root_provider_level() {
 #[test]
 fn no_provider_fn_leaves_the_level_childless() {
     let mut tree = build_tree(&default_menu(), &Entries::new());
-    apply_providers(&mut tree, &HashMap::<String, ProviderFn>::new());
+    apply_providers(&mut tree, &HashMap::<Provider, ProviderFn>::new());
     assert!(tree.nodes["wallpaper"].child_ids.is_empty());
 }
 
@@ -382,7 +381,7 @@ fn style_previews_carry_their_slot_and_hide_under_a_query() {
     ];
     let rows = tile_rows(&items, "style", false, "", "");
     assert_eq!(rows.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(), ["/p/x-light.png", "/p/x-dark.png"]);
-    assert_eq!(rows[0].kind, Kind::Other(fs_menu::providers::MODE_KIND.into()));
+    assert_eq!(rows[0].kind, Kind::WallpaperMode);
     assert!(items[0].files().is_empty());
     assert!(tile_rows(&items, "style", false, "", "light").is_empty());
 }

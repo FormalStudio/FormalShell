@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::frecency::{self, Record};
-use crate::node::{DesktopEntry, Kind, Node, Tree};
+use crate::node::{DesktopEntry, Kind, Node, Provider, Tree};
 
 /// `recent` marks the head of the frecency order for the launcher's own
 /// `Recent` heading. It is capped rather than "everything with a launch
@@ -106,8 +106,8 @@ pub fn attach_children(tree: &mut Tree, provider_id: &str, children: Vec<Node>) 
 /// name in `provider_fns`, parents the returned nodes under it, and registers
 /// them in `tree.nodes`. Provider nodes the walk creates are not themselves
 /// expanded.
-pub fn apply_providers(tree: &mut Tree, provider_fns: &HashMap<String, ProviderFn>) {
-    let targets: Vec<(String, String)> = tree
+pub fn apply_providers(tree: &mut Tree, provider_fns: &HashMap<Provider, ProviderFn>) {
+    let targets: Vec<(String, Provider)> = tree
         .nodes
         .values()
         .filter(|n| n.kind == Kind::Provider)

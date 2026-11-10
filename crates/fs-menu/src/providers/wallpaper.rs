@@ -80,10 +80,6 @@ pub fn image_rows(paths: &[String], query: &str) -> Vec<Node> {
         .collect()
 }
 
-/// A Style preview's node kind: no wallpaper of its own to set, open or
-/// copy, so it carries no image actions.
-pub const MODE_KIND: &str = "wallpaper-mode";
-
 /// The picker's rows for `items` in `section`: each tile's node id is
 /// `wallpaper.<item id>`, its label the title, its path the file it shows now
 /// (a pair's dark half when `dark`, the Sky's `sky` source). `query` matches
@@ -106,7 +102,7 @@ pub fn tile_rows(items: &[Item], section: &str, dark: bool, sky: &str, query: &s
                 ItemKind::Pair { light, dark: d } => (if dark { d.clone() } else { light.clone() }, Kind::Image),
                 ItemKind::Single { path, .. } => (path.clone(), Kind::Image),
                 ItemKind::Sky => (sky.to_owned(), Kind::Image),
-                ItemKind::Mode { path, .. } => (path.clone(), Kind::Other(MODE_KIND.to_owned())),
+                ItemKind::Mode { path, .. } => (path.clone(), Kind::WallpaperMode),
             };
             Node {
                 parent_id: Some("wallpaper".to_string()),

@@ -2,8 +2,9 @@
 
 use super::clipboard::{captured_at_label, share_entry_command};
 use crate::clipboard::history::{Entry as ClipEntry, EntryKind};
-use crate::actions::{IpcCall, Run};
-use crate::node::{Entries, Entry, Kind};
+use crate::actions::Run;
+use crate::intent::Intent;
+use crate::node::{Entries, Entry, Kind, Provider};
 
 /// A LocalSend peer from the last scan.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -23,6 +24,7 @@ pub struct ReceiveStatus {
 fn note_entry(label: &str) -> Entry {
     Entry {
         icon: Some(String::new()),
+        icon_name: Some("download".into()),
         kind: Some(Kind::Note),
         dim: Some(true),
         ..Entry::labelled(label)
@@ -56,7 +58,7 @@ pub fn share_peer_entries(
 
     let mut out = Entries::new();
     out.insert("share.receive".into(), share_receive_status(receive));
-    out.insert("share.send".into(), Entry::labelled("Send"));
+    out.insert("share.send".into(), Entry::labelled("Send").with_icon_name("send"));
     if peers.is_empty() {
         out.insert("share.send.empty".into(), note_entry("No devices found"));
         return out;
@@ -75,7 +77,7 @@ pub fn share_peer_entries(
                 format!("{peer_id}.clipboard"),
                 Entry::labelled("Clipboard")
                     .with_icon("")
-                    .with_action(IpcCall::new("localsend", "send").arg(i.to_string()).arg(&text.id)),
+                    .with_action(Intent::LocalsendSend(i.to_string(), text.id.clone())),
             );
         }
         for (j, entry) in image_entries.iter().enumerate() {
@@ -86,7 +88,7 @@ pub fn share_peer_entries(
                     thumb_source: Some(entry.path.clone().unwrap_or_default()),
                     ..Entry::labelled("Image")
                         .with_icon("")
-                        .with_action(IpcCall::new("localsend", "send").arg(i.to_string()).arg(&entry.id))
+                        .with_action(Intent::LocalsendSend(i.to_string(), entry.id.clone()))
                 },
             );
         }
@@ -112,6 +114,7 @@ fn share_receive_status(receive: Option<&ReceiveStatus>) -> Entry {
     };
     Entry {
         icon: Some(String::new()),
+        icon_name: Some("download".into()),
         kind: Some(Kind::Note),
         dim: Some(false),
         desc: Some(desc),
@@ -126,16 +129,17 @@ fn share_receive_status(receive: Option<&ReceiveStatus>) -> Entry {
 /// unavailable-state rows.
 fn share_fallback_entries(clipboard_items: &[ClipEntry]) -> Entries {
     let mut out = Entries::new();
-    out.insert("share.receive".into(), Entry::labelled("Receive").with_action(Run::Spawn(vec!["localsend_app".into()])));
+    out.insert("share.receive".into(), Entry::labelled("Receive").with_icon_name("download").with_action(Run::Spawn(vec!["localsend_app".into()])));
     out.insert(
         "share.history".into(),
-        Entry { provider: Some("shareHistory".to_string()), ..Entry::labelled("Pick From History") },
+        Entry { provider: Some(Provider::ShareHistory), ..Entry::labelled("Pick From History").with_icon_name("history") },
     );
     let send = match clipboard_items.first() {
         // nf-md-clipboard_text
         Some(newest) => Entry::labelled("Send").with_icon("\u{F014D}").with_action(Run::Shell(share_entry_command(newest))),
         None => note_entry("Nothing to share"),
-    };
+    }
+    .with_icon_name("send");
     out.insert("share.send".into(), send);
     out
 }

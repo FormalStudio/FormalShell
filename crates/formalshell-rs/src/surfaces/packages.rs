@@ -143,7 +143,7 @@ pub fn install(store: &Store, id: &str) {
 
 /// The desktop ids the apps scan knows now, before an install.
 pub fn desktop_ids(store: &Store) -> HashSet<String> {
-    store.menu.exec.keys().filter(|k| !k.contains('\u{1}')).cloned().collect()
+    store.menu.exec.apps.keys().cloned().collect()
 }
 
 /// fspec operations that change what is installed.
@@ -195,7 +195,7 @@ pub fn land(store: &mut Store) -> bool {
         if let Some(app) = fresh.first() {
             claimed.insert((*app).clone());
             s.app = Some((*app).clone());
-            picks.push(format!("app:{app}"));
+            picks.push(fs_menu::actions::SubjectId::App((*app).clone()).to_string());
             moved = true;
         }
     }

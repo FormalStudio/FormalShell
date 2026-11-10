@@ -49,6 +49,7 @@ use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::session_lock::{
     SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface, SessionLockSurfaceConfigure,
 };
+use crate::ui::confirm::Armed;
 use crate::ui::field::{self, Field};
 use zeroize::Zeroizing;
 
@@ -172,7 +173,7 @@ pub struct Lock {
     /// When the boot lock's first frame went out.
     splashed_at: Option<Instant>,
     /// A button asked once, which the next Return on it carries out.
-    armed: Option<Button>,
+    armed: Armed<Button>,
     /// PrepareForShutdown while locked: the lock itself fades to black, 1 at rest.
     depart: Animated,
     departing: bool,
@@ -218,7 +219,7 @@ impl Lock {
             splash: Vec::new(),
             splash_taken: false,
             splashed_at: None,
-            armed: None,
+            armed: Armed::default(),
             depart: Animated::new(1.0, Clock::Effects.curve()),
             departing: false,
         }
@@ -462,7 +463,7 @@ impl App {
         self.lock.password = field();
         self.lock.checking = false;
         self.lock.transport = -1;
-        self.lock.armed = None;
+        self.lock.armed.clear();
         self.lock.entered = false;
         self.lock.departing = false;
         self.lock.depart.jump(1.0);
@@ -890,7 +891,7 @@ impl App {
         mark_held(false);
         self.lock.password = field();
         self.lock.error.clear();
-        self.lock.armed = None;
+        self.lock.armed.clear();
         if std::mem::take(&mut self.lock.login) {
             self.lock.splash.clear();
             drop(self.lock.prompter.lock().unwrap_or_else(|e| e.into_inner()).take());
@@ -941,16 +942,14 @@ impl App {
         let step = view::transport_key(self.lock.transport, count, key);
         self.lock.transport = step.index;
         let on = usize::try_from(step.index - media).ok().and_then(|i| buttons.get(i).copied());
-        if on != self.lock.armed {
-            self.lock.armed = None;
-        }
+        self.lock.armed.keep(on.as_ref());
         if step.press {
             match on {
-                Some(b) if self.lock.armed == Some(b) => {
-                    self.lock.armed = None;
-                    self.lock_button(b);
+                Some(b) => {
+                    if self.lock.armed.press(b) {
+                        self.lock_button(b);
+                    }
                 }
-                Some(b) => self.lock.armed = Some(b),
                 None => match step.index {
                     0 => self.store.media.previous(),
                     1 => self.store.media.play_pause(),
@@ -1282,7 +1281,7 @@ impl App {
                 art: None,
                 cursor: if self.lock.transport < media { self.lock.transport } else { -1 },
             }),
-            buttons: Buttons { shown, cursor: if self.lock.transport >= media { self.lock.transport - media } else { -1 }, armed: self.lock.armed },
+            buttons: Buttons { shown, cursor: if self.lock.transport >= media { self.lock.transport - media } else { -1 }, armed: self.lock.armed.get().copied() },
             ..shared
         };
         let qh = self.qh.clone();
@@ -1386,7 +1385,7 @@ impl App {
                 "boot": self.lock.login,
                 "buttons": self.lock_buttons().iter().map(|b| b.id()).collect::<Vec<_>>(),
                 "buttonCursor": usize::try_from(self.lock.transport - self.lock_media_stops()).ok().and_then(|i| self.lock_buttons().get(i).map(|b| b.id())),
-                "armed": self.lock.armed.map(Button::id),
+                "armed": self.lock.armed.get().copied().map(Button::id),
             })
         };
         let s = &self.lock.sleep;

@@ -144,18 +144,11 @@ pub fn dispatch(app: &mut App, request: &Request) -> String {
     registry().answer(app, request)
 }
 
-/// A configured `@ipc:` call checked against what answers it: a launcher
-/// row's own verbs (`row`), the App's, then the targets. The call comes
+/// A configured `@ipc:` call checked against the targets. The call comes
 /// back with its arguments fitted to the function's, or the reason nothing
-/// would answer it.
-pub fn check(call: &IpcCall, row: bool) -> Result<IpcCall, String> {
-    use crate::surfaces::launcher::{ROW_VERBS, answers};
-    use crate::wayland::launcher::SHELL_VERBS;
-    let tables: &[&[(&str, &str, usize)]] = if row { &[ROW_VERBS, SHELL_VERBS] } else { &[SHELL_VERBS] };
-    let own: Vec<usize> = tables.iter().flat_map(|t| t.iter()).filter(|(t, f, _)| *t == call.target && *f == call.function).map(|v| v.2).collect();
-    if let Some(fit) = own.iter().map(|n| call.clone().fitted(*n)).find(|c| tables.iter().any(|t| answers(t, c))) {
-        return Ok(fit);
-    }
+/// would answer it: a launcher verb (`Intent`) given the wrong arguments
+/// says so.
+pub fn check(call: &IpcCall) -> Result<IpcCall, String> {
     let r = registry();
     match r.arity(&call.target, &call.function) {
         Some(n) => {
@@ -163,8 +156,10 @@ pub fn check(call: &IpcCall, row: bool) -> Result<IpcCall, String> {
             r.check(&fit.target, &fit.function, &fit.args)?;
             Ok(fit)
         }
-        None if !own.is_empty() => Err(format!("{call} takes {} arguments, given {}", own[0], call.args.len())),
-        None => r.check(&call.target, &call.function, &call.args).map(|_| call.clone()),
+        None => match fs_menu::intent::Intent::from_call(call) {
+            Some(Err(reason)) => Err(reason),
+            _ => r.check(&call.target, &call.function, &call.args).map(|_| call.clone()),
+        },
     }
 }
 

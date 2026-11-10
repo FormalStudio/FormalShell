@@ -114,7 +114,7 @@ fn wifi_dotted_ssid_has_one_level() {
 #[test]
 fn wifi_tick_condition_names_the_ssid() {
     let rows = wifi(vec![WifiNetwork { known: true, ..net("Home") }]);
-    assert_eq!(rows[0].checked.as_deref(), Some("@state:wifi.ssid=Home"));
+    assert_eq!(rows[0].checked, Some(fs_menu::toggles::Checked::parse("@state:wifi.ssid=Home")));
 }
 
 #[test]
@@ -237,7 +237,7 @@ fn bluetooth_row_ids_action_and_tick() {
     let rows = bt(vec![dev("aa:bb:cc:dd:ee:01", "Buds")]);
     assert_eq!(rows[0].id, "bluetooth.dev.AA%3ABB%3ACC%3ADD%3AEE%3A01");
     assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:bluetooth.toggle:AA:BB:CC:DD:EE:01"));
-    assert_eq!(rows[0].checked.as_deref(), Some("@state:bluetooth.connected=AA:BB:CC:DD:EE:01"));
+    assert_eq!(rows[0].checked, Some(fs_menu::toggles::Checked::parse("@state:bluetooth.connected=AA:BB:CC:DD:EE:01")));
     assert_eq!(rows[0].keep_open, Some(true));
 }
 
@@ -281,11 +281,11 @@ fn audio_sections_actions_and_ticks() {
     assert_eq!(rows[0].id, "audio.output.alsa_output%2Epci-0000_00_1f%2E3%2Eanalog-stereo");
     assert_eq!(rows[0].section.as_deref(), Some("Output"));
     assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:audio.sink:alsa_output.pci-0000_00_1f.3.analog-stereo"));
-    assert_eq!(rows[0].checked.as_deref(), Some("@state:audio.sink=alsa_output.pci-0000_00_1f.3.analog-stereo"));
+    assert_eq!(rows[0].checked, Some(fs_menu::toggles::Checked::parse("@state:audio.sink=alsa_output.pci-0000_00_1f.3.analog-stereo")));
     assert_eq!(rows[1].id, "audio.input.alsa_input%2Eusb");
     assert_eq!(rows[1].section.as_deref(), Some("Input"));
     assert_eq!(rows[1].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:audio.source:alsa_input.usb"));
-    assert_eq!(rows[1].checked.as_deref(), Some("@state:audio.source=alsa_input.usb"));
+    assert_eq!(rows[1].checked, Some(fs_menu::toggles::Checked::parse("@state:audio.source=alsa_input.usb")));
     assert_eq!(rows[0].keep_open, Some(true));
     assert_eq!(rows[1].keep_open, Some(true));
 }
@@ -306,7 +306,7 @@ fn radio_favorites_ticks_and_alternates() {
     assert_eq!(rows[0].label, "Groove");
     assert_eq!(rows[0].desc.as_deref(), Some("France"));
     assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:radio.fav:u-1"));
-    assert_eq!(rows[0].checked.as_deref(), Some("@state:radio.station=u-1"));
+    assert_eq!(rows[0].checked, Some(fs_menu::toggles::Checked::parse("@state:radio.station=u-1")));
     assert_eq!(rows[0].keep_open, Some(true));
     assert_eq!(rows[0].alternate.as_ref().map(ToString::to_string).as_deref(), Some("@ipc:radio.unfavorite:u-1"));
     assert_eq!(rows[0].alternate_label.as_deref(), Some("Remove favorite"));

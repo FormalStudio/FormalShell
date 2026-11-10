@@ -205,6 +205,8 @@ pub fn build_tree(default_obj: &Entries, user_obj: &Entries) -> Tree {
                 parent_id: parent.map(str::to_string),
                 label: entry.label.unwrap_or_else(|| title_case(segment)),
                 icon: entry.icon.unwrap_or_default(),
+                icon_name: entry.icon_name.unwrap_or_default(),
+                chord: entry.chord.unwrap_or_default(),
                 title: entry.title.unwrap_or_default(),
                 aliases: entry.aliases.unwrap_or_default(),
                 kind,

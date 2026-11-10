@@ -12,8 +12,6 @@ use crate::node::{Kind, Node};
 use crate::thumbnails::path_key;
 
 pub const FILES_ROUTE: &str = "files";
-pub const FILE_KIND: &str = "file";
-pub const FOLDER_KIND: &str = "folder";
 /// How many of the recent list's newest files rank.
 pub const RECENT_FILES: usize = 100;
 /// A folder lists at most this many visible entries, and as many hidden.
@@ -111,12 +109,12 @@ pub fn tilde(path: &str, home: &str) -> String {
 /// A file or folder as a subject. Its id hashes the path, so the path's
 /// words never match a query through the id.
 pub fn subject(path: &str, dir: bool, meta: Option<String>) -> Node {
-    let kind = if dir { FOLDER_KIND } else { FILE_KIND };
+    let kind = if dir { Kind::Folder } else { Kind::File };
     Node {
         path: path.to_owned(),
         meta,
         verb: Some("Open".into()),
-        ..Node::new(format!("{FILES_ROUTE}.{}", path_key(path)), basename(path), Kind::Other(kind.into()))
+        ..Node::new(format!("{FILES_ROUTE}.{}", path_key(path)), basename(path), kind)
     }
 }
 
@@ -127,11 +125,11 @@ pub fn recent_subject(path: &str, dir: bool, home: &str) -> Node {
 }
 
 pub fn is_file_subject(node: &Node) -> bool {
-    matches!(&node.kind, Kind::Other(k) if k == FILE_KIND)
+    node.kind == Kind::File
 }
 
 pub fn is_folder_subject(node: &Node) -> bool {
-    matches!(&node.kind, Kind::Other(k) if k == FOLDER_KIND)
+    node.kind == Kind::Folder
 }
 
 /// One path the service found on disk, and whether it is a directory.

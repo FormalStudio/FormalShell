@@ -5,6 +5,7 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 use crate::clipboard::emoji::is_emoji_only;
 use crate::clipboard::history::{Entry, EntryKind};
 use crate::actions::{IpcCall, Run};
+use crate::intent::Intent;
 use crate::node::{ActionEntry, Kind, Node};
 
 /// The day heading a capture falls under: `Today`, `Yesterday`, then the
@@ -83,7 +84,7 @@ pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<N
                 // Shift+Enter's target: the image file this row stands for,
                 // "" on text rows and on share rows, whose Shift+Enter has
                 // nothing of its own to do.
-                alternate: (is_image && !share).then(|| IpcCall::new("clipssh", "image").arg(&entry.id).arg(&path).into()),
+                alternate: (is_image && !share).then(|| Intent::ClipsshImage(entry.id.clone(), path.clone()).into()),
                 alternate_label: (is_image && !share).then(|| "Send over SSH".to_string()),
                 clipssh_path: if is_image && !share { path } else { String::new() },
                 // Full untruncated text for the split-pane preview, "" for

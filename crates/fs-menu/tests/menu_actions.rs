@@ -6,8 +6,9 @@ mod common;
 
 use common::{entries, real_tree};
 use fs_menu::abbrev::Source;
-use fs_menu::actions::{Action, IpcCall, Run, Subject, TargetKind, WINDOW_KIND, actions_for, filter, first_action, into_action, second_action};
+use fs_menu::actions::{Action, Run, Subject, TargetKind, actions_for, filter, first_action, into_action, second_action};
 use fs_menu::clipboard::history::Entry;
+use fs_menu::intent::Intent;
 use fs_menu::keybinds::rows as bind_rows;
 use fs_menu::model::build_tree;
 use fs_menu::node::{DesktopEntry, Entries, Kind, Node};
@@ -67,7 +68,7 @@ fn app_with_windows() {
 
 #[test]
 fn window() {
-    let node = Node { path: "0xab".into(), ..Node::new("window:0xab", "Firefox", Kind::Other(WINDOW_KIND.into())) };
+    let node = Node { path: "0xab".into(), ..Node::new("window:0xab", "Firefox", Kind::Window) };
     let all = of(&node);
     assert_eq!(ids(&all), ["focus", "close", "move-to-workspace", "float", "fullscreen"]);
     assert_eq!(all[0].run, Run::parse("@ipc:window.focus:0xab"));
@@ -103,7 +104,7 @@ fn uninstall_is_an_owned_apps_last_action() {
     assert_eq!(last.id, "uninstall");
     assert_eq!(last.label, "Uninstall Firefox");
     assert!(last.confirm && last.destructive);
-    assert_eq!(last.run, Run::Ipc(IpcCall::new("package", "uninstall").arg("flatpak:org.mozilla.firefox")));
+    assert_eq!(last.run, Run::Intent(Intent::PackageUninstall("flatpak:org.mozilla.firefox".into())));
 }
 
 #[test]
@@ -187,7 +188,7 @@ fn bluetooth_device() {
     let rows = bluetooth_rows(&BluetoothState { available: true, enabled: true, devices: vec![device] });
     let all = of(rows.iter().find(|r| r.id.starts_with("bluetooth.dev.")).unwrap());
     assert_eq!(ids(&all), ["run", "forget", "panel"]);
-    assert_eq!(all[1].run, Run::Ipc(IpcCall::new("bluetooth", "forget").arg("AA:BB:CC:DD:EE:01")));
+    assert_eq!(all[1].run, Run::Intent(Intent::BluetoothForget("AA:BB:CC:DD:EE:01".into())));
     assert!(all[1].destructive);
 }
 
@@ -367,11 +368,11 @@ fn a_declared_alternate_survives_the_provider() {
 fn subjects_outside_the_tree_carry_their_own_ids() {
     use fs_menu::actions::subject_id;
     use fs_menu::providers::subject;
-    assert_eq!(subject_id(&subject("/home/u/a b.txt", false, None)), "file:/home/u/a b.txt");
-    assert_eq!(subject_id(&subject("/home/u/Music", true, None)), "file:/home/u/Music");
+    assert_eq!(subject_id(&subject("/home/u/a b.txt", false, None)).to_string(), "file:/home/u/a b.txt");
+    assert_eq!(subject_id(&subject("/home/u/Music", true, None)).to_string(), "file:/home/u/Music");
     let index = EmojiIndex::new(vec![EmojiEntry { ch: "\u{1F62D}".into(), name: "loudly crying face".into(), ..EmojiEntry::default() }]);
     let row = index.row_for("\u{1F62D}", true).unwrap();
-    assert_eq!(subject_id(&row), "emoji:\u{1F62D}");
+    assert_eq!(subject_id(&row), fs_menu::actions::SubjectId::Emoji("\u{1F62D}".into()));
     assert_eq!(row, index.rows("loudly", true, &[], None).remove(0));
     assert!(index.row_for("x", true).is_none());
 }

@@ -5,10 +5,11 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
 
 use crate::actions::Run;
+use crate::toggles::Checked;
 
-/// What a node is. `Other` carries an explicit `kind` the five inferred ones
-/// do not cover (a user entry may say anything; the shell itself uses `note`
-/// and `image`).
+/// What a node is. The first seven are what an entry is inferred as; the
+/// rest are the rows the shell builds itself. `Other` carries any other
+/// explicit `kind` a user entry says.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Kind {
     #[default]
@@ -19,40 +20,133 @@ pub enum Kind {
     App,
     Note,
     Image,
+    /// A recent file, its path in the node's `path`.
+    File,
+    /// A folder, its path in the node's `path`.
+    Folder,
+    /// A package Install mode lists, its search id in the node's `path`.
+    Package,
+    /// A compositor window, its id in the node's `path`.
+    Window,
+    /// The wallpaper picker's Light or Dark preview.
+    WallpaperMode,
+    /// One of a Select step's options.
+    Option,
+    /// What a target action picks from: a peer, an app.
+    Target,
+    /// A workspace a window can move to.
+    Workspace,
     Other(String),
 }
 
 impl Kind {
+    const NAMED: [(Kind, &'static str); 15] = [
+        (Kind::Submenu, "submenu"),
+        (Kind::Link, "link"),
+        (Kind::Provider, "provider"),
+        (Kind::Action, "action"),
+        (Kind::App, "app"),
+        (Kind::Note, "note"),
+        (Kind::Image, "image"),
+        (Kind::File, "file"),
+        (Kind::Folder, "folder"),
+        (Kind::Package, "package"),
+        (Kind::Window, "window"),
+        (Kind::WallpaperMode, "wallpaper-mode"),
+        (Kind::Option, "option"),
+        (Kind::Target, "target"),
+        (Kind::Workspace, "workspace"),
+    ];
+
     pub fn as_str(&self) -> &str {
         match self {
-            Kind::Submenu => "submenu",
-            Kind::Link => "link",
-            Kind::Provider => "provider",
-            Kind::Action => "action",
-            Kind::App => "app",
-            Kind::Note => "note",
-            Kind::Image => "image",
             Kind::Other(s) => s,
+            kind => Kind::NAMED.iter().find(|(k, _)| k == kind).map_or("", |(_, name)| name),
         }
     }
 
     pub fn from_name(name: &str) -> Kind {
-        match name {
-            "submenu" => Kind::Submenu,
-            "link" => Kind::Link,
-            "provider" => Kind::Provider,
-            "action" => Kind::Action,
-            "app" => Kind::App,
-            "note" => Kind::Note,
-            "image" => Kind::Image,
-            other => Kind::Other(other.to_string()),
-        }
+        Kind::NAMED.iter().find(|(_, n)| *n == name).map_or_else(|| Kind::Other(name.to_owned()), |(k, _)| k.clone())
     }
 }
 
 impl<'de> Deserialize<'de> for Kind {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Kind, D::Error> {
         Ok(Kind::from_name(&String::deserialize(d)?))
+    }
+}
+
+/// What fills a provider node's children: one of the shell's sources, by
+/// the name a menu file gives it, or a launcher plugin's mode by its route.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Provider {
+    Apps,
+    Clipboard,
+    Calc,
+    Emoji,
+    Wallpaper,
+    Monitor,
+    Mirror,
+    Settings,
+    Info,
+    Keybinds,
+    Files,
+    Wifi,
+    Bluetooth,
+    Audio,
+    Radio,
+    RadioSearch,
+    Install,
+    Panels,
+    Tray,
+    Gpu,
+    Clipssh,
+    ShareHistory,
+    Plugin(String),
+}
+
+impl Provider {
+    const NAMED: [(Provider, &'static str); 22] = [
+        (Provider::Apps, "apps"),
+        (Provider::Clipboard, "clipboard"),
+        (Provider::Calc, "calc"),
+        (Provider::Emoji, "emoji"),
+        (Provider::Wallpaper, "wallpaper"),
+        (Provider::Monitor, "monitor"),
+        (Provider::Mirror, "mirror"),
+        (Provider::Settings, "settings"),
+        (Provider::Info, "info"),
+        (Provider::Keybinds, "keybinds"),
+        (Provider::Files, "files"),
+        (Provider::Wifi, "wifi"),
+        (Provider::Bluetooth, "bluetooth"),
+        (Provider::Audio, "audio"),
+        (Provider::Radio, "radio"),
+        (Provider::RadioSearch, "radioSearch"),
+        (Provider::Install, "install"),
+        (Provider::Panels, "panels"),
+        (Provider::Tray, "tray"),
+        (Provider::Gpu, "gpu"),
+        (Provider::Clipssh, "clipssh"),
+        (Provider::ShareHistory, "shareHistory"),
+    ];
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Provider::Plugin(route) => route,
+            p => Provider::NAMED.iter().find(|(k, _)| k == p).map_or("", |(_, name)| name),
+        }
+    }
+
+    /// A name no source carries is a plugin's route.
+    pub fn from_name(name: &str) -> Provider {
+        Provider::NAMED.iter().find(|(_, n)| *n == name).map_or_else(|| Provider::Plugin(name.to_owned()), |(p, _)| p.clone())
+    }
+}
+
+impl<'de> Deserialize<'de> for Provider {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Provider, D::Error> {
+        Ok(Provider::from_name(&String::deserialize(d)?))
     }
 }
 
@@ -65,15 +159,20 @@ impl<'de> Deserialize<'de> for Kind {
 #[serde(default, rename_all = "camelCase")]
 pub struct Entry {
     pub label: Option<String>,
+    /// A glyph of the entry's own, drawn in the mono font.
     pub icon: Option<String>,
+    /// A named icon in the set `theme.icons` picks, drawn over `icon`.
+    pub icon_name: Option<String>,
+    /// The chord that summons this route, as a reader would type it.
+    pub chord: Option<String>,
     pub title: Option<String>,
     pub aliases: Option<Vec<String>>,
     pub kind: Option<Kind>,
     pub action: Option<Run>,
     pub target: Option<String>,
-    pub provider: Option<String>,
+    pub provider: Option<Provider>,
     pub when: Option<String>,
-    pub checked: Option<String>,
+    pub checked: Option<Checked>,
     pub confirm: Option<bool>,
     pub dim: Option<bool>,
     pub keep_open: Option<bool>,
@@ -162,8 +261,13 @@ impl Entry {
         self
     }
 
-    pub fn with_checked(mut self, checked: impl Into<String>) -> Entry {
-        self.checked = Some(checked.into());
+    pub fn with_icon_name(mut self, name: &str) -> Entry {
+        self.icon_name = Some(name.to_owned());
+        self
+    }
+
+    pub fn with_checked(mut self, checked: Checked) -> Entry {
+        self.checked = Some(checked);
         self
     }
 
@@ -178,6 +282,8 @@ impl Entry {
         Entry {
             label: u.label.clone().or_else(|| self.label.clone()),
             icon: u.icon.clone().or_else(|| self.icon.clone()),
+            icon_name: u.icon_name.clone().or_else(|| self.icon_name.clone()),
+            chord: u.chord.clone().or_else(|| self.chord.clone()),
             title: u.title.clone().or_else(|| self.title.clone()),
             aliases: u.aliases.clone().or_else(|| self.aliases.clone()),
             kind: u.kind.clone().or_else(|| self.kind.clone()),
@@ -234,15 +340,19 @@ pub struct Node {
     pub parent_id: Option<String>,
     pub label: String,
     pub icon: String,
+    /// A named icon, "" for none: the row then draws `icon`.
+    pub icon_name: String,
+    /// The chord that summons this route, "" for none.
+    pub chord: String,
     pub title: String,
     pub aliases: Vec<String>,
     pub kind: Kind,
     pub child_ids: Vec<String>,
     pub action: Option<Run>,
     pub target: Option<String>,
-    pub provider: Option<String>,
+    pub provider: Option<Provider>,
     pub when: Option<String>,
-    pub checked: Option<String>,
+    pub checked: Option<Checked>,
     pub confirm: Option<bool>,
     pub dim: Option<bool>,
     pub keep_open: Option<bool>,

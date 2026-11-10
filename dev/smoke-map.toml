@@ -174,6 +174,15 @@ runs = ["--app-grid", "--grid-relaunch", "--menu"]
 paths = ["crates/fs-menu/src/actions.rs", "crates/fs-menu/src/calc.rs"]
 runs = ["--menu-actions", "--toggles", "--launcher-actions", "--launcher-abbrev", "--launcher-preview", "--launcher-send", "--launcher-install"]
 
+# The launcher's verbs and the arm-then-confirm every surface asks with.
+[[rule]]
+paths = ["crates/fs-menu/src/intent.rs"]
+runs = ["--menu-actions", "--toggles", "--launcher-actions", "--launcher-abbrev", "--launcher-install", "--processes", "--power", "--device-routes"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/ui/confirm.rs"]
+runs = ["--processes", "--power", "--login-lock", "--quick-settings-power", "--launcher-install"]
+
 [[rule]]
 paths = ["crates/fs-menu/src/clipboard/emoji.rs", "crates/fs-menu/src/providers/emoji.rs"]
 runs = ["--emoji", "--menu-hover"]

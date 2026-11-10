@@ -12,7 +12,7 @@ use chrono::{Local, TimeZone};
 use common::*;
 use fs_menu::clipboard::history::{Entry, EntryKind};
 use fs_menu::model::{build_tree, visible_children};
-use fs_menu::node::{Entries, Kind};
+use fs_menu::node::{Entries, Kind, Provider};
 use fs_menu::providers::{ClipMode, Peer, ReceiveStatus, clipboard_provider, share_entry_command, share_peer_entries};
 use serde_json::json;
 
@@ -74,7 +74,7 @@ fn fallback_newest_entry_maps_share_send_to_a_launch_action() {
 fn fallback_receive_launches_the_gui_and_history_stays_a_provider_node() {
     let out = share_peer_entries(false, &[], &[], None);
     assert_eq!(out["share.receive"].action.as_ref().map(ToString::to_string).as_deref(), Some("localsend_app"));
-    assert_eq!(out["share.history"].provider.as_deref(), Some("shareHistory"));
+    assert_eq!(out["share.history"].provider.as_ref().map(Provider::as_str), Some("shareHistory"));
 }
 
 // --- CLI shape (installed=true) ----------------------------------------------

@@ -1,69 +1,49 @@
-// The map from the shipped route ids onto icon names. The drift guard reads the
-// shipped default-menu.jsonc rather than a fixture: a route added without a
-// mapping renders with no icon at all. Resolving the names in the Lucide and
-// Nerd sets belongs to the theme icon table's port.
+// Row icon names. The drift guard reads the shipped default-menu.jsonc rather
+// than a fixture: a route added without an `iconName` renders with no icon
+// at all. Resolving the names in the Lucide and Nerd sets belongs to the
+// theme icon table's port.
 
 mod common;
 
 use common::*;
-use fs_menu::icons::{ROUTE_ICONS, ROUTE_ICON_PREFIXES, fallback_for, icon_for};
+use fs_menu::icons::{fallback_for, icon_for};
 use fs_menu::model::build_tree;
-use fs_menu::node::{Entries, Kind, Node};
+use fs_menu::node::{Entries, Entry, Kind, Node};
 
-fn id(id: &str) -> Node {
-    Node { id: id.into(), ..Node::default() }
-}
-
+// Every route the shell ships names its icon. A route added without one
+// still renders, just bare, so only this test catches the omission.
 #[test]
-fn every_route_name_is_non_empty_and_unique_by_id() {
-    let mut seen = std::collections::HashSet::new();
-    for (route, name) in ROUTE_ICONS {
-        assert!(!name.is_empty(), "{route}");
-        assert!(seen.insert(*route), "{route} is mapped twice");
-    }
-    assert!(!ROUTE_ICON_PREFIXES.is_empty());
-}
-
-#[test]
-fn a_device_row_resolves_by_prefix() {
-    assert_eq!(icon_for(Some(&id("wifi.net.x"))), "wifi");
-    assert_eq!(icon_for(Some(&id("audio.input.a%2Eb"))), "mic");
-    assert_eq!(icon_for(Some(&id("wifi"))), "wifi");
-}
-
-// The point of the map: every route the shell ships names its icon here. A
-// route added without one still renders, just bare, so only this test catches
-// the omission.
-#[test]
-fn every_shipped_route_is_mapped() {
+fn every_shipped_route_names_its_icon() {
     let tree = build_tree(&default_menu(), &Entries::new());
     assert!(!tree.nodes.is_empty());
-    let mut mapped = 0;
     for node in tree.nodes.values() {
-        if node.id.is_empty() {
-            continue;
-        }
-        assert!(!icon_for(Some(node)).is_empty(), "{} has no mapped icon name", node.id);
-        mapped += 1;
+        assert!(!icon_for(Some(node)).is_empty(), "{} has no icon name", node.id);
     }
-    assert!(mapped > 0);
+    assert_eq!(icon_for(Some(&tree.nodes["clipboard"])), "clipboard");
+    assert_eq!(icon_for(Some(&tree.nodes["toggles.dnd"])), "bell-off");
+    assert_eq!(icon_for(Some(&real_tree().nodes["panels.network"])), "wifi");
 }
 
 #[test]
-fn an_unmapped_row_keeps_its_own_glyph() {
-    // An emoji row's icon IS the emoji, and a user menu.jsonc route names an id
-    // this map has never heard of.
-    assert_eq!(icon_for(Some(&Node { icon: "a".into(), ..id("emoji.a") })), "");
-    assert_eq!(icon_for(Some(&id("my.own.route"))), "");
+fn a_row_with_no_name_keeps_its_own_glyph() {
+    // An emoji row's icon IS the emoji, and a user menu.jsonc route names no
+    // icon of the set.
+    assert_eq!(icon_for(Some(&Node { icon: "a".into(), ..Node::new("emoji.a", "", Kind::Action) })), "");
     assert_eq!(icon_for(Some(&Node::default())), "");
     assert_eq!(icon_for(None), "");
 }
 
+// A user entry overriding a shipped route keeps the route's icon and chord
+// unless it names its own.
 #[test]
-fn a_mapped_row_answers_with_its_name() {
-    assert_eq!(icon_for(Some(&id("clipboard"))), "clipboard");
-    assert_eq!(icon_for(Some(&id("toggles.dnd"))), "bell-off");
-    assert_eq!(icon_for(Some(&id("panels.network"))), "wifi");
+fn a_user_override_keeps_the_shipped_icon_and_chord() {
+    let user = Entries::from([("clipboard".to_owned(), Entry { prompt: Some("Mine".into()), ..Entry::labelled("Clips") })]);
+    let tree = build_tree(&default_menu(), &user);
+    let clip = &tree.nodes["clipboard"];
+    assert_eq!((clip.label.as_str(), clip.icon_name.as_str(), clip.chord.as_str()), ("Clips", "clipboard", "Super+Ctrl+V"));
+    let own = Entries::from([("clipboard".to_owned(), Entry { chord: Some("Super+V".into()), ..Entry::labelled("Clips").with_icon_name("copy") })]);
+    let clip = &build_tree(&default_menu(), &own).nodes["clipboard"];
+    assert_eq!((clip.icon_name.as_str(), clip.chord.as_str()), ("copy", "Super+V"));
 }
 
 // A row whose own icon is a raw codepoint draws a named icon for what it is
@@ -76,7 +56,8 @@ fn the_fallback_is_named() {
     assert_eq!(named(Kind::Provider), "folder");
     assert_eq!(named(Kind::Link), "folder");
     assert_eq!(named(Kind::Action), "terminal");
+    assert_eq!(named(Kind::Window), "app-window");
     assert_eq!(named(Kind::Note), "circle-help");
-    assert_eq!(named(Kind::Other("option".into())), "circle-help");
+    assert_eq!(named(Kind::Option), "circle-help");
     assert_eq!(fallback_for(None), "circle-help");
 }

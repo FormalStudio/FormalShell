@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use common::*;
 use fs_menu::frecency::{self, Record};
-use fs_menu::node::{DesktopEntry, Kind, Node, Tree};
+use fs_menu::node::{DesktopEntry, Kind, Node, Provider, Tree};
 use fs_menu::providers::{ProviderFn, apply_providers, apps_provider};
 use fs_menu::search;
 
@@ -28,12 +28,12 @@ fn apps_tree(entries: Vec<DesktopEntry>, launches: Vec<Record>) -> Tree {
     tree.nodes.insert(
         "apps".into(),
         Node {
-            provider: Some("apps".into()),
+            provider: Some(Provider::Apps),
             ..Node::new("apps", "Apps", Kind::Provider)
         },
     );
-    let mut fns: HashMap<String, ProviderFn> = HashMap::new();
-    fns.insert("apps".into(), Box::new(move || apps_provider(&entries, None, &launches, Some(NOW))));
+    let mut fns: HashMap<Provider, ProviderFn> = HashMap::new();
+    fns.insert(Provider::Apps, Box::new(move || apps_provider(&entries, None, &launches, Some(NOW))));
     apply_providers(&mut tree, &fns);
     tree
 }

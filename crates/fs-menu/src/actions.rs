@@ -7,15 +7,18 @@
 //! rather than a verb that would do nothing. Keys are names, one per cap.
 
 use crate::abbrev::Source;
+use crate::intent::Intent;
 use crate::model::Mode;
 use crate::node::{ActionEntry, Kind, Node};
-use crate::providers::{FILE_KIND, FOLDER_KIND, PACKAGE_KIND, clipboard_entry_id, is_wifi_network};
+use crate::providers::{clipboard_entry_id, is_wifi_network};
 
 /// What running an action does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Run {
     /// One of the shell's own IPC calls, answered in process.
     Ipc(IpcCall),
+    /// One of the launcher's own verbs.
+    Intent(Intent),
     /// A program and its arguments, spawned through the compositor.
     Spawn(Vec<String>),
     /// A line of the user's own, spawned through the compositor as `sh -c`.
@@ -60,13 +63,14 @@ impl Run {
     /// same call written out as `formalshell-ipc call <target> <function>
     /// <args>` in plain words, or else a shell line.
     pub fn parse(text: &str) -> Run {
-        if let Some(call) = text.strip_prefix("@ipc:") {
-            return Run::Ipc(IpcCall::parse(call));
-        }
-        match self_call(text) {
-            Some(call) => Run::Ipc(call),
-            None => Run::Shell(text.to_owned()),
-        }
+        let call = match text.strip_prefix("@ipc:") {
+            Some(call) => IpcCall::parse(call),
+            None => match self_call(text) {
+                Some(call) => call,
+                None => return Run::Shell(text.to_owned()),
+            },
+        };
+        Run::from(call)
     }
 }
 
@@ -79,6 +83,7 @@ impl std::fmt::Display for Run {
                 write!(f, "@ipc:{call}")?;
                 call.args.iter().try_for_each(|a| write!(f, ":{a}"))
             }
+            Run::Intent(intent) => std::fmt::Display::fmt(intent, f),
             Run::Spawn(argv) => f.write_str(&argv.join(" ")),
             Run::Shell(line) => f.write_str(line),
             Run::Into(id) => write!(f, "into {id}"),
@@ -89,9 +94,20 @@ impl std::fmt::Display for Run {
     }
 }
 
+/// A call naming one of the launcher's own verbs is that verb; one naming
+/// it with the wrong arguments stays a call, refused where it is checked.
 impl From<IpcCall> for Run {
     fn from(call: IpcCall) -> Run {
-        Run::Ipc(call)
+        match Intent::from_call(&call) {
+            Some(Ok(intent)) => Run::Intent(intent),
+            _ => Run::Ipc(call),
+        }
+    }
+}
+
+impl From<Intent> for Run {
+    fn from(intent: Intent) -> Run {
+        Run::Intent(intent)
     }
 }
 
@@ -249,9 +265,6 @@ pub struct Subject<'a> {
     pub single: bool,
 }
 
-/// A row's kind for one compositor window, its id in the node's `path`.
-pub const WINDOW_KIND: &str = "window";
-
 impl<'a> Subject<'a> {
     pub fn of(node: &'a Node) -> Subject<'a> {
         Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false, removable: None, single: false }
@@ -264,29 +277,57 @@ impl<'a> Subject<'a> {
     }
 }
 
-/// The id a pick, an abbreviation and `Recent` know a subject by:
-/// `app:<desktop id>` for an app, `file:<path>` for a file or folder,
-/// `emoji:<char>` for an emoji, the node id for everything else. The last
-/// two name subjects outside the tree, so `Recent` rebuilds them off the id.
-pub fn subject_id(node: &Node) -> String {
-    match &node.entry {
-        Some(e) if node.kind == Kind::App => return format!("app:{}", e.id),
-        _ => {}
-    }
-    if matches!(&node.kind, Kind::Other(k) if k == FILE_KIND || k == FOLDER_KIND) {
-        return format!("{FILE_SUBJECT}{}", node.path);
-    }
-    match node.id.strip_prefix(EMOJI_ROW) {
-        Some(ch) if node.kind == Kind::Action => format!("{EMOJI_SUBJECT}{ch}"),
-        _ => node.id.clone(),
+/// What a pick, an abbreviation and `Recent` know a subject by. The last
+/// two name subjects outside the tree, so `Recent` rebuilds them off the
+/// id; state.json keeps it as text.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SubjectId {
+    /// An app, by desktop id: `app:<id>`.
+    App(String),
+    /// A file or folder, by absolute path: `file:<path>`.
+    File(String),
+    /// An emoji, by itself: `emoji:<char>`.
+    Emoji(String),
+    /// Anything else, by node id.
+    Node(String),
+}
+
+impl SubjectId {
+    pub fn parse(id: &str) -> SubjectId {
+        if let Some(app) = id.strip_prefix("app:") {
+            SubjectId::App(app.to_owned())
+        } else if let Some(path) = id.strip_prefix("file:") {
+            SubjectId::File(path.to_owned())
+        } else if let Some(ch) = id.strip_prefix("emoji:") {
+            SubjectId::Emoji(ch.to_owned())
+        } else {
+            SubjectId::Node(id.to_owned())
+        }
     }
 }
 
-/// A file or folder's subject id prefix, before its absolute path.
-pub const FILE_SUBJECT: &str = "file:";
-/// An emoji's subject id prefix, before the emoji itself.
-pub const EMOJI_SUBJECT: &str = "emoji:";
-const EMOJI_ROW: &str = "emoji.";
+impl std::fmt::Display for SubjectId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubjectId::App(id) => write!(f, "app:{id}"),
+            SubjectId::File(path) => write!(f, "file:{path}"),
+            SubjectId::Emoji(ch) => write!(f, "emoji:{ch}"),
+            SubjectId::Node(id) => f.write_str(id),
+        }
+    }
+}
+
+pub fn subject_id(node: &Node) -> SubjectId {
+    match (&node.kind, &node.entry) {
+        (Kind::App, Some(e)) => SubjectId::App(e.id.clone()),
+        (Kind::File | Kind::Folder, _) => SubjectId::File(node.path.clone()),
+        (Kind::Action, _) => match crate::providers::emoji_of(node) {
+            Some(ch) => SubjectId::Emoji(ch.to_owned()),
+            None => SubjectId::Node(node.id.clone()),
+        },
+        _ => SubjectId::Node(node.id.clone()),
+    }
+}
 
 /// A single-quoted shell word.
 fn shell_quote(s: &str) -> String {
@@ -334,17 +375,17 @@ fn builtins(s: &Subject) -> Vec<Action> {
     match &n.kind {
         Kind::App => {
             let Some(e) = &n.entry else { return out };
-            out.push(Action::new("open", "Open", IpcCall::new("app", "open").arg(&e.id).into()));
-            out.push(Action::new("new-window", "New window", IpcCall::new("app", "new").arg(&e.id).into()));
+            out.push(Action::new("open", "Open", Intent::AppOpen(e.id.clone()).into()));
+            out.push(Action::new("new-window", "New window", Intent::AppNew(e.id.clone()).into()));
             for (key, name) in &e.actions {
-                out.push(Action::new(&format!("desktop:{key}"), name.clone(), IpcCall::new("app", "action").arg(&e.id).arg(key).into()));
+                out.push(Action::new(&format!("desktop:{key}"), name.clone(), Intent::AppAction(e.id.clone(), key.clone()).into()));
             }
             if s.windows > 0 {
                 let label = if s.windows == 1 { "Show its window".to_owned() } else { format!("Show its {} windows", s.windows) };
-                out.push(Action::new("windows", label, Run::Into(subject_id(n))));
+                out.push(Action::new("windows", label, Run::Into(subject_id(n).to_string())));
             }
             if s.discrete_gpu {
-                out.push(Action::new("discrete-gpu", "Open on discrete GPU", IpcCall::new("app", "gpu").arg(&e.id).into()));
+                out.push(Action::new("discrete-gpu", "Open on discrete GPU", Intent::AppGpu(e.id.clone()).into()));
             }
             if s.windows > 0 {
                 out.push(Action::new("move-to-workspace", "Move to workspace\u{2026}", Run::Target(TargetKind::Workspace)));
@@ -353,40 +394,40 @@ fn builtins(s: &Subject) -> Vec<Action> {
                 out.push(copy("copy-path", "Copy desktop file path", &e.path));
             }
         }
-        Kind::Other(k) if k == WINDOW_KIND => {
+        Kind::Window => {
             let id = &n.path;
-            out.push(Action::new("focus", "Focus", IpcCall::new("window", "focus").arg(id).into()));
-            let mut close = Action::new("close", "Close", IpcCall::new("window", "close").arg(id).into());
+            out.push(Action::new("focus", "Focus", Intent::WindowFocus(id.clone()).into()));
+            let mut close = Action::new("close", "Close", Intent::WindowClose(id.clone()).into());
             close.destructive = true;
             out.push(close);
             out.push(Action::new("move-to-workspace", "Move to workspace\u{2026}", Run::Target(TargetKind::Workspace)));
-            out.push(Action::new("float", "Toggle floating", IpcCall::new("window", "float").arg(id).into()));
-            out.push(Action::new("fullscreen", "Fullscreen", IpcCall::new("window", "fullscreen").arg(id).into()));
+            out.push(Action::new("float", "Toggle floating", Intent::WindowFloat(id.clone()).into()));
+            out.push(Action::new("fullscreen", "Fullscreen", Intent::WindowFullscreen(id.clone()).into()));
         }
         Kind::Submenu | Kind::Provider | Kind::Link => {
             let to = n.target.clone().filter(|_| n.kind == Kind::Link).unwrap_or_else(|| n.id.clone());
             out.push(Action::new("open", "Open", Run::Into(to)));
             let mut pin = if s.pinned {
-                Action::new("unpin-recent", "Unpin from Recent", IpcCall::new("recent", "unpin").arg(subject_id(n)).into())
+                Action::new("unpin-recent", "Unpin from Recent", Intent::RecentUnpin(subject_id(n).to_string()).into())
             } else {
-                Action::new("pin-recent", "Pin to Recent", IpcCall::new("recent", "pin").arg(subject_id(n)).into())
+                Action::new("pin-recent", "Pin to Recent", Intent::RecentPin(subject_id(n).to_string()).into())
             };
             pin.keep_open = true;
             out.push(pin);
         }
-        Kind::Other(k) if k == FILE_KIND => {
+        Kind::File => {
             out.push(Action::new("open", "Open", xdg_open(&n.path)));
             out.push(Action::new("open-with", "Open with\u{2026}", Run::Target(TargetKind::App)));
             out.push(Action::new("show-in-folder", "Show in folder", show_in_folder(&n.path)));
             out.push(copy("copy-path", "Copy path", &n.path));
             out.push(Action::new("send-to", "Send to\u{2026}", Run::Target(TargetKind::Peer)));
         }
-        Kind::Other(k) if k == FOLDER_KIND => {
+        Kind::Folder => {
             out.push(Action::new("open", "Open in the file manager", xdg_open(&n.path)));
             out.push(copy("copy-path", "Copy path", &n.path));
-            out.push(Action::new("contents", "Open folder contents", Run::Into(subject_id(n))));
+            out.push(Action::new("contents", "Open folder contents", Run::Into(subject_id(n).to_string())));
         }
-        Kind::Other(k) if k == PACKAGE_KIND => {
+        Kind::Package => {
             if let Some(action) = &n.action {
                 let mut install = Action::new("install", "Install", action.clone());
                 install.keep_open = true;
@@ -398,14 +439,14 @@ fn builtins(s: &Subject) -> Vec<Action> {
         }
         Kind::Image => {
             let label = if s.picker_select { "Choose" } else { "Set wallpaper" };
-            out.push(Action::new("set", label, IpcCall::new("wallpaper", "set").arg(&n.path).into()));
+            out.push(Action::new("set", label, Intent::WallpaperSet(n.path.clone()).into()));
             // The sky cell is drawn by the shell: no file to open or copy.
             if !n.path.starts_with('/') {
                 return out;
             }
             if s.single && !s.picker_select {
-                out.push(Action::new("light-only", "Use in light mode only", IpcCall::new("wallpaper", "setFor").arg("light").arg(&n.path).into()));
-                out.push(Action::new("dark-only", "Use in dark mode only", IpcCall::new("wallpaper", "setFor").arg("dark").arg(&n.path).into()));
+                out.push(Action::new("light-only", "Use in light mode only", Intent::WallpaperSetFor("light".into(), n.path.clone()).into()));
+                out.push(Action::new("dark-only", "Use in dark mode only", Intent::WallpaperSetFor("dark".into(), n.path.clone()).into()));
             }
             out.push(Action::new("open-file", "Open file", xdg_open(&n.path)));
             out.push(copy("copy-path", "Copy path", &n.path));
@@ -449,7 +490,8 @@ fn builtins(s: &Subject) -> Vec<Action> {
 /// it is: a configured one is settings.json's, so only a line saying so.
 fn abbreviation_actions(s: &Subject) -> Vec<Action> {
     let Some((q, source)) = s.abbrev else { return Vec::new() };
-    let ipc = |verb: &str| Run::Ipc(IpcCall::new("abbrev", verb).arg(q));
+    let forget = Run::Intent(Intent::AbbrevForget(q.to_owned()));
+    let pin = Run::Intent(Intent::AbbrevPin(q.to_owned()));
     let keep = |mut a: Action| {
         a.keep_open = true;
         a
@@ -458,11 +500,11 @@ fn abbreviation_actions(s: &Subject) -> Vec<Action> {
         Source::Configured => vec![Action::new("abbrev-configured", "Set in settings.json", Run::Note)],
         Source::Pinned | Source::Learned => {
             let mut out = vec![
-                keep(Action::new("abbrev-forget", format!("Forget \u{201C}{q}\u{201D}"), ipc("forget"))),
+                keep(Action::new("abbrev-forget", format!("Forget \u{201C}{q}\u{201D}"), forget)),
                 Action::new("abbrev-edit", "Edit abbreviation", Run::Input(format!("Abbreviation for {}", s.node.label))),
             ];
             if source == Source::Learned {
-                out.push(keep(Action::new("abbrev-pin", format!("Pin \u{201C}{q}\u{201D}"), ipc("pin"))));
+                out.push(keep(Action::new("abbrev-pin", format!("Pin \u{201C}{q}\u{201D}"), pin)));
             }
             out
         }
@@ -488,7 +530,7 @@ pub fn actions_for(s: &Subject) -> Vec<Action> {
     // After the node's own, so a network with no Forget keeps the panel on
     // Shift+Enter.
     if is_wifi_network(s.node) {
-        out.push(Action::new("details", "Details", Run::Into(subject_id(s.node))));
+        out.push(Action::new("details", "Details", Run::Into(subject_id(s.node).to_string())));
     }
     out.extend(abbreviation_actions(s));
     out.extend(uninstall_action(s));
@@ -498,7 +540,7 @@ pub fn actions_for(s: &Subject) -> Vec<Action> {
 /// An app's last action, once fspec said this host's spec holds it.
 pub fn uninstall_action(s: &Subject) -> Option<Action> {
     let id = s.removable.filter(|_| s.node.kind == Kind::App)?;
-    let mut uninstall = Action::new("uninstall", format!("Uninstall {}", s.node.label), IpcCall::new("package", "uninstall").arg(id).into());
+    let mut uninstall = Action::new("uninstall", format!("Uninstall {}", s.node.label), Intent::PackageUninstall(id.to_owned()).into());
     uninstall.confirm = true;
     uninstall.destructive = true;
     Some(uninstall)
@@ -603,7 +645,7 @@ pub fn primary_action(c: &ActionCtx) -> Option<KeyHint> {
         return Some(hint(KEY_ENTER, verb));
     }
     let label = match node.kind {
-        Kind::Other(ref k) if k == "option" => "Select",
+        Kind::Option => "Select",
         Kind::Image if c.picker_select => "Choose",
         Kind::Image => "Set wallpaper",
         Kind::App | Kind::Submenu | Kind::Provider | Kind::Link => "Open",
@@ -635,30 +677,6 @@ pub fn action_bar(c: &ActionCtx) -> ActionBar {
     ActionBar { primary: primary_action(c), hints: hints(c) }
 }
 
-/// The chords that summon a route directly, as a reader would type them.
-pub const ROUTE_CHORDS: &[(&str, &str)] = &[
-    ("apps", "Super+Alt+Space"),
-    ("calc", "Super+Ctrl+Q"),
-    ("capture", "Super+Ctrl+C"),
-    ("clipboard", "Super+Ctrl+V"),
-    ("emoji", "Super+Ctrl+E"),
-    ("keybinds", "Super+K"),
-    ("reminder", "Super+Ctrl+R"),
-    ("share", "Super+Ctrl+S"),
-    ("system", "Super+Escape"),
-    ("theme", "Super+Shift+Ctrl+Space"),
-    ("toggles", "Super+Ctrl+O"),
-    ("wallpaper", "Super+Ctrl+Space"),
-];
-
-fn lookup(table: &[(&str, &'static str)], id: &str) -> &'static str {
-    table.iter().find(|(k, _)| *k == id).map_or("", |(_, v)| v)
-}
-
-pub fn chord_for(id: &str) -> &'static str {
-    lookup(ROUTE_CHORDS, id)
-}
-
 /// A count only for a provider node, whose children are a listing; zero reads
 /// as no hint at all.
 pub fn count_for(node: Option<&Node>) -> String {
@@ -671,8 +689,7 @@ pub fn count_for(node: Option<&Node>) -> String {
 /// The chord wins over the count.
 pub fn hint_for(node: Option<&Node>) -> String {
     let Some(n) = node else { return String::new() };
-    let chord = chord_for(&n.id);
-    if chord.is_empty() { count_for(node) } else { chord.to_string() }
+    if n.chord.is_empty() { count_for(node) } else { n.chord.clone() }
 }
 
 /// The row's trailing value: its own (a level, a source), else a route's
@@ -704,7 +721,7 @@ mod tests {
         let app = Node::new("apps.x", "X", Kind::App);
         let act = Node::new("a", "Lock", Kind::Action);
         let img = Node::new("i", "i", Kind::Image);
-        let opt = Node::new("select.0", "o", Kind::Other("option".into()));
+        let opt = Node::new("select.0", "o", Kind::Option);
         let ctx = |n| ActionCtx { node: Some(n), ..Default::default() };
         assert_eq!(primary_action(&ctx(&app)).unwrap().label, "Open");
         assert_eq!(primary_action(&ctx(&act)).unwrap().label, "Run");
@@ -736,8 +753,10 @@ mod tests {
     #[test]
     fn an_action_is_parsed_once_into_a_call_or_a_line() {
         let call = |t: &str, f: &str, args: &[&str]| Run::Ipc(IpcCall { target: t.into(), function: f.into(), args: args.iter().map(|a| (*a).into()).collect() });
-        assert_eq!(Run::parse("@ipc:theme.toggleMode"), call("theme", "toggleMode", &[]));
-        assert_eq!(Run::parse("@ipc:wifi.activate:Home:5G"), call("wifi", "activate", &["Home", "5G"]));
+        assert_eq!(Run::parse("@ipc:theme.toggleMode"), Run::Intent(Intent::ThemeToggleMode));
+        assert_eq!(Run::parse("@ipc:wifi.activate:Home:5G"), Run::Intent(Intent::WifiActivate("Home:5G".into())));
+        assert_eq!(Run::parse("@ipc:app.open"), call("app", "open", &[]));
+        assert_eq!(Run::parse("@ipc:panel.open:audio"), call("panel", "open", &["audio"]));
         assert_eq!(Run::parse("formalshell-ipc call screenshot full default"), call("screenshot", "full", &["default"]));
         assert_eq!(Run::parse("formalshell-ipc call panel open $X"), Run::Shell("formalshell-ipc call panel open $X".into()));
         assert_eq!(Run::parse("formalshell-ipc call panel"), Run::Shell("formalshell-ipc call panel".into()));
@@ -763,7 +782,7 @@ mod tests {
         assert_eq!(accessory_for(Some(&Node::new("a", "a", Kind::Action))), "");
         let emoji = Node { prefix: Some(":e".into()), ..Node::new("emoji", "Emoji", Kind::Provider) };
         assert_eq!(accessory_for(Some(&emoji)), ":e");
-        let clip = Node::new("clipboard", "Clipboard", Kind::Provider);
+        let clip = Node { chord: "Super+Ctrl+V".into(), ..Node::new("clipboard", "Clipboard", Kind::Provider) };
         assert_eq!(accessory_for(Some(&clip)), "Super Ctrl V");
         let tray = Node { child_ids: vec!["a".into(), "b".into()], ..Node::new("tray", "Tray", Kind::Provider) };
         assert_eq!(accessory_for(Some(&tray)), "2");

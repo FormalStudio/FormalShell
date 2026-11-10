@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use common::*;
 use fs_chrome::bar::panels::PanelId;
 use fs_menu::actions::{IpcCall, Run};
-use fs_menu::node::Kind;
+use fs_menu::node::{Kind, Provider};
 use fs_menu::providers::{
     ProviderFn, RadioState, RadioStation, TrayItem, apply_providers, capture_entries, panel_ids, panels_provider,
     radio_result_rows, radio_rows, tray_provider,
@@ -53,7 +53,7 @@ fn launcher_pages_are_root_routes() {
     let tree = real_tree();
     for (id, label) in LAUNCHER_PAGES {
         let node = tree.nodes.get(*id).unwrap_or_else(|| panic!("missing launcher route '{id}'"));
-        assert_eq!(node.provider.as_deref(), Some(*id), "{id} is not held by its own provider");
+        assert_eq!(node.provider.as_ref().map(Provider::as_str), Some(*id), "{id} is not held by its own provider");
         assert!(!tree.nodes.contains_key(&format!("panels.{id}")), "{id} is still a Panels row");
         let ranked = search::rank(&tree.nodes, label, &no_conds(), None);
         assert!(ids(&ranked).contains(id), "root query '{label}' does not reach {id}");
@@ -140,15 +140,15 @@ fn wifi_is_a_root_provider_node() {
     let tree = real_tree();
     let node = &tree.nodes["wifi"];
     assert_eq!(node.kind, Kind::Provider);
-    assert_eq!(node.provider.as_deref(), Some("wifi"));
+    assert_eq!(node.provider.as_ref().map(Provider::as_str), Some("wifi"));
     assert_eq!(node.parent_id, None);
 }
 
 fn device_tree() -> fs_menu::node::Tree {
     let mut tree = real_tree();
-    let mut fns: HashMap<String, ProviderFn> = HashMap::new();
+    let mut fns: HashMap<Provider, ProviderFn> = HashMap::new();
     fns.insert(
-        "radio".into(),
+        Provider::Radio,
         Box::new(|| {
             let favorite = RadioStation { uuid: "u-1".into(), name: "Groove Salad".into(), ..RadioStation::default() };
             let result = RadioStation { uuid: "u-2".into(), name: "Zebra Jazz".into(), ..RadioStation::default() };
@@ -166,10 +166,10 @@ fn device_routes_exist_at_root() {
     let tree = device_tree();
     for (id, provider) in [("wifi", "wifi"), ("bluetooth", "bluetooth"), ("audio", "audio"), ("radio", "radio")] {
         let node = tree.nodes.get(id).unwrap_or_else(|| panic!("missing route {id}"));
-        assert_eq!(node.provider.as_deref(), Some(provider));
+        assert_eq!(node.provider.as_ref().map(Provider::as_str), Some(provider));
         assert_eq!(node.parent_id, None);
     }
-    assert_eq!(tree.nodes["radio.search"].provider.as_deref(), Some("radioSearch"));
+    assert_eq!(tree.nodes["radio.search"].provider.as_ref().map(Provider::as_str), Some("radioSearch"));
     assert_eq!(tree.nodes["radio.search"].parent_id.as_deref(), Some("radio"));
 }
 

@@ -17,11 +17,13 @@
 use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
-use fs_menu::actions::{Action, IpcCall, Run, TargetKind};
+use fs_menu::actions::{Action, IpcCall, Run, SubjectId, TargetKind};
 use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir};
-use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
+use fs_menu::intent::Intent;
+use fs_menu::node::{ActionEntry, Kind as NodeKind, Node, Provider};
 use fs_menu::toggles::{self, Snapshot};
+use crate::ui::confirm::Armed;
 use fs_types::{Edge, WindowId};
 use fs_theme::style::Role;
 use fs_theme::theme::Theme;
@@ -121,7 +123,7 @@ struct ViewId {
     key: String,
     query: String,
     cursor: String,
-    confirm: String,
+    confirm: Option<Confirm>,
     column: Option<(usize, bool)>,
 }
 
@@ -152,7 +154,7 @@ pub struct Model {
     /// The last scroll came off a wheel notch: it glides there without
     /// overshooting either end.
     wheeled: bool,
-    confirm: String,
+    confirm: Armed<Confirm>,
     pub scroll: f64,
     /// A touchpad's pull past either end, drawn over `scroll`, and the
     /// coast after a flick, which moves `scroll` frame by frame.
@@ -179,7 +181,7 @@ pub struct Model {
     /// The monitor route keeps both polls running while it is the level.
     monitor_wants: Option<(crate::services::wants::Want, crate::services::wants::Want)>,
     /// The pid an Enter armed TERM on; the next Enter on it sends it.
-    monitor_armed: Option<u64>,
+    monitor_armed: Armed<u64>,
     /// The camera the mirror shows, by node path.
     pub mirror_current: String,
     /// The monitor tiles' history lines, started when the route opens.
@@ -493,7 +495,7 @@ impl Default for Model {
             output_w: 0.0,
             monitor_strip_h: 0.0,
             monitor_wants: None,
-            monitor_armed: None,
+            monitor_armed: Armed::default(),
             mirror_current: String::new(),
             panel: None,
             monitor_history: MonitorHistory::default(),
@@ -510,7 +512,7 @@ impl Default for Model {
             from_keys: true,
             travels: false,
             wheeled: false,
-            confirm: String::new(),
+            confirm: Armed::default(),
             scroll: 0.0,
             touch: Touchpad::new(),
             layout: Layout::default(),
@@ -525,63 +527,52 @@ pub enum Out {
     None,
     Close,
     /// An `@ipc:` call the App answers in process.
-    Internal(IpcCall),
+    Call(IpcCall),
+    /// A verb of the launcher's the App answers.
+    Intent(Intent),
 }
 
-/// The `@ipc:` calls a row answers itself in [`Model::run`], before the
-/// App's own and the IPC targets: `(target, function, arguments)`.
-pub const ROW_VERBS: &[(&str, &str, usize)] = &[
-    ("abbrev", "forget", 1),
-    ("abbrev", "pin", 1),
-    ("recent", "pin", 1),
-    ("recent", "unpin", 1),
-    ("plugin", "send", 2),
-    ("window", "focus", 1),
-    ("window", "close", 1),
-    ("window", "float", 1),
-    ("window", "fullscreen", 1),
-    ("app", "open", 1),
-    ("app", "new", 1),
-    ("app", "action", 2),
-    ("wallpaper", "set", 1),
-    ("wallpaper", "setFor", 2),
-    ("monitor", "end", 1),
-];
+/// The row action a first press armed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Confirm {
+    node: String,
+    action: String,
+}
 
-/// Whether `table` names `call` with as many arguments as it carries.
-pub fn answers(table: &[(&str, &str, usize)], call: &IpcCall) -> bool {
-    table.iter().any(|(t, f, n)| *t == call.target && *f == call.function && *n == call.args.len())
+impl Confirm {
+    fn of(node: &Node, action: &Action) -> Confirm {
+        Confirm { node: node.id.clone(), action: action.id.clone() }
+    }
 }
 
 pub fn snapshot(store: &Store) -> Snapshot {
     let radio = &store.media.radio;
-    let connected: Vec<String> = store.bluetooth.devices.iter().filter(|x| x.connected).map(|x| x.address.to_string()).collect();
     let l = &store.lights;
     let ipad = store.ipad.bridge.as_ref();
-    toggles::snapshot(Some(&json!({
-        "nightlight.active": store.nightlight.active,
-        "lights.on": l.brightness > 0,
-        "lights.effect": l.effect,
-        "lights.source": l.source,
-        "lights.colour": if l.source == "custom" { l.custom_colour.as_str() } else { "" },
-        "lights.speed": l.speed,
-        "lights.brightness": l.brightness.to_string(),
-        "theme.dark": store.state.data.mode == "dark",
-        "caffeinate.active": store.caffeinate.active,
-        "notifications.dnd": store.notifications.model.dnd,
-        "overnight.active": store.state.data.overnight.is_some(),
-        "hdr.active": crate::services::display::hdr_active(store),
-        "wifi.ssid": store.network.ssid.as_ref().map_or("", |(s, _)| s.as_str()),
-        "audio.sink": store.audio.default_sink,
-        "audio.source": store.audio.default_source,
-        "bluetooth.connected": connected,
-        "radio.station": radio.station.as_ref().filter(|_| radio.running()).map_or("", |s| s.uuid.as_str()),
-        "ipad.active": ipad.is_some_and(|i| i.active),
-        "ipad.edge": ipad.map_or("", |i| i.edge.as_str()),
-        "ipad.stretch": ipad
+    Snapshot {
+        nightlight: store.nightlight.active,
+        overnight: store.state.data.overnight.is_some(),
+        caffeinate: store.caffeinate.active,
+        dnd: store.notifications.model.dnd,
+        dark: store.state.data.mode == "dark",
+        lights_on: l.brightness > 0,
+        hdr: crate::services::display::hdr_active(store),
+        ipad_active: ipad.is_some_and(|i| i.active),
+        lights_effect: l.effect.clone(),
+        lights_source: l.source.clone(),
+        lights_colour: if l.source == "custom" { l.custom_colour.clone() } else { String::new() },
+        lights_speed: l.speed.clone(),
+        lights_brightness: l.brightness.to_string(),
+        wifi_ssid: store.network.ssid.as_ref().map_or_else(String::new, |(s, _)| s.clone()),
+        audio_sink: store.audio.default_sink.clone(),
+        audio_source: store.audio.default_source.clone(),
+        radio_station: radio.station.as_ref().filter(|_| radio.running()).map_or_else(String::new, |s| s.uuid.clone()),
+        ipad_edge: ipad.map_or_else(String::new, |i| i.edge.as_str().to_owned()),
+        ipad_stretch: ipad
             .and_then(|i| fs_menu::providers::IPAD_STRETCHES.iter().find(|(_, _, a, b)| i.stretch.near(*a, *b)))
-            .map_or("", |(id, ..)| *id),
-    })))
+            .map_or_else(String::new, |(id, ..)| (*id).to_owned()),
+        bluetooth_connected: store.bluetooth.devices.iter().filter(|x| x.connected).map(|x| x.address.to_string()).collect(),
+    }
 }
 
 fn radio_station(s: &fs_media::radio::stations::Station) -> fs_menu::providers::RadioStation {
@@ -635,7 +626,7 @@ fn network_rows(store: &Store, ssid: &str, q: &str) -> Vec<Node> {
 }
 
 /// The four device routes' rows, off the store.
-pub fn device_sources(store: &Store) -> Vec<(&'static str, Vec<Node>)> {
+pub fn device_sources(store: &Store) -> Vec<(Provider, Vec<Node>)> {
     use fs_menu::providers as p;
     let n = &store.network;
     let wifi = p::WifiState {
@@ -654,10 +645,10 @@ pub fn device_sources(store: &Store) -> Vec<(&'static str, Vec<Node>)> {
     let r = &store.media.radio;
     let radio = p::RadioState { running: r.running(), favorites: r.favorites.iter().map(radio_station).collect() };
     vec![
-        ("wifi", p::wifi_rows(&wifi)),
-        ("bluetooth", p::bluetooth_rows(&bluetooth)),
-        ("audio", p::audio_rows(&audio)),
-        ("radio", p::radio_rows(&radio)),
+        (Provider::Wifi, p::wifi_rows(&wifi)),
+        (Provider::Bluetooth, p::bluetooth_rows(&bluetooth)),
+        (Provider::Audio, p::audio_rows(&audio)),
+        (Provider::Radio, p::radio_rows(&radio)),
     ]
 }
 
@@ -670,7 +661,7 @@ pub fn plugin_modes(store: &Store) -> Vec<(String, String)> {
 
 /// Each plugin mode's rows off what its plugin last printed, or the one dim
 /// row that says why there are none.
-pub fn plugin_sources(store: &Store) -> Vec<(String, Vec<Node>)> {
+pub fn plugin_sources(store: &Store) -> Vec<(Provider, Vec<Node>)> {
     use crate::services::plugins::Run as Printed;
     let state = &store.plugins;
     fs_chrome::plugins::launcher_plugins(&state.resolved.plugins)
@@ -687,14 +678,14 @@ pub fn plugin_sources(store: &Store) -> Vec<(String, Vec<Node>)> {
                     if rows.is_empty() { note("No results".into()) } else { rows }
                 }
             };
-            (route, rows)
+            (Provider::Plugin(route), rows)
         })
         .collect()
 }
 
-/// The call that writes `line` to plugin `id`'s stdin.
-fn plugin_send(id: &str, line: &str) -> IpcCall {
-    IpcCall::new("plugin", "send").arg(id).arg(line)
+/// The verb that writes `line` to plugin `id`'s stdin.
+fn plugin_send(id: &str, line: &str) -> Intent {
+    Intent::PluginSend(id.to_owned(), line.to_owned())
 }
 
 /// A plugin mode's rows: each activates its row, then its own actions; a
@@ -736,7 +727,7 @@ impl Model {
             key: self.key.clone(),
             query: self.query.text().to_owned(),
             cursor: self.cursor_id.clone(),
-            confirm: self.confirm.clone(),
+            confirm: self.confirm.get().cloned(),
             column: self.column.as_ref().map(|c| (c.cursor, c.target.is_some())),
         }
     }
@@ -1274,7 +1265,7 @@ impl Model {
                 self.select_options
                     .iter()
                     .enumerate()
-                    .map(|(i, o)| Node::new(format!("select.{i}"), o.clone(), NodeKind::Other("option".into())))
+                    .map(|(i, o)| Node::new(format!("select.{i}"), o.clone(), NodeKind::Option))
                     .filter(|n| ql.is_empty() || n.label.to_lowercase().contains(&ql))
                     .collect()
             }
@@ -1708,7 +1699,7 @@ impl Model {
         self.placed = true;
         self.want = self.cursor_id.clone();
         self.confirm.clear();
-        self.monitor_armed = None;
+        self.monitor_armed.clear();
         self.from_keys = true;
         self.touch.settle();
         self.follow();
@@ -1898,7 +1889,7 @@ impl Model {
             "ids": self.rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
             "checked": checked,
             "drawn": drawn,
-            "abbrev": self.rows.get(self.cursor).and_then(|n| self.lookup.source_of(&fs_menu::actions::subject_id(n))).map(fs_menu::abbrev::Source::as_str),
+            "abbrev": self.rows.get(self.cursor).and_then(|n| self.lookup.source_of(&fs_menu::actions::subject_id(n).to_string())).map(fs_menu::abbrev::Source::as_str),
             "token": self.token(store),
             "actionsOpen": self.column.is_some(),
             "actions": self.column.as_ref().map_or_else(Vec::new, Column::ids),
@@ -1989,15 +1980,18 @@ impl Model {
             .nodes()
             .values()
             .flat_map(|n| {
-                let when = n.when.clone().filter(|c| !toggles::is_state_condition(c)).map(|c| (n.id.clone(), c, true));
-                let checked = n.checked.clone().filter(|c| !toggles::is_state_condition(c)).map(|c| (n.id.clone(), c, false));
+                let when = n.when.clone().filter(|c| !c.starts_with(toggles::PREFIX)).map(|c| (n.id.clone(), c, true));
+                let checked = match &n.checked {
+                    Some(toggles::Checked::Shell(line)) => Some((n.id.clone(), line.clone(), false)),
+                    _ => None,
+                };
                 when.into_iter().chain(checked)
             })
             .collect();
         index::ask(Ask::Conds(conds));
         index::ask(Ask::Binds);
         index::ask(Ask::Files);
-        let paths: Vec<String> = store.state.data.picks.iter().filter_map(|r| Some(r.id.strip_prefix(fs_menu::actions::FILE_SUBJECT)?.to_owned())).collect();
+        let paths: Vec<String> = store.state.data.picks.iter().filter_map(|r| match SubjectId::parse(&r.id) { SubjectId::File(path) => Some(path), _ => None }).collect();
         if !paths.is_empty() {
             index::ask(Ask::Stat(paths));
         }
@@ -2043,7 +2037,7 @@ impl Model {
             self.picker_abandon();
         }
         self.monitor_wants = None;
-        self.monitor_armed = None;
+        self.monitor_armed.clear();
         if self.on_mirror() {
             crate::services::mirror::command(crate::services::mirror::Cmd::Stream(None));
         }
@@ -2111,7 +2105,7 @@ impl Model {
             self.picker_abandon();
         }
         let entering = id.as_deref() == Some(PICKER_ROUTE);
-        self.monitor_armed = None;
+        self.monitor_armed.clear();
         if id.as_deref() == Some(MIRROR_ROUTE) {
             self.mirror_current.clear();
             crate::services::mirror::command(crate::services::mirror::Cmd::List);
@@ -2168,7 +2162,7 @@ impl Model {
         if self.on_picker()
             && let Some(page) = self.picker.from.take()
         {
-            return Out::Internal(IpcCall::new("panel", "open").arg(page.as_str()));
+            return Out::Call(IpcCall::new("panel", "open").arg(page.as_str()));
         }
         let parent = store.menu.nodes().get(&level).and_then(|n| n.parent_id.clone());
         self.enter_level(store, parent);
@@ -2207,7 +2201,7 @@ impl Model {
     /// query inside it.
     fn query_changed(&mut self, store: &Store) {
         self.confirm.clear();
-        self.monitor_armed = None;
+        self.monitor_armed.clear();
         if let Some(c) = &mut self.column {
             c.refilter(self.query.text());
             return;
@@ -2237,7 +2231,7 @@ impl Model {
             }
             _ => None,
         };
-        let id = fs_menu::actions::subject_id(node);
+        let id = fs_menu::actions::subject_id(node).to_string();
         let abbrev = self.abbrev_key.as_deref().zip(self.lookup.source_of(&id));
         fs_menu::actions::Subject {
             node,
@@ -2284,7 +2278,7 @@ impl Model {
         if actions.is_empty() && asked.is_empty() {
             return false;
         }
-        let subject = fs_menu::actions::subject_id(&node);
+        let subject = fs_menu::actions::subject_id(&node).to_string();
         let asked_at = Instant::now();
         for id in &asked {
             plugins::send(id, plugins::actions_event(&subject, kind, &node.path));
@@ -2323,7 +2317,7 @@ impl Model {
     pub fn plugin_answers(&mut self, store: &Store) -> bool {
         let filter = self.query.text().to_owned();
         let Some(c) = self.column.as_mut().filter(|c| c.target.is_none() && !c.asked.is_empty()) else { return false };
-        let subject = fs_menu::actions::subject_id(&c.node);
+        let subject = fs_menu::actions::subject_id(&c.node).to_string();
         let mut joined = false;
         for id in std::mem::take(&mut c.asked) {
             let answer = store.plugins.answers.get(&id).filter(|a| a.at >= c.asked_at && a.subject == subject);
@@ -2340,7 +2334,7 @@ impl Model {
                     continue;
                 }
                 let label = if a.label.is_empty() { a.id.clone() } else { a.label.clone() };
-                let mut action = Action::new(&a.id, label, Run::Ipc(plugin_send(&id, &plugins::action_event(&subject, &a.id))));
+                let mut action = Action::new(&a.id, label, Run::Intent(plugin_send(&id, &plugins::action_event(&subject, &a.id))));
                 action.icon = Some(a.icon.clone()).filter(|i| !i.is_empty());
                 c.actions.push(action);
             }
@@ -2442,16 +2436,16 @@ impl Model {
             }
             _ => {}
         }
-        let armed = format!("{}\u{1}{}", node.id, action.id);
-        if action.confirm && self.confirm != armed {
-            self.confirm = armed;
+        let armed = Confirm::of(node, action);
+        if action.confirm && !self.confirm.is(&armed) {
+            self.confirm.arm(armed);
             self.dirty = true;
             return Out::None;
         }
         self.close_actions();
         // Closing the column disarms; this run is the confirmed one.
         if action.confirm {
-            self.confirm = armed;
+            self.confirm.arm(armed);
         }
         self.run(store, node, action)
     }
@@ -2459,7 +2453,8 @@ impl Model {
     /// The column action a first Enter armed, by position in the actions.
     fn column_armed(&self) -> Option<usize> {
         let c = self.column.as_ref()?;
-        c.actions.iter().position(|a| self.confirm == format!("{}\u{1}{}", c.node.id, a.id))
+        let armed = self.confirm.get().filter(|k| k.node == c.node.id)?;
+        c.actions.iter().position(|a| a.id == armed.action)
     }
 
     /// A click on the column's `i`th entry.
@@ -2563,7 +2558,7 @@ impl Model {
     pub fn activate(&mut self, store: &Store, index: usize) -> Out {
         self.close_actions();
         let Some(node) = self.rows.get(index).cloned() else { return Out::None };
-        if matches!(node.kind, NodeKind::Other(ref k) if k == "option") {
+        if node.kind == NodeKind::Option {
             self.complete_select(&node.label);
             return Out::Close;
         }
@@ -2599,8 +2594,12 @@ impl Model {
         if self.mode != Mode::Menu {
             return;
         }
-        let id = fs_menu::actions::subject_id(node);
-        let file = id.strip_prefix(fs_menu::actions::FILE_SUBJECT);
+        let subject = fs_menu::actions::subject_id(node);
+        let id = subject.to_string();
+        let file = match &subject {
+            SubjectId::File(path) => Some(path.as_str()),
+            _ => None,
+        };
         if file.is_none() && !resolves(store, &id) {
             return;
         }
@@ -2612,10 +2611,11 @@ impl Model {
         // deleted file are pruned: a provider's rows (a network out of
         // range, a stopped player) come back, and before the scan no app
         // resolves at all.
-        let apps_known = !store.menu.exec.is_empty();
-        let gone = |id: &str| match id.strip_prefix(fs_menu::actions::FILE_SUBJECT) {
-            Some(path) => store.menu.files.get(path) == Some(&None),
-            None => apps_known && id.starts_with("app:") && !resolves(store, id),
+        let apps_known = !store.menu.exec.apps.is_empty();
+        let gone = |id: &str| match SubjectId::parse(id) {
+            SubjectId::File(path) => store.menu.files.get(&path) == Some(&None),
+            SubjectId::App(_) => apps_known && !resolves(store, id),
+            SubjectId::Emoji(_) | SubjectId::Node(_) => false,
         };
         let held: Vec<fs_menu::frecency::Record> = store.state.data.picks.iter().filter(|r| !gone(&r.id)).cloned().collect();
         let mut fields = vec![state::Field::Picks(fs_menu::frecency::record(&held, &id, now, None))];
@@ -2631,16 +2631,14 @@ impl Model {
 
     /// Whether a confirm action on row `id` is armed.
     pub fn confirming(&self, id: &str) -> bool {
-        !self.confirm.is_empty() && self.confirm.split('\u{1}').next() == Some(id)
+        self.confirm.get().is_some_and(|k| k.node == id)
     }
 
     /// One action on one row. A `confirm` action arms on the first run and
     /// runs on the second; a `keepOpen` one leaves the launcher up.
     pub fn run(&mut self, store: &Store, node: &Node, action: &fs_menu::actions::Action) -> Out {
         use fs_menu::actions::Run;
-        let armed = format!("{}\u{1}{}", node.id, action.id);
-        if action.confirm && self.confirm != armed {
-            self.confirm = armed;
+        if action.confirm && !self.confirm.press(Confirm::of(node, action)) {
             self.dirty = true;
             return Out::None;
         }
@@ -2648,7 +2646,7 @@ impl Model {
         let out = match &action.run {
             Run::Into(id) => {
                 self.picked(store, node);
-                let into = if *id != fs_menu::actions::subject_id(node) {
+                let into = if *id != fs_menu::actions::subject_id(node).to_string() {
                     None
                 } else if node.kind == NodeKind::App {
                     Some(Into::Windows(id.clone()))
@@ -2672,107 +2670,106 @@ impl Model {
                 return Out::None;
             }
             Run::Input(prompt) => {
-                let subject = fs_menu::actions::subject_id(node);
+                let subject = fs_menu::actions::subject_id(node).to_string();
                 let editing = self.abbrev_key.clone().map(|q| (subject, q));
                 self.open_input(prompt, ABBREV_EDIT, false);
                 self.editing = editing;
                 return Out::None;
             }
             Run::Target(_) | Run::Note => return Out::None,
-            Run::Ipc(call) if !answers(ROW_VERBS, call) => Out::Internal(call.clone()),
-            Run::Ipc(call) => {
-                let arg = call.at(0);
-                match (call.target.as_str(), call.function.as_str()) {
-                    // An abbreviation's own actions are no pick: picking
-                    // would teach the pair straight back.
-                    ("abbrev", verb @ ("forget" | "pin")) => {
-                        let subject = fs_menu::actions::subject_id(node);
-                        let book = index::abbreviation_book(store);
-                        let book = if verb == "pin" {
-                            fs_menu::abbrev::pin(&book, arg, &subject)
-                        } else {
-                            fs_menu::abbrev::forget(&book, arg, &subject)
-                        };
-                        state::set(vec![state::Field::Abbreviations(Some(book))]);
-                        self.dirty = true;
-                        if action.keep_open {
-                            return Out::None;
-                        }
-                        self.close();
-                        return Out::Close;
+            Run::Ipc(call) => Out::Call(call.clone()),
+            Run::Intent(intent) => match intent {
+                // An abbreviation's own actions are no pick: picking would
+                // teach the pair straight back.
+                Intent::AbbrevForget(q) | Intent::AbbrevPin(q) => {
+                    let subject = fs_menu::actions::subject_id(node).to_string();
+                    let book = index::abbreviation_book(store);
+                    let book = if matches!(intent, Intent::AbbrevPin(_)) {
+                        fs_menu::abbrev::pin(&book, q, &subject)
+                    } else {
+                        fs_menu::abbrev::forget(&book, q, &subject)
+                    };
+                    state::set(vec![state::Field::Abbreviations(Some(book))]);
+                    self.dirty = true;
+                    if action.keep_open {
+                        return Out::None;
                     }
-                    // A pin is no pick either: it would count twice.
-                    ("recent", verb @ ("pin" | "unpin")) => {
-                        let mut pinned: Vec<String> = store.state.data.recent_pinned.iter().filter(|id| *id != arg).cloned().collect();
-                        if verb == "pin" {
-                            pinned.push(arg.to_owned());
-                        }
-                        state::set(vec![state::Field::RecentPinned(pinned)]);
-                        self.dirty = true;
-                        if action.keep_open {
-                            return Out::None;
-                        }
-                        self.close();
-                        return Out::Close;
-                    }
-                    ("plugin", "send") => {
-                        plugins::send(arg, call.at(1).to_owned());
-                        Out::None
-                    }
-                    ("window", "focus") => {
-                        compositor::focus_window(&WindowId::new(arg));
-                        Out::None
-                    }
-                    ("window", "close") => {
-                        compositor::close_window(&WindowId::new(arg));
-                        Out::None
-                    }
-                    ("window", "float") => {
-                        compositor::send(compositor::Command::ToggleFloating(WindowId::new(arg)));
-                        Out::None
-                    }
-                    ("window", "fullscreen") => {
-                        compositor::send(compositor::Command::ToggleFullscreen(WindowId::new(arg)));
-                        Out::None
-                    }
-                    ("app", "open") => {
-                        let Some(entry) = node.entry.as_ref().filter(|e| e.id == arg) else { return Out::None };
-                        let target = fs_menu::appmatch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
-                        if let Some(target) = target {
-                            compositor::focus_window(&target);
-                        } else if let Some(argv) = index::launch_argv(&store.menu, arg) {
-                            crate::services::launch::spawn(store, arg, &argv);
-                        }
-                        Out::None
-                    }
-                    ("app", verb @ ("new" | "action")) => {
-                        let key = if verb == "action" { index::action_key(arg, call.at(1)) } else { arg.to_owned() };
-                        if let Some(argv) = index::launch_argv(&store.menu, &key) {
-                            crate::services::launch::spawn(store, arg, &argv);
-                        }
-                        Out::None
-                    }
-                    ("wallpaper", "set") => {
-                        self.picked(store, node);
-                        return if self.choose_image(store, arg) { Out::Close } else { Out::None };
-                    }
-                    ("wallpaper", "setFor") => {
-                        let Some(half) = state::Half::parse(arg) else { return Out::None };
-                        return if self.choose_for(store, call.at(1), half) { Out::Close } else { Out::None };
-                    }
-                    ("monitor", "end") => {
-                        let Ok(pid) = arg.parse::<u64>() else { return Out::None };
-                        self.dirty = true;
-                        if self.monitor_armed != Some(pid) {
-                            self.monitor_armed = Some(pid);
-                            return Out::None;
-                        }
-                        self.monitor_armed = None;
-                        Out::Internal(IpcCall::new("monitor", "kill").arg(pid.to_string()).arg("TERM"))
-                    }
-                    _ => Out::Internal(call.clone()),
+                    self.close();
+                    return Out::Close;
                 }
-            }
+                // A pin is no pick either: it would count twice.
+                Intent::RecentPin(id) | Intent::RecentUnpin(id) => {
+                    let mut pinned: Vec<String> = store.state.data.recent_pinned.iter().filter(|p| *p != id).cloned().collect();
+                    if matches!(intent, Intent::RecentPin(_)) {
+                        pinned.push(id.clone());
+                    }
+                    state::set(vec![state::Field::RecentPinned(pinned)]);
+                    self.dirty = true;
+                    if action.keep_open {
+                        return Out::None;
+                    }
+                    self.close();
+                    return Out::Close;
+                }
+                Intent::PluginSend(id, line) => {
+                    plugins::send(id, line.clone());
+                    Out::None
+                }
+                Intent::WindowFocus(id) => {
+                    compositor::focus_window(&WindowId::new(id));
+                    Out::None
+                }
+                Intent::WindowClose(id) => {
+                    compositor::close_window(&WindowId::new(id));
+                    Out::None
+                }
+                Intent::WindowFloat(id) => {
+                    compositor::send(compositor::Command::ToggleFloating(WindowId::new(id)));
+                    Out::None
+                }
+                Intent::WindowFullscreen(id) => {
+                    compositor::send(compositor::Command::ToggleFullscreen(WindowId::new(id)));
+                    Out::None
+                }
+                Intent::AppOpen(id) => {
+                    let Some(entry) = node.entry.as_ref().filter(|e| e.id == *id) else { return Out::None };
+                    let target = fs_menu::appmatch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
+                    if let Some(target) = target {
+                        compositor::focus_window(&target);
+                    } else if let Some(argv) = index::launch_argv(&store.menu, id) {
+                        crate::services::launch::spawn(store, id, &argv);
+                    }
+                    Out::None
+                }
+                Intent::AppNew(id) => {
+                    if let Some(argv) = index::launch_argv(&store.menu, id) {
+                        crate::services::launch::spawn(store, id, &argv);
+                    }
+                    Out::None
+                }
+                Intent::AppAction(id, key) => {
+                    if let Some(argv) = index::action_argv(&store.menu, id, key) {
+                        crate::services::launch::spawn(store, id, &argv);
+                    }
+                    Out::None
+                }
+                Intent::WallpaperSet(path) => {
+                    self.picked(store, node);
+                    return if self.choose_image(store, path) { Out::Close } else { Out::None };
+                }
+                Intent::WallpaperSetFor(half, path) => {
+                    let Some(half) = state::Half::parse(half) else { return Out::None };
+                    return if self.choose_for(store, path, half) { Out::Close } else { Out::None };
+                }
+                Intent::EndProcess(pid) => {
+                    self.dirty = true;
+                    if !self.monitor_armed.press(*pid) {
+                        return Out::None;
+                    }
+                    Out::Call(IpcCall::new("monitor", "kill").arg(pid.to_string()).arg("TERM"))
+                }
+                _ => Out::Intent(intent.clone()),
+            },
             Run::Spawn(argv) => {
                 compositor::spawn(argv);
                 Out::None
@@ -2797,8 +2794,8 @@ impl Model {
         }
         self.close();
         match out {
-            Out::Internal(call) => Out::Internal(call),
-            _ => Out::Close,
+            Out::Call(_) | Out::Intent(_) => out,
+            Out::None | Out::Close => Out::Close,
         }
     }
 
@@ -2977,13 +2974,15 @@ fn resolves(store: &Store, id: &str) -> bool {
 /// disk, an emoji in the dataset. Windows are left out: their ids do not
 /// outlive the window.
 fn outside_subject(store: &Store, id: &str) -> Option<Node> {
-    if let Some(path) = id.strip_prefix(fs_menu::actions::FILE_SUBJECT) {
-        // Read off the service's stat of the picks, never the disk here.
-        let dir = (*store.menu.files.get(path)?)?;
-        return Some(fs_menu::providers::recent_subject(path, dir, &std::env::var("HOME").unwrap_or_default()));
+    match SubjectId::parse(id) {
+        SubjectId::File(path) => {
+            // Read off the service's stat of the picks, never the disk here.
+            let dir = (*store.menu.files.get(&path)?)?;
+            Some(fs_menu::providers::recent_subject(&path, dir, &std::env::var("HOME").unwrap_or_default()))
+        }
+        SubjectId::Emoji(ch) => store.menu.emoji.as_ref()?.row_for(&ch, crate::settings::CLIPBOARD_PASTE.get(&store.config)),
+        SubjectId::App(_) | SubjectId::Node(_) => None,
     }
-    let ch = id.strip_prefix(fs_menu::actions::EMOJI_SUBJECT)?;
-    store.menu.emoji.as_ref()?.row_for(ch, crate::settings::CLIPBOARD_PASTE.get(&store.config))
 }
 
 /// The compositor's windows an app's entry claims.
@@ -3010,7 +3009,7 @@ fn window_rows(store: &Store, subject: &str, q: &str) -> Vec<Node> {
             ..Node::new(
                 format!("window:{}", w.id),
                 if w.title.is_empty() { app.label.clone() } else { w.title.clone() },
-                NodeKind::Other(fs_menu::actions::WINDOW_KIND.into()),
+                NodeKind::Window,
             )
         })
         .collect()
@@ -3040,7 +3039,7 @@ fn peer_targets(store: &Store) -> Vec<Node> {
         .peers
         .iter()
         .enumerate()
-        .map(|(i, p)| Node { meta: Some(p.ip.clone()), ..Node::new(format!("peer:{i}"), p.name.clone(), NodeKind::Other("target".into())) })
+        .map(|(i, p)| Node { meta: Some(p.ip.clone()), ..Node::new(format!("peer:{i}"), p.name.clone(), NodeKind::Target) })
         .collect();
     match (peers.is_empty(), ls.scanning || ls.last_scan_at == 0.0) {
         (false, _) => peers,
@@ -3057,7 +3056,7 @@ fn targets_for(store: &Store, kind: TargetKind) -> Vec<Node> {
         TargetKind::App => {
             let mut apps: Vec<Node> = model::visible_children(store.menu.nodes(), Some("apps"), &store.menu.cond)
                 .into_iter()
-                .filter_map(|n| n.entry.as_ref().map(|e| Node::new(format!("target-app:{}", e.id), n.label.clone(), NodeKind::Other("target".into()))))
+                .filter_map(|n| n.entry.as_ref().map(|e| Node::new(format!("target-app:{}", e.id), n.label.clone(), NodeKind::Target)))
                 .collect();
             apps.sort_by_key(|n| n.label.to_lowercase());
             apps
@@ -3083,7 +3082,7 @@ fn targets_for(store: &Store, kind: TargetKind) -> Vec<Node> {
             let next = snap.workspaces.iter().map(|w| w.idx).max().unwrap_or(0).max(0) + 1;
             let row = |idx: i64, meta: Option<String>| Node {
                 meta,
-                ..Node::new(format!("workspace:{idx}"), format!("Workspace {idx}"), NodeKind::Other("workspace".into()))
+                ..Node::new(format!("workspace:{idx}"), format!("Workspace {idx}"), NodeKind::Workspace)
             };
             let mut out: Vec<Node> = slots.into_iter().map(|(idx, name)| row(idx, (!name.is_empty() && name != idx.to_string()).then_some(name))).collect();
             out.push(row(next, Some("New".into())));
@@ -3856,7 +3855,7 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                     ..Default::default()
                 });
                 // A Style preview runs `theme mode`, which a pinned key refuses.
-                let mode_tile = m.view == View::Picker && matches!(&n.kind, NodeKind::Other(k) if k == fs_menu::providers::MODE_KIND);
+                let mode_tile = m.view == View::Picker && n.kind == NodeKind::WallpaperMode;
                 if mode_tile {
                     let key = crate::services::theme::mode_key(store.config.settings());
                     if key != "light" && key != "dark" {
@@ -3941,7 +3940,7 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
                 // A destructive label already names what it does (`Uninstall Firefox?`).
                 let label = match armed == Some(i) {
                     true if a.destructive => format!("{}?", a.label),
-                    true => format!("Confirm {}?", a.label),
+                    true => crate::ui::confirm::ask(&a.label),
                     false => a.label.clone(),
                 };
                 let trail = matches!(a.run, Run::Into(_)).then(|| w::icon("chevron-right").ink(Ink::Dim));
@@ -4080,7 +4079,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
                 .width(Size::Px(slot.w))
                 .pad(gutter, gutter, gutter, gutter)
         } else if m.view == View::Monitor {
-            proc_row(m, row, i, selected, theme).width(Size::Px(slot.w))
+            proc_row(m, store, row, i, selected, theme).width(Size::Px(slot.w))
         } else if i < cells && m.view == View::Picker {
             picker_tile(m, store, theme, &tiles, row, i, selected, slot)
         } else if i < cells {
@@ -4165,7 +4164,7 @@ fn mirror_body(m: &Model, store: &Store, theme: &Theme) -> El {
 
 /// The process table's rows: the filter, busiest first.
 fn monitor_rows(store: &Store, q: &str) -> Vec<Node> {
-    use fs_system::monitor::{format, procs};
+    use fs_system::monitor::procs;
     let p = &store.procs;
     if !p.available {
         let note = if p.sampled_ms.is_none() { "Reading processes" } else { "No process table" };
@@ -4179,9 +4178,8 @@ fn monitor_rows(store: &Store, q: &str) -> Vec<Node> {
         .take(200)
         .map(|r| Node {
             desc: Some(r.cmd.clone()),
-            meta: Some(format!("{}\u{1}{}\u{1}{}", r.pid, format::proc_pct(r.cpu_fraction), format::bytes(Some(r.mem_bytes)))),
             actions: vec![
-                ActionEntry { keep_open: Some(true), ..ActionEntry::new("end", "End", IpcCall::new("monitor", "end").arg(r.pid.to_string())) },
+                ActionEntry { keep_open: Some(true), ..ActionEntry::new("end", "End", Intent::EndProcess(r.pid)) },
                 ActionEntry { keep_open: Some(true), ..ActionEntry::new("kill", "Kill", IpcCall::new("monitor", "kill").arg(r.pid.to_string()).arg("KILL")).destructive() },
             ],
             ..Node::new(format!("proc.{}", r.pid), r.name.clone(), NodeKind::Action)
@@ -4233,13 +4231,13 @@ fn monitor_strip(store: &Store, theme: &Theme, h: &MonitorHistory) -> El {
 
 /// One process: name and command line, then pid, CPU and memory in mono.
 /// An armed row turns destructive under a confirm.
-fn proc_row(m: &Model, row: &Node, i: usize, selected: bool, theme: &Theme) -> El {
+fn proc_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, theme: &Theme) -> El {
+    use fs_system::monitor::format;
     let s = &theme.space;
     let pid = row.id.strip_prefix("proc.").and_then(|p| p.parse::<u64>().ok());
-    let armed = pid.is_some() && m.monitor_armed == pid;
-    let meta = row.meta.clone().unwrap_or_default();
-    let mut nums = meta.split('\u{1}');
-    let (pid_s, cpu, mem) = (nums.next().unwrap_or(""), nums.next().unwrap_or(""), nums.next().unwrap_or(""));
+    let armed = pid.is_some_and(|p| m.monitor_armed.is(&p));
+    let figures = pid.and_then(|p| store.procs.rows.iter().find(|r| r.pid == p));
+    let (pid_s, cpu, mem) = figures.map_or_else(Default::default, |r| (r.pid.to_string(), format::proc_pct(r.cpu_fraction), format::bytes(Some(r.mem_bytes))));
     let name = if armed { format!("End {}? Enter again", row.label) } else { row.label.clone() };
     let mut lead = vec![w::label(name).elide()];
     if row.kind == NodeKind::Note {
@@ -4250,7 +4248,7 @@ fn proc_row(m: &Model, row: &Node, i: usize, selected: bool, theme: &Theme) -> E
     }
     // Fixed gutters, so the mono figures line up down the table.
     let figure = |t: &str, px: f64| w::caption(t.to_owned()).mono().ink(Ink::Muted).width(Size::Px(px));
-    let trail = vec![figure(pid_s, 56.0), figure(cpu, 48.0), figure(mem, 56.0)];
+    let trail = vec![figure(&pid_s, 56.0), figure(&cpu, 48.0), figure(&mem, 56.0)];
     let parts = vec![w::row(s.icon_gap, lead).fill(), w::row(s.sm, trail)];
     w::cell(w::row(s.control_padding_x, parts).fill())
         .ghost()
@@ -4291,7 +4289,7 @@ pub fn pane_kind(n: &Node) -> Option<PaneKind> {
         Some(PaneKind::File)
     } else if fs_menu::providers::is_folder_subject(n) {
         Some(PaneKind::Folder)
-    } else if matches!(&n.kind, NodeKind::Other(k) if k == fs_menu::actions::WINDOW_KIND) {
+    } else if n.kind == NodeKind::Window {
         Some(PaneKind::Window)
     } else if fs_menu::providers::is_package(n) {
         Some(PaneKind::Package)
@@ -4612,7 +4610,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
         .then(|| store.menu.row_icons.get(&row.icon_source).cloned().flatten())
         .flatten();
     // An emoji in Recent is its own picture, drawn as text.
-    let emoji = fs_menu::actions::subject_id(row).starts_with(fs_menu::actions::EMOJI_SUBJECT);
+    let emoji = matches!(fs_menu::actions::subject_id(row), SubjectId::Emoji(_));
     let drawn = if !glyph.is_empty() {
         glyph.to_owned()
     } else if picture.is_none() && !row.emoji_only && !emoji {
@@ -4630,7 +4628,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     } else if emoji {
         lead.push(w::text(row.icon.clone()).size(Type::Heading).centred().width(Size::Px(icon_px)));
     }
-    let label = if confirming { format!("Confirm {}?", row.label) } else { row.label.clone() };
+    let label = if confirming { crate::ui::confirm::ask(&row.label) } else { row.label.clone() };
     let mut name = row_words(label);
     if row.dim == Some(true) {
         name = name.ink(Ink::Dim);

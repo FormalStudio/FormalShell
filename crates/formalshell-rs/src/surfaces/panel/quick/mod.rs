@@ -29,6 +29,7 @@ use crate::services::ipad::Link;
 use crate::services::wants::Source;
 use crate::services::{display, theme};
 use crate::store::{Store, Topic};
+use crate::ui::confirm::Armed;
 use crate::surfaces::activity;
 use crate::surfaces::bar::cell::{Action as CellAction, Button, Cell, Env, Summary};
 use crate::surfaces::bar::cells;
@@ -457,13 +458,20 @@ pub struct MenuView {
     pub settings: Option<(&'static str, Hand)>,
 }
 
-/// The power menu's actions as `m:power:<what>` names them, with their
-/// rows' words at rest and armed. Suspend needs no second Enter.
-const POWER: [(&str, &str, &str); 4] = [
-    ("suspend", "Suspend", ""),
-    ("reboot", "Restart…", "Confirm restart?"),
-    ("poweroff", "Power off…", "Confirm power off?"),
-    ("logout", "Log out…", "Confirm log out?"),
+/// One power menu action: as `m:power:<what>` names it, its row's words
+/// at rest, and what an armed row asks after (`confirm::ask`), "" for one
+/// that needs no second Enter.
+pub struct Power {
+    pub what: &'static str,
+    pub rest: &'static str,
+    pub noun: &'static str,
+}
+
+pub const POWER: [Power; 4] = [
+    Power { what: "suspend", rest: "Suspend", noun: "" },
+    Power { what: "reboot", rest: "Restart…", noun: "restart" },
+    Power { what: "poweroff", rest: "Power off…", noun: "power off" },
+    Power { what: "logout", rest: "Log out…", noun: "log out" },
 ];
 
 /// `id`'s menu off the store, `armed` the power row a first Enter armed;
@@ -592,7 +600,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
         "power" => {
             let can = store.logind;
             let mut lines = Vec::new();
-            for (what, rest, confirm) in POWER {
+            for Power { what, rest, noun } in POWER {
                 let shown = match what {
                     "suspend" => can.suspend,
                     "reboot" => can.reboot,
@@ -606,7 +614,8 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                 };
                 if shown {
                     let armed = armed == Some(what);
-                    lines.push(Line::Row { key: format!("m:power:{what}"), glyph: "", title: (if armed { confirm } else { rest }).to_owned(), detail: None, mark: None, checked: false, armed });
+                    let title = if armed { crate::ui::confirm::ask(noun) } else { rest.to_owned() };
+                    lines.push(Line::Row { key: format!("m:power:{what}"), glyph: "", title, detail: None, mark: None, checked: false, armed });
                 }
             }
             MenuView { glyph: "power", title: "Power off", on: false, lines, settings: None }
@@ -637,7 +646,7 @@ struct MenuState {
     /// The dim's share, `effects`.
     dim: Animated,
     /// The power row a first Enter armed.
-    armed: Option<String>,
+    armed: Armed<&'static str>,
     /// The cursor has gone into the menu since it opened.
     entered: bool,
     /// Where the cursor goes next, once.
@@ -653,7 +662,7 @@ impl Default for MenuState {
             height: Animated::new(0.0, Clock::SpatialFast.curve()),
             content: Animated::new(0.0, Clock::EffectsFast.curve()),
             dim: Animated::new(0.0, Clock::Effects.curve()),
-            armed: None,
+            armed: Armed::default(),
             entered: false,
             cursor: None,
         }
@@ -717,7 +726,7 @@ impl MenuState {
 
     fn open(&mut self, id: &str) {
         self.want = Some(id.to_owned());
-        self.armed = None;
+        self.armed.clear();
         self.entered = false;
     }
 
@@ -725,7 +734,7 @@ impl MenuState {
     fn close(&mut self) -> bool {
         let Some(id) = self.want.take() else { return false };
         self.cursor = Some(opener(&id));
-        self.armed = None;
+        self.armed.clear();
         true
     }
 }
@@ -870,7 +879,7 @@ impl Panel for QuickSettings {
         let toggles: Vec<&Tile> = all.iter().filter(|t| matches!(t.kind, Kind::Toggle | Kind::Split)).collect();
         let tail: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::Background).collect();
         let extras = self.extras_now(v.store, v.raster);
-        let open = frame.id.as_deref().and_then(|id| menu(v.store, id, state.armed.as_deref()));
+        let open = frame.id.as_deref().and_then(|id| menu(v.store, id, state.armed.get().copied()));
         // A menu whose devices went (a sink unplugged to one) closes.
         if frame.id.is_some() && open.is_none() {
             state.close();
@@ -1046,7 +1055,7 @@ impl Panel for QuickSettings {
                     .iter()
                     .map(|x| json!({ "id": x.id, "title": x.summary.name, "subtitle": x.summary.value, "icon": x.summary.icon, "tone": x.summary.tone.as_str(), "panel": x.panel.map(PanelId::as_str) }))
                     .collect();
-                let state = json!({ "menu": m.want, "shown": m.shown, "armed": m.armed, "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras });
+                let state = json!({ "menu": m.want, "shown": m.shown, "armed": m.armed.get(), "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras });
                 Some(Ok(state))
             }
             _ => None,
@@ -1070,9 +1079,8 @@ impl Panel for QuickSettings {
 
     fn reached(&mut self, stop: &str, _fx: &mut Effect) {
         let m = self.menu.get_mut();
-        if m.armed.as_ref().is_some_and(|a| format!("m:power:{a}") != stop) {
-            m.armed = None;
-        }
+        let on = stop.strip_prefix("m:power:").and_then(|w| POWER.iter().find(|p| p.what == w)).map(|p| p.what);
+        m.armed.keep(on.as_ref());
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
@@ -1264,18 +1272,17 @@ impl QuickSettings {
     /// as the launcher's Shutdown and Reboot rows do. The card closes first.
     fn power(&mut self, what: &str, fx: &mut Effect) {
         let m = self.menu.get_mut();
-        let action = match what {
+        let Some(power) = POWER.iter().find(|p| p.what == what) else { return };
+        let action = match power.what {
             "suspend" => Some(Action::Suspend),
             "reboot" => Some(Action::Reboot),
             "poweroff" => Some(Action::PowerOff),
-            "logout" => None,
-            _ => return,
+            _ => None,
         };
-        if what != "suspend" && m.armed.as_deref() != Some(what) {
-            m.armed = Some(what.to_owned());
+        if !power.noun.is_empty() && !m.armed.press(power.what) {
             return;
         }
-        m.armed = None;
+        m.armed.clear();
         fx.push(Out::Close);
         match action {
             Some(a) => power::request(a),

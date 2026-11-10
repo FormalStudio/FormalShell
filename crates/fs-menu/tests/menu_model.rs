@@ -6,7 +6,7 @@ use common::*;
 use fs_menu::model::{
     build_tree, gated_note_row, mode_path, parse_headered_json, parse_jsonc, prefixed, visible_children,
 };
-use fs_menu::node::{Entries, Kind, Node};
+use fs_menu::node::{Entries, Kind, Node, Provider};
 use serde_json::json;
 
 #[test]
@@ -45,7 +45,7 @@ fn kind_inference_for_all_four_kinds() {
     assert_eq!(tree.nodes["b"].kind, Kind::Link);
     assert_eq!(tree.nodes["b"].target.as_deref(), Some("a"));
     assert_eq!(tree.nodes["c"].kind, Kind::Provider);
-    assert_eq!(tree.nodes["c"].provider.as_deref(), Some("apps"));
+    assert_eq!(tree.nodes["c"].provider.as_ref().map(Provider::as_str), Some("apps"));
     assert_eq!(tree.nodes["d"].kind, Kind::Submenu);
 }
 
@@ -306,7 +306,7 @@ fn recent_holds_subjects_outside_the_tree() {
         _ => None,
     };
     let rows = fs_menu::model::root_rest(&tree.nodes, &[], &picks, 1_000.0, 8, &HashMap::new(), outside);
-    let ids: Vec<String> = rows.iter().map(fs_menu::actions::subject_id).collect();
+    let ids: Vec<String> = rows.iter().map(|n| fs_menu::actions::subject_id(n).to_string()).collect();
     assert_eq!(ids, ["file:/home/u/notes.txt", "emoji:\u{1F62D}", "clipboard"]);
     assert_eq!(rows[0].meta.as_deref(), Some("~"));
     assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::RECENT_SECTION)));

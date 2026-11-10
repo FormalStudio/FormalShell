@@ -75,7 +75,8 @@ impl Button {
         }
     }
 
-    /// The launcher's row names, armed as `Confirm <label>?` the same way.
+    /// The launcher's row names, armed as the launcher's are
+    /// (`confirm::ask`).
     pub fn label(self) -> &'static str {
         match self {
             Self::PowerOff => "Shutdown",
@@ -114,7 +115,7 @@ impl Buttons {
             .iter()
             .map(|b| {
                 let el = if self.armed == Some(*b) {
-                    w::icon_text_button(b.icon(), format!("Confirm {}?", b.label())).variant(Variant::Destructive)
+                    w::icon_text_button(b.icon(), crate::ui::confirm::ask(b.label())).variant(Variant::Destructive)
                 } else {
                     w::icon_button(b.icon())
                 };

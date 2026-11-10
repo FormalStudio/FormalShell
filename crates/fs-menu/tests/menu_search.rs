@@ -226,7 +226,7 @@ fn apps_rank_above_files_above_clipboard() {
     let mut nodes = indexmap::IndexMap::new();
     for n in [
         Node::new("clipboard.7", "update: the messages client", Kind::Action),
-        Node::new("files.recent.png", "messages.png", Kind::Other(fs_menu::providers::FILE_KIND.into())),
+        Node::new("files.recent.png", "messages.png", Kind::File),
         Node::new("apps.messages.desktop", "Messages", Kind::App),
     ] {
         nodes.insert(n.id.clone(), n);
@@ -241,7 +241,7 @@ fn apps_rank_above_files_above_clipboard() {
 fn a_loose_app_match_ranks_below_a_file() {
     let mut nodes = indexmap::IndexMap::new();
     for n in [
-        Node::new("files.recent.ab", "abacus.txt", Kind::Other(fs_menu::providers::FILE_KIND.into())),
+        Node::new("files.recent.ab", "abacus.txt", Kind::File),
         Node::new("apps.alb.desktop", "Album Browser", Kind::App),
     ] {
         nodes.insert(n.id.clone(), n);

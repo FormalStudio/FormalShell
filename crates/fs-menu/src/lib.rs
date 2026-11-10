@@ -15,6 +15,7 @@ pub mod calc;
 pub mod clipboard;
 pub mod frecency;
 pub mod icons;
+pub mod intent;
 pub mod keybinds;
 pub mod model;
 pub mod nav;

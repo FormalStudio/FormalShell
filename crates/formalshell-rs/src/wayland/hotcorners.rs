@@ -250,6 +250,7 @@ impl App {
             }
             Action::Overview => self.overview_action(super::overview::Action::Toggle),
             Action::Launcher { run: Run::Ipc(call), .. } => self.run_call(call),
+            Action::Launcher { run: Run::Intent(intent), .. } => self.run_intent(intent),
             Action::Launcher { run: Run::Spawn(argv), .. } => compositor::spawn(argv),
             Action::Launcher { run: Run::Shell(line), .. } => compositor::spawn(&["sh", "-c", line].map(String::from)),
             Action::Launcher { .. } | Action::None => {}

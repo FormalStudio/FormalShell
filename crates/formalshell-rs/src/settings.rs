@@ -239,7 +239,10 @@ const fn corner(key: &'static str, corner: Corner) -> Word {
 /// gets in as an absolute path or with its arguments.
 pub fn hot_corners(settings: &impl Doc) -> corners::Config<Run> {
     corners::resolve(lookup(settings.doc(), "hotCorners"), |text| match Run::parse(text) {
-        Run::Ipc(call) => crate::ipc::check(&call, false).map(Run::Ipc),
+        Run::Ipc(call) => crate::ipc::check(&call).map(Run::Ipc),
+        // A row's own verb is an IPC call anywhere else.
+        Run::Intent(intent) if intent.row_only() => crate::ipc::check(&intent.call()).map(Run::Ipc),
+        Run::Intent(intent) => Ok(Run::Intent(intent)),
         Run::Shell(line) if line.contains(char::is_whitespace) || line.contains('/') => Ok(Run::Shell(line)),
         _ => Err(format!("unknown action {}", Value::String(text.to_owned()))),
     })
