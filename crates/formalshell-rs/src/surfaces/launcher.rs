@@ -1352,10 +1352,8 @@ impl Model {
             }
             Mode::Menu if level == Some("calc") => fs_menu::calc::result_node(q).into_iter().collect(),
             Mode::Menu => {
-                let calc = level.is_none().then(|| fs_menu::calc::result_node(q)).flatten();
                 let boost = fs_menu::search::Boost { abbrev: Some(&self.lookup), picks: &store.state.data.picks, now: now_ms() };
-                let ranked = fs_menu::search::rank_with(nodes, q, cond, level, boost).into_iter().cloned();
-                calc.into_iter().chain(ranked).collect()
+                fs_menu::search::rows_for_query(nodes, q, cond, level, boost)
             }
         };
         let mut empty = None;
@@ -2654,9 +2652,7 @@ impl Model {
         let held: Vec<fs_menu::frecency::Record> = store.state.data.picks.iter().filter(|r| !gone(&r.id)).cloned().collect();
         let mut fields = vec![state::Field::Picks(fs_menu::frecency::record(&held, &id, now, None))];
         let q = self.list_text();
-        let q_norm = fs_menu::search::normalize(q.trim());
-        let exact = fs_menu::search::tier(node, &q_norm, &fs_menu::search::slug(&q_norm)) == fs_menu::search::TIER_EXACT;
-        if !exact && fs_menu::abbrev::key(q).is_some() && store.menu.nodes().contains_key(&node.id) {
+        if !fs_menu::search::is_exact(node, q) && fs_menu::abbrev::key(q).is_some() && store.menu.nodes().contains_key(&node.id) {
             let book = fs_menu::abbrev::learn(&index::abbreviation_book(store), q, &id, now);
             fields.push(state::Field::Abbreviations(Some(book)));
         }
@@ -2767,7 +2763,7 @@ impl Model {
                 }
                 Intent::AppOpen(id) => {
                     let Some(entry) = node.entry.as_ref().filter(|e| e.id == *id) else { return Out::None };
-                    let target = fs_menu::appmatch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
+                    let target = crate::services::launch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
                     if let Some(target) = target {
                         compositor::focus_window(&target);
                     } else if let Some(argv) = index::launch_argv(&store.menu, id) {
@@ -2968,19 +2964,16 @@ impl Model {
         let book = index::abbreviation_book(store);
         let lookup = fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, q, now_ms(), |id| resolves(store, id));
         let boost = fs_menu::search::Boost { abbrev: Some(&lookup), picks: &store.state.data.picks, now: now_ms() };
-        let mut rows: Vec<Value> = fs_menu::search::rank_with(nodes, q, &store.menu.cond, level, boost)
-            .into_iter()
-            .map(|n| {
-                json!({
-                    "id": n.id, "label": n.label, "kind": n.kind.as_str(), "iconSource": n.icon_source,
-                    "checked": toggles::checked_for(Some(n), Some(&snap), Some(&store.menu.checked))
-                })
+        let rows = fs_menu::search::rows_for_query(nodes, q, &store.menu.cond, level, boost).into_iter().map(|n| {
+            if n.id == fs_menu::calc::RESULT_ID {
+                return json!({"id": n.id, "label": n.label, "kind": n.kind.as_str()});
+            }
+            json!({
+                "id": n.id, "label": n.label, "kind": n.kind.as_str(), "iconSource": n.icon_source,
+                "checked": toggles::checked_for(Some(&n), Some(&snap), Some(&store.menu.checked))
             })
-            .collect();
-        if let Some(calc) = level.is_none().then(|| fs_menu::calc::result_node(q)).flatten() {
-            rows.insert(0, json!({"id": calc.id, "label": calc.label, "kind": calc.kind.as_str()}));
-        }
-        Value::Array(rows)
+        });
+        Value::Array(rows.collect())
     }
 }
 
@@ -3021,7 +3014,7 @@ fn outside_subject(store: &Store, id: &str) -> Option<Node> {
 
 /// The compositor's windows an app's entry claims.
 fn app_windows(store: &Store, entry: &fs_menu::node::DesktopEntry) -> Vec<WindowId> {
-    fs_menu::appmatch::match_windows(Some(entry), &store.compositor.snapshot.windows)
+    crate::services::launch::match_windows(Some(entry), &store.compositor.snapshot.windows)
 }
 
 /// An app subject's windows as rows, each a window subject: its title

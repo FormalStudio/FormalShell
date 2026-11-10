@@ -1,7 +1,7 @@
 //! The SHARE route's whole dynamic subtree.
 
 use super::clipboard::{captured_at_label, share_entry_command};
-use crate::clipboard::history::{Entry as ClipEntry, EntryKind};
+use crate::clipboard::entry::{Entry as ClipEntry, EntryKind};
 use crate::actions::Run;
 use crate::intent::Intent;
 use crate::node::{Entries, Entry, Kind, Provider};

@@ -8,15 +8,74 @@
 
 use std::sync::OnceLock;
 
-use fs_menu::appmatch;
 use fs_menu::node::DesktopEntry;
 use fs_system::monitor::gpu::{self, OffloadTools};
-use fs_types::WindowId;
+use fs_types::{Window, WindowId};
 
 use super::activity::{self, Input};
 use super::compositor;
 use crate::runtime::{Ctx, Publisher};
 use crate::store::{self, Store};
+
+/// One tier's comparison across every window, in window order. An empty
+/// `app_id` never matches, so a window the compositor has not classified
+/// cannot be claimed by an entry with an empty `startup_class`.
+fn collect(needle: &str, windows: &[Window], fold: bool) -> Vec<WindowId> {
+    let want = if fold { needle.to_lowercase() } else { needle.to_string() };
+    windows
+        .iter()
+        .filter(|w| !w.app_id.is_empty())
+        .filter(|w| if fold { w.app_id.to_lowercase() == want } else { w.app_id == want })
+        .map(|w| w.id.clone())
+        .collect()
+}
+
+/// Which running windows belong to a desktop entry, so activating an app row
+/// focuses the app you already have open instead of spawning a second copy.
+///
+/// Only two entry fields are read: `startup_class` and `id` (the .desktop
+/// basename, which equals the app_id for the large majority of Linux apps).
+/// Each is tried exactly, then case-folded. There is deliberately no fuzzy
+/// tier: Electron and wrapper-launched apps often report an app_id unrelated
+/// to their .desktop basename, and a miss falls through to the caller's
+/// spawn path while a fuzzy hit focuses the wrong app. Window ids are
+/// opaque: `app_id`s are compared, ids are copied into the result verbatim.
+///
+/// Window ids in window order, or empty when nothing matched.
+///
+/// The first non-empty tier wins outright, never a union: a union would mix a
+/// precise `startup_class` hit with a coincidental id hit and then cycle
+/// between two different apps.
+pub fn match_windows(entry: Option<&DesktopEntry>, windows: &[Window]) -> Vec<WindowId> {
+    let Some(entry) = entry else { return Vec::new() };
+    let mut tiers: Vec<&str> = Vec::new();
+    if !entry.startup_class.is_empty() {
+        tiers.push(&entry.startup_class);
+    }
+    if !entry.id.is_empty() {
+        tiers.push(&entry.id);
+    }
+    for tier in tiers {
+        let exact = collect(tier, windows, false);
+        if !exact.is_empty() {
+            return exact;
+        }
+        let folded = collect(tier, windows, true);
+        if !folded.is_empty() {
+            return folded;
+        }
+    }
+    Vec::new()
+}
+
+/// The window to focus next: the one AFTER `focused_window_id` in `matches`,
+/// wrapping, so repeat-activating an app row cycles its open instances. Focus
+/// outside `matches` (another app, or nothing focused) starts the cycle at
+/// the first instance. None when nothing matched.
+pub fn next_window(matches: &[WindowId], focused_window_id: &WindowId) -> Option<WindowId> {
+    let at = matches.iter().position(|m| m == focused_window_id).map_or(0, |at| at + 1);
+    matches.get(at % matches.len().max(1)).cloned()
+}
 
 pub struct Pending {
     entry: DesktopEntry,
@@ -71,7 +130,7 @@ fn entry(store: &Store, id: &str) -> Option<DesktopEntry> {
 pub fn spawn(store: &Store, id: &str, argv: &[String]) {
     compositor::spawn(argv);
     let Some(entry) = entry(store, id) else { return };
-    let before = appmatch::match_windows(Some(&entry), &store.compositor.snapshot.windows);
+    let before = match_windows(Some(&entry), &store.compositor.snapshot.windows);
     let title = if entry.name.is_empty() { entry.id.clone() } else { entry.name.clone() };
     let app = entry.id.clone();
     if let Some(p) = PUBLISHER.get() {
@@ -88,7 +147,7 @@ pub fn windows_changed(store: &Store) -> Option<store::Diff> {
         .launches
         .pending
         .iter()
-        .filter(|p| appmatch::match_windows(Some(&p.entry), windows).iter().any(|id| !p.before.contains(id)))
+        .filter(|p| match_windows(Some(&p.entry), windows).iter().any(|id| !p.before.contains(id)))
         .map(|p| p.entry.id.clone())
         .collect();
     for id in &landed {
@@ -164,4 +223,100 @@ pub fn on_gpu(store: &Store, id: &str, card: &str) -> Result<OnGpu, String> {
     }
     spawn(store, id, &argv);
     Ok(OnGpu { card: target.record.card.card.clone(), name: target.name.clone(), argv, bare_terminal: file.terminal && bare })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn win(id: &str, app_id: &str) -> Window {
+        Window { id: WindowId::new(id), app_id: app_id.into(), ..Window::default() }
+    }
+
+    fn next(matches: &[WindowId], focused: &str) -> Option<String> {
+        next_window(matches, &WindowId::new(focused)).map(|id| id.to_string())
+    }
+
+    fn entry(id: &str, startup_class: &str) -> DesktopEntry {
+        DesktopEntry { id: id.into(), startup_class: startup_class.into(), name: id.into(), ..DesktopEntry::default() }
+    }
+
+    fn ids(v: &[&str]) -> Vec<WindowId> {
+        v.iter().map(|s| WindowId::new(*s)).collect()
+    }
+
+    #[test]
+    fn startup_class_beats_id_when_both_present() {
+        let windows = [win("1", "firefox"), win("2", "org.mozilla.firefox")];
+        let matches = match_windows(Some(&entry("org.mozilla.firefox", "firefox")), &windows);
+        assert_eq!(matches, ["1"]);
+    }
+
+    #[test]
+    fn startup_class_matches_case_insensitively() {
+        let windows = [win("1", "Alacritty")];
+        let matches = match_windows(Some(&entry("alacritty-terminal", "alacritty")), &windows);
+        assert_eq!(matches, ["1"]);
+    }
+
+    #[test]
+    fn exact_startup_class_wins_over_a_case_folded_one() {
+        let windows = [win("1", "Alacritty"), win("2", "alacritty")];
+        let matches = match_windows(Some(&entry("alacritty", "alacritty")), &windows);
+        assert_eq!(matches, ["2"]);
+    }
+
+    #[test]
+    fn falls_back_to_entry_id_when_startup_class_is_empty() {
+        let windows = [win("1", "mpv")];
+        assert_eq!(match_windows(Some(&entry("mpv", "")), &windows), ["1"]);
+    }
+
+    #[test]
+    fn no_match_returns_empty_list_so_the_caller_spawns() {
+        let windows = [win("1", "firefox"), win("2", "mpv")];
+        assert!(match_windows(Some(&entry("code", "code")), &windows).is_empty());
+    }
+
+    #[test]
+    fn empty_app_id_on_a_window_never_matches_an_empty_startup_class() {
+        let windows = [win("1", "")];
+        assert!(match_windows(Some(&entry("", "")), &windows).is_empty());
+        assert!(match_windows(Some(&entry("mpv", "")), &windows).is_empty());
+    }
+
+    #[test]
+    fn every_instance_of_the_same_app_is_matched_in_window_order() {
+        let windows = [win("1", "kitty"), win("2", "mpv"), win("3", "kitty")];
+        let matches = match_windows(Some(&entry("kitty", "kitty")), &windows);
+        assert_eq!(matches, ["1", "3"]);
+    }
+
+    #[test]
+    fn next_window_cycles_past_the_focused_instance_and_wraps() {
+        let matches = ids(&["a", "b", "c"]);
+        assert_eq!(next(&matches, "a").as_deref(), Some("b"));
+        assert_eq!(next(&matches, "b").as_deref(), Some("c"));
+        assert_eq!(next(&matches, "c").as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn next_window_returns_first_when_focus_is_elsewhere_or_empty() {
+        let matches = ids(&["a", "b"]);
+        assert_eq!(next(&matches, "").as_deref(), Some("a"));
+        assert_eq!(next(&matches, "zzz").as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn next_window_of_empty_matches_is_none() {
+        assert_eq!(next(&[], "a"), None);
+    }
+
+    #[test]
+    fn window_ids_are_returned_verbatim_never_parsed() {
+        let windows = [win("abc123def", "kitty"), win("0x55f1", "kitty")];
+        let matches = match_windows(Some(&entry("kitty", "kitty")), &windows);
+        assert_eq!(matches, ["abc123def", "0x55f1"]);
+        assert_eq!(next(&matches, "abc123def").as_deref(), Some("0x55f1"));
+    }
 }

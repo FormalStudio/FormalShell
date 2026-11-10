@@ -1330,7 +1330,7 @@ impl App {
     /// What every store change the launcher's index reads asks of it.
     pub(super) fn launcher_inputs(&mut self) {
         let l = &self.store.lights;
-        let inputs = index::BaseInputs {
+        let inputs = fs_menu::base::BaseInputs {
             buttons: self.store.config.get("menu.customPowerButtons").cloned().unwrap_or_default(),
             lights: l.available.then(|| {
                 l.effects.iter().map(|(id, label)| fs_menu::providers::LightEffect { id: id.clone(), label: label.clone() }).collect()
@@ -1338,7 +1338,7 @@ impl App {
             ipad: self.store.ipad.bridge.is_some(),
             share: {
                 let ls = &self.store.localsend;
-                Some(index::ShareInputs {
+                Some(fs_menu::base::ShareInputs {
                     installed: ls.installed,
                     peers: ls.peers.iter().map(|p| p.name.clone()).collect(),
                     items: self.store.clipboard.items.clone(),

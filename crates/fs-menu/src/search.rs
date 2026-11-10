@@ -186,6 +186,21 @@ pub fn rank<'a>(
     rank_with(nodes, query, cond_results, within_id, Boost::default())
 }
 
+/// The launcher's rows for `query` standing at `level`: the calculator's
+/// result first when the level is the root, then the ranked tree.
+pub fn rows_for_query(nodes: &IndexMap<String, Node>, query: &str, cond_results: &HashMap<String, bool>, level: Option<&str>, boost: Boost) -> Vec<Node> {
+    let calc = level.is_none().then(|| crate::calc::result_node(query)).flatten();
+    let ranked = rank_with(nodes, query, cond_results, level, boost).into_iter().cloned();
+    calc.into_iter().chain(ranked).collect()
+}
+
+/// Whether `query` names `node` outright, the tier an abbreviation taught
+/// under it would add nothing to.
+pub fn is_exact(node: &Node, query: &str) -> bool {
+    let q_norm = normalize(query.trim());
+    tier(node, &q_norm, &slug(&q_norm)) == TIER_EXACT
+}
+
 pub fn rank_with<'a>(
     nodes: &'a IndexMap<String, Node>,
     query: &str,

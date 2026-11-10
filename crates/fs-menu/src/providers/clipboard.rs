@@ -3,7 +3,7 @@
 use chrono::{DateTime, Datelike, Local, Timelike};
 
 use crate::clipboard::emoji::is_emoji_only;
-use crate::clipboard::history::{Entry, EntryKind};
+use crate::clipboard::entry::{Entry, EntryKind};
 use crate::actions::{IpcCall, Run};
 use crate::intent::Intent;
 use crate::node::{ActionEntry, Kind, Node};

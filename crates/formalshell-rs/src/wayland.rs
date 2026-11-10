@@ -330,7 +330,7 @@ pub struct App {
     wifi_reveal: Option<(u64, u64)>,
     wifi_reveals: u64,
     mods: crate::ui::field::Modifiers,
-    menu_buttons: Option<crate::services::menu::BaseInputs>,
+    menu_buttons: Option<fs_menu::base::BaseInputs>,
     /// The split pane's last picture request, so a frame asks once.
     preview_asked: Option<(String, ((u32, u32), f64))>,
     /// The file or folder the preview pane last asked a peek of, this open.

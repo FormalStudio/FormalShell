@@ -80,10 +80,10 @@ pub enum Payload {
 }
 
 impl Payload {
-    pub fn of(entry: &fs_menu::clipboard::history::Entry) -> Payload {
+    pub fn of(entry: &fs_menu::clipboard::entry::Entry) -> Payload {
         match entry.kind {
-            fs_menu::clipboard::history::EntryKind::Image => Payload::Path(entry.path.clone().unwrap_or_default()),
-            fs_menu::clipboard::history::EntryKind::Text => Payload::Text(entry.text.clone().unwrap_or_default()),
+            fs_menu::clipboard::entry::EntryKind::Image => Payload::Path(entry.path.clone().unwrap_or_default()),
+            fs_menu::clipboard::entry::EntryKind::Text => Payload::Text(entry.text.clone().unwrap_or_default()),
         }
     }
 }

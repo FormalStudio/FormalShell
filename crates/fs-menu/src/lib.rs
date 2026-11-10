@@ -1,7 +1,7 @@
 //! The launcher's pure logic: the tree model, fuzzy search, abbreviations,
 //! cursor movement, pick frecency, the calculator, toggle conditions, route
-//! icons, the providers that build each source's rows, clipboard history and
-//! emoji detection, and window matching for app rows.
+//! icons, the providers that build each source's rows, the base tree merge and
+//! emoji detection.
 //!
 //! Everything here is a function over plain data. Providers take their live
 //! source as an argument and return nodes, so a caller can recompute one
@@ -10,7 +10,7 @@
 pub mod abbrev;
 pub mod actions;
 pub mod appgrid;
-pub mod appmatch;
+pub mod base;
 pub mod calc;
 pub mod clipboard;
 pub mod frecency;

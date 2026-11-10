@@ -213,6 +213,9 @@ pub fn format(n: f64) -> String {
     fs_js::num_str(rounded)
 }
 
+/// The id of the node `result_node` makes.
+pub const RESULT_ID: &str = "calc.result";
+
 /// The ready-made row the launcher prepends to ranked results (and shows
 /// alone at the calc route) when the query parses. A plain action node, so
 /// Enter needs no new handling. `--` keeps a leading minus from reading as a
@@ -226,6 +229,6 @@ pub fn result_node(query: &str) -> Option<Node> {
         meta: Some("CALC".to_string()),
         verb: Some("Copy".to_string()),
         actions: vec![crate::node::ActionEntry { paste_after: Some(true), ..crate::node::ActionEntry::new("paste", "Paste", crate::actions::copy_run(&text)) }],
-        ..Node::new("calc.result", std::format!("= {text}"), Kind::Action)
+        ..Node::new(RESULT_ID, std::format!("= {text}"), Kind::Action)
     })
 }

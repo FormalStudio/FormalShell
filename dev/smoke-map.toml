@@ -134,7 +134,7 @@ paths = [
   "crates/fs-menu/src/node.rs",
   "crates/fs-menu/src/lib.rs",
   "crates/fs-menu/src/frecency.rs",
-  "crates/fs-menu/src/appmatch.rs",
+  "crates/fs-menu/src/base.rs",
   "crates/fs-menu/src/providers/mod.rs",
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",

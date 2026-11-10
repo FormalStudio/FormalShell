@@ -23,7 +23,8 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
-use fs_menu::clipboard::history::{self, Entry, EntryKind, NewEntry};
+use history::NewEntry;
+use fs_menu::clipboard::entry::{Entry, EntryKind};
 use fs_menu::thumbnails::{self, Mode};
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, future};
@@ -33,6 +34,7 @@ use crate::runtime::{Ctx, now_ms};
 use crate::scene::Bitmap;
 use crate::store;
 
+mod history;
 mod urilist;
 
 const SETTLE: Duration = Duration::from_millis(300);

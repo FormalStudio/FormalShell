@@ -7,7 +7,7 @@ mod common;
 use common::{entries, real_tree};
 use fs_menu::abbrev::Source;
 use fs_menu::actions::{Action, Run, Subject, TargetKind, actions_for, filter, first_action, into_action, second_action};
-use fs_menu::clipboard::history::Entry;
+use fs_menu::clipboard::entry::Entry;
 use fs_menu::intent::Intent;
 use fs_menu::keybinds::rows as bind_rows;
 use fs_menu::model::build_tree;

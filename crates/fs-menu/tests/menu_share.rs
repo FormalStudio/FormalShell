@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use chrono::{Local, TimeZone};
 use common::*;
-use fs_menu::clipboard::history::{Entry, EntryKind};
+use fs_menu::clipboard::entry::{Entry, EntryKind};
 use fs_menu::model::{build_tree, visible_children};
 use fs_menu::node::{Entries, Kind, Provider};
 use fs_menu::providers::{ClipMode, Peer, ReceiveStatus, clipboard_provider, share_entry_command, share_peer_entries};

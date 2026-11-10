@@ -3,7 +3,7 @@
 // Activation and debounce wiring is out of scope: this is the pure half.
 
 use chrono::{Local, TimeZone};
-use fs_menu::clipboard::history::{Entry, EntryKind};
+use fs_menu::clipboard::entry::{Entry, EntryKind};
 use fs_menu::node::Kind;
 use fs_menu::providers::{
     ClipMode, clipboard_empty_row, clipboard_no_match_row, clipboard_provider, clipboard_search, paste_argv,

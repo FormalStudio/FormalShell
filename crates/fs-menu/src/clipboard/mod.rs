@@ -1,4 +1,4 @@
-//! Clipboard capture logic: emoji-only detection and the history reducer.
+//! Clipboard rows: the history entry shape and emoji-only detection.
 
 pub mod emoji;
-pub mod history;
+pub mod entry;

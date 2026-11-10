@@ -17,19 +17,17 @@ use std::time::{Duration, SystemTime};
 
 use fs_menu::frecency::Record;
 use fs_types::Bind;
-use fs_menu::model::{build_tree, entries_from_value, parse_jsonc};
+use fs_menu::base::BaseInputs;
+use fs_menu::model::{entries_from_value, parse_jsonc};
 use fs_menu::actions::Run;
-use fs_menu::node::{DesktopEntry, Entries, Entry, Kind, Node, Provider, Tree};
-use fs_menu::providers::{self, CustomPowerButton, Listed, Peeked};
-use serde_json::Value;
+use fs_menu::node::{DesktopEntry, Entries, Kind, Node, Provider, Tree};
+use fs_menu::providers::{self, Listed, Peeked};
 
 use super::{appicon, icons, proc};
 use crate::runtime::Ctx;
 use crate::scene::Bitmap;
 use crate::store;
 
-const DEFAULT_MENU: &str = include_str!("../../../fs-menu/data/default-menu.jsonc");
-const EMOJI: &str = include_str!("../../../fs-menu/data/emoji.json");
 /// How long after an ask the condition checks start: past the launcher's
 /// entrance, whose springs settle in twice the spatial family's length.
 fn conds_after() -> Duration {
@@ -212,28 +210,6 @@ fn check_calls<'a>(nodes: impl Iterator<Item = &'a mut Node>) -> Vec<String> {
     refused
 }
 
-/// What the base tree is built from besides the files.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct BaseInputs {
-    pub buttons: Value,
-    /// The keyboard lights' effects, `None` while no keyboard was found.
-    pub lights: Option<Vec<providers::LightEffect>>,
-    /// padbridge is on the bus: the iPad route.
-    pub ipad: bool,
-    /// The share subtree: LocalSend's state and what it can send.
-    pub share: Option<ShareInputs>,
-    /// Each launcher plugin's mode, `(route id, name)`.
-    pub plugin_modes: Vec<(String, String)>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ShareInputs {
-    pub installed: bool,
-    pub peers: Vec<String>,
-    pub items: Vec<fs_menu::clipboard::history::Entry>,
-    pub receive: providers::ReceiveStatus,
-}
-
 pub enum Ask {
     /// An input of the base changed, or a refresh: the base again.
     Base(BaseInputs),
@@ -367,7 +343,7 @@ async fn run(ctx: Ctx) {
                 });
             }
             Ask::Emoji => {
-                if let Some(index) = ctx.pool().run(|| fs_menu::providers::EmojiIndex::new(fs_menu::providers::parse_emoji_dataset(EMOJI))).await {
+                if let Some(index) = ctx.pool().run(|| fs_menu::providers::EmojiIndex::new(fs_menu::providers::parse_emoji_dataset(fs_menu::base::EMOJI))).await {
                     ctx.publish(store::Diff::Menu(Diff::Emoji(Arc::new(index))));
                 }
             }
@@ -418,67 +394,25 @@ async fn run(ctx: Ctx) {
 /// default-menu.jsonc merged with the self-targeted fragments and the
 /// custom power buttons, then the user's overlay over it.
 fn base(inputs: &BaseInputs) -> Tree {
-    let user = std::fs::read_to_string(user_menu_path())
-        .ok()
-        .and_then(|t| match parse_jsonc(&t) {
-            Ok(v) => entries_from_value(&v).ok(),
-            Err(e) => {
-                eprintln!("Menu: failed to parse menu.jsonc: {e}");
-                None
-            }
-        })
-        .unwrap_or_default();
+    let path = user_menu_path();
+    let read = match std::fs::read_to_string(&path) {
+        Ok(text) => parse_jsonc(&text).and_then(|v| entries_from_value(&v)).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Entries::default()),
+        Err(e) => Err(e.to_string()),
+    };
+    let user = read.unwrap_or_else(|e| {
+        eprintln!("Menu: ignoring {}: {e}", path.display());
+        Entries::default()
+    });
     base_over(inputs, &user)
 }
 
 fn base_over(inputs: &BaseInputs, user: &Entries) -> Tree {
-    let mut merged: Entries = parse_jsonc(DEFAULT_MENU).ok().and_then(|v| entries_from_value(&v).ok()).unwrap_or_default();
-    for (k, v) in providers::capture_entries() {
-        merged.insert(k, v);
-    }
-    if let Some(effects) = &inputs.lights {
-        for (k, v) in providers::lights_entries(true, effects) {
-            merged.insert(k, v);
-        }
-    }
-    for (k, v) in providers::ipad_entries(inputs.ipad) {
-        merged.insert(k, v);
-    }
-    if let Some(sh) = &inputs.share {
-        let peers: Vec<providers::Peer> = sh.peers.iter().map(|n| providers::Peer { name: n.clone() }).collect();
-        for (k, v) in providers::share_peer_entries(sh.installed, &peers, &sh.items, Some(&sh.receive)) {
-            merged.insert(k, v);
-        }
-    }
-    for (k, v) in providers::custom_power_button_entries(&power_buttons(&inputs.buttons)) {
-        merged.insert(k, v);
-    }
-    for (route, name) in &inputs.plugin_modes {
-        let entry = Entry { provider: Some(Provider::Plugin(route.clone())), ..Entry::labelled(name).with_icon("puzzle") };
-        merged.insert(route.clone(), entry);
-    }
-    let mut tree = build_tree(&merged, user);
-    let panels = providers::panels_provider();
-    if tree.nodes.contains_key("panels") {
-        providers::attach_children(&mut tree, "panels", panels);
-    }
-    tree
-}
-
-fn power_buttons(v: &Value) -> Vec<CustomPowerButton> {
-    let Value::Array(items) = v else { return Vec::new() };
-    items
-        .iter()
-        .filter_map(|b| {
-            let s = |k: &str| b.get(k).and_then(Value::as_str).map(str::to_owned);
-            Some(CustomPowerButton {
-                label: s("label")?,
-                icon: s("icon"),
-                command: s("command")?,
-                confirm: b.get("confirm").and_then(Value::as_bool).unwrap_or(false),
-            })
-        })
-        .collect()
+    let defaults = fs_menu::base::defaults().unwrap_or_else(|e| {
+        eprintln!("Menu: the shipped default-menu.jsonc is invalid: {e}");
+        Entries::default()
+    });
+    fs_menu::base::base_tree(defaults, inputs, user)
 }
 
 pub(crate) fn home() -> String {
@@ -701,7 +635,8 @@ mod tests {
 
     use fs_devices::bluetooth::Device as BluetoothDevice;
     use fs_menu::actions::{IpcCall, Subject, actions_for};
-    use fs_menu::clipboard::history::{Entry as ClipEntry, EntryKind};
+    use fs_menu::base::ShareInputs;
+    use fs_menu::clipboard::entry::{Entry as ClipEntry, EntryKind};
     use fs_menu::providers::*;
     use serde_json::json;
 
