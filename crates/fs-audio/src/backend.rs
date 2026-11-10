@@ -244,9 +244,30 @@ struct Hw {
     step: Option<f32>,
 }
 
+/// A bound proxy and its listener. Dropping the proxy runs
+/// `pw_proxy_destroy`, which frees it on the spot once the server has sent
+/// `remove_id` for it (`pw_global_destroy` sends that before the registry's
+/// `global_remove`), and `pw_proxy_unref` frees it without unhooking its
+/// listeners ("client must explicitly destroy all proxy listeners",
+/// src/pipewire/proxy.c). A listener removed after that writes into freed
+/// memory, so the field order here, which is the drop order, puts the
+/// listener first.
+struct Bound<P, L> {
+    _listener: L,
+    proxy: P,
+}
+
+impl<P, L> Bound<P, L> {
+    fn new(proxy: P, listener: L) -> Self {
+        Self {
+            _listener: listener,
+            proxy,
+        }
+    }
+}
+
 struct DeviceEntry {
-    proxy: Device,
-    _listener: DeviceListener,
+    bound: Bound<Device, DeviceListener>,
     /// `card.profile.device` to the route's index and props.
     routes: HashMap<i32, (i32, VolumeProps)>,
     /// A route write is in flight; the next Route param acknowledges it.
@@ -261,13 +282,13 @@ struct State {
     core: CoreRc,
     sync: Sync,
     graph: Graph,
-    nodes: HashMap<u32, (PwNode, NodeListener)>,
+    nodes: HashMap<u32, Bound<PwNode, NodeListener>>,
     hw: HashMap<u32, Hw>,
     devices: HashMap<u32, DeviceEntry>,
-    links: HashMap<u32, (PwLink, LinkListener)>,
-    ports: HashMap<u32, (PwPort, PortListener)>,
-    metadata: Option<(u32, Metadata, MetadataListener)>,
-    settings: Option<(u32, Metadata, MetadataListener)>,
+    links: HashMap<u32, Bound<PwLink, LinkListener>>,
+    ports: HashMap<u32, Bound<PwPort, PortListener>>,
+    metadata: Option<(u32, Bound<Metadata, MetadataListener>)>,
+    settings: Option<(u32, Bound<Metadata, MetadataListener>)>,
 }
 
 fn readable(params: &[ParamInfo], kind: ParamType) -> bool {
@@ -326,7 +347,7 @@ fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalO
             proxy.subscribe_params(&[ParamType::Props]);
             let node = Node::from_props(id, dict(global.props));
             let mut s = state.borrow_mut();
-            s.nodes.insert(id, (proxy, listener));
+            s.nodes.insert(id, Bound::new(proxy, listener));
             let hw = s.hw.entry(id).or_default();
             hw.device = node.props.get("device.id").and_then(|d| d.parse().ok());
             s.emit(Event::Node(node));
@@ -347,6 +368,7 @@ fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalO
                             with(&weak, |s| {
                                 if let Some(entry) = s.devices.get(&id) {
                                     entry
+                                        .bound
                                         .proxy
                                         .enum_params(0, Some(ParamType::Route), 0, u32::MAX);
                                 }
@@ -364,8 +386,7 @@ fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalO
                 .register();
             proxy.subscribe_params(&[ParamType::Route]);
             let entry = DeviceEntry {
-                proxy,
-                _listener: listener,
+                bound: Bound::new(proxy, listener),
                 routes: HashMap::new(),
                 waiting: false,
                 pending: HashMap::new(),
@@ -403,7 +424,7 @@ fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalO
             state
                 .borrow_mut()
                 .links
-                .insert(global.id, (proxy, listener));
+                .insert(global.id, Bound::new(proxy, listener));
         }
         ObjectType::Port => {
             let Some(node) = global
@@ -426,8 +447,8 @@ fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalO
                             && readable(info.params(), ParamType::Latency)
                         {
                             with(&weak, |s| {
-                                if let Some((proxy, _)) = s.ports.get(&id) {
-                                    proxy.enum_params(0, Some(ParamType::Latency), 0, u32::MAX);
+                                if let Some(port) = s.ports.get(&id) {
+                                    port.proxy.enum_params(0, Some(ParamType::Latency), 0, u32::MAX);
                                 }
                             });
                         }
@@ -449,7 +470,7 @@ fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalO
                 .register();
             proxy.subscribe_params(&[ParamType::Latency]);
             let mut s = state.borrow_mut();
-            s.ports.insert(id, (proxy, listener));
+            s.ports.insert(id, Bound::new(proxy, listener));
             s.emit(Event::Port(Port {
                 id,
                 node,
@@ -493,7 +514,7 @@ fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalO
                     })
                     .register()
             };
-            let entry = Some((global.id, proxy, listener));
+            let entry = Some((global.id, Bound::new(proxy, listener)));
             if name == Some("default") {
                 state.borrow_mut().metadata = entry;
             } else {
@@ -586,8 +607,8 @@ impl State {
     }
 
     fn on_node_info(&mut self, id: u32, props: Option<BTreeMap<String, String>>, enumerate: bool) {
-        if enumerate && let Some((proxy, _)) = self.nodes.get(&id) {
-            proxy.enum_params(0, Some(ParamType::Props), 0, u32::MAX);
+        if enumerate && let Some(node) = self.nodes.get(&id) {
+            node.proxy.enum_params(0, Some(ParamType::Props), 0, u32::MAX);
         }
         let Some(props) = props else { return };
         let hw = self.hw.entry(id).or_default();
@@ -705,9 +726,10 @@ impl State {
         let Some(target) = self.graph.sinks().find(|n| n.name == sink) else {
             return;
         };
-        let (Some(serial), Some((_, proxy, _))) = (target.serial, &self.metadata) else {
+        let (Some(serial), Some((_, metadata))) = (target.serial, &self.metadata) else {
             return;
         };
+        let proxy = &metadata.proxy;
         proxy.set_property(stream, KEY_TARGET_NODE, Some(ID_TYPE), Some(&target.id.to_string()));
         proxy.set_property(stream, KEY_TARGET_OBJECT, Some(ID_TYPE), Some(&serial.to_string()));
     }
@@ -750,8 +772,8 @@ impl State {
             }
         } else {
             let pod = serialize(&props_value(channel_volumes(&volumes)));
-            if let (Some(pod), Some((proxy, _))) = (pod, self.nodes.get(&id)) {
-                proxy.set_param(
+            if let (Some(pod), Some(node)) = (pod, self.nodes.get(&id)) {
+                node.proxy.set_param(
                     ParamType::Props,
                     0,
                     Pod::from_bytes(&pod).expect("serialized pod"),
@@ -784,8 +806,8 @@ impl State {
                 ss::SPA_PROP_mute,
                 Value::Bool(muted),
             )]));
-            if let (Some(pod), Some((proxy, _))) = (pod, self.nodes.get(&id)) {
-                proxy.set_param(
+            if let (Some(pod), Some(node)) = (pod, self.nodes.get(&id)) {
+                node.proxy.set_param(
                     ParamType::Props,
                     0,
                     Pod::from_bytes(&pod).expect("serialized pod"),
@@ -825,7 +847,7 @@ impl State {
         let Some(bytes) = serialize(&route) else {
             return;
         };
-        entry.proxy.set_param(
+        entry.bound.proxy.set_param(
             ParamType::Route,
             0,
             Pod::from_bytes(&bytes).expect("serialized pod"),
@@ -861,9 +883,10 @@ impl State {
                 return;
             }
         }
-        let Some((_, proxy, _)) = &self.metadata else {
+        let Some((_, metadata)) = &self.metadata else {
             return;
         };
+        let proxy = &metadata.proxy;
         if name.is_empty() {
             proxy.set_property(PW_ID_CORE, key, Some(DEFAULT_TYPE), None);
         } else {
