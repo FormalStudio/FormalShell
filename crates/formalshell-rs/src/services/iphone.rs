@@ -15,7 +15,7 @@
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_io::Timer;
 use fs_dbus::Backoff;
@@ -274,10 +274,6 @@ struct Session {
     mirror: Vec<notifications::Diff>,
 }
 
-fn now_ms() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
-}
-
 fn focus_window() -> f64 {
     crate::settings::IPHONE_FOCUS_WINDOW.positive(&config::current())
 }
@@ -338,7 +334,7 @@ impl Session {
                             self.state.unread += 1;
                         }
                         if !entry.preexisting {
-                            self.arrivals.push(Arrival { at: now_ms(), silent: entry.silent });
+                            self.arrivals.push(Arrival { at: crate::runtime::now_ms() as f64, silent: entry.silent });
                         }
                     }
                     self.state.recent = iphone::upsert(&self.state.recent, entry, HISTORY_LIMIT);
@@ -380,9 +376,9 @@ impl Session {
     /// The Focus reading, aged: a silent arrival leaving the window ends it
     /// with no event to say so.
     fn age(&mut self) {
-        let horizon = now_ms() - focus_window() * 1000.0;
+        let horizon = crate::runtime::now_ms() as f64 - focus_window() * 1000.0;
         self.arrivals.retain(|a| a.at >= horizon);
-        self.state.in_focus = iphone::in_focus(&self.arrivals, now_ms(), focus_window());
+        self.state.in_focus = iphone::in_focus(&self.arrivals, crate::runtime::now_ms() as f64, focus_window());
     }
 }
 

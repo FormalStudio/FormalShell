@@ -833,7 +833,7 @@ impl Model {
             }
             Mode::Menu if emoji => {
                 let paste = crate::settings::CLIPBOARD_PASTE.get(&store.config);
-                store.menu.emoji.as_ref().map_or_else(Vec::new, |e| e.rows(q, paste, &store.state.data.emoji_uses, None))
+                store.menu.emoji.as_ref().map_or_else(Vec::new, |e| e.rows(q, paste, &store.state.data.emoji_uses, crate::runtime::now_ms() as f64))
             }
             Mode::Menu if level == Some("keybinds") => {
                 let reply = store.menu.binds.as_ref().map(|r| r.as_deref().map_err(|_| ()));
@@ -2268,7 +2268,7 @@ impl Model {
                     index::ask(Ask::Emoji);
                     return json!([]);
                 };
-                return Value::Array(index.rows(q, true, &store.state.data.emoji_uses, None).iter().map(|n| json!({"id": n.id, "label": n.label, "icon": n.icon, "kind": n.kind.as_str()})).collect());
+                return Value::Array(index.rows(q, true, &store.state.data.emoji_uses, crate::runtime::now_ms() as f64).iter().map(|n| json!({"id": n.id, "label": n.label, "icon": n.icon, "kind": n.kind.as_str()})).collect());
             }
             Some("keybinds") => {
                 index::ask(Ask::Binds);

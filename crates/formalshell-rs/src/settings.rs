@@ -238,10 +238,10 @@ pub fn location(doc: &(impl Doc + ?Sized)) -> Option<(f64, f64)> {
 
 /// `avatar.path`, the picture the lock screen and the polkit card show;
 /// `~/.face` when unset or empty.
-pub fn avatar_path(doc: &(impl Doc + ?Sized), home: &str) -> String {
+pub fn avatar_path(doc: &(impl Doc + ?Sized)) -> String {
     match lookup(doc.doc(), "avatar.path").and_then(Value::as_str) {
         Some(p) if !p.is_empty() => p.to_owned(),
-        _ => format!("{home}/.face"),
+        _ => crate::paths::home().join(".face").to_string_lossy().into_owned(),
     }
 }
 
@@ -464,7 +464,7 @@ pub fn recording_dir(doc: &(impl Doc + ?Sized)) -> String {
 fn directory(doc: &(impl Doc + ?Sized), key: &str, under_home: &str) -> String {
     match lookup(doc.doc(), key).and_then(Value::as_str) {
         Some(d) if !d.is_empty() => d.to_owned(),
-        _ => format!("{}/{under_home}", std::env::var("HOME").unwrap_or_default()),
+        _ => crate::paths::home().join(under_home).to_string_lossy().into_owned(),
     }
 }
 
@@ -565,9 +565,10 @@ mod tests {
 
     #[test]
     fn avatar_defaults_to_home_face() {
-        assert_eq!(avatar_path(&json!({}), "/home/k"), "/home/k/.face");
-        assert_eq!(avatar_path(&json!({"avatar": {"path": ""}}), "/home/k"), "/home/k/.face");
-        assert_eq!(avatar_path(&json!({"avatar": {"path": "/p.png"}}), "/home/k"), "/p.png");
+        let face = crate::paths::home().join(".face").to_string_lossy().into_owned();
+        assert_eq!(avatar_path(&json!({})), face);
+        assert_eq!(avatar_path(&json!({"avatar": {"path": ""}})), face);
+        assert_eq!(avatar_path(&json!({"avatar": {"path": "/p.png"}})), "/p.png");
     }
 
     #[test]

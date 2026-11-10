@@ -133,7 +133,7 @@ pub fn directory(configured: &str) -> String {
     if !configured.is_empty() {
         return configured.to_owned();
     }
-    let home = super::menu::home();
+    let home = crate::paths::home().to_string_lossy().into_owned();
     let dirs = std::fs::read_to_string(crate::paths::config().join("user-dirs.dirs")).unwrap_or_default();
     let line = dirs.lines().find(|l| l.trim_start().starts_with("XDG_PICTURES_DIR=")).unwrap_or("");
     let pictures = providers::user_dirs(line, &home).into_iter().next().unwrap_or_else(|| format!("{}/Pictures", home.trim_end_matches('/')));

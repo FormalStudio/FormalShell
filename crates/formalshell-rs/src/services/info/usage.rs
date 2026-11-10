@@ -151,7 +151,7 @@ impl Poll {
     }
 
     async fn credentials(&self) -> Option<usage::Credentials> {
-        let path = format!("{}/.claude/.credentials.json", std::env::var("HOME").unwrap_or_default());
+        let path = crate::paths::home().join(".claude/.credentials.json");
         for attempt in 0..CREDENTIALS_READS {
             let read = path.clone();
             match self.ctx.pool().run(move || std::fs::read_to_string(read)).await {
@@ -199,7 +199,7 @@ impl Poll {
                     s.claude_rows.clear();
                 });
             };
-            let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64);
+            let now_ms = crate::runtime::now_ms() as f64;
             let expired = usage::credentials_expired(creds.expires_at_ms, now_ms);
             let tier = usage::tier_label(&creds.subscription_type, &creds.rate_limit_tier);
             self.update(|s| {

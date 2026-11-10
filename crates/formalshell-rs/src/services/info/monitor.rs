@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 #[cfg(test)]
 use fs_system::monitor::collect::split_sections;
@@ -153,10 +153,6 @@ fn card_json(c: &Card) -> Value {
     })
 }
 
-pub fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
-}
-
 /// Whether `name` is an executable on PATH, for the offload tools the
 /// GPU cell asks about.
 /// What a tick compares itself to.
@@ -206,7 +202,7 @@ fn sample(prev: &mut Prev, sections: &HashMap<String, String>, at: Instant) -> S
         .collect();
 
     State {
-        sampled_ms: Some(now_ms()),
+        sampled_ms: Some(crate::runtime::now_ms() as u64),
         cpu,
         mem: sysinfo::parse_mem(section(sections, "mem")),
         load: sysinfo::parse_load(section(sections, "load")),

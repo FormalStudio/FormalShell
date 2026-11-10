@@ -33,7 +33,7 @@ fn apps_tree(entries: Vec<DesktopEntry>, launches: Vec<Record>) -> Tree {
         },
     );
     let mut fns: HashMap<Provider, ProviderFn> = HashMap::new();
-    fns.insert(Provider::Apps, Box::new(move || apps_provider(&entries, None, &launches, Some(NOW))));
+    fns.insert(Provider::Apps, Box::new(move || apps_provider(&entries, None, &launches, NOW)));
     apply_providers(&mut tree, &fns);
     tree
 }
@@ -173,7 +173,7 @@ fn apps_provider_orders_rows_by_launch_frecency() {
         &[entry("fish", "Fish Shell"), entry("files", "Files")],
         None,
         &[rec("files", 3.0, NOW)],
-        Some(NOW),
+        NOW,
     );
     assert_eq!(rows[0].id, "apps.files");
     assert_eq!(rows[1].id, "apps.fish");
@@ -181,7 +181,7 @@ fn apps_provider_orders_rows_by_launch_frecency() {
 
 #[test]
 fn apps_provider_without_a_store_keeps_desktop_entry_order() {
-    let rows = apps_provider(&[entry("fish", "Fish Shell"), entry("files", "Files")], None, &[], Some(NOW));
+    let rows = apps_provider(&[entry("fish", "Fish Shell"), entry("files", "Files")], None, &[], NOW);
     assert_eq!(rows[0].id, "apps.fish");
     assert_eq!(rows[1].id, "apps.files");
 }

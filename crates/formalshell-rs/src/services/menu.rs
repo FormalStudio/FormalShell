@@ -416,10 +416,6 @@ fn base_over(inputs: &BaseInputs, user: &Entries) -> Tree {
     fs_menu::base::base_tree(defaults, inputs, user)
 }
 
-pub(crate) fn home() -> String {
-    std::env::var("HOME").unwrap_or_default()
-}
-
 fn user_menu_path() -> PathBuf {
     crate::paths::config().join("formalshell").join("menu.jsonc")
 }
@@ -428,7 +424,7 @@ fn user_menu_path() -> PathBuf {
 /// recent list's newest files that still do.
 fn files() -> Vec<Node> {
     use fs_menu::providers::{Found, RECENT_FILES, recent_paths, user_dirs};
-    let home = home();
+    let home = crate::paths::home().to_string_lossy().into_owned();
     let found = |path: String| std::fs::metadata(&path).ok().map(|m| Found { path, dir: m.is_dir() });
     let dirs = std::fs::read_to_string(crate::paths::config().join("user-dirs.dirs")).unwrap_or_default();
     let places: Vec<Found> = user_dirs(&dirs, &home).into_iter().filter_map(found).filter(|f| f.dir).collect();
@@ -545,7 +541,7 @@ impl Scan {
                 .clone()
         };
         let cell = std::cell::RefCell::new(resolve);
-        let rows = providers::apps_provider(&entries, Some(&|n: &str| (cell.borrow_mut())(n)), launches, None);
+        let rows = providers::apps_provider(&entries, Some(&|n: &str| (cell.borrow_mut())(n)), launches, crate::runtime::now_ms() as f64);
         let paths: Vec<String> = rows.iter().map(|r| r.icon_source.clone()).collect();
         let fresh = self.icons(&paths, scale);
         let mut exec = Exec::default();
@@ -762,7 +758,7 @@ pub fn outside_subject(store: &store::Store, id: &str) -> Option<Node> {
         SubjectId::File(path) => {
             // Read off the service's stat of the picks, never the disk here.
             let dir = (*store.menu.files.get(&path)?)?;
-            Some(providers::recent_subject(&path, dir, &std::env::var("HOME").unwrap_or_default()))
+            Some(providers::recent_subject(&path, dir, &crate::paths::home().to_string_lossy()))
         }
         SubjectId::Emoji(ch) => store.menu.emoji.as_ref()?.row_for(&ch, crate::settings::CLIPBOARD_PASTE.get(&store.config)),
         SubjectId::App(_) | SubjectId::Node(_) => None,
@@ -912,7 +908,7 @@ mod tests {
         rows.extend(clipssh_rows(&[ClipsshAlias { name: "box".into(), target: "k@box".into() }]));
         rows.extend(package_rows(&[package("zypper:foot", true), package("flatpak:org.example.App", false)]));
         rows.extend(tray_provider(&[TrayItem { id: "org.kde.Item:1".into(), title: "Item".into(), tooltip_title: String::new() }]));
-        rows.extend(apps_provider(&[DesktopEntry { id: "foot".into(), name: "Foot".into(), actions: vec![("new".into(), "New".into())], ..DesktopEntry::default() }], None, &[], None));
+        rows.extend(apps_provider(&[DesktopEntry { id: "foot".into(), name: "Foot".into(), actions: vec![("new".into(), "New".into())], ..DesktopEntry::default() }], None, &[], 0.0));
         rows
     }
 
@@ -940,7 +936,7 @@ mod tests {
 
     #[test]
     fn every_builtin_call_is_answered() {
-        let app = apps_provider(&[DesktopEntry { id: "foot".into(), name: "Foot".into(), actions: vec![("new".into(), "New".into())], ..DesktopEntry::default() }], None, &[], None).remove(0);
+        let app = apps_provider(&[DesktopEntry { id: "foot".into(), name: "Foot".into(), actions: vec![("new".into(), "New".into())], ..DesktopEntry::default() }], None, &[], 0.0).remove(0);
         let window = Node { path: "0xabc".into(), ..Node::new("w", "Window", Kind::Window) };
         let image = Node { path: "/w/a.png".into(), ..Node::new("img", "a", Kind::Image) };
         let submenu = Node::new("system", "System", Kind::Submenu);

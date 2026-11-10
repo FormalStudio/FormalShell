@@ -34,7 +34,7 @@ fn fixture(items: &[(&str, &str, Option<&str>)]) -> EmojiIndex {
 }
 
 fn icons(index: &EmojiIndex, query: &str) -> Vec<String> {
-    index.rows(query, true, &[], None).into_iter().map(|r| r.icon).collect()
+    index.rows(query, true, &[], 0.0).into_iter().map(|r| r.icon).collect()
 }
 
 fn now() -> f64 {
@@ -68,7 +68,7 @@ fn keywords_are_vendored_lowercase() {
 
 #[test]
 fn known_mapping() {
-    let rows = REAL.rows("thumbs up", true, &[], None);
+    let rows = REAL.rows("thumbs up", true, &[], 0.0);
     assert!(!rows.is_empty());
     assert_eq!(rows[0].icon, "\u{1F44D}");
     assert_eq!(rows[0].label, "Thumbs up");
@@ -84,7 +84,7 @@ fn known_mapping() {
 // window focus returns to, and says Copy instead of Paste.
 #[test]
 fn paste_off() {
-    let rows = REAL.rows("thumbs up", false, &[], None);
+    let rows = REAL.rows("thumbs up", false, &[], 0.0);
     assert!(!rows[0].paste_after);
     assert_eq!(rows[0].verb.as_deref(), Some("Copy"));
     assert_eq!(rows[0].action.as_ref().map(ToString::to_string).as_deref(), Some("wl-copy -- \u{1F44D}"));
@@ -94,7 +94,7 @@ fn paste_off() {
 fn exact_beats_earlier_substring() {
     // "grinning cat" (Smileys & Emotion) precedes "cat" (Animals & Nature) in
     // file order; the exact-name tier must still win.
-    let rows = REAL.rows("cat", true, &[], None);
+    let rows = REAL.rows("cat", true, &[], 0.0);
     assert_eq!(rows[0].label, "Cat");
     assert_eq!(rows[0].icon, "\u{1F408}");
 }
@@ -121,10 +121,10 @@ fn the_four_tiers_rank_in_order() {
 // all but five rows of the set out of reach.
 #[test]
 fn browse_shows_the_whole_set() {
-    let all = REAL.rows("", true, &[], None);
+    let all = REAL.rows("", true, &[], 0.0);
     assert_eq!(all.len(), DATASET.len());
     assert_eq!(all[0].label, "Grinning face");
-    assert_eq!(REAL.rows("zzzznotanemoji", true, &[], None).len(), 0);
+    assert_eq!(REAL.rows("zzzznotanemoji", true, &[], 0.0).len(), 0);
 }
 
 // A one-letter query matches most of the dataset. Every match has to survive
@@ -133,7 +133,7 @@ fn browse_shows_the_whole_set() {
 // keyword hits legitimately add rows no name carries.
 #[test]
 fn a_broad_query_is_not_truncated() {
-    let broad = REAL.rows("a", true, &[], None);
+    let broad = REAL.rows("a", true, &[], 0.0);
     let seen: std::collections::HashSet<&str> = broad.iter().map(|r| r.icon.as_str()).collect();
     let mut missing = 0;
     let mut expected = 0;
@@ -156,9 +156,9 @@ fn a_broad_query_is_not_truncated() {
 // nothing in it says "sob".
 #[test]
 fn keywords_find_what_the_name_does_not() {
-    assert_eq!(REAL.rows("sob", true, &[], None)[0].icon, "\u{1F62D}");
-    assert_eq!(REAL.rows("lmao", true, &[], None)[0].icon, "\u{1F923}");
-    assert_eq!(REAL.rows("+1", true, &[], None)[0].icon, "\u{1F44D}");
+    assert_eq!(REAL.rows("sob", true, &[], 0.0)[0].icon, "\u{1F62D}");
+    assert_eq!(REAL.rows("lmao", true, &[], 0.0)[0].icon, "\u{1F923}");
+    assert_eq!(REAL.rows("+1", true, &[], 0.0)[0].icon, "\u{1F44D}");
 }
 
 // The keyword tiers sit below every name tier: a row whose visible name
@@ -188,7 +188,7 @@ fn usage_reorders_within_a_tier_only() {
     ]);
     let t = now();
     let uses = [Record::new("emoji.4", 9.0, t), Record::new("emoji.1", 1.0, t)];
-    let order: Vec<String> = index.rows("cat", true, &uses, Some(t)).into_iter().map(|r| r.icon).collect();
+    let order: Vec<String> = index.rows("cat", true, &uses, t).into_iter().map(|r| r.icon).collect();
     // "cat with a hat" leads the prefix tier over "cat face" on nine copies,
     // and still does not overtake the exact-name row above it.
     assert_eq!(order, ["1", "4", "2", "3"]);
@@ -200,9 +200,9 @@ fn usage_reorders_within_a_tier_only() {
 fn usage_leads_the_browse_grid() {
     let t = now();
     let uses = [Record::new("emoji.\u{1F62D}", 4.0, t)];
-    assert_eq!(REAL.rows("", true, &uses, Some(t))[0].icon, "\u{1F62D}");
+    assert_eq!(REAL.rows("", true, &uses, t)[0].icon, "\u{1F62D}");
     // No ledger, no reordering: a fresh profile browses file order.
-    assert_eq!(REAL.rows("", true, &[], Some(t))[0].label, "Grinning face");
+    assert_eq!(REAL.rows("", true, &[], t)[0].label, "Grinning face");
 }
 
 // A stale ledger entry decays rather than ruling forever: the same half-life
@@ -213,7 +213,7 @@ fn a_stale_favourite_loses_to_a_recent_one() {
     let t = now();
     let year = 365.0 * 24.0 * 60.0 * 60.0 * 1000.0;
     let uses = [Record::new("emoji.1", 20.0, t - year), Record::new("emoji.2", 2.0, t)];
-    let order: Vec<String> = index.rows("cat", true, &uses, Some(t)).into_iter().map(|r| r.icon).collect();
+    let order: Vec<String> = index.rows("cat", true, &uses, t).into_iter().map(|r| r.icon).collect();
     assert_eq!(order, ["2", "1"]);
 }
 
@@ -225,7 +225,7 @@ fn a_stale_favourite_loses_to_a_recent_one() {
 #[test]
 fn building_every_row_stays_under_the_frame_budget() {
     let t0 = std::time::Instant::now();
-    let rows = REAL.rows("", true, &[], None);
+    let rows = REAL.rows("", true, &[], 0.0);
     let elapsed = t0.elapsed().as_millis();
     assert_eq!(rows.len(), DATASET.len());
     assert!(elapsed < 200, "building {} rows took {elapsed}ms", rows.len());
@@ -233,10 +233,10 @@ fn building_every_row_stays_under_the_frame_budget() {
 
 #[test]
 fn repeat_search_is_not_slower_than_the_first() {
-    REAL.rows("face", true, &[], None);
+    REAL.rows("face", true, &[], 0.0);
     let t0 = std::time::Instant::now();
     for _ in 0..5 {
-        REAL.rows("face", true, &[], None);
+        REAL.rows("face", true, &[], 0.0);
     }
     let elapsed = t0.elapsed().as_millis();
     assert!(elapsed < 500, "five repeat searches took {elapsed}ms");
@@ -247,7 +247,7 @@ fn repeat_search_is_not_slower_than_the_first() {
 #[test]
 fn a_grid_skips_the_section_pass() {
     use fs_menu::model::{Mode, SectionCtx, sections_for};
-    let rows = REAL.rows("", true, &[], None);
+    let rows = REAL.rows("", true, &[], 0.0);
     let ctx = SectionCtx { grid: true, mode: Some(Mode::Menu), ..SectionCtx::default() };
     assert_eq!(sections_for(&rows, &ctx).len(), 0);
 }

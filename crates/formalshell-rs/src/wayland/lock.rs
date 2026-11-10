@@ -116,8 +116,8 @@ pub struct Sleep {
 /// One PrepareForSleep, as `lock status` reports it.
 struct SleepRecord {
     result: SleepLock,
-    prepared_at: u64,
-    released: Option<(Release, u64)>,
+    prepared_at: i64,
+    released: Option<(Release, i64)>,
 }
 
 impl SleepRecord {
@@ -640,8 +640,7 @@ impl App {
     /// The avatar and the scrimmed wallpaper, decoded on the pool.
     fn load_lock_pictures(&mut self) {
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
-        let home = std::env::var("HOME").unwrap_or_default();
-        let path = crate::settings::avatar_path(&self.store.config, &home);
+        let path = crate::settings::avatar_path(&self.store.config);
         let size = login::picture_size(&self.store.theme.theme);
         self.lock.avatar.clear();
         self.lock.shards.clear();
@@ -1469,7 +1468,7 @@ impl App {
         } else {
             self.lock().map_or_else(SleepLock::Failed, |()| SleepLock::Locked)
         };
-        self.lock.sleep.last = Some(SleepRecord { result, prepared_at: epoch_ms(), released: None });
+        self.lock.sleep.last = Some(SleepRecord { result, prepared_at: crate::runtime::now_ms(), released: None });
         self.lock.sleep.started = Some(Instant::now());
         self.check_sleep_release();
     }
@@ -1510,7 +1509,7 @@ impl App {
         }
         self.lock.sleep.started = None;
         if let Some(last) = &mut self.lock.sleep.last {
-            last.released = Some((why, epoch_ms()));
+            last.released = Some((why, crate::runtime::now_ms()));
         }
         if let Some(rt) = &self.runtime {
             rt.service(|_| crate::services::sleep::release());
@@ -1537,9 +1536,6 @@ fn boottime() -> f64 {
     ts.tv_sec as f64 + ts.tv_nsec as f64 / 1e9
 }
 
-fn epoch_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
-}
 
 impl SessionLockHandler for App {
     fn locked(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {

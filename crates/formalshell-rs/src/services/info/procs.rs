@@ -15,7 +15,6 @@ use fs_system::monitor::procs::{self, DeltaOptions, ProcRecord, ProcRow};
 use futures_lite::FutureExt;
 use serde_json::{Value, json};
 
-use super::monitor::now_ms;
 use super::{idle, kicked};
 use crate::runtime::Ctx;
 use crate::services::config;
@@ -178,7 +177,7 @@ pub async fn run(ctx: Ctx) {
         let wait = interval();
         let sections = ctx.pool().run(collect).await.unwrap_or_default();
         let (rows, available) = sample(&mut prev, &sections);
-        ctx.publish(store::Diff::Procs(Diff::Rows { rows, available, sampled_ms: now_ms() }));
+        ctx.publish(store::Diff::Procs(Diff::Rows { rows, available, sampled_ms: crate::runtime::now_ms() as u64 }));
         let kicked = async {
             let _ = kick.recv().await;
         };
@@ -192,7 +191,7 @@ fn finish(ctx: &Ctx, pid: u64, action: &str, ok: bool, message: &str) {
         action: action.to_owned(),
         ok,
         message: message.to_owned(),
-        at_ms: now_ms(),
+        at_ms: crate::runtime::now_ms() as u64,
     })));
     // The table is one poll behind an action that worked, and a row for a
     // process already gone invites a second press on it.

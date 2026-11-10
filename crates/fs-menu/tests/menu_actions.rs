@@ -35,7 +35,7 @@ fn firefox() -> Node {
         actions: vec![("new-private-window".into(), "New private window".into())],
         ..DesktopEntry::default()
     };
-    apps_provider(&[entry], None, &[], None).remove(0)
+    apps_provider(&[entry], None, &[], 0.0).remove(0)
 }
 
 #[test]
@@ -231,11 +231,11 @@ fn clipboard_entry() {
 #[test]
 fn emoji() {
     let index = EmojiIndex::new(vec![EmojiEntry { ch: "😭".into(), name: "loudly crying face".into(), group: "g".into(), kw: None }]);
-    let paste = of(&index.rows("cry", true, &[], None)[0]);
+    let paste = of(&index.rows("cry", true, &[], 0.0)[0]);
     assert_eq!(ids(&paste), ["run", "copy-only"]);
     assert_eq!(paste[0].label, "Paste");
     assert!(paste[0].paste_after && !paste[1].paste_after);
-    assert_eq!(ids(&of(&index.rows("cry", false, &[], None)[0])), ["run"]);
+    assert_eq!(ids(&of(&index.rows("cry", false, &[], 0.0)[0])), ["run"]);
 }
 
 #[test]
@@ -326,7 +326,7 @@ fn menu_jsonc_actions() {
     }));
     let mut tree = build_tree(&default, &user);
     let files = DesktopEntry { id: "org.gnome.Files".into(), name: "Files".into(), path: "/f.desktop".into(), ..DesktopEntry::default() };
-    attach_children(&mut tree, "apps", vec![firefox(), apps_provider(&[files], None, &[], None).remove(0)]);
+    attach_children(&mut tree, "apps", vec![firefox(), apps_provider(&[files], None, &[], 0.0).remove(0)]);
     assert!(tree.nodes["apps"].child_ids.iter().filter(|c| *c == "apps.firefox").count() == 1);
     assert!(tree.nodes["apps"].child_ids.contains(&"apps.org.gnome.Files".to_string()));
     assert_eq!(ids(&of(&tree.nodes["apps.org.gnome.Files"])), ["open", "new-window"]);
@@ -373,6 +373,6 @@ fn subjects_outside_the_tree_carry_their_own_ids() {
     let index = EmojiIndex::new(vec![EmojiEntry { ch: "\u{1F62D}".into(), name: "loudly crying face".into(), ..EmojiEntry::default() }]);
     let row = index.row_for("\u{1F62D}", true).unwrap();
     assert_eq!(subject_id(&row), fs_menu::actions::SubjectId::Emoji("\u{1F62D}".into()));
-    assert_eq!(row, index.rows("loudly", true, &[], None).remove(0));
+    assert_eq!(row, index.rows("loudly", true, &[], 0.0).remove(0));
     assert!(index.row_for("x", true).is_none());
 }

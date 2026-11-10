@@ -7,7 +7,7 @@
 //! `mode` joins with the launcher's monitor view.
 
 use super::registry::{Function, Reply, Target, Type, Value, text};
-use crate::services::info::monitor::now_ms;
+use crate::runtime::now_ms;
 use crate::services::info::procs;
 use crate::services::launch;
 use crate::services::wants::{self, Source};
@@ -15,17 +15,17 @@ use crate::wayland::App;
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
     wants::pulse(Source::Monitor);
-    Ok(app.store.monitor.status(now_ms()))
+    Ok(app.store.monitor.status(now_ms() as u64))
 }
 
 fn gpu(app: &mut App, _: &[Value]) -> Reply {
     wants::pulse(Source::Monitor);
-    Ok(app.store.monitor.gpu(now_ms()))
+    Ok(app.store.monitor.gpu(now_ms() as u64))
 }
 
 fn processes(app: &mut App, args: &[Value]) -> Reply {
     wants::pulse(Source::Processes);
-    Ok(app.store.procs.report(args[0].str(), now_ms()))
+    Ok(app.store.procs.report(args[0].str(), now_ms() as u64))
 }
 
 fn signal(app: &mut App, args: &[Value]) -> Reply {

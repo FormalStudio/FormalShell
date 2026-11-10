@@ -253,10 +253,6 @@ fn cache_path(country: Option<&str>) -> PathBuf {
     }
 }
 
-fn now_ms() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
-}
-
 /// A cache document and its stations; `None` when it cannot be read.
 fn read_cache(path: &std::path::Path) -> Option<(Value, Vec<Station>)> {
     let doc: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
@@ -265,7 +261,7 @@ fn read_cache(path: &std::path::Path) -> Option<(Value, Vec<Station>)> {
 }
 
 fn write_cache(path: &std::path::Path, rows: &[Station]) {
-    let doc = json!({ "fetchedAt": now_ms(), "stations": rows });
+    let doc = json!({ "fetchedAt": crate::runtime::now_ms() as f64, "stations": rows });
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -276,7 +272,7 @@ fn write_cache(path: &std::path::Path, rows: &[Station]) {
 }
 
 fn stale_doc(doc: &Value) -> bool {
-    stations::stale(doc.get("fetchedAt").and_then(Value::as_f64).unwrap_or(0.0), now_ms())
+    stations::stale(doc.get("fetchedAt").and_then(Value::as_f64).unwrap_or(0.0), crate::runtime::now_ms() as f64)
 }
 
 fn state_path() -> PathBuf {

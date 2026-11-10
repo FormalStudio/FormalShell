@@ -455,7 +455,7 @@ async fn check() -> (Result<(u32, String), String>, Option<(Verb, String)>) {
     let host = host();
     let grep = format!("--grep=^feat\\(apps\\): (install|uninstall) .+ on {}$", host.replace('.', "\\."));
     let log = git(&dir, &["log", "-1", "--format=%ct %s", "-E", &grep, "@{u}", "--", "apps.star"], Duration::from_secs(10)).await;
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let now = (crate::runtime::now_ms() / 1000) as u64;
     let last = log.stdout.lines().find_map(|l| recent_change(l, &host, now));
     (behind, last)
 }

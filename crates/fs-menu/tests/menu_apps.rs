@@ -17,7 +17,7 @@ fn resolver(name: &str) -> String {
 
 #[test]
 fn label_is_display_name_never_id() {
-    let rows = apps_provider(&[stub_entry("firefox", "Firefox Web Browser", "firefox")], Some(&resolver), &[], None);
+    let rows = apps_provider(&[stub_entry("firefox", "Firefox Web Browser", "firefox")], Some(&resolver), &[], 0.0);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "apps.firefox");
     assert_eq!(rows[0].label, "Firefox Web Browser");
@@ -26,13 +26,13 @@ fn label_is_display_name_never_id() {
 
 #[test]
 fn label_falls_back_to_id_only_when_name_empty() {
-    let rows = apps_provider(&[stub_entry("bare-id", "", "")], Some(&resolver), &[], None);
+    let rows = apps_provider(&[stub_entry("bare-id", "", "")], Some(&resolver), &[], 0.0);
     assert_eq!(rows[0].label, "bare-id");
 }
 
 #[test]
 fn icon_theme_name_never_rendered_as_text() {
-    let rows = apps_provider(&[stub_entry("mpv", "mpv Media Player", "mpv")], Some(&resolver), &[], None);
+    let rows = apps_provider(&[stub_entry("mpv", "mpv Media Player", "mpv")], Some(&resolver), &[], 0.0);
     assert_eq!(rows[0].icon, "");
 }
 
@@ -42,7 +42,7 @@ fn icon_source_resolved_through_injected_lookup() {
         &[stub_entry("a", "App A", "resolvable"), stub_entry("b", "App B", "no-such-icon"), stub_entry("c", "App C", "")],
         Some(&resolver),
         &[],
-        None,
+        0.0,
     );
     assert_eq!(rows[0].icon_source, "image://icon/resolvable");
     assert_eq!(rows[1].icon_source, "");
@@ -51,6 +51,6 @@ fn icon_source_resolved_through_injected_lookup() {
 
 #[test]
 fn no_resolver_degrades_to_empty_icon_source() {
-    let rows = apps_provider(&[stub_entry("a", "App A", "resolvable")], None, &[], None);
+    let rows = apps_provider(&[stub_entry("a", "App A", "resolvable")], None, &[], 0.0);
     assert_eq!(rows[0].icon_source, "");
 }

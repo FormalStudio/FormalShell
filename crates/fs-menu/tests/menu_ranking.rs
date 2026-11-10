@@ -26,7 +26,7 @@ fn with_apps(mut tree: fs_menu::node::Tree) -> fs_menu::node::Tree {
         .into_iter()
         .map(|(id, name)| desktop_entry(id, name))
         .collect();
-    attach_children(&mut tree, "apps", apps_provider(&apps, None, &[], Some(NOW)));
+    attach_children(&mut tree, "apps", apps_provider(&apps, None, &[], NOW));
     tree
 }
 
@@ -86,7 +86,7 @@ fn snapshot() -> String {
 
     let dataset = fs_menu::model::parse_headered_json(&read_repo("crates/fs-menu/data/emoji.json")).expect("emoji.json parses");
     let emoji = fs_menu::providers::EmojiIndex::new(serde_json::from_value(dataset).expect("emoji entries"));
-    let sob = emoji.rows("sob", true, &[], None);
+    let sob = emoji.rows("sob", true, &[], 0.0);
     out.push(format!("emoji sob: {} {}", sob[0].id, sob[0].icon));
 
     let clips: Vec<Node> = clipboard_provider(&[Entry::text("a", "notebook entry"), Entry::text("b", "other"), Entry::image("c", "/tmp/x.png")], ClipMode::Copy, true);

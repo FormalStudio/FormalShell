@@ -289,10 +289,6 @@ pub fn named(name: &str, theme_path: &str, size: u32) -> Option<Raw> {
     load(&lookup(name, theme_path, size)?)
 }
 
-fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
-}
-
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Fixed,
@@ -354,7 +350,7 @@ struct Themes {
 }
 
 fn icon_bases() -> Vec<PathBuf> {
-    let mut bases = vec![home().join(".icons")];
+    let mut bases = vec![crate::paths::home().join(".icons")];
     bases.extend(crate::paths::data_dirs().into_iter().map(|d| d.join("icons")));
     bases
 }

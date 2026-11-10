@@ -2,7 +2,6 @@
 //! node.
 
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::frecency::{self, Record};
 use crate::node::{DesktopEntry, Kind, Node, Provider, Tree};
@@ -15,10 +14,6 @@ use crate::node::{DesktopEntry, Kind, Node, Provider, Tree};
 /// in without scanning, and the rows below it are the whole list in the same
 /// order, so nothing is hidden by the split.
 pub const APPS_RECENT_MAX: usize = 5;
-
-pub(crate) fn now_ms() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
-}
 
 /// One row per desktop entry, ordered by launch frecency before the map,
 /// which is the whole of frecency's reach into ranking: equal-score search
@@ -38,9 +33,8 @@ pub fn apps_provider(
     entries: &[DesktopEntry],
     resolve_icon: Option<&dyn Fn(&str) -> String>,
     launches: &[Record],
-    now: Option<f64>,
+    now: f64,
 ) -> Vec<Node> {
-    let now = now.unwrap_or_else(now_ms);
     let ordered = frecency::order(entries.to_vec(), launches, now, |e| e.id.as_str());
     ordered
         .into_iter()

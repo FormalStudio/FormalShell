@@ -7,7 +7,7 @@
 //! the exit code alone says nothing about a failed file.
 
 use std::sync::LazyLock;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
 use fs_devices::localsend::{self as model, Peer, RecvEvent};
@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 use super::notifications::{self, Op};
 use super::proc;
-use crate::runtime::Ctx;
+use crate::runtime::{Ctx, now_ms};
 use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(2);
@@ -106,10 +106,6 @@ fn toast(ctx: &Ctx, summary: &str, body: &str, urgency: Urgency) {
     ctx.publish(store::Diff::Notifications(notifications::Diff::Op(Op::Notify(summary.into(), body.into(), urgency))));
 }
 
-fn now_ms() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
-}
-
 enum Wake {
     Cmd(Cmd),
     Scanned(String),
@@ -140,7 +136,7 @@ async fn run(ctx: Ctx) {
         match wake {
             Wake::Cmd(Cmd::Config { receive, alias, dir }) => {
                 let alias = if alias.is_empty() { if host.is_empty() { "FormalShell".to_owned() } else { host.clone() } } else { alias };
-                let dir = if dir.is_empty() { format!("{}/Downloads", std::env::var("HOME").unwrap_or_default()) } else { dir };
+                let dir = if dir.is_empty() { crate::paths::home().join("Downloads").to_string_lossy().into_owned() } else { dir };
                 let next = (receive, alias.clone(), dir.clone());
                 if config.as_ref() == Some(&next) {
                     continue;
@@ -201,7 +197,7 @@ async fn run(ctx: Ctx) {
                 if !s.installed || s.scanning {
                     continue;
                 }
-                if !force && !s.peers.is_empty() && now_ms() - s.last_scan_at < SCAN_FRESH_MS {
+                if !force && !s.peers.is_empty() && now_ms() as f64 - s.last_scan_at < SCAN_FRESH_MS {
                     continue;
                 }
                 s.scanning = true;
@@ -213,7 +209,7 @@ async fn run(ctx: Ctx) {
             }
             Wake::Scanned(out) => {
                 s.peers = model::parse_scan(&out);
-                s.last_scan_at = now_ms();
+                s.last_scan_at = now_ms() as f64;
                 s.scanning = false;
             }
             Wake::Cmd(Cmd::Send { peer, payload }) => {
@@ -225,7 +221,7 @@ async fn run(ctx: Ctx) {
                     Payload::Path(p) => p,
                     Payload::Text(text) => {
                         let dir = crate::paths::shell_runtime();
-                        let file = dir.join(format!("localsend-text-{}.txt", now_ms() as u64));
+                        let file = dir.join(format!("localsend-text-{}.txt", now_ms()));
                         let staged = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, text));
                         if staged.is_err() {
                             toast(&ctx, "LOCALSEND FAILED", "Could not stage the clipboard text to send", Urgency::Critical);

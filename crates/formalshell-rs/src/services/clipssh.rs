@@ -64,7 +64,7 @@ pub fn resolve_alias(configured: &str, aliases: &[ClipsshAlias]) -> Option<Strin
 }
 
 fn aliases_path() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".clipssh/aliases")
+    crate::paths::home().join(".clipssh/aliases")
 }
 
 fn toast(ctx: &Ctx, summary: &str, body: &str, urgency: Urgency) {

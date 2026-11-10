@@ -110,7 +110,7 @@ impl Model {
         if self.picker.select {
             return vec![PickerSection { id: FILES, ..Default::default() }];
         }
-        let home = crate::services::menu::home();
+        let home = crate::paths::home().to_string_lossy().into_owned();
         let dir = match self.picker.dir.strip_prefix(home.trim_end_matches('/')) {
             Some(rest) if !home.is_empty() && rest.starts_with('/') => format!("~{rest}"),
             _ => self.picker.dir.clone(),

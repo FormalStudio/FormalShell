@@ -3,7 +3,6 @@
 
 use serde::Deserialize;
 
-use super::apps::now_ms;
 use crate::frecency::{self, Record};
 use crate::node::{Kind, Node};
 
@@ -108,7 +107,7 @@ impl EmojiIndex {
     /// `uses` (the emoji ledger) and `now` reorder WITHIN each tier, never
     /// across: what gets used most leads the browse grid and leads among
     /// equally-good matches, and a better match still wins outright.
-    pub fn search(&self, query: &str, uses: &[Record], now: Option<f64>) -> Vec<&EmojiEntry> {
+    pub fn search(&self, query: &str, uses: &[Record], now: f64) -> Vec<&EmojiEntry> {
         let q = fs_js::trim(query).to_lowercase();
         if q.is_empty() {
             return rank(self.entries.iter().collect(), uses, now);
@@ -159,7 +158,7 @@ impl EmojiIndex {
     /// path typed the char itself with `wtype <char>`, which only lands where
     /// the focused client accepts a remapped keysym off a virtual keyboard; a
     /// paste works wherever the user's own paste chord already works.
-    pub fn rows(&self, query: &str, paste: bool, uses: &[Record], now: Option<f64>) -> Vec<Node> {
+    pub fn rows(&self, query: &str, paste: bool, uses: &[Record], now: f64) -> Vec<Node> {
         self.search(query, uses, now).into_iter().map(|e| emoji_row(e, paste)).collect()
     }
 
@@ -184,12 +183,10 @@ fn emoji_row(e: &EmojiEntry, paste: bool) -> Node {
 /// fresh profile browses the grid in Unicode's own order. `pull_recorded`
 /// rather than `order`: a broad query's tier can hold thousands of entries,
 /// and only the ones the ledger actually scores ever move.
-fn rank<'a>(entries: Vec<&'a Indexed>, uses: &[Record], now: Option<f64>) -> Vec<&'a EmojiEntry> {
+fn rank<'a>(entries: Vec<&'a Indexed>, uses: &[Record], now: f64) -> Vec<&'a EmojiEntry> {
     if uses.is_empty() {
         return entries.into_iter().map(|i| &i.entry).collect();
     }
-    // `nowMs || Date.now()`: a zero clock reads as absent.
-    let now = now.filter(|n| *n != 0.0).unwrap_or_else(now_ms);
     frecency::pull_recorded(entries, uses, now, |i| i.usage_id.as_str())
         .into_iter()
         .map(|i| &i.entry)

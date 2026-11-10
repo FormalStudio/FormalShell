@@ -10,7 +10,7 @@
 use fs_info::usage::{UsageRow, format_reset, refresh_hint};
 
 use super::{Effect, Panel, View};
-use crate::services::info::monitor::now_ms;
+use crate::runtime::now_ms;
 use crate::services::info::usage::{Claude, Codex, State};
 use crate::services::info::kick;
 use crate::services::wants::Source;
