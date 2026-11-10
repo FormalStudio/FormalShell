@@ -608,7 +608,8 @@ type MotionLines = Lines<BufReader<Async<std::os::unix::net::UnixStream>>>;
 #[derive(Default)]
 struct MotionState {
     latest: Option<Sample>,
-    /// The first sample of the watch, or where `recenter` last took it.
+    /// The first sample of the watch or of a bud taking the stream over, or
+    /// where `recenter` last took it.
     reference: Option<Quat>,
     /// The daemon answered the watch with an `error:` line, or it could not
     /// be opened; not tried again until the panel is reopened.
@@ -785,6 +786,11 @@ impl Airpods {
             return;
         }
         let Some(sample) = parse_sample(line) else { return };
+        // A primary swap hands the stream to the other bud, whose frame the
+        // old reference means nothing in.
+        if self.motion.latest.is_some_and(|last| last.bud != sample.bud) {
+            self.motion.reference = None;
+        }
         self.motion.reference.get_or_insert(sample.orientation);
         self.motion.latest = Some(sample);
         self.republish(ctx);
