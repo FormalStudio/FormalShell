@@ -29,12 +29,12 @@ const DRAG_Z: i32 = 900_000;
 /// A window drawn where the hand has it instead of where the scene does.
 pub struct Drag {
     pub id: String,
-    /// The box its client is drawn in, global.
-    pub rect: Box2,
     /// The size its client has.
     pub size: (f64, f64),
-    /// From the box's corner to the pointer.
+    /// Where on the window the hand has it, as a share of its size.
     pub grip: (f64, f64),
+    /// The pointer, global.
+    pub at: (f64, f64),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -208,11 +208,12 @@ impl Engine {
         let border = self.signals.look.get_untracked().border;
         let window = win.handle;
         let (w, h) = drag.size;
-        let (sx, sy) = (drag.rect.w / w.max(1.0), drag.rect.h / h.max(1.0));
+        let rect = self.drag_box(drag);
+        let (sx, sy) = (rect.w / w.max(1.0), rect.h / h.max(1.0));
         batch(|| {
             window.state(&windows::RECT).set(Rect::new(
-                drag.rect.x - border * sx,
-                drag.rect.y - border * sy,
+                rect.x - border * sx,
+                rect.y - border * sy,
                 (w + 2.0 * border).round(),
                 (h + 2.0 * border).round(),
             ));
@@ -232,6 +233,22 @@ impl Engine {
                 .state(&windows::OPACITY)
                 .set(self.opacity_of(&drag.id, false));
         });
+    }
+
+    /// The box a dragged window's client is drawn in: under the overview
+    /// as small as the windows around it, held where the hand took it.
+    pub fn drag_box(&self, drag: &Drag) -> Box2 {
+        let zoom = self
+            .output_at(drag.at)
+            .and_then(|output| self.lens(&output))
+            .map_or(1.0, |(lens, _)| lens.zoom);
+        let (w, h) = (drag.size.0 * zoom, drag.size.1 * zoom);
+        Box2::new(
+            drag.at.0 - drag.grip.0 * w,
+            drag.at.1 - drag.grip.1 * h,
+            w,
+            h,
+        )
     }
 
     fn output_at(&self, at: (f64, f64)) -> Option<String> {
@@ -300,16 +317,19 @@ impl Engine {
                 self.model.focus_window(&id);
                 self.drag = Some(Drag {
                     id,
-                    rect: client,
                     size: (client.w, client.h),
-                    grip: (pointer.0 - client.x, pointer.1 - client.y),
+                    grip: (
+                        (pointer.0 - client.x) / client.w.max(1.0),
+                        (pointer.1 - client.y) / client.h.max(1.0),
+                    ),
+                    at: pointer,
                 });
                 self.commit();
                 self.present_drag();
             }
             WindowMovePhaseSnapshot::Update => {
                 if let Some(drag) = self.drag.as_mut().filter(|drag| drag.id == id) {
-                    (drag.rect.x, drag.rect.y) = (client.x, client.y);
+                    drag.at = pointer;
                     self.present_drag();
                 }
             }
@@ -350,7 +370,9 @@ impl Engine {
             }
         }
         self.scene.sync(&self.model);
-        self.scene.carry(id, drag.rect);
+        let drawn = self.drag_box(drag);
+        let from = self.undo_lens(id, drawn).unwrap_or(drawn);
+        self.scene.carry(id, from);
         self.commit();
     }
 

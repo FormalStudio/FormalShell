@@ -3,7 +3,7 @@
 //! it is open.
 
 use formalwm_core::{
-    chord::{Key, Mods},
+    chord::Mods,
     geom::Rect as Box2,
     model::Home,
     motion::{Spring, SpringParams, project},
@@ -32,7 +32,7 @@ pub struct Overview {
     pub progress: Spring,
     /// Fingers have it.
     pub held: bool,
-    grab: Option<InputGrab>,
+    pub grab: Option<InputGrab>,
     press: Option<Press>,
     scroll: f64,
 }
@@ -121,7 +121,11 @@ impl Engine {
                 if let Some(grab) = self.overview.grab.take() {
                     grab.release();
                 }
-                self.drag = None;
+                // A drag of the overview's own ends with it; one the core
+                // is running goes on over the workspace now shown.
+                if !self.hold.window_drag {
+                    self.drag = None;
+                }
             }
         }
         self.present();
@@ -182,20 +186,22 @@ impl Engine {
     }
 
     /// Takes the input an open overview should have and has not: after a
-    /// drag that kept it, or a reload that ended the grab.
+    /// drag that kept it, or a reload that ended the grab. On a timer: a
+    /// grab asked for inside the core's event for the end of a window move
+    /// stops the compositor for good.
     pub fn regrab_overview(&mut self) {
-        if self
-            .overview
-            .grab
-            .as_ref()
-            .is_some_and(InputGrab::is_active)
-        {
-            return;
-        }
-        self.overview.grab = None;
-        if self.overview.open {
-            self.grab_overview();
-        }
+        set_timeout(1.0, || {
+            enter(|engine| {
+                let active = |grab: &InputGrab| grab.is_active();
+                if engine.overview.grab.as_ref().is_some_and(active) {
+                    return;
+                }
+                engine.overview.grab = None;
+                if engine.overview.open {
+                    engine.grab_overview();
+                }
+            })
+        });
     }
 
     fn overview_key(&mut self, key: &str, mods: Mods) {
@@ -206,22 +212,7 @@ impl Engine {
             "Down" if plain => self.model.focus_workspace_relative(1),
             "Left" if plain => self.model.focus_column(Side::Prev),
             "Right" if plain => self.model.focus_column(Side::Next),
-            _ => {
-                let actions: Vec<_> = self
-                    .settings
-                    .binds
-                    .iter()
-                    .filter(|bind| !bind.release && bind.chord.mods == mods)
-                    .filter(
-                        |bind| matches!(&bind.chord.key, Key::Sym(name) if name.eq_ignore_ascii_case(key)),
-                    )
-                    .map(|bind| bind.action.clone())
-                    .collect();
-                for action in actions {
-                    self.run(&action);
-                }
-                return;
-            }
+            _ => return self.run_chord(key, mods),
         };
         if moved {
             self.commit();
@@ -291,14 +282,16 @@ impl Engine {
                 .translate(area.x, area.y);
             self.drag = Some(Drag {
                 id,
-                rect: drawn,
                 size: visual.size,
-                grip: (press.at.0 - drawn.x, press.at.1 - drawn.y),
+                grip: (
+                    (press.at.0 - drawn.x) / drawn.w.max(1.0),
+                    (press.at.1 - drawn.y) / drawn.h.max(1.0),
+                ),
+                at,
             });
         }
         if let Some(drag) = &mut self.drag {
-            drag.rect.x = at.0 - drag.grip.0;
-            drag.rect.y = at.1 - drag.grip.1;
+            drag.at = at;
         }
         self.present_drag();
     }
@@ -344,7 +337,7 @@ impl Engine {
             }
         }
         self.scene.sync(&self.model);
-        if let Some(from) = self.undo_lens(&id, drag.rect) {
+        if let Some(from) = self.undo_lens(&id, self.drag_box(drag)) {
             self.scene.carry(&id, from);
         }
         self.commit();
@@ -374,7 +367,7 @@ impl Engine {
     }
 
     /// The box the scene would have to draw for the lens to show `drawn`.
-    fn undo_lens(&self, id: &str, drawn: Box2) -> Option<Box2> {
+    pub fn undo_lens(&self, id: &str, drawn: Box2) -> Option<Box2> {
         let visual = self.scene.visual(id)?;
         let Some((lens, area)) = self.lens(&visual.output) else {
             return Some(drawn);

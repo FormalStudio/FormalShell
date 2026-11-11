@@ -3,7 +3,7 @@
 # shell's build image is too old for.
 [workspace]
 resolver = "3"
-members = ["core", "formalwm"]
+members = ["core", "formalwm", "dev/hand"]
 
 [workspace.package]
 version = "0.2.0"

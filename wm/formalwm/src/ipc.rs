@@ -5,7 +5,11 @@ use formalwm_core::{color::Rgba, geom::Rect as Box2, view};
 use fs_wm_proto::{self as proto, event, method};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use shojiwm_rs::{ipc::IpcServer, prelude::*, ssd::OutputTransformSnapshot};
+use shojiwm_rs::{
+    ipc::IpcServer,
+    prelude::*,
+    ssd::{OutputTransformSnapshot, window_model::LayerKindSnapshot},
+};
 
 use crate::{
     engine::{Engine, ask, enter},
@@ -240,6 +244,9 @@ pub fn serve() -> Option<IpcServer> {
             Ok(Value::Null)
         })
     });
+    server.handle(method::LAYERS_LIST, |_| {
+        serde_json::to_value(layers()).map_err(|error| error.to_string())
+    });
     server.handle(method::OUTPUTS_GET, |_| {
         serde_json::to_value(outputs()).map_err(|error| error.to_string())
     });
@@ -250,6 +257,15 @@ pub fn serve() -> Option<IpcServer> {
         }
         session::override_output(request);
         Ok(Value::Null)
+    });
+    // The core has no outputs without a connector yet.
+    server.handle(method::OUTPUTS_CREATE, |value| {
+        params::<proto::OutputCreate>(value)?;
+        Err("outputs.create: the core cannot make an output yet".to_owned())
+    });
+    server.handle(method::OUTPUTS_REMOVE, |value| {
+        params::<proto::OutputRef>(value)?;
+        Err("outputs.remove: the core cannot remove an output yet".to_owned())
     });
     server.handle(method::THEME_SET, |value| {
         let theme = params::<proto::Theme>(value)?;
@@ -284,6 +300,33 @@ fn transform(transform: OutputTransformSnapshot) -> u8 {
         OutputTransformSnapshot::Flipped180 => 6,
         OutputTransformSnapshot::Flipped270 => 7,
     }
+}
+
+fn layers() -> Vec<proto::Layer> {
+    COMPOSITOR
+        .layer
+        .stacked()
+        .into_iter()
+        .filter_map(|layer| {
+            // The core places a layer within its output.
+            let output = COMPOSITOR.output.logical_rect(&layer.output_name)?;
+            Some(proto::Layer {
+                namespace: layer.namespace.unwrap_or_default(),
+                layer: match layer.layer {
+                    LayerKindSnapshot::Background => proto::LayerLevel::Background,
+                    LayerKindSnapshot::Bottom => proto::LayerLevel::Bottom,
+                    LayerKindSnapshot::Top => proto::LayerLevel::Top,
+                    LayerKindSnapshot::Overlay => proto::LayerLevel::Overlay,
+                },
+                x: output.x.round() as i32 + layer.position.x,
+                y: output.y.round() as i32 + layer.position.y,
+                width: layer.position.width,
+                height: layer.position.height,
+                pid: 0,
+                output: layer.output_name,
+            })
+        })
+        .collect()
 }
 
 fn outputs() -> Vec<proto::Output> {

@@ -3,15 +3,7 @@
 # opens windows, drives the binds and the socket, takes screenshots and
 # prints what the socket says after each step.
 set -u
-key() { "$SHOJI_BIN" --key "$1" >/dev/null; sleep "${2:-0.7}"; }
-ipc() { ~/shoji-ipc "$@"; }
-shot() { grim "$SHOJI_RUN_DIR/$1.png"; }
-windows() {
-  ipc state.get | jq -c '{ws: .focusedWorkspaceId, focus: .focusedWindowId, overview,
-    windows: [.windows[] | {id: .id[0:6], app: .appId, ws: .workspaceId, ov: .overlay, shown,
-      c: .column, r: .row, fl: .floating, fs: .fullscreen, rect: (.rect | [.x, .y, .width, .height])}]}'
-}
-step() { echo "== $1"; }
+. "$(dirname "$0")/lib.sh"
 
 step start
 ipc state.get | jq -c '{outputs, workspaces: [.workspaces[] | {id, idx, name, output, active}], keyboard, cursorHidden, chrome}'
@@ -97,4 +89,4 @@ key Super+Return 1.5; windows | jq -c '.windows | length'
 step "close them all"
 for _ in 1 2 3 4 5; do key Super+q 0.6; done
 windows | jq -c '.windows | length'; shot 17-empty
-grep -iE "panic|error|warn" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx" | tail -15
+grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx" | cut -c1-300 | tail -15

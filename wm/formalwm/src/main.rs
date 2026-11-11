@@ -51,6 +51,8 @@ fn setup() {
         asked_focus: None,
         bind_ids: Vec::new(),
         escapes: BTreeMap::new(),
+        releases: BTreeMap::new(),
+        release_grab: None,
         cursor_hidden: true,
         shell_arrived: false,
         cursor_idle: false,
