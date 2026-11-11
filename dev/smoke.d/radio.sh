@@ -84,7 +84,7 @@ sleep 3
 $ipc call media status > "$radio_stopped_path" 2>&1
 EOF
   add_cleanup "kill \"\$(cat '$radio_leftover_pid_path')\" 2>/dev/null || true"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_radio_assert() {

@@ -113,7 +113,7 @@ sleep 2
 snap closedagain
 touch "$mirror_dir/done"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The middle half of a logical rect off `mirror status`, cut from a frame at

@@ -80,7 +80,7 @@ sleep 0.3
 $ipc call menu status > "$app_install_closed_removed_path" 2>&1
 $ipc call menu close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # <status file> <what> <present|absent>

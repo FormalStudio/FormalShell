@@ -78,7 +78,7 @@ sleep 2
 $ipc call menu status > "$shot_dir/launcher-apps-long.json" 2>&1
 $ipc call menu close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_launcher_apps_assert() {

@@ -171,7 +171,7 @@ until_jq 15 "$lyrics_blur_status_off_path" '.blur == false' call media lyrics
 sleep 1
 "$grim_bin" "$lyrics_blur_off_png_path" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 
   write_script "$kill_script" <<EOF
 #!/usr/bin/env bash

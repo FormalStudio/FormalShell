@@ -231,7 +231,7 @@ call debug query jazz > "$shot_dir/device-routes-root-jazz.json" 2>&1
 call menu close > /dev/null 2>&1
 EOF
   add_cleanup "'$pactl_bin' set-default-sink \"\$(cat '$device_routes_default_before_path' 2>/dev/null)\" 2>/dev/null || true"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_device_routes_assert() {

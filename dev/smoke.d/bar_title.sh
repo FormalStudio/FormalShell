@@ -98,7 +98,7 @@ sleep 1
 mkdir -p "$bar_title_samples_dir"
 focused() {
   for _ in \$(seq 1 40); do
-    [ "\$("$hyprctl_bin" -j activewindow | "$jq_bin" -r .class)" = "\$1" ] && return 0
+    [ "\$("$wmctl_bin" -j activewindow | "$jq_bin" -r .class)" = "\$1" ] && return 0
     sleep 0.1
   done
   return 1
@@ -108,7 +108,7 @@ focused formalshell-bar-short
 for i in \$(seq 1 12); do
   $ipc call bar room > "$bar_title_samples_dir/to-short-\$i.json" 2>&1
 done
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:formalshell-bar-title' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:formalshell-bar-title' })" > /dev/null 2>&1
 focused formalshell-bar-title
 for i in \$(seq 1 12); do
   $ipc call bar room > "$bar_title_samples_dir/to-long-\$i.json" 2>&1
@@ -132,7 +132,7 @@ EOF
 true
 EOF
   add_cleanup "bash $kill_script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # Shared with --bar-room: every drawn cell in one `bar room` answer held

@@ -54,7 +54,7 @@ park > "$notify_close_dispatch_path" 2>&1
 sleep 1
 "$wlrctl_bin" pointer move \$bx \$by >> "$notify_close_dispatch_path" 2>&1
 sleep 2
-"$hyprctl_bin" cursorpos >> "$notify_close_dispatch_path" 2>&1
+"$wmctl_bin" cursorpos >> "$notify_close_dispatch_path" 2>&1
 "$grim_bin" -c "$notify_close_parked_path" > /dev/null 2>&1
 call notifications status > "$notify_close_status_parked_path" 2>&1
 click >> "$notify_close_dispatch_path" 2>&1
@@ -62,7 +62,7 @@ sleep 2
 call notifications status > "$notify_close_status_after_path" 2>&1
 "$grim_bin" -c "$notify_close_after_path" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_notify_close_assert() {

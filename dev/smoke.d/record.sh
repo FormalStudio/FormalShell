@@ -79,7 +79,7 @@ $ipc call record gif "\$rec_file" > "$record_gif_reply_path" 2>&1
 # ceiling for it would only delay the failure below.
 until_jq 40 "$record_status3_path" '(.transcoding == false and ((.lastGifPath // "") | startswith("/"))) or .lastError != ""' call record status || true
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_record_assert() {

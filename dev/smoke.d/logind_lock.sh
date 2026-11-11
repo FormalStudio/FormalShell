@@ -66,7 +66,7 @@ sleep 4
 $ipc call lock status > "\$p-status-4.json" 2>&1
 hint "\$sid" > "\$p-hint-4.txt"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_logind_lock_assert() {

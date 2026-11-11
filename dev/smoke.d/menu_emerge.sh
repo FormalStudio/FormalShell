@@ -158,7 +158,7 @@ done
 call debug motionScale 100 > /dev/null 2>&1
 sleep 1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # How bright one box is on average. The card's own fill sits several times

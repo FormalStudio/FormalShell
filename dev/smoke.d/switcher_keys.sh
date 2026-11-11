@@ -155,20 +155,20 @@ EOS
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 mkdir -p "$switcher_keys_probe_dir"
-"$hyprctl_bin" binds > "$switcher_keys_binds_path" 2>&1
+"$wmctl_bin" binds > "$switcher_keys_binds_path" 2>&1
 # Two more windows of the same app id as the base fixture's, spawned through
 # the compositor so they are tracked from the moment they map.
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke two' sh -c 'sleep 300']==])"
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke two' sh -c 'sleep 300']==])"
 sleep 2
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke three' sh -c 'sleep 300']==])"
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke three' sh -c 'sleep 300']==])"
 sleep 3
 # And one the card must not hold, moved off silently so the monitor stays on
 # the workspace the other three are on.
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-elsewhere --title='formalshell smoke elsewhere' sh -c 'sleep 300']==])"
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-elsewhere --title='formalshell smoke elsewhere' sh -c 'sleep 300']==])"
 sleep 3
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ workspace = 2, follow = false, window = 'class:formalshell-smoke-elsewhere' })"
+"$wmctl_bin" dispatch "hl.dsp.window.move({ workspace = 2, follow = false, window = 'class:formalshell-smoke-elsewhere' })"
 sleep 3
-"$hyprctl_bin" -j clients > "$switcher_keys_clients_json" 2>&1
+"$wmctl_bin" -j clients > "$switcher_keys_clients_json" 2>&1
 
 # The control: an ordinary key's release bind, then Alt down and straight
 # back up with no Tab in between, which is the one shape a plain release bind
@@ -187,34 +187,34 @@ sleep 1
   > /dev/null 2>&1 &
 sleep 3.4
 $ipc call switcher state > "$switcher_keys_held_json" 2>&1
-"$hyprctl_bin" -j layers > "$switcher_keys_layers_held" 2>&1
+"$wmctl_bin" -j layers > "$switcher_keys_layers_held" 2>&1
 "$grim_bin" "$switcher_keys_held_png" > /dev/null 2>&1
 wait
 sleep 3
 $ipc call switcher state > "$switcher_keys_closed_json" 2>&1
-"$hyprctl_bin" -j layers > "$switcher_keys_layers_closed" 2>&1
-"$hyprctl_bin" -j activewindow > "$switcher_keys_active_json" 2>&1
+"$wmctl_bin" -j layers > "$switcher_keys_layers_closed" 2>&1
+"$wmctl_bin" -j activewindow > "$switcher_keys_active_json" 2>&1
 ls -1 "$switcher_keys_probe_dir" > "$switcher_keys_after_path" 2>&1
 "$grim_bin" "$switcher_keys_closed_png" > /dev/null 2>&1
 
 # Three fast taps, no sleep inside any of them: one wtype process per tap
 # presses the Alt key, taps Tab once and releases Alt straight back out.
 $ipc call switcher state > "$switcher_keys_fast_pre_state_json" 2>&1
-"$hyprctl_bin" -j activewindow > "$switcher_keys_fast_before_json" 2>&1
+"$wmctl_bin" -j activewindow > "$switcher_keys_fast_before_json" 2>&1
 # Every layer map while the taps run, polled as fast as hyprctl answers.
 ( while [ ! -e "$switcher_keys_fast_done" ]; do
-    "$hyprctl_bin" layers 2>/dev/null | grep -c 'formalshell:switcher' >> "$switcher_keys_fast_layers"
+    "$wmctl_bin" layers 2>/dev/null | grep -c 'formalshell:switcher' >> "$switcher_keys_fast_layers"
   done ) &
 poller=\$!
 "$wtype_bin" -M alt -P Alt_L -k Tab -p Alt_L -m alt >> "$switcher_keys_wtype_log" 2>&1
 sleep 1
-"$hyprctl_bin" -j activewindow > "$switcher_keys_fast_1_json" 2>&1
+"$wmctl_bin" -j activewindow > "$switcher_keys_fast_1_json" 2>&1
 "$wtype_bin" -M alt -P Alt_L -k Tab -p Alt_L -m alt >> "$switcher_keys_wtype_log" 2>&1
 sleep 1
-"$hyprctl_bin" -j activewindow > "$switcher_keys_fast_2_json" 2>&1
+"$wmctl_bin" -j activewindow > "$switcher_keys_fast_2_json" 2>&1
 "$wtype_bin" -M alt -P Alt_L -k Tab -p Alt_L -m alt >> "$switcher_keys_wtype_log" 2>&1
 sleep 1
-"$hyprctl_bin" -j activewindow > "$switcher_keys_fast_3_json" 2>&1
+"$wmctl_bin" -j activewindow > "$switcher_keys_fast_3_json" 2>&1
 touch "$switcher_keys_fast_done"
 wait \$poller
 $ipc call switcher state > "$switcher_keys_fast_state_json" 2>&1
@@ -222,11 +222,11 @@ $ipc call switcher state > "$switcher_keys_fast_state_json" 2>&1
 # Six more windows on this workspace, nine in all, every one of them on
 # screen under the rig's dwindle layout.
 for n in 4 5 6 7 8 9; do
-  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-many --title='formalshell smoke \$n' sh -c 'sleep 300']==])"
+  "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-many --title='formalshell smoke \$n' sh -c 'sleep 300']==])"
   sleep 1.5
 done
 sleep 3
-"$hyprctl_bin" -j clients > "$switcher_keys_many_clients_json" 2>&1
+"$wmctl_bin" -j clients > "$switcher_keys_many_clients_json" 2>&1
 # Tab held for a second with Alt down: one press, the 300ms delay, then a
 # step every 200ms. Then Shift+Tab once with Alt still down, then the
 # release.
@@ -239,25 +239,25 @@ sleep 1.4
 $ipc call switcher state > "$switcher_keys_back_json" 2>&1
 wait
 sleep 2
-"$hyprctl_bin" -j activewindow > "$switcher_keys_back_active_json" 2>&1
+"$wmctl_bin" -j activewindow > "$switcher_keys_back_active_json" 2>&1
 
 # The same nine under the scrolling layout, half the output per column, so
 # most of them sit off the monitor. Hyprland copies a window only while its
 # box overlaps its monitor (ScreenshareManager::onOutputCommit), so those
 # cells keep their icon.
-"$hyprctl_bin" eval 'hl.config({ general = { layout = "scrolling" }, scrolling = { column_width = 0.5 } })' \
+"$wmctl_bin" eval 'hl.config({ general = { layout = "scrolling" }, scrolling = { column_width = 0.5 } })' \
   > "$switcher_keys_scroll_eval" 2>&1
 sleep 3
 "$wtype_bin" -M alt -P Alt_L -k Tab -s 3000 -p Alt_L -m alt > /dev/null 2>&1 &
 sleep 2
 $ipc call switcher state > "$switcher_keys_scroll_json" 2>&1
-"$hyprctl_bin" -j clients > "$switcher_keys_scroll_clients_json" 2>&1
-"$hyprctl_bin" -j monitors > "$switcher_keys_scroll_monitors_json" 2>&1
+"$wmctl_bin" -j clients > "$switcher_keys_scroll_clients_json" 2>&1
+"$wmctl_bin" -j monitors > "$switcher_keys_scroll_monitors_json" 2>&1
 "$grim_bin" "$switcher_keys_scroll_png" > /dev/null 2>&1
 wait
 sleep 1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 _switcher_keys_layers() {

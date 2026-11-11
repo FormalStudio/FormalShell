@@ -53,7 +53,7 @@ leg_keybinds_drive() {
   echo '-- hl.bind("SUPER + Z", hl.dsp.exit())'
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-"$hyprctl_bin" binds > "$keybinds_hyprctl_plain_path" 2>&1
+"$wmctl_bin" binds > "$keybinds_hyprctl_plain_path" 2>&1
 $ipc call debug query ":k " > /dev/null 2>&1
 sleep 1
 $ipc call debug query ":k " > "$keybinds_query1_path" 2>&1
@@ -63,7 +63,7 @@ until_settled
 $ipc call menu status > "$keybinds_menu_status_path" 2>&1
 "$grim_bin" "$keybinds_menu_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_keybinds_assert() {

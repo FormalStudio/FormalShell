@@ -180,25 +180,25 @@ centre() { "$jq_bin" -r ".slots[\$1].rect | \"\\(.x + (.width / 2) | floor) \\(.
 card_centre() { "$jq_bin" -r ".preview.rect | \"\\(.x + (.width / 2) | floor) \\(.y + (.height / 2) | floor)\"" "\$1"; }
 # Home first and let the hover see the pointer leave before it lands.
 park_slow() { park; sleep 0.5; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --server=$spaces_foot_socket]==])" > "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --server=$spaces_foot_socket]==])" > "$spaces_dispatch_path" 2>&1
 sleep 1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[${foot_bin%/*}/footclient --server-socket=$spaces_foot_socket --app-id=com.t3tools.T3Code sh -c 'sleep 300']==])" >> "$spaces_dispatch_path" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[${foot_bin%/*}/footclient --server-socket=$spaces_foot_socket --app-id=formalshell-spaces-sibling sh -c 'sleep 300']==])" >> "$spaces_dispatch_path" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-spaces-other sh -c 'sleep 300']==], { workspace = '2 silent' })" >> "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[${foot_bin%/*}/footclient --server-socket=$spaces_foot_socket --app-id=com.t3tools.T3Code sh -c 'sleep 300']==])" >> "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[${foot_bin%/*}/footclient --server-socket=$spaces_foot_socket --app-id=formalshell-spaces-sibling sh -c 'sleep 300']==])" >> "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-spaces-other sh -c 'sleep 300']==], { workspace = '2 silent' })" >> "$spaces_dispatch_path" 2>&1
 sleep 2
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-spaces-plain sh -c 'sleep 300']==], { workspace = '2 silent' })" >> "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-spaces-plain sh -c 'sleep 300']==], { workspace = '2 silent' })" >> "$spaces_dispatch_path" 2>&1
 sleep 2
 # Workspace 2's plain window floated and put mostly past the output's right
 # edge, its real rect kept as it is. Fully past it Hyprland exports no
 # frames for it and the capture count below would drop.
-out_w=\$("$hyprctl_bin" monitors -j | "$jq_bin" -r '.[0] | (.width / .scale) | floor')
-"$hyprctl_bin" dispatch "hl.dsp.window.float({ window = 'class:^(formalshell-spaces-plain)\$', action = 'toggle' })" >> "$spaces_dispatch_path" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = 640, y = 400, window = 'class:^(formalshell-spaces-plain)\$' })" >> "$spaces_dispatch_path" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ x = \$((out_w - 200)), y = 150, window = 'class:^(formalshell-spaces-plain)\$' })" >> "$spaces_dispatch_path" 2>&1
+out_w=\$("$wmctl_bin" monitors -j | "$jq_bin" -r '.[0] | (.width / .scale) | floor')
+"$wmctl_bin" dispatch "hl.dsp.window.float({ window = 'class:^(formalshell-spaces-plain)\$', action = 'toggle' })" >> "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.resize({ x = 640, y = 400, window = 'class:^(formalshell-spaces-plain)\$' })" >> "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ x = \$((out_w - 200)), y = 150, window = 'class:^(formalshell-spaces-plain)\$' })" >> "$spaces_dispatch_path" 2>&1
 # A footclient window belongs to the server's pid, which exec's window rules
 # never see, so both are moved by class instead.
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ workspace = 1, follow = false, window = 'class:^(com\\.t3tools\\.T3Code)\$' })" >> "$spaces_dispatch_path" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ workspace = 1, follow = false, window = 'class:^(formalshell-spaces-sibling)\$' })" >> "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ workspace = 1, follow = false, window = 'class:^(com\\.t3tools\\.T3Code)\$' })" >> "$spaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ workspace = 1, follow = false, window = 'class:^(formalshell-spaces-sibling)\$' })" >> "$spaces_dispatch_path" 2>&1
 sleep 6
 call workspaces status > "$spaces_status_one_path" 2>&1
 call debug dump > "$spaces_dump_path" 2>&1
@@ -219,12 +219,12 @@ park_slow \$(centre 0 "$spaces_status_one_path")
 sleep 1
 "$wlrctl_bin" pointer scroll 15 0 >> "$spaces_dispatch_path" 2>&1
 sleep 2
-"$hyprctl_bin" activeworkspace -j > "$spaces_ws_down_path" 2>&1
+"$wmctl_bin" activeworkspace -j > "$spaces_ws_down_path" 2>&1
 call workspaces status > "$spaces_status_two_path" 2>&1
 "$grim_bin" "$spaces_two_png" > /dev/null 2>&1
 "$wlrctl_bin" pointer scroll -15 0 >> "$spaces_dispatch_path" 2>&1
 sleep 2
-"$hyprctl_bin" activeworkspace -j > "$spaces_ws_up_path" 2>&1
+"$wmctl_bin" activeworkspace -j > "$spaces_ws_up_path" 2>&1
 park_slow 960 900
 sleep 1
 call workspaces peek 2 > "$spaces_peek_reply_path" 2>&1
@@ -271,7 +271,7 @@ call workspaces status > "$spaces_status_left_path" 2>&1
 "$grim_bin" "$spaces_left_png" > /dev/null 2>&1
 EOF
   add_cleanup "pkill -f formalshell-spaces- 2>/dev/null || true"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The icon a fixture app id resolved to in one status read, as a jq object

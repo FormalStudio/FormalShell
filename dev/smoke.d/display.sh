@@ -37,7 +37,7 @@ leg_display_drive() {
   local script="$shot_dir/display-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-mon() { "$hyprctl_bin" monitors all -j > "\$1" 2>&1; }
+mon() { "$wmctl_bin" monitors all -j > "\$1" 2>&1; }
 mon "$display_monitors_base"
 out=\$("$jq_bin" -r '.[0].name' "$display_monitors_base")
 call display scale "\$out" 1.5 > "$display_scale_path" 2>&1
@@ -45,7 +45,7 @@ sleep 1
 mon "$display_monitors_scaled"
 call display scale "\$out" 1 >> "$display_scale_path" 2>&1
 sleep 1
-"$hyprctl_bin" output create headless "$display_second" > "$display_create_path" 2>&1
+"$wmctl_bin" output create headless "$display_second" > "$display_create_path" 2>&1
 sleep 2
 mon "$display_monitors_two"
 call display mirror "$display_second" "\$out" > "$display_mirror_path" 2>&1
@@ -60,13 +60,13 @@ mon "$display_monitors_disabled"
 call display enable "$display_second" true >> "$display_mirror_path" 2>&1
 sleep 1
 mon "$display_monitors_enabled"
-"$hyprctl_bin" output remove "$display_second" >> "$display_create_path" 2>&1
+"$wmctl_bin" output remove "$display_second" >> "$display_create_path" 2>&1
 sleep 1
 call panel open display > /dev/null 2>&1
 until_settled
 "$grim_bin" "$display_panel_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_display_assert() {

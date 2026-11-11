@@ -22,7 +22,7 @@ leg_light_drive() {
 #!/usr/bin/env bash
 until_jq 20 "$light_status_path" '.mode == "light"' call theme status
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_light_assert() {

@@ -51,7 +51,7 @@ await "\$m.build.1"
 sleep 1
 $ipc call sidebar status > "\$m-status-running.json" 2>&1
 $ipc call activity status > "\$m-activity-running.json" 2>&1
-"$hyprctl_bin" -j layers > "\$m-layers.json" 2>&1
+"$wmctl_bin" -j layers > "\$m-layers.json" 2>&1
 "$grim_bin" "\$m-running.png" > /dev/null 2>&1
 # The build through its steps: compiling twice, then packaging stalled.
 for n in 1 2 3; do
@@ -67,7 +67,7 @@ $ipc call activity status > "\$m-activity-done.json" 2>&1
 "$grim_bin" "\$m-done.png" > /dev/null 2>&1
 touch "\$m.code.go1" "\$m.build.go4" "\$m-drive.done"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The card's crop off a frame: the union of the `open:` lines' hits, plus

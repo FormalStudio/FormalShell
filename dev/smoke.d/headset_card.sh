@@ -157,9 +157,9 @@ sleep 2.5
 mark left
 list true true false
 sleep 4
-escapes() { "$hyprctl_bin" binds -j | "$jq_bin" '[.[] | select(.key == "Escape" and .modmask == 0)] | length'; }
-active() { "$hyprctl_bin" activewindow -j | "$jq_bin" -r '.class'; }
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=headset-typing sh -c 'stty raw -echo; exec dd bs=1 status=none of=$headset_typed']==])" > /dev/null
+escapes() { "$wmctl_bin" binds -j | "$jq_bin" '[.[] | select(.key == "Escape" and .modmask == 0)] | length'; }
+active() { "$wmctl_bin" activewindow -j | "$jq_bin" -r '.class'; }
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=headset-typing sh -c 'stty raw -echo; exec dd bs=1 status=none of=$headset_typed']==])" > /dev/null
 sleep 2
 echo "before active=\$(active) escapes=\$(escapes)" >> "$headset_escape_marks"
 # Typed before the card: each wtype run uploads a keymap whose first key
@@ -210,7 +210,7 @@ $ipc call debug dump 2>/dev/null | "$jq_bin" -c '.headset' > "$headset_sidebar_d
 mark sidebar
 $ipc call headset dismiss > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 headset_mark() {

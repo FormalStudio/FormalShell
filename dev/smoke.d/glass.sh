@@ -46,14 +46,14 @@ until_settled
 $ipc call debug dump > "$glass_dump_opaque" 2>&1
 "$grim_bin" "$glass_opaque_path" > /dev/null 2>&1
 sed -i 's/blur = { enabled = false }/blur = { enabled = true }/' "$cfg"
-"$hyprctl_bin" reload > /dev/null 2>&1
+"$wmctl_bin" reload > /dev/null 2>&1
 until_jq 10 "$glass_dump_clear" '.theme.blur' call debug dump
 until_settled
 $ipc call debug dump > "$glass_dump_clear" 2>&1
 "$grim_bin" "$glass_clear_path" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_glass_assert() {

@@ -119,7 +119,7 @@ until_settled
 "$grim_bin" "$grid_relaunch_return_png" > /dev/null 2>&1
 $ipc call menu status > "$grid_relaunch_return_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 grid_relaunch_check() {

@@ -26,7 +26,7 @@ leg_gallery_drive() {
 $ipc call gallery open > "$gallery_log_path" 2>&1
 $ipc call gallery status >> "$gallery_log_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_gallery_assert() {

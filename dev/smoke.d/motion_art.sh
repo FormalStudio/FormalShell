@@ -119,8 +119,8 @@ sleep 3
 call sidebar status > "$motion_art_rail" 2>&1
 burst "$shot_dir/motion-art-rail" $motion_art_frames 0.15
 EOF
-  hypr_exec_once "bash $play"
-  hypr_exec_once "bash $drive"
+  wm_exec_once "bash $play"
+  wm_exec_once "bash $drive"
 }
 
 # Pixels within 20% of one flat colour. White ones (every label on screen)

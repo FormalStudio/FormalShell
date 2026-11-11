@@ -90,7 +90,7 @@ call notifications status > "$notify_emerge_rest_path" 2>&1
 sleep 4
 call notifications status >> "$notify_emerge_rest_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # One box out of a saved frame, named after what it is looking at. -strip

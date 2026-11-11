@@ -61,7 +61,7 @@ $ipc call panel state > "$panel_state_path" 2>&1
 $ipc call debug dump > "$panel_dump_path" 2>&1
 "$grim_bin" "$panel_header_shot" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_panel_assert() {

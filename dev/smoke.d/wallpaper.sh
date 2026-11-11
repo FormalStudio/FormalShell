@@ -102,12 +102,12 @@ $ipc call wallpaper get > "$wallpaper_get_path" 2>&1
 # The shell's reload reaches the compositor after the palette lands.
 primary=\$("$jq_bin" -r '.primary // empty' "$theme_json_path" 2>/dev/null | tr -d '#')
 for _ in \$(seq 1 20); do
-  "$hyprctl_bin" getoption general:col.active_border > "$hypr_border_path" 2>&1
+  "$wmctl_bin" getoption general:col.active_border > "$hypr_border_path" 2>&1
   [ -n "\$primary" ] && grep -qiF "\$primary" "$hypr_border_path" && break
   sleep 0.5
 done
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
   # The compositor half of the palette, wired the way docs/USAGE.md tells a
   # user to wire it. Appended after the base config's own `general` block, so
   # this is the value that survives.

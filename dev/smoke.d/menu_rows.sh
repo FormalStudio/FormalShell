@@ -74,7 +74,7 @@ sleep 1.5
 call menu status > "\$d/final.json" 2>&1
 call menu close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_menu_rows_assert() {

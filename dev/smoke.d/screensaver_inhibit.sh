@@ -120,7 +120,7 @@ if kill -0 "\$(cat "$si_cycle_pid")" 2>/dev/null; then echo alive; else echo gon
 kill "\$(cat "$si_cycle_pid")"
 EOF
   add_cleanup "kill \$(cat '$si_hold_pid' '$si_cycle_pid' 2>/dev/null) 2>/dev/null || true"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_screensaver_inhibit_assert() {

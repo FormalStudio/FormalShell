@@ -160,7 +160,7 @@ sleep 0.5
 sleep 4
 $ipc call lock status > "\$d/lock-unlocked.json" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 settings_ui_jq() {

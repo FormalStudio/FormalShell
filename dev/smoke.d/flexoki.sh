@@ -85,7 +85,7 @@ until_settled
 $ipc call theme status > "$flexoki_status_path" 2>&1
 "$grim_bin" "$flexoki_shot_path" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # key=value out of the probe, so a missing line fails loudly rather than

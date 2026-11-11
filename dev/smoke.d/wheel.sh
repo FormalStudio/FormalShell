@@ -200,7 +200,7 @@ sleep 2
 "$grim_bin" -c "$wheel_bar_png" > /dev/null 2>&1
 "$wpctl_bin" get-volume @DEFAULT_AUDIO_SINK@ 2>&1 | grep '^Volume:' > "$wheel_volume_after_path"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 wheel_field() {

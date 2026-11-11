@@ -31,7 +31,7 @@ $ipc call network speedtest > /dev/null 2>&1
 until_jq 25 "$speedtest_status_path" '.phase == "done"' call network speedstatus
 "$grim_bin" "$speedtest_panel_path" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_speedtest_assert() {

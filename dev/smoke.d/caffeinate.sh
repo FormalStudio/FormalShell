@@ -32,20 +32,20 @@ leg_caffeinate_drive() {
 #!/usr/bin/env bash
 # The inhibitor is held once its surface maps, a beat after the toggle.
 until_jq 10 "$caffeinate_on_path" '.active and .inhibiting' call caffeinate status
-"$hyprctl_bin" -j layers > "$caffeinate_on_layers" 2>&1
+"$wmctl_bin" -j layers > "$caffeinate_on_layers" 2>&1
 # Three timeouts' worth of no input at all.
 sleep 9
 $ipc call screensaver status > "$caffeinate_held_path" 2>&1
 $ipc call caffeinate disable > /dev/null 2>&1
 sleep 1
 $ipc call caffeinate status > "$caffeinate_off_path" 2>&1
-"$hyprctl_bin" -j layers > "$caffeinate_off_layers" 2>&1
+"$wmctl_bin" -j layers > "$caffeinate_off_layers" 2>&1
 sleep 6
 $ipc call screensaver status > "$caffeinate_idle_path" 2>&1
 $ipc call screensaver stop > /dev/null 2>&1
 $ipc call caffeinate enable > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 caffeinate_layer_count() {

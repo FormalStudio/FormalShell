@@ -20,7 +20,7 @@ leg_dump_drive() {
 #!/usr/bin/env bash
 $ipc call debug dump > "$dump_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_dump_assert() {

@@ -178,7 +178,7 @@ to \$(cell clock); click; sleep 1.5; check handoff
 "$grim_bin" "$chevron_handoff_path" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The weather panel handed over from the card carries a back button, and

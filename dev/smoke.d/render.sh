@@ -96,7 +96,7 @@ echo '{"file_format_version": "1.0.0"}' > "$shot_dir/render-no-icd.json"
 VK_DRIVER_FILES="$shot_dir/render-no-icd.json" "$launch" > "$shot_dir/render-nodriver.log" 2>&1 &
 turn nodriver gpu
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The card's crop off one turn's frame, by its menu status.

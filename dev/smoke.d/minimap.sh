@@ -76,15 +76,15 @@ for _ in \$(seq 1 40); do
   $ipc call sidebar status 2>/dev/null | grep -q '"cards"' && break
   sleep 0.5
 done
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-a sh -c 'sleep 300']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-a sh -c 'sleep 300']==])" > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-b sh -c 'sleep 300']==])" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-c sh -c 'sleep 300']==], { workspace = '2 silent' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-b sh -c 'sleep 300']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-c sh -c 'sleep 300']==], { workspace = '2 silent' })" > /dev/null 2>&1
 sleep 3
 $ipc call sidebar focus > /dev/null 2>&1
 sleep 0.5
 $ipc call sidebar status > "${minimap_status[0]}" 2>&1
-"$hyprctl_bin" -j clients > "${minimap_clients[0]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[0]}" 2>&1
 "$wtype_bin" -k Left
 sleep 0.5
 $ipc call sidebar status > "${minimap_status[1]}" 2>&1
@@ -92,15 +92,15 @@ $ipc call sidebar status > "${minimap_status[1]}" 2>&1
 "$wtype_bin" -M shift -k Right -m shift
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[2]}" 2>&1
-"$hyprctl_bin" -j clients > "${minimap_clients[1]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[1]}" 2>&1
 "$wtype_bin" -M shift -k Down -m shift
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[3]}" 2>&1
-"$hyprctl_bin" -j clients > "${minimap_clients[2]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[2]}" 2>&1
 "$wtype_bin" -M shift -k Down -m shift
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[4]}" 2>&1
-"$hyprctl_bin" -j clients > "${minimap_clients[3]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[3]}" 2>&1
 "$grim_bin" "$minimap_carried_png" > /dev/null 2>&1
 "$wtype_bin" -k Escape
 sleep 0.5
@@ -130,7 +130,7 @@ $ipc call sidebar status > "${minimap_status[6]}" 2>&1
 wait
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[7]}" 2>&1
-"$hyprctl_bin" -j clients > "${minimap_clients[4]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[4]}" 2>&1
 "$grim_bin" "$minimap_dropped_png" > /dev/null 2>&1
 first=\$("$jq_bin" -r '.rows[1].windows[0]' "${minimap_status[7]}")
 second=\$("$jq_bin" -r '.rows[1].windows[1]' "${minimap_status[7]}")
@@ -139,30 +139,30 @@ read -r bx by <<< "\$(centre "window:\$second")"
 drag "\$ax" "\$ay" \$(( bx + 4 )) "\$by" 200
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[8]}" 2>&1
-"$hyprctl_bin" -j clients > "${minimap_clients[5]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[5]}" 2>&1
 read -r ax ay <<< "\$(centre "window:\$first")"
 read -r bx by <<< "\$(centre new)"
 drag "\$ax" "\$ay" "\$bx" "\$by" 200
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[9]}" 2>&1
-"$hyprctl_bin" -j clients > "${minimap_clients[6]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[6]}" 2>&1
 read -r ax ay <<< "\$(centre "window:\$second")"
 drag "\$ax" "\$ay" 600 "\$ay" 200
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[10]}" 2>&1
-"$hyprctl_bin" -j clients > "${minimap_clients[7]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[7]}" 2>&1
 $ipc call debug dump 2>/dev/null | "$jq_bin" -r '.overview.phase' > "$shot_dir/minimap-out-overview.txt" 2>&1
 $ipc call workspaces overview close > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 4 })" > /dev/null 2>&1
+"$wmctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ workspace = 4 })" > /dev/null 2>&1
 for app in d e f; do
-  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-\$app sh -c 'sleep 300']==])" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-\$app sh -c 'sleep 300']==])" > /dev/null 2>&1
   sleep 1
 done
 sleep 2
-"$hyprctl_bin" -j clients > "${minimap_clients[8]}" 2>&1
-"$hyprctl_bin" -j workspaces > "$shot_dir/minimap-workspaces.json" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[8]}" 2>&1
+"$wmctl_bin" -j workspaces > "$shot_dir/minimap-workspaces.json" 2>&1
 row=\$($ipc call sidebar status | "$jq_bin" '[.rows[] | .windows | length] | index(3)')
 d=\$($ipc call sidebar status | "$jq_bin" -r --argjson r "\$row" '.rows[\$r].windows[0]')
 f=\$($ipc call sidebar status | "$jq_bin" -r --argjson r "\$row" '.rows[\$r].windows[2]')
@@ -173,13 +173,13 @@ sleep 1
 "$grim_bin" "$minimap_column_lifted_png" > /dev/null 2>&1
 wait
 sleep 1.5
-"$hyprctl_bin" -j clients > "${minimap_clients[9]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[9]}" 2>&1
 "$grim_bin" "$minimap_column_png" > /dev/null 2>&1
 $ipc call sidebar focus > /dev/null 2>&1
 sleep 0.5
 "$wtype_bin" -M shift -k Left -m shift
 sleep 1.5
-"$hyprctl_bin" -j clients > "${minimap_clients[10]}" 2>&1
+"$wmctl_bin" -j clients > "${minimap_clients[10]}" 2>&1
 "$wtype_bin" -k Escape
 sleep 0.5
 # A move inside workspace 4 off a real bind, its first window by position
@@ -187,19 +187,19 @@ sleep 0.5
 inner() {
   local tag=\$1 addr
   shift
-  addr=\$("$hyprctl_bin" -j clients | "$jq_bin" -r '[.[] | select(.workspace.id == 4)] | sort_by(.at[0], .at[1]) | .[0].address')
-  "$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'address:\$addr' })" > /dev/null 2>&1
+  addr=\$("$wmctl_bin" -j clients | "$jq_bin" -r '[.[] | select(.workspace.id == 4)] | sort_by(.at[0], .at[1]) | .[0].address')
+  "$wmctl_bin" dispatch "hl.dsp.focus({ window = 'address:\$addr' })" > /dev/null 2>&1
   sleep 1
   $ipc call sidebar status > "$shot_dir/minimap-inner-\$tag-before.json" 2>&1
-  "$hyprctl_bin" -j clients > "$shot_dir/minimap-inner-\$tag-before-clients.json" 2>&1
+  "$wmctl_bin" -j clients > "$shot_dir/minimap-inner-\$tag-before-clients.json" 2>&1
   "$wtype_bin" "\$@"
   sleep 1
   $ipc call sidebar status > "$shot_dir/minimap-inner-\$tag.json" 2>&1
-  "$hyprctl_bin" -j clients > "$shot_dir/minimap-inner-\$tag-clients.json" 2>&1
-  "$hyprctl_bin" -j binds > "$shot_dir/minimap-inner-\$tag-binds.json" 2>&1
+  "$wmctl_bin" -j clients > "$shot_dir/minimap-inner-\$tag-clients.json" 2>&1
+  "$wmctl_bin" -j binds > "$shot_dir/minimap-inner-\$tag-binds.json" 2>&1
 }
 inner scrolling -M logo -P Super_L -k period -p Super_L -m logo
-"$hyprctl_bin" eval 'hl.config({ general = { layout = "dwindle" } })' > /dev/null 2>&1
+"$wmctl_bin" eval 'hl.config({ general = { layout = "dwindle" } })' > /dev/null 2>&1
 sleep 1
 inner dwindle -M logo -P Super_L -k Right -p Super_L -m logo
 # Every drag has settled and the keyboard is back: the map as the drags
@@ -226,7 +226,7 @@ sleep 1
 $ipc call sidebar status > "$shot_dir/minimap-collapsed.json" 2>&1
 $ipc call sidebar expand > /dev/null 2>&1
 for n in \$(seq 5 30); do
-  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-\$n sh -c 'sleep 300']==], { workspace = '\$n silent' })" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-\$n sh -c 'sleep 300']==], { workspace = '\$n silent' })" > /dev/null 2>&1
 done
 sleep 3
 $ipc call sidebar status > "$shot_dir/minimap-crowded.json" 2>&1
@@ -239,7 +239,7 @@ sleep 0.8
 $ipc call sidebar status > "$shot_dir/minimap-scrolled.json" 2>&1
 "$grim_bin" "$shot_dir/minimap-scrolled.png" > /dev/null 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # A window by its sidebar id in a clients dump: "<x> <workspace id>".

@@ -77,13 +77,13 @@ for _ in \$(seq 1 200); do
   $ipc call lock status 2>/dev/null | "$jq_bin" -e '.secure == true' > /dev/null 2>&1 && break
   sleep 0.05
 done
-"$hyprctl_bin" eval 'hl.monitor({ output = "", mode = "${out_w}x${out_h}@60", position = "0x0", scale = $login_lock_rescale })' > /dev/null 2>&1
+"$wmctl_bin" eval 'hl.monitor({ output = "", mode = "${out_w}x${out_h}@60", position = "0x0", scale = $login_lock_rescale })' > /dev/null 2>&1
 # The nested output starts at the backend's window size and takes its mode a
 # moment later, Hyprland stretching the lock's first buffer until the shell
 # commits one at the new size: the grab waits for the mode to hold.
 last=
 for _ in \$(seq 1 40); do
-  now=\$("$hyprctl_bin" monitors -j 2>/dev/null | "$jq_bin" -r '.[0] | "\\(.width)x\\(.height)"' 2>/dev/null)
+  now=\$("$wmctl_bin" monitors -j 2>/dev/null | "$jq_bin" -r '.[0] | "\\(.width)x\\(.height)"' 2>/dev/null)
   [ -n "\$now" ] && [ "\$now" = "\$last" ] && break
   last=\$now
   sleep 0.15
@@ -133,7 +133,7 @@ fi
 sleep 4
 call lock status > "$login_lock_after_json" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # Pixels of the fixture's colour (or the one given) in a frame.

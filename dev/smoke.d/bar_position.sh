@@ -102,11 +102,11 @@ EOS
 # so a quoted identifier in a comment runs as a command.
 until_jq 20 "$bar_position_dump_path" '.theme.barPosition == "$(leg_arg bar_position)"' call debug dump
 sleep 1
-"$hyprctl_bin" -j layers > "$bar_position_layers_path" 2>&1
-"$hyprctl_bin" -j monitors > "$bar_position_monitors_path" 2>&1
+"$wmctl_bin" -j layers > "$bar_position_layers_path" 2>&1
+"$wmctl_bin" -j monitors > "$bar_position_monitors_path" 2>&1
 $own
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_bar_position_assert() {

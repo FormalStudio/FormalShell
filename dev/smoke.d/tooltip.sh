@@ -46,16 +46,16 @@ leg_tooltip_drive() {
   local script="$shot_dir/tooltip-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-"$hyprctl_bin" -j layers > "$tooltip_layers_before_path" 2>&1
+"$wmctl_bin" -j layers > "$tooltip_layers_before_path" 2>&1
 park > "$tooltip_dispatch_path" 2>&1
 sleep 1
 "$wlrctl_bin" pointer move $((logical_w - 34)) 74 >> "$tooltip_dispatch_path" 2>&1
 sleep 2
-"$hyprctl_bin" cursorpos >> "$tooltip_dispatch_path" 2>&1
-"$hyprctl_bin" -j layers > "$tooltip_layers_after_path" 2>&1
+"$wmctl_bin" cursorpos >> "$tooltip_dispatch_path" 2>&1
+"$wmctl_bin" -j layers > "$tooltip_layers_after_path" 2>&1
 "$grim_bin" -c "$tooltip_path" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_tooltip_assert() {

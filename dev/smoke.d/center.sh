@@ -129,7 +129,7 @@ sleep 5
 $ipc call debug motionScale 100 > /dev/null 2>&1
 $ipc call notifications showHistory > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_center_assert() {

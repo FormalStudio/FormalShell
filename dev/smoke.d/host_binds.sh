@@ -56,7 +56,7 @@ after=\$(pgrep -fc 'formalshell-rs' || true)
 printf 'DAEMONS %s %s\n' "\$before" "\$after" >> "\$out"
 run $fs ipc --any-display call lock lock
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_host_binds_assert() {

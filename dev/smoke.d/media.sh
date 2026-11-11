@@ -151,10 +151,10 @@ true
 EOF
   add_cleanup "bash $kill_script"
 
-  hypr_exec_once "bash $play_script"
-  hypr_exec_once "bash $open_script"
-  hypr_exec_once "bash $marquee_script"
-  hypr_exec_once "bash $controls_script"
+  wm_exec_once "bash $play_script"
+  wm_exec_once "bash $open_script"
+  wm_exec_once "bash $marquee_script"
+  wm_exec_once "bash $controls_script"
 }
 
 leg_media_assert() {

@@ -69,17 +69,17 @@ leg_switcher_drive() {
 #!/usr/bin/env bash
 # Two more windows of the same app id as the base fixture's, spawned through
 # the compositor so they are tracked from the moment they map.
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke two' sh -c 'sleep 300']==])"
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke two' sh -c 'sleep 300']==])"
 sleep 2
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke three' sh -c 'sleep 300']==])"
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-iconic --title='formalshell smoke three' sh -c 'sleep 300']==])"
 sleep 3
 # And one the card must not hold, moved off silently so the monitor stays on
 # the workspace the other three are on.
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-elsewhere --title='formalshell smoke elsewhere' sh -c 'sleep 300']==])"
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-elsewhere --title='formalshell smoke elsewhere' sh -c 'sleep 300']==])"
 sleep 3
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ workspace = 2, follow = false, window = 'class:formalshell-smoke-elsewhere' })"
+"$wmctl_bin" dispatch "hl.dsp.window.move({ workspace = 2, follow = false, window = 'class:formalshell-smoke-elsewhere' })"
 sleep 3
-"$hyprctl_bin" -j clients > "$switcher_clients_json" 2>&1
+"$wmctl_bin" -j clients > "$switcher_clients_json" 2>&1
 
 # The first press opens the card on the window before the focused one; the
 # second walks on to the third entry.
@@ -88,7 +88,7 @@ sleep 1
 $ipc call switcher next > /dev/null 2>&1
 sleep 2
 $ipc call switcher state > "$switcher_second_json" 2>&1
-"$hyprctl_bin" -j layers > "$switcher_layers_open" 2>&1
+"$wmctl_bin" -j layers > "$switcher_layers_open" 2>&1
 "$grim_bin" "$switcher_second_png" > /dev/null 2>&1
 
 $ipc call switcher prev > /dev/null 2>&1
@@ -99,10 +99,10 @@ $ipc call switcher state > "$switcher_first_json" 2>&1
 $ipc call switcher commit > /dev/null 2>&1
 sleep 3
 $ipc call switcher state > "$switcher_closed_json" 2>&1
-"$hyprctl_bin" -j layers > "$switcher_layers_closed" 2>&1
-"$hyprctl_bin" -j activewindow > "$switcher_active_json" 2>&1
+"$wmctl_bin" -j layers > "$switcher_layers_closed" 2>&1
+"$wmctl_bin" -j activewindow > "$switcher_active_json" 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # One patch of a frame as its own mean colour, as a plain string: two crops of

@@ -58,7 +58,7 @@ sleep 3
 sleep 4
 $ipc call lock status > "$lock_restore_after_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_lock_restore_assert() {

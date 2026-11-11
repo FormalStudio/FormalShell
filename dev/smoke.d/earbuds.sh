@@ -489,7 +489,7 @@ call earbuds devices > "$earbuds_devices_refused" 2>&1
 "$grim_bin" "$earbuds_refused_png" > /dev/null 2>&1
 call panel close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_earbuds_assert() {

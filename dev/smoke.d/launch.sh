@@ -53,7 +53,7 @@ snap ipc-running
 shoot "$shot_dir/launch-ipc-running.png"
 sleep 4
 snap ipc-mapped
-"$hyprctl_bin" clients -j > "$shot_dir/launch-clients-ipc.json" 2>&1
+"$wmctl_bin" clients -j > "$shot_dir/launch-clients-ipc.json" 2>&1
 pkill -f -- "--app-id=$launch_probe"
 sleep 1
 call menu summon "" > /dev/null 2>&1
@@ -74,7 +74,7 @@ snap ghost-failed
 shoot "$shot_dir/launch-ghost-failed.png"
 call activity launch nothing-here > "$shot_dir/launch-reply-unknown.txt" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The group of launch:<id> in one status capture, or null.

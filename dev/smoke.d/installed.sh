@@ -193,7 +193,7 @@ pm image rm -f $installed_image > /dev/null 2>&1
 pm image prune -f > /dev/null 2>&1 || true
 EOF
   add_cleanup "bash $stop"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_installed_assert() {

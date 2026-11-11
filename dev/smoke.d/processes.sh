@@ -88,7 +88,7 @@ $ipc call monitor restart \$(cat "$processes_restart_pid_path") > "$processes_re
 sleep 6
 pgrep -f "$processes_restart_bin" > "$processes_restart_pids_path"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_processes_assert() {

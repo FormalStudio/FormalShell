@@ -76,7 +76,7 @@ if [ -f "$spectrum_pid_path" ]; then
 fi
 EOF
   add_cleanup "bash $kill_script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_spectrum_assert() {

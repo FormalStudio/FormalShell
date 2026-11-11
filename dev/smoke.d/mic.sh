@@ -37,7 +37,7 @@ leg_mic_drive() {
 $ipc call debug dump > "$mic_dump_path" 2>&1
 "$grim_bin" "$mic_bar_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_mic_assert() {

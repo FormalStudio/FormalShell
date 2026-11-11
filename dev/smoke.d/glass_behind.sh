@@ -96,15 +96,15 @@ shoot() {
 wp="$glass_behind_bright"
 $ipc call theme status 2>/dev/null | jq -e '.mode == "light"' > /dev/null && wp="$glass_behind_dark"
 $ipc call wallpaper set "\$wp" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-glass sh -c 'for i in \\\$(seq 1 3000); do printf \"WMWMWM ||| ### IIII mmmm \"; done; sleep 300']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-glass sh -c 'for i in \\\$(seq 1 3000); do printf \"WMWMWM ||| ### IIII mmmm \"; done; sleep 300']==])" > /dev/null 2>&1
 sleep 6
 shoot text
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ window = \"class:formalshell-glass\", workspace = 2, follow = false })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ window = \"class:formalshell-glass\", workspace = 2, follow = false })" > /dev/null 2>&1
 sleep 1
 shoot bare
 touch "$shot_dir/glass-behind-done"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_glass_behind_assert() {

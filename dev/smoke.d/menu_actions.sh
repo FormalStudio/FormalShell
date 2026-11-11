@@ -63,7 +63,7 @@ call menu close > /dev/null 2>&1
 call caffeinate disable > /dev/null 2>&1
 call overnight disable > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_menu_actions_assert() {

@@ -73,11 +73,11 @@ sleep 1
 $wallpaper
 $ipc call debug dump > "$bar_style_dump_path" 2>&1
 $ipc call bar paint > "$bar_style_paint_path" 2>&1
-"$hyprctl_bin" -j layers > "$bar_style_layers_path" 2>&1
-"$hyprctl_bin" -j monitors > "$bar_style_monitors_path" 2>&1
+"$wmctl_bin" -j layers > "$bar_style_layers_path" 2>&1
+"$wmctl_bin" -j monitors > "$bar_style_monitors_path" 2>&1
 "$grim_bin" "$bar_style_frame_path" > /dev/null 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # One pixel's red channel, 0..255: every surface read here is grey.

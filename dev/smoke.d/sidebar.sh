@@ -140,9 +140,9 @@ done
 "$notify_send_bin" -t 1500 "Sidebar" "One pending notification" > /dev/null 2>&1
 sleep 5
 $ipc call sidebar status > "$sidebar_status_open" 2>&1
-"$hyprctl_bin" -j layers > "$sidebar_layers_open" 2>&1
-"$hyprctl_bin" -j clients > "$sidebar_clients" 2>&1
-"$hyprctl_bin" -j monitors > "$sidebar_monitors" 2>&1
+"$wmctl_bin" -j layers > "$sidebar_layers_open" 2>&1
+"$wmctl_bin" -j clients > "$sidebar_clients" 2>&1
+"$wmctl_bin" -j monitors > "$sidebar_monitors" 2>&1
 "$grim_bin" "$sidebar_open_png" > /dev/null 2>&1
 if [ "$(sidebar_clock_case && echo 1)" = 1 ]; then
   out="$sidebar_clock_results"
@@ -217,24 +217,24 @@ $ipc call panel close > /dev/null 2>&1
 sleep 1.5
 $ipc call debug dump 2>/dev/null | "$jq_bin" -c '.profilesPill' > "$sidebar_pill_closed"
 probe='class:^(formalshell-sidebar-probe)\$'
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-sidebar-probe sh -c 'sleep 300']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-sidebar-probe sh -c 'sleep 300']==])" > /dev/null 2>&1
 for _ in \$(seq 1 40); do
-  "$hyprctl_bin" -j clients 2>/dev/null | grep -q formalshell-sidebar-probe && break
+  "$wmctl_bin" -j clients 2>/dev/null | grep -q formalshell-sidebar-probe && break
   sleep 0.25
 done
 wy=\$(( oy + (w0 + w1) / 2 ))
-"$hyprctl_bin" dispatch "hl.dsp.window.float({ window = '\$probe', action = 'toggle' })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = 400, y = 200, window = '\$probe' })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = \$(( wy - 100 )), window = '\$probe' })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\$' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.float({ window = '\$probe', action = 'toggle' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.resize({ x = 400, y = 200, window = '\$probe' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = \$(( wy - 100 )), window = '\$probe' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\$' })" > /dev/null 2>&1
 sleep 0.5
-{ echo "before=\$("$hyprctl_bin" -j activewindow | "$jq_bin" -r .class)"; } > "$sidebar_through" 2>&1
+{ echo "before=\$("$wmctl_bin" -j activewindow | "$jq_bin" -r .class)"; } > "$sidebar_through" 2>&1
 vclick "\$mx" "\$wy"
 sleep 1
-{ echo "at=\$mx,\$wy cursor=\$("$hyprctl_bin" cursorpos)"; echo "after=\$("$hyprctl_bin" -j activewindow | "$jq_bin" -r .class)"; } >> "$sidebar_through" 2>&1
+{ echo "at=\$mx,\$wy cursor=\$("$wmctl_bin" cursorpos)"; echo "after=\$("$wmctl_bin" -j activewindow | "$jq_bin" -r .class)"; } >> "$sidebar_through" 2>&1
 "$grim_bin" "$sidebar_through_png" > /dev/null 2>&1
-kill \$("$hyprctl_bin" -j clients | "$jq_bin" -r '.[] | select(.class == "formalshell-sidebar-probe") | .pid') 2>/dev/null
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\$' })" > /dev/null 2>&1
+kill \$("$wmctl_bin" -j clients | "$jq_bin" -r '.[] | select(.class == "formalshell-sidebar-probe") | .pid') 2>/dev/null
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\$' })" > /dev/null 2>&1
 sleep 1
 # Every card that opens something, clicked at its centre and 4px in from
 # its top left corner: \$1 names the column, \$2 its status, \$3 its layers.
@@ -277,7 +277,7 @@ sleep 2
 LC_ALL=C date +'%I %H %M' > "$sidebar_rail_clock"
 $ipc call sidebar status > "$sidebar_status_rail" 2>&1
 LC_ALL=C date +'%I %H %M' >> "$sidebar_rail_clock"
-"$hyprctl_bin" -j layers > "$sidebar_layers_rail" 2>&1
+"$wmctl_bin" -j layers > "$sidebar_layers_rail" 2>&1
 cp "$state_path" "$sidebar_state_copy" 2>/dev/null
 "$grim_bin" "$sidebar_rail_png" > /dev/null 2>&1
 livecards "$sidebar_status_cards_rail"
@@ -289,10 +289,10 @@ $ipc call sidebar status > "$sidebar_status_expanded" 2>&1
 settings_retarget '.bar.position = "right"'
 until_jq 10 "$shot_dir/sidebar-edge-right.json" '.edge == "right"' call sidebar status
 sleep 1
-"$hyprctl_bin" -j layers > "$sidebar_layers_right" 2>&1
+"$wmctl_bin" -j layers > "$sidebar_layers_right" 2>&1
 EOS
   echo 'hl.config({ general = { gaps_out = 10, border_size = 2 } })'
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 sidebar_box() {

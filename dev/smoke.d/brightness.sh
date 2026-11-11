@@ -162,7 +162,7 @@ done
 wait \$sampler
 # 2 and 3. The panel's cursor walks one stop per output, then the backlight
 # row, then HDMI-A-1; the first Down only lands it on the first stop.
-outputs=\$("$hyprctl_bin" -j monitors all | "$jq_bin" length)
+outputs=\$("$wmctl_bin" -j monitors all | "$jq_bin" length)
 echo "\$outputs" > "$brightness_stops_path"
 call panel open display > /dev/null 2>&1
 # Past the panel's DDC detection and its first getvcp.
@@ -178,14 +178,14 @@ sleep 3
 call panel close > /dev/null 2>&1
 sleep 1
 # 4. The step verb, one burst per device kind.
-"$hyprctl_bin" output create headless HDMI-A-1 > /dev/null 2>&1
-"$hyprctl_bin" output create headless eDP-1 > /dev/null 2>&1
+"$wmctl_bin" output create headless HDMI-A-1 > /dev/null 2>&1
+"$wmctl_bin" output create headless eDP-1 > /dev/null 2>&1
 sleep 3
 step_burst() {
   local output=\$1 delta=\$2 samples=\$3 sampler
-  "$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '\$output' })" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.focus({ monitor = '\$output' })" > /dev/null 2>&1
   sleep 0.5
-  "$hyprctl_bin" -j monitors all > "$brightness_step_monitors-\$output.json"
+  "$wmctl_bin" -j monitors all > "$brightness_step_monitors-\$output.json"
   echo "--- \$output" >> "$brightness_ddc_log"
   echo "--- \$output" >> "$brightness_bl_log"
   ( end=\$((SECONDS + 3)); while [ \$SECONDS -lt \$end ]; do
@@ -202,7 +202,7 @@ step_burst() {
   done
   # Inside the pill's hold, the burst's writes done.
   sleep 0.8
-  "$hyprctl_bin" -j layers > "$brightness_step_layers-\$output.json"
+  "$wmctl_bin" -j layers > "$brightness_step_layers-\$output.json"
   wait \$sampler
 }
 step_burst HDMI-A-1 -5 "$brightness_step_ddc"
@@ -223,7 +223,7 @@ overnight_cycle() {
     call panel open display > /dev/null 2>&1
     until_settled
     call panel close > /dev/null 2>&1
-    "$hyprctl_bin" output create headless HDMI-A-2 > /dev/null 2>&1
+    "$wmctl_bin" output create headless HDMI-A-2 > /dev/null 2>&1
   fi
   call overnight disable > /dev/null 2>&1
   sleep 6
@@ -235,17 +235,17 @@ overnight_cycle b 0.3
 echo "--- rows" >> "$brightness_ddc_log"
 echo "--- rows" >> "$brightness_bl_log"
 for o in eDP-1 HDMI-A-1; do
-  "$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '\$o' })" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.focus({ monitor = '\$o' })" > /dev/null 2>&1
   sleep 1.5
   call display brightnessStep 0 > /dev/null 2>&1
   echo "\$o \$(call osd state | "$jq_bin" -r .brightness)" >> "$brightness_overnight_rows"
 done
 sleep 2
-"$hyprctl_bin" output remove HDMI-A-2 > /dev/null 2>&1
-"$hyprctl_bin" output remove eDP-1 > /dev/null 2>&1
-"$hyprctl_bin" output remove HDMI-A-1 > /dev/null 2>&1
+"$wmctl_bin" output remove HDMI-A-2 > /dev/null 2>&1
+"$wmctl_bin" output remove eDP-1 > /dev/null 2>&1
+"$wmctl_bin" output remove HDMI-A-1 > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # Prints the first pair of numbers in stdin that steps against $1 (up|down).

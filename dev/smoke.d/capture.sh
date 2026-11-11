@@ -73,7 +73,7 @@ leg_capture_drive() {
 #!/usr/bin/env bash
 # The compositor's own view of the output, so the captured PNG's real pixel
 # dimensions can be checked against it rather than merely existing.
-"$hyprctl_bin" -j monitors > "$capture_outputs_path" 2>&1
+"$wmctl_bin" -j monitors > "$capture_outputs_path" 2>&1
 $ipc call screenshot pick smart default > /dev/null 2>&1
 sleep 2
 $ipc call screenshot pickerStatus > "$capture_open_status_path" 2>&1
@@ -121,7 +121,7 @@ $ipc call screenshot key escape > /dev/null 2>&1
 sleep 1
 $ipc call screenshot pickerStatus > "$capture_escape_status_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_capture_assert() {

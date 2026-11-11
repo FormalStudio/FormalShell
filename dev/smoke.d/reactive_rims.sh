@@ -57,11 +57,11 @@ leg_reactive_rims_drive() {
 commits() { grep -c '^commit surface=panel ' "$shell_log_path"; }
 # The window first, floated well clear of both cards, so nothing later
 # takes focus from an open panel.
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-rims sh -c 'sleep 300']==])" >> "$reactive_rims_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-rims sh -c 'sleep 300']==])" >> "$reactive_rims_dispatch_path" 2>&1
 sleep 1.5
-"$hyprctl_bin" dispatch "hl.dsp.window.float({ window = '$win', action = 'toggle' })" >> "$reactive_rims_dispatch_path" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = 300, y = 200, window = '$win' })" >> "$reactive_rims_dispatch_path" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 860, y = 820, window = '$win' })" >> "$reactive_rims_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.float({ window = '$win', action = 'toggle' })" >> "$reactive_rims_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.resize({ x = 300, y = 200, window = '$win' })" >> "$reactive_rims_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ x = 860, y = 820, window = '$win' })" >> "$reactive_rims_dispatch_path" 2>&1
 $ipc call wallpaper set "$reactive_rims_wp" > /dev/null 2>&1
 until_wallpaper "$reactive_rims_wp"
 until_settled
@@ -79,9 +79,9 @@ c1=\$(commits)
 echo "\$c0 \$c1" > "$reactive_rims_rest_path"
 # Just left of the network card, its top a little under the card's.
 read -r x0 y0 < <("$jq_bin" -r '.rims.panel.rect | "\(.[0] | floor) \(.[1] | floor)"' "$reactive_rims_right_json")
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ x = \$((x0 - 312)), y = \$((y0 + 24)), window = '$win' })" >> "$reactive_rims_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ x = \$((x0 - 312)), y = \$((y0 + 24)), window = '$win' })" >> "$reactive_rims_dispatch_path" 2>&1
 sleep 1.5
-"$hyprctl_bin" -j getoption general:col.active_border >> "$reactive_rims_dispatch_path" 2>&1
+"$wmctl_bin" -j getoption general:col.active_border >> "$reactive_rims_dispatch_path" 2>&1
 $ipc call debug dump > "$reactive_rims_lit_json" 2>&1
 "$grim_bin" "$reactive_rims_lit_png" > /dev/null 2>&1
 settings_retarget '.theme.reactiveRims = false'
@@ -89,7 +89,7 @@ sleep 2
 $ipc call debug dump > "$reactive_rims_off_json" 2>&1
 "$grim_bin" "$reactive_rims_off_png" > /dev/null 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The card's rect in the frame's pixels, its edges on the first and last

@@ -96,7 +96,7 @@ sleep 2
 "$grim_bin" "$deform_settled_path" > /dev/null 2>&1
 $ipc call panel state > "$deform_state_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The card's box in one frame: everything under the bar's line that differs

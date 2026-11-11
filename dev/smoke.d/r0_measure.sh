@@ -108,7 +108,7 @@ for _ in \$(seq 100); do
   pid=\$(cat "$shot_dir/shell.pid" 2>/dev/null) && [ -r "/proc/\$pid/stat" ] && break
   sleep 0.1
 done
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=com.t3tools.T3Code sh -c 'sleep infinity']==])" > "$shot_dir/r0-dispatch.txt" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=com.t3tools.T3Code sh -c 'sleep infinity']==])" > "$shot_dir/r0-dispatch.txt" 2>&1
 start=\$(cut -d' ' -f1 "$r0_start_path")
 sleep 20
 mark idle; cpu idle
@@ -135,7 +135,7 @@ mark rss
 echo "rss \$(awk '/^(VmRSS|VmHWM|Threads):/{printf "%s=%s ", \$1, \$2}' "/proc/\$pid/status")" >> "$r0_results_path"
 awk '/^[0-9a-f]+-[0-9a-f]+ /{n=(NF>=6)?\$6:"[anon]"} /^Size:/{sz=\$2} /^Rss:/{if (n ~ /^\/memfd:/) printf "smaps %s size=%d rss=%d\n", n, sz, \$2; else r[n]+=\$2} END{for(k in r) if(r[k]>=256) printf "smaps %s rss=%d\n", k, r[k]}' "/proc/\$pid/smaps" >> "$r0_results_path"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_r0_measure_assert() {

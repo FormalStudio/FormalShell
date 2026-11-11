@@ -158,7 +158,7 @@ $ipc call menu close > /dev/null 2>&1
 sleep 1
 cat "$iso_home/.local/state/formalshell/menu-selection.txt" > "$selection_path" 2>&1
 EOF
-  hypr_exec_once "bash $menu_script"
+  wm_exec_once "bash $menu_script"
 }
 
 menu_field() {

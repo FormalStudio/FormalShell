@@ -45,7 +45,7 @@ $ipc call localsend scan > "$share_scan_reply_path" 2>&1
 sleep 5
 $ipc call localsend peers > "$share_peers_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_share_assert() {

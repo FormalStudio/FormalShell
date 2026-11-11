@@ -318,7 +318,7 @@ sleep 2
 $ipc call iphone status > "$iphone_status_pairing_path" 2>&1
 "$grim_bin" "$iphone_pairing_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_iphone_assert() {

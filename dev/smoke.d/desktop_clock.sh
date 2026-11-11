@@ -75,10 +75,10 @@ quiet rest 3
 
 spawn_foot formalshell-desktop-clock "" "formalshell desktop clock"
 sleep 3
-"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set', window = 'class:formalshell-desktop-clock' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set', window = 'class:formalshell-desktop-clock' })" > /dev/null 2>&1
 sleep 2
 quiet fullscreen 5
-"$hyprctl_bin" -j clients > "$shot_dir/desktop-clock-fullscreen-clients.json" 2>&1
+"$wmctl_bin" -j clients > "$shot_dir/desktop-clock-fullscreen-clients.json" 2>&1
 pkill -f -- '--app-id=formalshell-desktop-clock'
 sleep 2
 
@@ -105,7 +105,7 @@ snap minute
 echo "render_us=\$(grep '^commit surface=desktop-clock ' "$shell_log_path" | tail -1 | grep -oE 'render_us=[0-9]+' | cut -d= -f2)" >> "\$out"
 echo done >> "\$out"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 _desktop_clock() { "$jq_bin" -r "$2" "$shot_dir/desktop-clock-$1.json"; }

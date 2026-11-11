@@ -76,7 +76,7 @@ call debug motionScale 100 > /dev/null 2>&1
 "$grim_bin" "$shot_dir/menu-hover.png" > /dev/null 2>&1
 call menu close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # Mean luminance of a cell's own fill: a 6px patch 6px inside its left

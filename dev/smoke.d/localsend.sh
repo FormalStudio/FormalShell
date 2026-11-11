@@ -90,7 +90,7 @@ sleep 5
 $ipc call notifications status > "$localsend_notify_after_path" 2>&1
 "$grim_bin" "$localsend_received_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_localsend_assert() {

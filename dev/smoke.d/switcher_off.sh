@@ -34,10 +34,10 @@ for verb in next prev commit cancel state; do
   $ipc call switcher "\$verb" > "$switcher_off_dir/\$verb.txt" 2>&1
 done
 sleep 1
-"$hyprctl_bin" -j layers > "$switcher_off_layers" 2>&1
+"$wmctl_bin" -j layers > "$switcher_off_layers" 2>&1
 "$grim_bin" "$switcher_off_png" > /dev/null 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_switcher_off_assert() {

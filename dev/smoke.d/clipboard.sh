@@ -154,7 +154,7 @@ $ipc call menu summon clipboard > /dev/null 2>&1
 until_settled
 "$grim_bin" "$clip_emoji_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_clipboard_assert() {

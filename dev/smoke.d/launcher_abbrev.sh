@@ -110,7 +110,7 @@ run abbrev-forget forget
 step fx forgotten
 $ipc call menu close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 launcher_abbrev_expect() {

@@ -53,7 +53,7 @@ leg_config_reload_drive() {
 #!/usr/bin/env bash
 # One box for the formalshell:bar layer, or empty while it has not mapped.
 bar_box() {
-  "$hyprctl_bin" -j layers 2>/dev/null \\
+  "$wmctl_bin" -j layers 2>/dev/null \\
     | "$jq_bin" -r "\$layers_jq"'layer("formalshell:bar") | first | "\\(.x) \\(.y) \\(.w) \\(.h)"' 2>/dev/null \\
     | grep -v null
 }
@@ -85,7 +85,7 @@ settings_retarget .
 
 wait_for_edge right 40
 bar_box > "$config_reload_before_path"
-"$hyprctl_bin" -j monitors > "$config_reload_monitors_path" 2>&1
+"$wmctl_bin" -j monitors > "$config_reload_monitors_path" 2>&1
 
 # The retarget, the write nothing announces: the first generation is left
 # exactly as it is, so the watch on it stays quiet forever and only a re-open
@@ -100,7 +100,7 @@ echo \$((SECONDS - start)) > "$config_reload_elapsed_path"
 bar_box > "$config_reload_after_path"
 "$grim_bin" "$config_reload_shot_path" > /dev/null 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_config_reload_assert() {

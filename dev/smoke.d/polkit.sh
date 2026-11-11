@@ -101,7 +101,7 @@ polkit_rc=\$?
 log "pkexec exited rc=\$polkit_rc"
 echo \$polkit_rc > "$polkit_rc_path"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_polkit_assert() {

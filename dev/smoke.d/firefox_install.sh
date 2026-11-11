@@ -100,7 +100,7 @@ git -C "$fi_dir/upstream.git" log -1 --format='%an <%ae>|%s' > "$fi_dir/upstream
 cp "\${XDG_STATE_HOME:-\$HOME/.local/state}"/fspec/log/* "$fi_dir/" 2>/dev/null
 touch "$fi_dir/drive.done"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_firefox_install_assert() {

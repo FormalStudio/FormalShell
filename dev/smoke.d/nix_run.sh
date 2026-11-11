@@ -45,11 +45,11 @@ $ipc call menu filter "Nix Run Fixture" > /dev/null 2>&1
 sleep 1
 $ipc call menu activate 0 > "$nix_run_activate_path" 2>&1
 sleep 5
-"$hyprctl_bin" clients -j > "$nix_run_clients_path" 2>&1
+"$wmctl_bin" clients -j > "$nix_run_clients_path" 2>&1
 pgrep -af 'nixpkgs#hello' > "$nix_run_procs_path" 2>&1
 "$grim_bin" "$nix_run_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_nix_run_assert() {

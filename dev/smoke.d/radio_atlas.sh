@@ -160,12 +160,12 @@ $ipc call radio status > "$radio_atlas_drag_settled_path" 2>&1
 $ipc call radio status > "$radio_atlas_fling_released_path" 2>&1
 sleep 2.5
 $ipc call radio status > "$radio_atlas_fling_settled_path" 2>&1
-"$hyprctl_bin" -j layers > "$radio_atlas_tip_before_path" 2>&1
+"$wmctl_bin" -j layers > "$radio_atlas_tip_before_path" 2>&1
 park
 sleep 0.5
 "$wlrctl_bin" pointer move \$(( ox + cw - 16 )) \$(( oy + 16 ))
 sleep 2
-"$hyprctl_bin" -j layers > "$radio_atlas_tip_after_path" 2>&1
+"$wmctl_bin" -j layers > "$radio_atlas_tip_after_path" 2>&1
 "$grim_bin" -c "$radio_atlas_tip_png" > /dev/null 2>&1
 "$wtype_bin" -k Escape
 sleep 2
@@ -227,7 +227,7 @@ sleep 1
 $ipc call radio stop > /dev/null 2>&1
 EOF
   add_cleanup "pkill -f 'radio-atlas-drive.sh' 2>/dev/null || true"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_radio_atlas_assert() {

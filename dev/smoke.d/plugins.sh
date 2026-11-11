@@ -324,7 +324,7 @@ sleep 2
 echo "after: \$(lprocs)" >> "$plugins_launcher_procs_path"
 $ipc call plugins status > "$plugins_status_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_plugins_assert() {

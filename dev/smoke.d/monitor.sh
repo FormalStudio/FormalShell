@@ -66,7 +66,7 @@ sleep 1
 $ipc call panel close > /dev/null 2>&1
 $menu_lines
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_monitor_assert() {

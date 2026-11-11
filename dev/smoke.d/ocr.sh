@@ -95,7 +95,7 @@ pgrep -x slurp > "$ocr_slurp_after_path" 2>&1 || true
 # fixture's line is rendered at font size 28, so a narrow region clips it
 # mid-string and tesseract returns fragments. Extra chrome in frame costs
 # nothing, the assertion only needs a real word to come back.
-geom="0,0 \$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0] | "\(.width)x\(.height)"')"
+geom="0,0 \$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0] | "\(.width)x\(.height)"')"
 $ipc call capture textAt "\$geom" > /dev/null 2>&1
 until_jq 15 "$ocr_textat_status_path" '.capturing == false' call capture status
 "$wl_paste_bin" --no-newline > "$ocr_textat_clipboard_path" 2>&1 || true
@@ -104,8 +104,8 @@ $ipc call capture colorAt '0,0 1x1' > /dev/null 2>&1
 until_jq 15 "$ocr_colorat_status_path" '.capturing == false' call capture status
 "$wl_paste_bin" --no-newline > "$ocr_colorat_clipboard_path" 2>&1 || true
 EOF
-  hypr_exec_once "bash $fixture_script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $fixture_script"
+  wm_exec_once "bash $script"
   # The fixture terminal has no auto-close of its own.
   add_cleanup "kill \"\$(cat '$ocr_pid_path' 2>/dev/null)\" 2>/dev/null || true"
 }

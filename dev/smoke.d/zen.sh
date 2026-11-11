@@ -38,45 +38,45 @@ for _ in \$(seq 1 60); do
   $ipc call sidebar status 2>/dev/null | grep -q '"cards"' && break
   sleep 0.25
 done
-"$hyprctl_bin" eval 'hl.config({ general = { layout = "scrolling" }, scrolling = { column_width = 0.4 } })' > /dev/null 2>&1
+"$wmctl_bin" eval 'hl.config({ general = { layout = "scrolling" }, scrolling = { column_width = 0.4 } })' > /dev/null 2>&1
 for n in a b c; do
-  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-zen-\$n sh -c 'sleep 300']==])" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-zen-\$n sh -c 'sleep 300']==])" > /dev/null 2>&1
   for _ in \$(seq 1 40); do
-    "$hyprctl_bin" -j clients | "$jq_bin" -e --arg c "formalshell-zen-\$n" 'any(.[]; .class == \$c)' > /dev/null 2>&1 && break
+    "$wmctl_bin" -j clients | "$jq_bin" -e --arg c "formalshell-zen-\$n" 'any(.[]; .class == \$c)' > /dev/null 2>&1 && break
     sleep 0.1
   done
   sleep 0.4
 done
-"$hyprctl_bin" dispatch 'hl.dsp.focus({ window = "class:formalshell-zen-b" })' > /dev/null 2>&1
-"$hyprctl_bin" dispatch 'hl.dsp.layout("colresize 0.6")' > /dev/null 2>&1
+"$wmctl_bin" dispatch 'hl.dsp.focus({ window = "class:formalshell-zen-b" })' > /dev/null 2>&1
+"$wmctl_bin" dispatch 'hl.dsp.layout("colresize 0.6")' > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" -j monitors > "$zen_monitors" 2>&1
+"$wmctl_bin" -j monitors > "$zen_monitors" 2>&1
 $ipc call zen status > "${zen_status[0]}" 2>&1
 $ipc call sidebar status > "${zen_sidebar[0]}" 2>&1
-"$hyprctl_bin" -j clients > "${zen_clients[0]}" 2>&1
+"$wmctl_bin" -j clients > "${zen_clients[0]}" 2>&1
 $ipc call zen enter > /dev/null 2>&1
 sleep 2
 $ipc call zen status > "${zen_status[1]}" 2>&1
 $ipc call sidebar status > "${zen_sidebar[1]}" 2>&1
-"$hyprctl_bin" -j clients > "${zen_clients[1]}" 2>&1
+"$wmctl_bin" -j clients > "${zen_clients[1]}" 2>&1
 "$grim_bin" "$zen_on_png" > /dev/null 2>&1
 $ipc call zen exit > /dev/null 2>&1
 sleep 2
 $ipc call zen status > "${zen_status[2]}" 2>&1
 $ipc call sidebar status > "${zen_sidebar[2]}" 2>&1
-"$hyprctl_bin" -j clients > "${zen_clients[2]}" 2>&1
-"$hyprctl_bin" -j activewindow > "$shot_dir/zen-active.json" 2>&1
+"$wmctl_bin" -j clients > "${zen_clients[2]}" 2>&1
+"$wmctl_bin" -j activewindow > "$shot_dir/zen-active.json" 2>&1
 "$grim_bin" "$zen_off_png" > /dev/null 2>&1
 $ipc call zen toggle > /dev/null 2>&1
 sleep 2
-"$hyprctl_bin" dispatch 'hl.dsp.window.close({ window = "class:formalshell-zen-b" })' > /dev/null 2>&1
+"$wmctl_bin" dispatch 'hl.dsp.window.close({ window = "class:formalshell-zen-b" })' > /dev/null 2>&1
 sleep 2
 $ipc call zen status > "${zen_status[3]}" 2>&1
 $ipc call sidebar status > "${zen_sidebar[3]}" 2>&1
-"$hyprctl_bin" -j clients > "${zen_clients[3]}" 2>&1
-"$hyprctl_bin" -j activewindow > "$shot_dir/zen-active-closed.json" 2>&1
+"$wmctl_bin" -j clients > "${zen_clients[3]}" 2>&1
+"$wmctl_bin" -j activewindow > "$shot_dir/zen-active-closed.json" 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 zen_client() {

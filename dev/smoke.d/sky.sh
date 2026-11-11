@@ -67,7 +67,7 @@ grep -c 'commit surface=wallpaper' "$shell_log_path" > "$shot_dir/sky-commits-be
 sleep 6
 grep -c 'commit surface=wallpaper' "$shell_log_path" > "$shot_dir/sky-commits-after.txt"
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 _sky_primary() {

@@ -48,7 +48,7 @@ sleep 1
 "$grim_bin" "$panel_keys_path" > /dev/null 2>&1
 "$wpctl_bin" get-volume @DEFAULT_AUDIO_SINK@ > "$panel_keys_mute_after_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_panel_keys_assert() {

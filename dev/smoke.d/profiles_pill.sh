@@ -40,7 +40,7 @@ chip() {
   local x y
   read -r x y <<< "\$("$jq_bin" -r --arg on "\$1" '.chips[] | select(.on == \$on) | .rect | "\\((.x + .w / 2) | floor) \\((.y + .h / 2) | floor)"' "\$d/\$2.json")"
   "$python3_bin" "$PWD/dev/vpointer.py" move -6000 -6000 move "\$x" "\$y" wait 300 down wait 60 up > /dev/null 2>&1
-  "$hyprctl_bin" cursorpos > "\$d/cursor-\$1.txt" 2>&1
+  "$wmctl_bin" cursorpos > "\$d/cursor-\$1.txt" 2>&1
 }
 for _ in \$(seq 1 40); do
   $ipc call sidebar status 2>/dev/null | grep -q '"cards"' && break
@@ -64,7 +64,7 @@ $ipc call panel close > /dev/null 2>&1
 sleep 1.5
 pill closed
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_profiles_pill_assert() {

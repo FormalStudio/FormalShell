@@ -51,7 +51,17 @@ iso_home=$(mktemp -d)
 # The settings file the shell reads. rig.sh holds rig_password.
 settings_path="$iso_home/.config/formalshell/settings.json"
 . "$script_dir/rig.sh"
-# Every drive sources this (hypr_exec_once), written once the binaries are
+# The compositor the session runs, behind dev/compositor/<name>.sh: its
+# launch, its config and $wmctl_bin, the hyprctl-shaped reads and dispatches
+# every leg goes through.
+FS_COMPOSITOR=${FS_COMPOSITOR:-hyprland}
+case $FS_COMPOSITOR in
+  hyprland | shoji) ;;
+  *) echo "SMOKE_FAIL: FS_COMPOSITOR=$FS_COMPOSITOR is neither hyprland nor shoji" >&2; exit 1 ;;
+esac
+# shellcheck source=/dev/null
+. "$script_dir/compositor/$FS_COMPOSITOR.sh"
+# Every drive sources this (wm_exec_once), written once the binaries are
 # resolved. pw_load_module lists the PipeWire modules a run loaded here.
 drive_lib="$shot_dir/drive-lib.sh"
 pw_modules_path="$shot_dir/pw-modules.txt"
@@ -318,7 +328,7 @@ echo "output scale: $FS_SMOKE_SCALE"
 # The output's size in logical pixels, the space the shell's rects and a
 # virtual pointer's moves are in, for a drive placing something against an
 # edge before any frame is read. out_w and out_h are the mode
-# hypr_base_config asks for, until the session reports the size it got.
+# wm_base_config asks for, until the session reports the size it got.
 out_w=1920
 out_h=1080
 logical_w=$(awk -v s="$FS_SMOKE_SCALE" -v w="$out_w" 'BEGIN { printf "%d", w / s + 0.5 }')
@@ -413,8 +423,6 @@ fi
 # <name>_bin (dashes as underscores): <name> <command> <openSUSE package>. A
 # need with more to it than a path is a need_<name> function below.
 tool_table="
-hyprland Hyprland hyprland
-hyprctl hyprctl hyprland
 grim grim grim
 foot foot foot
 notify_send notify-send libnotify-tools
@@ -538,7 +546,8 @@ need_localsend_cli() {
   [ -x "$localsend_cli_bin" ] || { echo "SMOKE_FAIL: no localsend-cli in the result's helpers ($localsend_cli_bin)" >&2; exit 1; }
 }
 
-need_bin hyprland hyprctl grim jq
+wm_need
+need_bin grim jq
 if $fixture_window_mode; then
   need_bin foot convert
 fi
@@ -777,51 +786,6 @@ host_notifications_owner() {
 }
 host_notifications_owner_before=$(host_notifications_owner)
 
-# The rig boots from a Lua config, the only format Hyprland is supported on,
-# and starts its own processes through this helper, one autostart line each.
-# A leg's drive scripts go through it too, but land in drives.list under the
-# leg's name instead, for drives.sh to start in leg order.
-hypr_exec_once() {
-  if [ "${recording_drives:-}" = 1 ]; then
-    printf '%s\t%s\n' "$leg_name" "$1" >> "$drives_list"
-    return
-  fi
-  printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[%s]==]) end)\n' "$1"
-}
-
-# The session shape every run boots with, shared with --screensaver-gif's
-# per-effect sessions.
-hypr_base_config() {
-  # Pinned in both session modes: the vkms connector otherwise comes up
-  # 1024x768 at scale 2, and a nested window takes aquamarine's own default
-  # rather than a size the bar is worth reading at. FS_SMOKE_SCALE=1.25
-  # runs it fractional, the g815 panel's scale.
-  echo "hl.monitor({ output = \"\", mode = \"${out_w}x${out_h}@60\", position = \"0x0\", scale = ${FS_SMOKE_SCALE:-1} })"
-  echo "hl.config({"
-  echo "  general = { gaps_in = 0, gaps_out = 0, border_size = 0 },"
-  # DESIGN.md: nothing in the shell blurs anything, and a compositor blur
-  # behind the bar's own transparent strip is exactly the frame this rig
-  # exists to catch.
-  echo "  decoration = { rounding = 0, blur = { enabled = false } },"
-  echo "  animations = { enabled = false },"
-  # disable_watchdog_warning: without start-hyprland (a watchdog wrapper this
-  # rig has no use for) Hyprland posts a red full-width notification across
-  # the top of the screen for 15s, which is exactly where the bar is.
-  echo "  misc = {"
-  echo "    disable_watchdog_warning = true,"
-  echo "    disable_hyprland_logo = true,"
-  echo "    disable_splash_rendering = true,"
-  echo "    force_default_wallpaper = 0,"
-  echo "    disable_autoreload = true,"
-  echo "    allow_session_lock_restore = true,"
-  echo "  },"
-  # suppress_errors: Hyprland's error overlay is a full-width banner across
-  # the top of the screen, which is where the bar is. It renders over the
-  # exact thing every leg here photographs.
-  echo "  debug = { suppress_errors = true, disable_logs = false, enable_stdout_logs = true },"
-  echo "})"
-}
-
 # A leg that cannot share the single session below takes the run over here,
 # with the build done, the binaries resolved and the bus baseline captured,
 # and exits itself: --screensaver-gif pins screensaver.effect through the
@@ -833,8 +797,7 @@ done
 
 shot_path="$shot_dir/smoke.png"
 shell_log_path="$shot_dir/shell.log"
-hypr_log_path="$shot_dir/hyprland.log"
-cfg="$shot_dir/hyprland.lua"
+cfg=$wm_config_path
 
 # Isolated HOME for the Hyprland process and everything it spawns, see the
 # host-session safety note in the header.
@@ -996,15 +959,15 @@ output_json_path="$shot_dir/output.json"
 output_end_json_path="$shot_dir/output-end.json"
 
 {
-  hypr_base_config
+  wm_base_config
   # g815's headless parent holds a virtual pointer for the nested session
   # (formalshell-rig-pointer in the spec). The mac rig's vkms session has no
   # input device at all, so its seat offers no wl_pointer until one exists;
   # this one lives until the session's scope is torn down.
   if [ "$rig_kind" = mac ]; then
-    hypr_exec_once "python3 $script_dir/vpointer.py wait 86400000"
+    wm_exec_once "python3 $script_dir/vpointer.py wait 86400000"
   fi
-  hypr_exec_once "bash $shell_start_script"
+  wm_exec_once "bash $shell_start_script"
 } > "$cfg"
 
 # No stale pixels (`debug staleAudit`, surface/audit.rs): every frame any
@@ -1037,7 +1000,7 @@ stale_audit_assert() {
 arrived_script="$shot_dir/arrived.sh"
 write_script "$arrived_script" <<EOF
 #!/usr/bin/env bash
-layer() { "$hyprctl_bin" -j layers 2>/dev/null | grep -q "\"namespace\": *\"formalshell:\$1\""; }
+layer() { "$wmctl_bin" -j layers 2>/dev/null | grep -q "\"namespace\": *\"formalshell:\$1\""; }
 for _ in \$(seq 1 150); do layer bar && break; sleep 0.1; done
 for _ in \$(seq 1 50); do layer veil || break; sleep 0.1; done
 EOF
@@ -1104,7 +1067,7 @@ colour_px() {
 # bar layer's "x y". "$jq_bin" "$layers_jq"'layer("formalshell:bar") | length' <path>
 layers_jq='def layers: [.[] | .levels[]?[]?]; def layer($ns): layers | map(select(.namespace == $ns)); def layer_on($o; $ns): [.[$o].levels[]?[]? | select(.namespace == $ns)]; def bar_origin: layer("formalshell:bar") | first | "\(.x) \(.y)";'
 
-# The drive library: what drives share, sourced by each (hypr_exec_once).
+# The drive library: what drives share, sourced by each (wm_exec_once).
 # The run's paths and every resolved *_bin first, read when a function runs,
 # so a function needing a tool needs it in the leg's leg_<n>_needs.
 {
@@ -1211,13 +1174,13 @@ walk_to() {
 spawn_foot() {
   local rules=${2:+, $2} title=""
   [ -z "${3:-}" ] || title=" --title='$3'"
-  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=$1$title sh -c 'sleep 300']==]$rules)" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=$1$title sh -c 'sleep 300']==]$rules)" > /dev/null 2>&1
 }
 # until_window <app id> [seconds]: waits for a window of that app id to map
 # (10s by default); fails once the time is up.
 until_window() {
   local end=$((SECONDS + ${2:-10}))
-  until "$hyprctl_bin" -j clients 2>/dev/null | "$jq_bin" -e --arg c "$1" 'any(.[]; .class == $c)' > /dev/null 2>&1; do
+  until "$wmctl_bin" -j clients 2>/dev/null | "$jq_bin" -e --arg c "$1" 'any(.[]; .class == $c)' > /dev/null 2>&1; do
     [ "$SECONDS" -lt "$end" ] || return 1
     sleep 0.1
   done
@@ -1235,7 +1198,7 @@ LIB
 } > "$drive_lib"
 
 # Not a subshell: a drive function writes its own scripts, lists them
-# (hypr_exec_once), may register a teardown line, and prints any config
+# (wm_exec_once), may register a teardown line, and prints any config
 # lines (binds) it needs.
 drives_list="$shot_dir/drives.list"
 : > "$drives_list"
@@ -1316,7 +1279,7 @@ write_script "$shot_script" <<EOF
 #!/usr/bin/env bash
 . "$drive_lib"
 bash "$arrived_script"
-"$hyprctl_bin" monitors -j > "$output_json_path" 2>&1
+"$wmctl_bin" monitors -j > "$output_json_path" 2>&1
 if $fixture_window_mode; then
   spawn_foot formalshell-smoke-iconic "" "formalshell smoke session"
   until_window formalshell-smoke-iconic
@@ -1354,20 +1317,19 @@ if shell_pid=\$(cat "$shot_dir/shell.pid" 2>/dev/null) && [ -r "/proc/\$shell_pi
     END { for (p in parent) { q = parent[p]; while (q != "" && q != root && q > 1) q = parent[q]; if (q == root) print line[p] } }' \
     > "$shot_dir/shell-children.txt"
 fi
-"$hyprctl_bin" monitors -j > "$output_end_json_path" 2>&1
+"$wmctl_bin" monitors -j > "$output_end_json_path" 2>&1
 $fixture_cleanup
 pw_unload_modules
-"$hyprctl_bin" dispatch "hl.dsp.exit()"
+$(wm_exit_line)
 EOF
-hypr_exec_once "bash $shot_script" >> "$cfg"
+wm_exec_once "bash $shot_script" >> "$cfg"
 
-# HYPRLAND_NO_SD_VARS and the systemctl shim keep the nested Hyprland off
-# the user manager it shares with the host session (see host_env_names).
-# The restore only runs at exit, and a home-manager activation during a
-# run restarted e1504g's live formalshell.service onto the nested display,
-# which took it down with the session (2026-10-09).
+# The systemctl shim keeps the nested compositor off the user manager it
+# shares with the host session (see host_env_names). The restore only runs
+# at exit, and a home-manager activation during a run restarted e1504g's
+# live formalshell.service onto the nested display, which took it down with
+# the session (2026-10-09).
 session_env=(
-  "HYPRLAND_NO_SD_VARS=1"
   "PATH=$sd_shim_dir:$PATH"
   "HOME=$iso_home"
   "XDG_CONFIG_HOME=$iso_home/.config"
@@ -1382,21 +1344,14 @@ else
   # Unset, not empty: aquamarine reads WAYLAND_DISPLAY's presence, and an
   # empty value still sends it down the wayland backend, which then fails
   # to connect at all.
-  session_env+=("AQ_DRM_DEVICES=$vkms_device")
-  # Without seatd (the mac rig runs none), libseat finds no seat for an ssh
-  # login and aquamarine's backend fails to create. noop opens the card
-  # straight, which the video group allows, and lets four slots each be the
-  # master of their own card at once.
-  [ -S /run/seatd.sock ] || session_env+=("LIBSEAT_BACKEND=noop")
   unset WAYLAND_DISPLAY
 fi
+wm_session_env
 
 echo "session mode: $session_mode${vkms_device:+ ($vkms_device)}"
 
-# -k 10 force-kills 10s after the initial SIGTERM: Hyprland's SIGTERM
-# handler can hang instead of exiting, and a stuck session would sit on the
-# card (or on the host's screen) indefinitely. That only reaches the pid
-# timeout started, and behind a capability wrapper (NixOS's
+# A stuck session would sit on the card (or on the host's screen)
+# indefinitely, and wm_command's timeout only reaches the pid it started: and behind a capability wrapper (NixOS's
 # /run/wrappers/bin/Hyprland) the real compositor outlived it, reparented
 # to pid 1 (e1504g, 2026-10-07). So the whole session runs in a transient user
 # scope of its own and is torn down as a cgroup: every process in it gets
@@ -1404,15 +1359,16 @@ echo "session mode: $session_mode${vkms_device:+ ($vkms_device)}"
 # systemd-run reaches the user manager over its private socket, never the
 # session bus. Its fs-run- name puts a leftover under dev/scoped-run.sh's
 # sweep.
-hypr_unit="fs-run-hypr-$$"
+wm_unit="fs-run-wm-$$"
 session_scope=()
-if systemd-run --user --scope --quiet --collect --unit="$hypr_unit-probe" true > /dev/null 2>&1; then
-  session_scope=(systemd-run --user --scope --quiet --collect --unit="$hypr_unit"
+if systemd-run --user --scope --quiet --collect --unit="$wm_unit-probe" true > /dev/null 2>&1; then
+  session_scope=(systemd-run --user --scope --quiet --collect --unit="$wm_unit"
     -p TimeoutStopSec=5 -p RuntimeMaxSec=$((session_timeout + 60)) --)
 fi
-hypr_status=0
+wm_status=0
+wm_command "$session_timeout"
 env "${session_env[@]}" ${session_scope[@]+"${session_scope[@]}"} dbus-run-session -- \
-  timeout -k 10 "$session_timeout" $hyprland_bin --config "$cfg" > "$hypr_log_path" 2>&1 || hypr_status=$?
+  "${wm_cmd[@]}" > "$wm_log_path" 2>&1 || wm_status=$?
 # The shell goes with its compositor and takes every child it started with
 # it; read before the scopes below are stopped, which would kill them all
 # regardless.
@@ -1427,10 +1383,10 @@ if [ -s "$shot_dir/shell-children.txt" ]; then
   done
 fi
 if [ -n "$shell_unit" ]; then systemctl --user stop "$shell_unit.scope" 2>/dev/null || true; fi
-if [ ${#session_scope[@]} -gt 0 ]; then systemctl --user stop "$hypr_unit.scope" 2>/dev/null || true; fi
-# The config path is this run's own, so anything still carrying it is a
-# leftover of this session, whichever way it was started.
-if leftover=$(pgrep -f -- "--config $cfg"); then
+if [ ${#session_scope[@]} -gt 0 ]; then systemctl --user stop "$wm_unit.scope" 2>/dev/null || true; fi
+# The pattern names this run's own files, so anything still carrying it is
+# a leftover of this session, whichever way it was started.
+if leftover=$(pgrep -f -- "$wm_leftover_pattern"); then
   kill -KILL $leftover 2>/dev/null || true
   echo "SMOKE_FAIL: the nested compositor outlived its session (pids $(echo $leftover)), killed" >&2
   exit 1
@@ -1456,8 +1412,8 @@ fi
 # shell that died at startup looks identical from the outside.
 fail() {
   echo "SMOKE_FAIL: $1" >&2
-  echo "--- hyprland log tail ---" >&2
-  tail -20 "$hypr_log_path" >&2 2>/dev/null || true
+  echo "--- $FS_COMPOSITOR log tail ---" >&2
+  tail -20 "$wm_log_path" >&2 2>/dev/null || true
   echo "--- shell log tail ---" >&2
   tail -20 "$shell_log_path" >&2 2>/dev/null || true
   exit 1
@@ -1524,10 +1480,10 @@ panel_language_verdict() {
 
 # timeout's own exit (137 once its SIGKILL went too): the session never
 # reached drives.sh's exit, so the drive still running was cut short.
-case $hypr_status in
-  124 | 137) fail "the session ran past its ${session_timeout}s and was killed (exit $hypr_status)" ;;
+case $wm_status in
+  124 | 137) fail "the session ran past its ${session_timeout}s and was killed (exit $wm_status)" ;;
   0) ;;
-  *) echo "hyprland exited $hypr_status" ;;
+  *) echo "$FS_COMPOSITOR exited $wm_status" ;;
 esac
 
 if [ -n "$orphans" ]; then

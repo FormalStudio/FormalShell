@@ -137,7 +137,7 @@ sleep 2
 "$grim_bin" "$panel_emerge_settled_path" > /dev/null 2>&1
 $ipc call panel state > "$panel_emerge_state_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # One box out of a saved frame, named after what it is looking at. -strip

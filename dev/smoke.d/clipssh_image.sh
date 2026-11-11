@@ -115,7 +115,7 @@ $ipc call clipboard list > "$clipssh_image_list_path" 2>&1
 $ipc call debug dump > "$clipssh_image_dump_path" 2>&1
 sleep 1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_clipssh_image_assert() {

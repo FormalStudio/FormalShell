@@ -103,7 +103,7 @@ $ipc call airplay status > "$airplay_status_disconnected_path" 2>&1
 $ipc call media status > "$airplay_media_disconnected_path" 2>&1
 "$grim_bin" "$airplay_gone_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_airplay_assert() {

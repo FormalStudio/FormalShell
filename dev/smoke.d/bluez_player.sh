@@ -26,7 +26,7 @@
 #     then a wheel over the list takes it back to the top.
 leg_bluez_player_flag="--bluez-player"
 leg_bluez_player_order=179
-leg_bluez_player_needs="python3 jq grim wtype wlrctl pactl pw_cat hyprctl"
+leg_bluez_player_needs="python3 jq grim wtype wlrctl pactl pw_cat"
 leg_bluez_player_claims="bus.system"
 
 bluez_player_dir="$shot_dir/bluez-player"
@@ -143,11 +143,11 @@ done
 sleep 1.5
 $ipc call debug dump > "\$dir/dump-wheel.json" 2>&1
 shot wheel
-"$hyprctl_bin" monitors -j > "\$dir/monitors.json" 2>&1
+"$wmctl_bin" monitors -j > "\$dir/monitors.json" 2>&1
 $ipc call panel close > /dev/null 2>&1
 echo done > "\$dir/drive-done"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 bluez_player_calls() {

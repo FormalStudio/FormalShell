@@ -85,15 +85,15 @@ sleep 2
 { busctl --user call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications GetServerInformation
   busctl --user call org.freedesktop.Notifications /org/freedesktop/Notifications org.freedesktop.Notifications GetCapabilities
 } > "$notify_server_info_path" 2>&1
-"$hyprctl_bin" -j layers > "$notify_layers_collapsed_path" 2>&1
+"$wmctl_bin" -j layers > "$notify_layers_collapsed_path" 2>&1
 $ipc call notifications expand on > "$toasts_expand_status_path" 2>&1
 sleep 2
 "$grim_bin" "$toasts_expanded_path" > /dev/null 2>&1
-"$hyprctl_bin" -j layers > "$notify_layers_expanded_path" 2>&1
+"$wmctl_bin" -j layers > "$notify_layers_expanded_path" 2>&1
 sleep 1
 $ipc call notifications expand off > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_notify_assert() {

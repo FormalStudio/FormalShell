@@ -69,17 +69,17 @@ for _ in \$(seq 1 40); do
   $ipc call sidebar status 2>/dev/null | grep -q '"cards"' && break
   sleep 0.5
 done
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin -o colors-dark.background=1e3a5f --app-id=formalshell-ov-a sh -c 'printf \"\\\\033[1mwindow a\\\\033[0m\\\\n\\\\n\"; ls -1 /usr/bin | head -60; sleep 300']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin -o colors-dark.background=1e3a5f --app-id=formalshell-ov-a sh -c 'printf \"\\\\033[1mwindow a\\\\033[0m\\\\n\\\\n\"; ls -1 /usr/bin | head -60; sleep 300']==])" > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin -o colors-dark.background=4a2f5c --app-id=formalshell-ov-b sh -c 'printf \"\\\\033[1mwindow b\\\\033[0m\\\\n\\\\n\"; ls -1 /usr/bin | head -60; sleep 300']==])" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin -o colors-dark.background=2f4f33 --app-id=formalshell-ov-c sh -c 'printf \"\\\\033[1mwindow c\\\\033[0m\\\\n\\\\n\"; ls -1 /usr/bin | head -60; sleep 300']==], { workspace = '2 silent' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin -o colors-dark.background=4a2f5c --app-id=formalshell-ov-b sh -c 'printf \"\\\\033[1mwindow b\\\\033[0m\\\\n\\\\n\"; ls -1 /usr/bin | head -60; sleep 300']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin -o colors-dark.background=2f4f33 --app-id=formalshell-ov-c sh -c 'printf \"\\\\033[1mwindow c\\\\033[0m\\\\n\\\\n\"; ls -1 /usr/bin | head -60; sleep 300']==], { workspace = '2 silent' })" > /dev/null 2>&1
 sleep 3
 # The dump's ids are Hyprland's addresses without their 0x.
-id_of() { "$hyprctl_bin" -j clients | "$jq_bin" -r --arg c "\$1" '.[] | select(.class == \$c) | .address | ltrimstr("0x")' | head -1; }
+id_of() { "$wmctl_bin" -j clients | "$jq_bin" -r --arg c "\$1" '.[] | select(.class == \$c) | .address | ltrimstr("0x")' | head -1; }
 # wlrctl moves are relative: from where the cursor is to an absolute point,
 # without passing the top-left corner on the way.
 goto() {
-  read -r cx cy <<< "\$("$hyprctl_bin" -j cursorpos | "$jq_bin" -r '"\(.x | floor) \(.y | floor)"')"
+  read -r cx cy <<< "\$("$wmctl_bin" -j cursorpos | "$jq_bin" -r '"\(.x | floor) \(.y | floor)"')"
   "$wlrctl_bin" pointer move "\$(( \$1 - cx ))" "\$(( \$2 - cy ))" > /dev/null 2>&1
 }
 log "ids a=\$(id_of formalshell-ov-a) b=\$(id_of formalshell-ov-b) c=\$(id_of formalshell-ov-c)"
@@ -112,9 +112,9 @@ step ipc-open
 "$wtype_bin" -k Return
 wait_phase closed; sleep 0.5
 step return-closed
-"$hyprctl_bin" -j activewindow | "$jq_bin" -c '{class, workspace: .workspace.id}' > "$shot_dir/overview-active.json" 2>&1
+"$wmctl_bin" -j activewindow | "$jq_bin" -c '{class, workspace: .workspace.id}' > "$shot_dir/overview-active.json" 2>&1
 log "active \$(cat "$shot_dir/overview-active.json")"
-"$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 1 })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ workspace = 1 })" > /dev/null 2>&1
 sleep 1
 
 # A tenth speed: one frame part way through the zoom, one through a glide.
@@ -150,7 +150,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do steps+=(move "\$dx" "\$dy" wait 30); done
 sleep 1.2
 step dropped
 "$grim_bin" "$overview_drop_png" > /dev/null 2>&1
-"$hyprctl_bin" -j clients | "$jq_bin" -c --arg a "\$a" '[.[] | select(.address == ("0x" + \$a)) | .workspace.id]' > "$shot_dir/overview-dropped.json" 2>&1
+"$wmctl_bin" -j clients | "$jq_bin" -c --arg a "\$a" '[.[] | select(.address == ("0x" + \$a)) | .workspace.id]' > "$shot_dir/overview-dropped.json" 2>&1
 log "a on \$(cat "$shot_dir/overview-dropped.json")"
 $ipc call workspaces overview close > /dev/null 2>&1
 wait_phase closed; sleep 0.3
@@ -197,7 +197,7 @@ $ipc call workspaces overview close > /dev/null 2>&1
 wait_phase closed; sleep 0.3
 step out-closed
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 overview_field() {

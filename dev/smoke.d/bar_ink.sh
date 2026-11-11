@@ -45,7 +45,7 @@ $ipc call bar paint > "$bar_ink_json" 2>&1
 $ipc call bar room > "$bar_ink_room_json" 2>&1
 "$grim_bin" "$bar_ink_png" > /dev/null 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The brightest and darkest red sample inside one rect of the frame, 0..255.

@@ -91,7 +91,7 @@ EOF
 true
 EOF
   add_cleanup "bash $kill_script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_bar_room_assert() {

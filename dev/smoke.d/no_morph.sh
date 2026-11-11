@@ -24,7 +24,7 @@ leg_no_morph_drive() {
 #!/usr/bin/env bash
 until_jq 20 "$no_morph_dump_path" '.theme.morph == false' call debug dump
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_no_morph_assert() {

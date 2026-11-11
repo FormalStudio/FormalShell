@@ -54,23 +54,23 @@ leg_launcher_density_drive() {
   local script="$shot_dir/launcher-density-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-width=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
-"$hyprctl_bin" output create headless "$launcher_density_second" > "$launcher_density_log" 2>&1
-"$hyprctl_bin" eval "hl.monitor({ output = \\"$launcher_density_second\\", mode = \\"1600x1000@60\\", position = \\"\${width}x0\\", scale = 1.25 })" >> "$launcher_density_log" 2>&1
+width=\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
+"$wmctl_bin" output create headless "$launcher_density_second" > "$launcher_density_log" 2>&1
+"$wmctl_bin" eval "hl.monitor({ output = \\"$launcher_density_second\\", mode = \\"1600x1000@60\\", position = \\"\${width}x0\\", scale = 1.25 })" >> "$launcher_density_log" 2>&1
 sleep 3
-"$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '$launcher_density_second' })" >> "$launcher_density_log" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ monitor = '$launcher_density_second' })" >> "$launcher_density_log" 2>&1
 sleep 1
 $ipc call menu summon apps > /dev/null 2>&1
 $ipc call menu filter density > /dev/null 2>&1
 sleep 3
 "$grim_bin" -o "$launcher_density_second" "$launcher_density_png" >> "$launcher_density_log" 2>&1
 $ipc call menu status > "$launcher_density_status" 2>&1
-"$hyprctl_bin" -j monitors >> "$launcher_density_log" 2>&1
+"$wmctl_bin" -j monitors >> "$launcher_density_log" 2>&1
 $ipc call menu close > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" output remove "$launcher_density_second" >> "$launcher_density_log" 2>&1
+"$wmctl_bin" output remove "$launcher_density_second" >> "$launcher_density_log" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_launcher_density_assert() {

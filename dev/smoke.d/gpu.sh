@@ -121,7 +121,7 @@ $ipc call menu summon monitor > /dev/null 2>&1
 until_settled
 "$grim_bin" "$gpu_monitor_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_gpu_assert() {

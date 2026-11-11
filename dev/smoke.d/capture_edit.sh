@@ -84,8 +84,8 @@ sleep 3
 $ipc call screenshot edit "" > "$capture_edit_edit_reply_path" 2>&1
 sleep 1
 EOF
-  hypr_exec_once "bash $fixture_script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $fixture_script"
+  wm_exec_once "bash $script"
   # The fixture terminal has no auto-close of its own.
   add_cleanup "kill \"\$(cat '$capture_edit_fixture_pid_path' 2>/dev/null)\" 2>/dev/null || true"
 }

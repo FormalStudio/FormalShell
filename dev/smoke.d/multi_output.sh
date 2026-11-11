@@ -79,36 +79,36 @@ leg_multi_output_drive() {
   local script="$shot_dir/multi-output-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-"$hyprctl_bin" -j layers > "$multi_output_layers_one" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_layers_one" 2>&1
 $ipc call debug dump > "$multi_output_dump" 2>&1
-first=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].name')
+first=\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0].name')
 # Monitor positions and the pointer are in logical pixels.
-lw=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width / .[0].scale | floor')
-lh=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].height / .[0].scale | floor')
-"$hyprctl_bin" output create headless "$multi_output_second" > "$multi_output_create" 2>&1
-"$hyprctl_bin" eval "hl.monitor({ output = \\"$multi_output_second\\", mode = \\"1600x1000@60\\", position = \\"\${lw}x0\\", scale = 1.25 })" >> "$multi_output_create" 2>&1
+lw=\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0].width / .[0].scale | floor')
+lh=\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0].height / .[0].scale | floor')
+"$wmctl_bin" output create headless "$multi_output_second" > "$multi_output_create" 2>&1
+"$wmctl_bin" eval "hl.monitor({ output = \\"$multi_output_second\\", mode = \\"1600x1000@60\\", position = \\"\${lw}x0\\", scale = 1.25 })" >> "$multi_output_create" 2>&1
 sleep 4
-"$hyprctl_bin" -j monitors > "$multi_output_monitors" 2>&1
-"$hyprctl_bin" -j layers > "$multi_output_layers_two" 2>&1
+"$wmctl_bin" -j monitors > "$multi_output_monitors" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_layers_two" 2>&1
 "$grim_bin" -o "\$first" "$multi_output_first_png" > /dev/null 2>&1
 "$grim_bin" -o "$multi_output_second" "$multi_output_second_png" > /dev/null 2>&1
 sleep 6
 park_at() {
   park "\$1" "\$2" >> "$multi_output_click" 2>&1
   sleep 1
-  echo "park \$1 \$2: \$("$hyprctl_bin" cursorpos)" >> "$multi_output_click"
+  echo "park \$1 \$2: \$("$wmctl_bin" cursorpos)" >> "$multi_output_click"
 }
 park_at \$((lw / 2)) \$((lh / 2))
 echo "open: \$(call panel open network)" >> "$multi_output_click"
 until_settled
 echo "state open: \$(call panel state)" >> "$multi_output_click"
-"$hyprctl_bin" -j layers > "$multi_output_layers_open" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_layers_open" 2>&1
 "$grim_bin" "$multi_output_open_png" > /dev/null 2>&1
 park_at \$((lw + 640)) 500
 click >> "$multi_output_click" 2>&1
 sleep 2
 echo "state clicked: \$(call panel state)" >> "$multi_output_click"
-"$hyprctl_bin" -j layers > "$multi_output_layers_closed" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_layers_closed" 2>&1
 "$grim_bin" "$multi_output_closed_png" > /dev/null 2>&1
 park_at \$((lw + 640)) 2
 call bar room > "$multi_output_room" 2>&1
@@ -116,7 +116,7 @@ park_at \$((lw / 2)) \$((lh / 2))
 echo "reopen: \$(call panel open network)" >> "$multi_output_click"
 until_settled
 echo "state reopen: \$(call panel state)" >> "$multi_output_click"
-"$hyprctl_bin" -j layers > "$multi_output_layers_reopen" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_layers_reopen" 2>&1
 cell=\$("$jq_bin" -r '[.[0].cells[] | select(.name == "audio" and .whole)] | first | "\\(.x + .width / 2 | floor) \\(.y + .height / 2 | floor)"' "$multi_output_room" 2>/dev/null)
 echo "audio cell \$cell" >> "$multi_output_click"
 park_at \$((lw + \${cell%% *})) \${cell##* }
@@ -129,35 +129,35 @@ call panel close > /dev/null 2>&1
 park_at \$((lw + 640)) 500
 sleep 2
 "$grim_bin" -o "$multi_output_second" "$multi_output_bare_png" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-multi-full sh -c 'sleep 60']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-multi-full sh -c 'sleep 60']==])" > /dev/null 2>&1
 sleep 3
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:formalshell-multi-full' })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:formalshell-multi-full' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
 sleep 2
-"$hyprctl_bin" -j layers | "$jq_bin" -r --arg s "$multi_output_second" "\$layers_jq"'"bars under fullscreen: \(layer_on(\$s; "formalshell:bar") | length)"' >> "$multi_output_hidden" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.close()" > /dev/null 2>&1
+"$wmctl_bin" -j layers | "$jq_bin" -r --arg s "$multi_output_second" "\$layers_jq"'"bars under fullscreen: \(layer_on(\$s; "formalshell:bar") | length)"' >> "$multi_output_hidden" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.close()" > /dev/null 2>&1
 sleep 3
 "$grim_bin" -o "$multi_output_second" "$multi_output_unhidden_png" > /dev/null 2>&1
 echo "start: \$(call screensaver start)" >> "$multi_output_saver"
 sleep 3
-"$hyprctl_bin" -j layers > "$multi_output_saver_layers" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_saver_layers" 2>&1
 "$grim_bin" -o "\$first" "$multi_output_saver_first_png" > /dev/null 2>&1
 "$grim_bin" -o "$multi_output_second" "$multi_output_saver_second_png" > /dev/null 2>&1
 echo "status shown: \$(call screensaver status)" >> "$multi_output_saver"
 "$wlrctl_bin" pointer move 30 30 >> "$multi_output_saver" 2>&1
 sleep 3
 echo "status moved: \$(call screensaver status)" >> "$multi_output_saver"
-"$hyprctl_bin" -j layers > "$multi_output_saver_dismissed" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_saver_dismissed" 2>&1
 echo "restart: \$(call screensaver start)" >> "$multi_output_saver"
 sleep 2
-"$hyprctl_bin" output remove "$multi_output_second" >> "$multi_output_create" 2>&1
+"$wmctl_bin" output remove "$multi_output_second" >> "$multi_output_create" 2>&1
 sleep 3
-"$hyprctl_bin" -j layers > "$multi_output_layers_gone" 2>&1
-"$hyprctl_bin" output create headless "$multi_output_second" >> "$multi_output_create" 2>&1
-"$hyprctl_bin" eval "hl.monitor({ output = \\"$multi_output_second\\", mode = \\"1600x1000@60\\", position = \\"\${lw}x0\\", scale = 1.25 })" >> "$multi_output_create" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_layers_gone" 2>&1
+"$wmctl_bin" output create headless "$multi_output_second" >> "$multi_output_create" 2>&1
+"$wmctl_bin" eval "hl.monitor({ output = \\"$multi_output_second\\", mode = \\"1600x1000@60\\", position = \\"\${lw}x0\\", scale = 1.25 })" >> "$multi_output_create" 2>&1
 sleep 4
-"$hyprctl_bin" -j layers > "$multi_output_saver_readd" 2>&1
+"$wmctl_bin" -j layers > "$multi_output_saver_readd" 2>&1
 "$grim_bin" -o "$multi_output_second" "$multi_output_saver_readd_png" > /dev/null 2>&1
 echo "status readd: \$(call screensaver status)" >> "$multi_output_saver"
 call screensaver stop > /dev/null 2>&1
@@ -175,9 +175,9 @@ for i in \$(seq 1 40); do
   sleep 0.25
 done
 echo "unlocked: \$(call lock isLocked)" >> "$multi_output_saver"
-"$hyprctl_bin" output remove "$multi_output_second" >> "$multi_output_create" 2>&1
+"$wmctl_bin" output remove "$multi_output_second" >> "$multi_output_create" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # Surfaces on output $2 under namespace $3 in layers dump $1.

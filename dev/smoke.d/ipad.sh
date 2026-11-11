@@ -138,7 +138,7 @@ call menu status > "\$d/menu-gone.json" 2>&1
 call menu close > /dev/null 2>&1
 echo done > "\$d/drive-done"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 
   write_script "$kill_script" <<EOF
 #!/usr/bin/env bash

@@ -66,7 +66,7 @@ echo rest-start > "$shot_dir/menu-budget-rest"
 sleep 5
 echo rest-end >> "$shot_dir/menu-budget-rest"
 $ipc call menu toggle > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-budget-probe sleep 300]==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-budget-probe sleep 300]==])" > /dev/null 2>&1
 sleep 3
 seek() { $ipc call menu summon "" > /dev/null 2>&1; until_settled; $ipc call menu filter "\$1" > /dev/null 2>&1; sleep 1.5; }
 rest() { sleep 3; $ipc call menu status > "$shot_dir/menu-budget-rest-\$1.json" 2>&1; sleep 5.5; $ipc call menu close > /dev/null 2>&1; sleep 1; }
@@ -80,7 +80,7 @@ seek "Budget Probe"
 $ipc call menu into 0 > /dev/null 2>&1
 rest window
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_menu_budget_assert() {

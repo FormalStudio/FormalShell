@@ -94,7 +94,7 @@ call debug dump > "$shot_dir/menu-resize-dump-monitor2.json" 2>&1
 call debug motionScale 100 > /dev/null 2>&1
 call menu close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 menu_resize_probes() {

@@ -224,7 +224,7 @@ fi
 echo done > "\$m-drive-done.txt"
 EOF
   add_cleanup "rm -f \"\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}\"/fspec/activity/smoke-*.sock"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_activity_assert() {

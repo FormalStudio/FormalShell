@@ -30,7 +30,7 @@ until_settled
 $ipc call panel state > "$appmenu_state_path" 2>&1
 "$grim_bin" "$appmenu_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_appmenu_assert() {

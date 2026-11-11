@@ -42,7 +42,7 @@ for _ in \$(seq 1 80); do
   sleep 0.25
 done
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_backend_assert() {

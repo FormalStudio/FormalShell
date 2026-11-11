@@ -109,7 +109,7 @@ sudo ip netns pids fs-send-peer | xargs -r sudo kill
 sudo ip link del fs-send-host
 sudo ip netns del fs-send-peer
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # `<step> <jq claim> <what it means>`, against that step's status.

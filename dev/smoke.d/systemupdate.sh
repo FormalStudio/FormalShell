@@ -50,7 +50,7 @@ sleep 20
 $ipc call debug dump > "$systemupdate_dump_path" 2>&1
 $ipc call bar room > "$systemupdate_room_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_systemupdate_assert() {

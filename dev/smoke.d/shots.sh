@@ -161,7 +161,7 @@ EOF
 true
 EOF
   add_cleanup "bash $kill_script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # A concat list of stamped frames to H.264. concat drops the last entry's

@@ -139,7 +139,7 @@ $ipc call screensaver stop > /dev/null 2>&1
 sleep 4
 echo "rss_kb before_saver=\$r0 saver=\$r1 after_saver=\$(rss)" >> "$idle_results_path"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_idle_assert() {

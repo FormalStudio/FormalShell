@@ -43,11 +43,11 @@ confirm_row() {
   idx=\$(row_index "$power_p-menu.json" "\$1")
   call menu activate "\$idx" > "$power_p-arm-\$1.txt" 2>&1
   sleep 1.5
-  "$hyprctl_bin" layers -j > "$power_p-layers-armed-\$1.json" 2>&1
+  "$wmctl_bin" layers -j > "$power_p-layers-armed-\$1.json" 2>&1
   "$grim_bin" "$power_p-armed-\$1.png" > /dev/null 2>&1
   call menu activate "\$idx" > /dev/null 2>&1
   sleep 4
-  "$hyprctl_bin" layers -j > "$power_p-layers-prompt-\$1.json" 2>&1
+  "$wmctl_bin" layers -j > "$power_p-layers-prompt-\$1.json" 2>&1
 }
 date +%s > "$power_p-t0.txt"
 id "$power_user" > /dev/null 2>&1 || sudo -n useradd -m "$power_user"
@@ -77,11 +77,11 @@ call menu status > "$power_p-typed.json" 2>&1
 "$wtype_bin" -k Return
 sleep 1.5
 call menu status > "$power_p-armed.json" 2>&1
-"$hyprctl_bin" layers -j > "$power_p-layers-armed-system.shutdown.json" 2>&1
+"$wmctl_bin" layers -j > "$power_p-layers-armed-system.shutdown.json" 2>&1
 "$grim_bin" "$power_p-armed-system.shutdown.png" > /dev/null 2>&1
 "$wtype_bin" -k Return
 sleep 4
-"$hyprctl_bin" layers -j > "$power_p-layers-prompt-system.shutdown.json" 2>&1
+"$wmctl_bin" layers -j > "$power_p-layers-prompt-system.shutdown.json" 2>&1
 "$grim_bin" "$power_p-prompt.png" > /dev/null 2>&1
 "$wtype_bin" "wrong-password"
 "$wtype_bin" -k Return
@@ -102,7 +102,7 @@ EOF
   add_cleanup "sudo -n systemctl stop $power_unit > /dev/null 2>&1 || true"
   add_cleanup "sudo -n systemctl stop user@\$(id -u $power_user 2>/dev/null).service > /dev/null 2>&1 || true"
   add_cleanup "sudo -n userdel -r $power_user > /dev/null 2>&1 || true"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 power_polkit_layers() {

@@ -95,7 +95,7 @@ $ipc call debug motionScale 100 > /dev/null 2>&1
 sleep 3
 $ipc call lock isLocked > "$sleep_unlocked_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 sleep_inhibitor_held() {

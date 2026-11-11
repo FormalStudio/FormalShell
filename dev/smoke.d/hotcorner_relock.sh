@@ -189,9 +189,9 @@ saver "$hotcorner_relock_saver_final_path"
 ipc "$hotcorner_relock_saver_final_lock_path"
 corners true overview
 sleep 2
-"$hyprctl_bin" -j layers > "$hotcorner_relock_overview_path" 2>&1
+"$wmctl_bin" -j layers > "$hotcorner_relock_overview_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 hotcorner_relock_expect() {

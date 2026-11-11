@@ -107,7 +107,7 @@ for ((h = 0; h < $hold; h++)); do
   cp "$frames_dir/frame-\$last.png" "$frames_dir/frame-\$padded.png"
 done
 $ipc call screensaver stop > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exit()"
+"$wmctl_bin" dispatch "hl.dsp.exit()"
 EOF
 
     # The same session shape dev/smoke.sh builds for the shared run: the size
@@ -116,9 +116,9 @@ EOF
     # and the error overlay) suppressed, since every frame here is a picture
     # of the whole output.
     {
-      hypr_base_config
-      hypr_exec_once "bash $shell_script"
-      hypr_exec_once "bash $drive_script"
+      wm_base_config
+      wm_exec_once "bash $shell_script"
+      wm_exec_once "bash $drive_script"
     } > "$cfg"
 
     gif_env=(

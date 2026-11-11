@@ -136,7 +136,7 @@ until_pkgs() {
 at() {
   local origin status
   status=\$($ipc call sidebar status)
-  origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r "\$layers_jq"'bar_origin')
+  origin=\$("$wmctl_bin" -j layers | "$jq_bin" -r "\$layers_jq"'bar_origin')
   read -r ox oy <<< "\$origin"
   "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" \
     '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' <<< "\$status" | head -1
@@ -179,7 +179,7 @@ sleep 0.5
 $ipc call packages check > /dev/null 2>&1
 until_pkgs noupstream '.software.error != null' 10
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # `<step> <jq claim> <what it means>`, against that step's file.

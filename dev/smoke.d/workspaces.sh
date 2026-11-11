@@ -93,19 +93,19 @@ leg_workspaces_drive() {
   done
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-"$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 2 })" > "$workspaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ workspace = 2 })" > "$workspaces_dispatch_path" 2>&1
 sleep 1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-workspace --title='formalshell workspace two' sh -c 'sleep 300']==])" >> "$workspaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-smoke-workspace --title='formalshell workspace two' sh -c 'sleep 300']==])" >> "$workspaces_dispatch_path" 2>&1
 sleep 3
 "$grim_bin" "$workspaces_two_path" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 1 })" >> "$workspaces_dispatch_path" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ workspace = 1 })" >> "$workspaces_dispatch_path" 2>&1
 $arm
 wait
 sleep 3
 "$grim_bin" "$workspaces_settled_path" > /dev/null 2>&1
 EOF
   add_cleanup "pkill -f formalshell-smoke-workspace 2>/dev/null || true"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_workspaces_assert() {

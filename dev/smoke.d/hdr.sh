@@ -34,7 +34,7 @@ leg_hdr_drive() {
   local script="$shot_dir/hdr-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-"$hyprctl_bin" monitors all -j > "$hdr_monitors_path" 2>&1
+"$wmctl_bin" monitors all -j > "$hdr_monitors_path" 2>&1
 out=\$("$jq_bin" -r '.[0].name' "$hdr_monitors_path")
 until_jq 10 "$hdr_status_path" '.outputs != [] and all(.outputs[]; .reason != "Checking")' call hdr status
 $ipc call hdr enable > "$hdr_enable_path" 2>&1
@@ -46,7 +46,7 @@ until_settled
 "$grim_bin" "$hdr_panel_png" > /dev/null 2>&1
 cp "$iso_home/.local/state/formalshell/state.json" "$hdr_state_path" 2>/dev/null
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_hdr_assert() {

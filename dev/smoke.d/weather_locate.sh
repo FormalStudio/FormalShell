@@ -67,7 +67,7 @@ until_settled
 $ipc call debug dump > "$weather_locate_dump" 2>&1
 "$grim_bin" "$weather_locate_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_weather_locate_assert() {

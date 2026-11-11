@@ -77,7 +77,7 @@ printf '{"oldPid":%s,"newPid":%s,"survivorPid":%s,"waitedMs":%s,"finalCount":%s}
   "\${old_pid:-null}" "\${new_pid:-null}" "\${survivor:-null}" "\$waited" "\${count:-0}" \
   > "$instance_status_path"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_instance_assert() {

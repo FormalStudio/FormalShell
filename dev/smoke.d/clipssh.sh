@@ -126,8 +126,8 @@ sleep 5
 sleep 10
 "$grim_bin" "$clipssh_failed_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
-  hypr_exec_once "bash $frames"
+  wm_exec_once "bash $script"
+  wm_exec_once "bash $frames"
 }
 
 leg_clipssh_assert() {

@@ -286,7 +286,7 @@ EOF
   add_cleanup "[ -s '$quick_settings_dir/module-one.txt' ] && '$pactl_bin' unload-module \"\$(cat '$quick_settings_dir/module-one.txt')\" 2>/dev/null || true"
   add_cleanup "[ -s '$quick_settings_dir/module-two.txt' ] && '$pactl_bin' unload-module \"\$(cat '$quick_settings_dir/module-two.txt')\" 2>/dev/null || true"
   add_cleanup "[ -s '$quick_settings_dir/loopback.pid' ] && kill \"\$(cat '$quick_settings_dir/loopback.pid')\" 2>/dev/null || true"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 quick_settings_jq() {

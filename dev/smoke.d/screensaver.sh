@@ -158,8 +158,8 @@ for i in \$(seq 1 40); do
   sleep 0.25
 done
 EOF
-  hypr_exec_once "bash $play_script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $play_script"
+  wm_exec_once "bash $script"
 }
 
 # Reduces the converged-banner frame to a two-colour mask: every pixel within

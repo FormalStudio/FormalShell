@@ -775,13 +775,13 @@ true
 EOF
   add_cleanup "bash $kill_script"
 
-  hypr_exec_once "bash $play_all"
-  hypr_exec_once "bash $seed_all"
-  hypr_exec_once "bash $open1"
-  hypr_exec_once "bash $duet_wheel"
-  hypr_exec_once "bash $track2"
-  hypr_exec_once "bash $track3"
-  hypr_exec_once "bash $return_script"
+  wm_exec_once "bash $play_all"
+  wm_exec_once "bash $seed_all"
+  wm_exec_once "bash $open1"
+  wm_exec_once "bash $duet_wheel"
+  wm_exec_once "bash $track2"
+  wm_exec_once "bash $track3"
+  wm_exec_once "bash $return_script"
 }
 
 # A frame with the bar cropped off it, which is what every rect and crop in

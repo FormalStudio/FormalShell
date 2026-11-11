@@ -54,7 +54,7 @@ call debug r0Scrim true; sleep 1.2; shot scrim-mid
 call debug r0Scrim false; call debug r0Panel close; sleep 7
 call debug motionScale 100
 EOF
-  hypr_exec_once "bash $rs_drive"
+  wm_exec_once "bash $rs_drive"
 }
 
 leg_base_assert() {

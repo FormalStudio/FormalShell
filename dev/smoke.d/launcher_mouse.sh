@@ -178,7 +178,7 @@ shoot "$p-column-light.png"
 call menu close > /dev/null 2>&1
 park
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # `<step> <jq claim> <what it means>`, against that step's status.

@@ -114,7 +114,7 @@ $ipc call lock status > "$depth_status_off_path" 2>&1
 "$wtype_bin" -s 300 -k Return
 until_jq 20 "$shot_dir/depth-unlocked.txt" '. == false' call lock isLocked
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_depth_assert() {

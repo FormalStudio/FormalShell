@@ -74,24 +74,24 @@ $ipc call menu toggle > /dev/null 2>&1
 until_settled menu menu-content menu-scrim menu-scrim-band
 spawn_foot formalshell-backdrop "" "formalshell backdrop"
 sleep 3
-"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set', window = 'class:formalshell-backdrop' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set', window = 'class:formalshell-backdrop' })" > /dev/null 2>&1
 sleep 2
 quiet fullscreen 5
 dump fullscreen
-"$hyprctl_bin" -j clients > "$shot_dir/backdrop-fullscreen-clients.json" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset', window = 'class:formalshell-backdrop' })" > /dev/null 2>&1
+"$wmctl_bin" -j clients > "$shot_dir/backdrop-fullscreen-clients.json" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset', window = 'class:formalshell-backdrop' })" > /dev/null 2>&1
 sleep 2
 quiet covered 5
 dump covered
 "$grim_bin" "$shot_dir/backdrop-covered.png"
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ workspace = 2, follow = false, window = 'class:formalshell-backdrop' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ workspace = 2, follow = false, window = 'class:formalshell-backdrop' })" > /dev/null 2>&1
 sleep 2
 quiet resumed 5
 dump resumed
 "$grim_bin" "$shot_dir/backdrop-resumed-1.png"; sleep 1
 "$grim_bin" "$shot_dir/backdrop-resumed-2.png"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # Pixels differing between two frames inside the sculpture's side of the

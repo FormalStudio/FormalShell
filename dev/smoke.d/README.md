@@ -1,8 +1,12 @@
 # Smoke legs
 
 `dev/smoke.sh` is the scaffold (isolated HOME, settings fixture, private
-bus, session mode, binaries, Hyprland config, shell launch, `SMOKE_OK`
-frame, teardown) and sources every file here. A leg defines:
+bus, session mode, binaries, compositor, shell launch, `SMOKE_OK` frame,
+teardown) and sources every file here. The compositor is
+`dev/compositor/$FS_COMPOSITOR.sh` (`hyprland` by default): its config,
+launch and `$wmctl_bin`, which answers hyprctl's command line, so a leg
+reads clients, layers and monitors and dispatches through it alike under
+either. A leg defines:
 
 - `leg_<n>_flag` `"--flag"` or `"--flag <arg>"` (`leg_arg <n>` reads it);
   `leg_<n>_order` its place in the flags, fragments, autostart lines and
@@ -46,7 +50,7 @@ frame, teardown) and sources every file here. A leg defines:
   merge) over the base settings.json, in leg order, and staged files;
   `leg_<n>_timing` `leg_timing <seconds>`, how long its turn may take
   (45 at least); the session's timeout is their sum.
-- `leg_<n>_drive` writes the drive scripts and lists them (`hypr_exec_once`),
+- `leg_<n>_drive` writes the drive scripts and lists them (`wm_exec_once`, `dev/compositor/`),
   may `add_cleanup '<line>'`; `leg_<n>_assert` prints `SMOKE_*`, calls `fail`.
   A mid-run settings change is `settings_retarget <jq>` from a drive: the
   current file with the jq applied, written beside it and the symlink moved

@@ -135,56 +135,56 @@ sleep 5
 pid=\$(cat "$shot_dir/shell.pid")
 wait_cava up 10
 work before 5
-"$hyprctl_bin" -j layers > "$fullscreen_before_layers" 2>&1
+"$wmctl_bin" -j layers > "$fullscreen_before_layers" 2>&1
 "$grim_bin" "$fullscreen_before_path" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
 sleep 3
-"$hyprctl_bin" -j layers > "$fullscreen_on_layers" 2>&1
-"$hyprctl_bin" -j clients > "$fullscreen_on_clients" 2>&1
+"$wmctl_bin" -j layers > "$fullscreen_on_layers" 2>&1
+"$wmctl_bin" -j clients > "$fullscreen_on_clients" 2>&1
 "$grim_bin" "$fullscreen_on_path" > /dev/null 2>&1
 wait_cava down 5
 work on 6
 $ipc call menu summon "" > /dev/null 2>&1
 until_settled menu menu-content menu-scrim menu-scrim-band
-"$hyprctl_bin" -j layers > "$fullscreen_menu_layers" 2>&1
+"$wmctl_bin" -j layers > "$fullscreen_menu_layers" 2>&1
 "$grim_bin" "$fullscreen_menu_path" > /dev/null 2>&1
 $ipc call menu close > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
 sleep 3
-"$hyprctl_bin" -j layers > "$fullscreen_after_layers" 2>&1
+"$wmctl_bin" -j layers > "$fullscreen_after_layers" 2>&1
 "$grim_bin" "$fullscreen_after_path" > /dev/null 2>&1
 wait_cava up 10
 work after 5
 kill "\$(cat "$fullscreen_mpv_pid_path")" 2>/dev/null
-"$hyprctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1
+"$wmctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1
 "$python3_bin" "$PWD/dev/lockpointer.py" formalshell-lockpointer "$fullscreen_lock_log" 2>> "$fullscreen_lock_log" &
 sleep 2
 lp="window = 'class:^(formalshell-lockpointer)\\\$'"
-"$hyprctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = 'enable' })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = $logical_w, y = $logical_h, \$lp })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, \$lp })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = 'enable' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.resize({ x = $logical_w, y = $logical_h, \$lp })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, \$lp })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
 park $((logical_w / 2)) $((logical_h / 2))
 sleep 1
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\\\$' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\\\$' })" > /dev/null 2>&1
 sleep 0.5
-"$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
 sleep 2
-"$hyprctl_bin" -j clients > "$fullscreen_lock_clients" 2>&1
-{ echo "before"; "$hyprctl_bin" cursorpos; "$hyprctl_bin" -j activewindow | "$jq_bin" -r .class; } > "$fullscreen_lock_state" 2>&1
+"$wmctl_bin" -j clients > "$fullscreen_lock_clients" 2>&1
+{ echo "before"; "$wmctl_bin" cursorpos; "$wmctl_bin" -j activewindow | "$jq_bin" -r .class; } > "$fullscreen_lock_state" 2>&1
 echo "0 toast" >> "$fullscreen_lock_log"
 "$notify_send_bin" -u normal 'Over the game' 'the cursor stays locked'
 sleep 1.5
-"$hyprctl_bin" -j layers > "$fullscreen_lock_toast_layers" 2>&1
+"$wmctl_bin" -j layers > "$fullscreen_lock_toast_layers" 2>&1
 "$grim_bin" "$fullscreen_lock_toast_path" > /dev/null 2>&1
 "$notify_send_bin" -u critical 'Second' 'still locked'
 sleep 1
 $ipc call osd volume > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" -j layers > "$fullscreen_lock_osd_layers" 2>&1
+"$wmctl_bin" -j layers > "$fullscreen_lock_osd_layers" 2>&1
 sleep 6
-{ echo "after"; "$hyprctl_bin" cursorpos; "$hyprctl_bin" -j activewindow | "$jq_bin" -r .class; } >> "$fullscreen_lock_state" 2>&1
+{ echo "after"; "$wmctl_bin" cursorpos; "$wmctl_bin" -j activewindow | "$jq_bin" -r .class; } >> "$fullscreen_lock_state" 2>&1
 echo "0 control" >> "$fullscreen_lock_log"
 $ipc call debug join top 100 200 > /dev/null 2>&1
 sleep 1
@@ -196,37 +196,37 @@ fs_phase() {
   [ "\${1#*:}" = floating ] && { name="\$name-floating"; float=enable; }
   [ "\${1#*:}" = video ] && { name="\$name-video"; sig=USR2; }
   [ "\${1#*:}" = windowed ] && { name="\$name-windowed"; sig=USR2; fs=unset; }
-  "$hyprctl_bin" eval "hl.config({ general = { layout = '\${1%%:*}' } })" > /dev/null 2>&1
+  "$wmctl_bin" eval "hl.config({ general = { layout = '\${1%%:*}' } })" > /dev/null 2>&1
   sleep 1
-  "$hyprctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = '\$float' })" > /dev/null 2>&1
-  "$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
-  "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = '\$fs' })" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = '\$float' })" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = '\$fs' })" > /dev/null 2>&1
   sleep 2
   if [ "\$fs" = unset ]; then
-    read -r cx cy < <("$hyprctl_bin" -j clients | "$jq_bin" -r '.[] | select(.class == "formalshell-lockpointer") | "\\(.at[0] + .size[0] / 2 | floor) \\(.at[1] + .size[1] / 2 | floor)"')
+    read -r cx cy < <("$wmctl_bin" -j clients | "$jq_bin" -r '.[] | select(.class == "formalshell-lockpointer") | "\\(.at[0] + .size[0] / 2 | floor) \\(.at[1] + .size[1] / 2 | floor)"')
     park "\$cx" "\$cy"
     sleep 1
   fi
   echo "0 \$name-arm" >> "$fullscreen_lock_log"
   pkill -\$sig -f 'lockpointer.py formalshell-lockpointer'
   sleep 2
-  "$hyprctl_bin" -j clients > "$shot_dir/fullscreen-\$name-clients.json" 2>&1
+  "$wmctl_bin" -j clients > "$shot_dir/fullscreen-\$name-clients.json" 2>&1
   echo "0 \$name" >> "$fullscreen_lock_log"
   "$notify_send_bin" -u normal 'Over the fullscreen game' "\$1"
   sleep 1.5
-  "$hyprctl_bin" -j layers > "$shot_dir/fullscreen-\$name-toast-layers.json" 2>&1
+  "$wmctl_bin" -j layers > "$shot_dir/fullscreen-\$name-toast-layers.json" 2>&1
   "$grim_bin" "$shot_dir/fullscreen-\$name.png" > /dev/null 2>&1
   sleep 8
   if [ "\$fs" = set ]; then $ipc call osd volume > /dev/null 2>&1; else sleep 3; fi
   sleep 1
-  "$hyprctl_bin" -j layers > "$shot_dir/fullscreen-\$name-after-layers.json" 2>&1
+  "$wmctl_bin" -j layers > "$shot_dir/fullscreen-\$name-after-layers.json" 2>&1
   echo "0 \$name-end" >> "$fullscreen_lock_log"
-  "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
+  "$wmctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
   sleep 1
 }
 for phase in $fullscreen_fs_phases; do fs_phase "\$phase"; done
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
   add_cleanup "pkill -f 'lockpointer.py formalshell-lockpointer' || true"
   add_cleanup "kill \$(cat '$fullscreen_mpv_pid_path' 2>/dev/null) 2>/dev/null || true"
 }

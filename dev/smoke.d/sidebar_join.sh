@@ -80,7 +80,7 @@ EOF
     sidebar_join_burst "menu toggle" "menu toggle" menu
   } > "$script"
   chmod +x "$script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The card off one target's frames, then the claims, printed as one line

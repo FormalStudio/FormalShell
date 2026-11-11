@@ -99,7 +99,7 @@ leg_bar_layout_drive() {
 "$grim_bin" "$bar_layout_path" > /dev/null 2>&1
 $ipc call bar room > "$bar_layout_room_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_bar_layout_assert() {

@@ -44,7 +44,7 @@ $ipc call notifications status > "$reminder_notifications_path" 2>&1
 cat "$iso_home/.local/state/formalshell/state.json" > "$reminder_state2_path" 2>&1
 "$grim_bin" "$reminder_fired_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_reminder_assert() {

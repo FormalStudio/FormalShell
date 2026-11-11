@@ -180,8 +180,8 @@ true
 EOF
   add_cleanup "bash $kill_script"
 
-  hypr_exec_once "bash $play_script"
-  hypr_exec_once "bash $watch_script"
+  wm_exec_once "bash $play_script"
+  wm_exec_once "bash $watch_script"
 }
 
 media_progress_field() {

@@ -102,7 +102,7 @@ sleep 1.5
 status wheel-after
 echo "rect \$x \$y \$w \$h" >> "$toast_swipe_status_path"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The left edge of everything that differs from the bare frame below the

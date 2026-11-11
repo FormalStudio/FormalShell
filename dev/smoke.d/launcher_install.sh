@@ -312,7 +312,7 @@ status menu "$li_dir/distrocolumn.json"
 call menu close > /dev/null 2>&1
 for m in "$li_dir"/smoke-*.[0-9]; do touch "\${m%.*}.go1" "\${m%.*}.go2" "\${m%.*}.go3"; done
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # `<step> <jq claim> <what it means>`, against that step's file.

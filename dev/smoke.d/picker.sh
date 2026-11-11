@@ -259,7 +259,7 @@ sleep 3
 $ipc call picker status > "$picker_cached_status" 2>&1
 ls -1 "$iso_home/.cache/formalshell/thumbnails" > "$picker_cache_listing" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_picker_assert() {

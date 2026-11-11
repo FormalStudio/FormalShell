@@ -40,7 +40,7 @@ done
 sleep 1
 "$grim_bin" "$radio_atlas_cold_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The card's spread of grey levels, which a flat fill keeps near zero.

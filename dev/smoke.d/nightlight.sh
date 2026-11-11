@@ -48,7 +48,7 @@ $ipc call nightlight disable > /dev/null 2>&1
 sleep 1
 $ipc call nightlight status > "$nightlight_status2_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_nightlight_assert() {

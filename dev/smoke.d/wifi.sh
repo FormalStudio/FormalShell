@@ -146,7 +146,7 @@ until_jq 15 "$wifi_eap_forget_status_path" 'any(.networks[]; .name == "FORMALTES
 sudo journalctl -u NetworkManager -o cat --since "\$(cat "$wifi_auth_since_path")" \
   | grep -F 'CheckAuthorization(org.freedesktop.NetworkManager.settings.modify' >> "$wifi_auth_path"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_wifi_assert() {

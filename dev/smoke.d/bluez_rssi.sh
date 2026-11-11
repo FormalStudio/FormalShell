@@ -79,7 +79,7 @@ until_settled
 $ipc call bluetooth status > "$shot_dir/bluez-status-open.json" 2>&1
 $ipc call panel close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_bluez_rssi_assert() {

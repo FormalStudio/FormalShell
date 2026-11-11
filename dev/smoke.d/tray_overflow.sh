@@ -93,7 +93,7 @@ leg_tray_overflow_drive() {
   if leg_on sidebar; then
     tail_steps=$(cat <<STEPS
 sidebar_at() { $ipc call sidebar status 2>/dev/null | "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' | head -n 1; }
-origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r "\$layers_jq"'bar_origin')
+origin=\$("$wmctl_bin" -j layers | "$jq_bin" -r "\$layers_jq"'bar_origin')
 read -r ox oy <<< "\$origin"
 check() { echo "\$1 open=\$($ipc call tray status 2>/dev/null | "$jq_bin" -c '.overflow.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$tray_overflow_clicks_path"; }
 park \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check clicked-open
@@ -156,7 +156,7 @@ $ipc call panel toggle trayoverflow > /dev/null 2>&1
 until_settled
 $ipc call tray status > "$tray_overflow_open_path" 2>&1
 $ipc call debug dump > "$tray_overflow_bar_dump_path" 2>&1
-"$hyprctl_bin" -j layers > "$tray_overflow_layers_path" 2>&1
+"$wmctl_bin" -j layers > "$tray_overflow_layers_path" 2>&1
 "$grim_bin" "$tray_overflow_bar_path" > /dev/null 2>&1
 sleep 1
 $ipc call tray menu overflow-fixture-2 > "$tray_overflow_menu_reply_path" 2>&1
@@ -179,7 +179,7 @@ if [ -f "$tray_overflow_pids_path" ]; then
 fi
 EOF
   add_cleanup "bash $kill_script"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # How many pixels of the frame carry one fixture's colour.

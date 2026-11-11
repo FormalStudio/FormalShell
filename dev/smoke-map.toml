@@ -109,6 +109,7 @@ paths = [
   "dev.star",
   "fspec.lock",
   "dev/smoke.sh",
+  "dev/compositor/**",
   "dev/build.sh",
   "dev/remote.sh",
   "dev/share-result.sh",

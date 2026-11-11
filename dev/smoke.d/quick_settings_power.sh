@@ -59,7 +59,7 @@ status quicksettings "\$p-closed.json"
 sleep 1
 $ipc call panel state > "\$p-panel-closed.txt" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 quick_settings_power_jq() {

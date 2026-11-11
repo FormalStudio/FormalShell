@@ -41,9 +41,9 @@ leg_hypr_motion_drive() {
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 cp "$published" "$hypr_motion_chrome" 2>/dev/null
-"$hyprctl_bin" -j animations > "$hypr_motion_on" 2>&1
-"$hyprctl_bin" -j getoption animations:enabled > "$hypr_motion_enabled_on" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-motion sh -c 'sleep 30']==])" > /dev/null 2>&1
+"$wmctl_bin" -j animations > "$hypr_motion_on" 2>&1
+"$wmctl_bin" -j getoption animations:enabled > "$hypr_motion_enabled_on" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-motion sh -c 'sleep 30']==])" > /dev/null 2>&1
 for i in \$(seq 0 79); do
   "$grim_bin" -g "0,560 960x1" "$shot_dir/hypr-motion-strip-\$i.png" > /dev/null 2>&1
 done
@@ -51,9 +51,9 @@ sleep 2
 "$grim_bin" "$hypr_motion_settled" > /dev/null 2>&1
 settings_retarget '.motion.enabled = false'
 sleep 5
-"$hyprctl_bin" -j getoption animations:enabled > "$hypr_motion_enabled_off" 2>&1
+"$wmctl_bin" -j getoption animations:enabled > "$hypr_motion_enabled_off" 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_hypr_motion_assert() {

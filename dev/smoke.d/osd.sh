@@ -92,7 +92,7 @@ call osd brightness
 sleep 1
 "$grim_bin" "$osd_brightness_path" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # One whole column of a frame, as six hex digits per row, top to bottom.

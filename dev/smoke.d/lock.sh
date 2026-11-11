@@ -89,7 +89,7 @@ sleep 1
 $ipc call lock isLocked > "$lock_islocked2_path" 2>&1
 $ipc call lock status > "$lock_status_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_lock_assert() {

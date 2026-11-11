@@ -84,7 +84,7 @@ sleep 5
 call theme status > "$shot_dir/pair-status-auto.json" 2>&1
 "$grim_bin" "$shot_dir/pair-desk-auto.png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # A frame's mean grey over the desktop patch, 0 to 1000.

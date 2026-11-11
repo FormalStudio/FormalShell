@@ -162,7 +162,7 @@ until_jq 10 "\$dir/lyrics-local.json" '.source == "local"' call media lyrics
 shot local
 echo done > "\$dir/drive-done"
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 
   write_script "$kill_script" <<EOF
 #!/usr/bin/env bash

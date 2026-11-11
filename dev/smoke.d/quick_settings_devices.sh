@@ -137,7 +137,7 @@ until_jq 10 "\$d/status-balanced.json" '.rows[] | select(.id == "power-mode") | 
 call panel close > /dev/null 2>&1
 sleep 1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 quick_settings_devices_jq() {

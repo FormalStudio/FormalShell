@@ -54,17 +54,17 @@ park > "$tooltip_travel_dispatch_path" 2>&1
 sleep 1
 "$wlrctl_bin" pointer move $((logical_w - 34)) 74 >> "$tooltip_travel_dispatch_path" 2>&1
 sleep 2
-"$hyprctl_bin" cursorpos >> "$tooltip_travel_dispatch_path" 2>&1
-"$hyprctl_bin" -j layers > "$tooltip_travel_layers_first_path" 2>&1
+"$wmctl_bin" cursorpos >> "$tooltip_travel_dispatch_path" 2>&1
+"$wmctl_bin" -j layers > "$tooltip_travel_layers_first_path" 2>&1
 "$grim_bin" -c "$tooltip_travel_first_path" > /dev/null 2>&1
 "$wlrctl_bin" pointer move -40 0 >> "$tooltip_travel_dispatch_path" 2>&1
 sleep 0.25
-"$hyprctl_bin" cursorpos >> "$tooltip_travel_dispatch_path" 2>&1
-"$hyprctl_bin" -j layers > "$tooltip_travel_layers_second_path" 2>&1
+"$wmctl_bin" cursorpos >> "$tooltip_travel_dispatch_path" 2>&1
+"$wmctl_bin" -j layers > "$tooltip_travel_layers_second_path" 2>&1
 sleep 1
 "$grim_bin" -c "$tooltip_travel_second_path" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 tooltip_travel_count() {

@@ -251,12 +251,12 @@ burst chevron 7
 park \$chev; click; sleep 0.15; click; sleep 0.15; click
 sleep 1.5
 $ipc call bar chevron status > "\$d/chevron.json" 2>&1
-"$hyprctl_bin" -j layers > "\$d/chevron-layers.json" 2>&1
+"$wmctl_bin" -j layers > "\$d/chevron-layers.json" 2>&1
 park \$chev; click; sleep 1.2
 $ipc call bar chevron status > "\$d/chevron-closed.json" 2>&1
 log end
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # The checkpoint line named $1, or nothing.

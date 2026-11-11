@@ -153,7 +153,7 @@ until_jq 60 "$shot_dir/launcher-preview-theme.json" '.mode == "light" and .palet
 until_settled
 run light
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 launcher_preview_expect() {

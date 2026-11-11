@@ -54,7 +54,7 @@ $ipc call theme status > "$theme_auto_status2_path" 2>&1
 cat "$theme_auto_state_json" > "$theme_auto_state_path" 2>&1
 "$grim_bin" "$theme_auto_after_png" > /dev/null 2>&1
 DRIVE
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # "HH:MM" to minutes since midnight, base 10 so an 08:xx hour is not read as

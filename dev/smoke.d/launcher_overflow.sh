@@ -76,13 +76,13 @@ leg_launcher_overflow_drive() {
   local script="$shot_dir/launcher-overflow-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-focus() { "$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '\${1:-$launcher_overflow_output}' })" > /dev/null 2>&1; sleep 0.4; }
-width=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
-"$hyprctl_bin" output create headless "$launcher_overflow_output" > /dev/null 2>&1
+focus() { "$wmctl_bin" dispatch "hl.dsp.focus({ monitor = '\${1:-$launcher_overflow_output}' })" > /dev/null 2>&1; sleep 0.4; }
+width=\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
+"$wmctl_bin" output create headless "$launcher_overflow_output" > /dev/null 2>&1
 # A theme change reloads the compositor's config, which drops this rule.
-place() { "$hyprctl_bin" eval "hl.monitor({ output = \\"$launcher_overflow_output\\", mode = \\"1280x720@60\\", position = \\"\${width}x0\\", scale = 1 })" > /dev/null 2>&1; sleep 3; }
+place() { "$wmctl_bin" eval "hl.monitor({ output = \\"$launcher_overflow_output\\", mode = \\"1280x720@60\\", position = \\"\${width}x0\\", scale = 1 })" > /dev/null 2>&1; sleep 3; }
 place
-"$hyprctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors.json" 2>&1
+"$wmctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors.json" 2>&1
 
 focus
 call menu summon "" > /dev/null 2>&1
@@ -120,10 +120,10 @@ shoot "$shot_dir/launcher-overflow-end.png" -o "$launcher_overflow_output"
 call menu close > /dev/null 2>&1
 sleep 1
 
-"$hyprctl_bin" output create headless "$launcher_overflow_narrow" > /dev/null 2>&1
-"$hyprctl_bin" eval "hl.monitor({ output = \"$launcher_overflow_narrow\", mode = \"800x600@60\", position = \"\$((width + 1280))x0\", scale = 1 })" > /dev/null 2>&1
+"$wmctl_bin" output create headless "$launcher_overflow_narrow" > /dev/null 2>&1
+"$wmctl_bin" eval "hl.monitor({ output = \"$launcher_overflow_narrow\", mode = \"800x600@60\", position = \"\$((width + 1280))x0\", scale = 1 })" > /dev/null 2>&1
 sleep 3
-"$hyprctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors-narrow.json" 2>&1
+"$wmctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors-narrow.json" 2>&1
 focus "$launcher_overflow_narrow"
 call menu summon plugin:overflow-probe > /dev/null 2>&1
 until_jq 10 "$shot_dir/launcher-overflow-rows.json" '(.ids | length) > 0' call menu status
@@ -134,7 +134,7 @@ status menu "$shot_dir/launcher-overflow-narrow.json"
 shoot "$shot_dir/launcher-overflow-narrow.png" -o "$launcher_overflow_narrow"
 call menu close > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" output remove "$launcher_overflow_narrow" > /dev/null 2>&1
+"$wmctl_bin" output remove "$launcher_overflow_narrow" > /dev/null 2>&1
 sleep 1
 
 call theme mode light > /dev/null 2>&1
@@ -144,7 +144,7 @@ until_settled
 # the rule place sets.
 sleep 2
 place
-"$hyprctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors-light.json" 2>&1
+"$wmctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors-light.json" 2>&1
 focus
 call menu summon plugin:overflow-probe > /dev/null 2>&1
 until_jq 10 "$shot_dir/launcher-overflow-rows.json" '(.ids | length) > 0' call menu status
@@ -154,9 +154,9 @@ sleep 1.5
 shoot "$shot_dir/launcher-overflow-column-light.png" -o "$launcher_overflow_output"
 call menu close > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" output remove "$launcher_overflow_output" > /dev/null 2>&1
+"$wmctl_bin" output remove "$launcher_overflow_output" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # `<step> <jq claim> <what it means>`, against that step's status.

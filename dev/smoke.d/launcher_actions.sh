@@ -68,7 +68,7 @@ leg_launcher_actions_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
-clients() { "$hyprctl_bin" clients -j > "$shot_dir/launcher-actions-clients-\$1.json" 2>&1; }
+clients() { "$wmctl_bin" clients -j > "$shot_dir/launcher-actions-clients-\$1.json" 2>&1; }
 probe() { call menu summon "" > /dev/null 2>&1; until_settled; call menu filter "Actions Probe" > /dev/null 2>&1; sleep 0.6; }
 for verb in "actions 0" "runAction 0 open" "into 0"; do
   call menu \$verb >> "$shot_dir/launcher-actions-closed.txt" 2>&1
@@ -210,7 +210,7 @@ sleep 0.6
 shoot "$shot_dir/launcher-actions-column-light.png"
 call menu close > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # `<step> <jq claim> <what it means>`, against that step's status.

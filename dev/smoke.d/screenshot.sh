@@ -56,7 +56,7 @@ for _ in \$(seq 1 20); do
 done
 "$wl_paste_bin" --list-types > "$screenshot_types_path" 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_screenshot_assert() {

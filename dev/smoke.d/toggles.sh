@@ -58,7 +58,7 @@ $ipc call debug query dnd > "$toggles_dnd_query2_path" 2>&1
 $ipc call menu status > "$toggles_menu_status2_path" 2>&1
 "$grim_bin" "$toggles_toggled_png" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # One ranked row out of a debug query reply, nothing when the query ranked

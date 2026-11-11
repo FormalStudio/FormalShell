@@ -45,12 +45,12 @@ leg_frame_drive() {
   local script="$shot_dir/frame-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
-"$hyprctl_bin" -j layers > "$frame_layers_path" 2>&1
-"$hyprctl_bin" -j monitors > "$frame_monitors_path" 2>&1
+"$wmctl_bin" -j layers > "$frame_layers_path" 2>&1
+"$wmctl_bin" -j monitors > "$frame_monitors_path" 2>&1
 $ipc call debug dump > "$frame_dump_path" 2>&1
 "$grim_bin" "$frame_shot_path" > /dev/null 2>&1
 EOS
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_frame_assert() {

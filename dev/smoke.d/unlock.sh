@@ -65,7 +65,7 @@ sleep 4
 call lock isLocked > "$unlock_islocked_path" 2>&1
 call debug motionScale 100 > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # dev/dissolve-cells.py's line: at least 90% of the 32 px cells one

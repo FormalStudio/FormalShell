@@ -50,7 +50,7 @@ sleep 3
 $ipc call console status > "$console_status_return_path" 2>&1
 "$grim_bin" "$console_return_path" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_console_assert() {

@@ -40,17 +40,17 @@ leg_hotcorner_drive() {
 # A leg before this one may end on removing an output of its own, which
 # reaches the shell after hyprctl has answered: the corners settle on three
 # once the shell has handled it.
-until_jq 5 "$hotcorner_layers_path" "\$layers_jq"'layer("formalshell:hotcorner") | length == 3' "$hyprctl_bin" -j layers
+until_jq 5 "$hotcorner_layers_path" "\$layers_jq"'layer("formalshell:hotcorner") | length == 3' "$wmctl_bin" -j layers
 # Hyprland lays outputs out in logical pixels: the first one's width over
 # its scale.
-width=\$("$hyprctl_bin" -j monitors | "$jq_bin" '.[0] | .width / .scale | round')
-"$hyprctl_bin" output create headless "$hotcorner_second" > /dev/null 2>&1
-"$hyprctl_bin" eval "hl.monitor({ output = \"$hotcorner_second\", mode = \"1600x1000@60\", position = \"\${width}x0\", scale = 1.25 })" > /dev/null 2>&1
+width=\$("$wmctl_bin" -j monitors | "$jq_bin" '.[0] | .width / .scale | round')
+"$wmctl_bin" output create headless "$hotcorner_second" > /dev/null 2>&1
+"$wmctl_bin" eval "hl.monitor({ output = \"$hotcorner_second\", mode = \"1600x1000@60\", position = \"\${width}x0\", scale = 1.25 })" > /dev/null 2>&1
 sleep 2
-"$hyprctl_bin" -j layers > "$hotcorner_pair_path" 2>&1
-"$hyprctl_bin" output remove "$hotcorner_second" > /dev/null 2>&1
+"$wmctl_bin" -j layers > "$hotcorner_pair_path" 2>&1
+"$wmctl_bin" output remove "$hotcorner_second" > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_hotcorner_assert() {

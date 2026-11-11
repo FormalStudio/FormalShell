@@ -228,7 +228,7 @@ settings_retarget '.menu.appGrid = true'
 sleep 2
 $ipc call menu summon apps > /dev/null 2>&1
 EOF
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 # How many pixels of the probe entry's own colour one box of the frame
