@@ -166,6 +166,10 @@ wm_exit_line() {
 # Hyprland ends the session on its exit dispatch; the config needs no tail.
 wm_config_tail() { :; }
 
+# wm_cover_output <selector>: drive-script lines that make a lone window
+# cover the output. Hyprland's default dwindle already does, gaps being 0.
+wm_cover_output() { :; }
+
 # How zen holds its window: the shell floats it, centred, and Hyprland's
 # scrolling layout centres the narrower tape left of it.
 wm_zen=float

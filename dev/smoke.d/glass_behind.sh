@@ -95,6 +95,7 @@ $ipc call theme status 2>/dev/null | jq -e '.mode == "light"' > /dev/null && wp=
 $ipc call wallpaper set "\$wp" > /dev/null 2>&1
 "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-glass sh -c 'for i in \\\$(seq 1 3000); do printf \"WMWMWM ||| ### IIII mmmm \"; done; sleep 300']==])" > /dev/null 2>&1
 sleep 6
+$(wm_cover_output class:formalshell-glass)
 shoot text
 "$wmctl_bin" dispatch "hl.dsp.window.move({ window = \"class:formalshell-glass\", workspace = 2, follow = false })" > /dev/null 2>&1
 sleep 1

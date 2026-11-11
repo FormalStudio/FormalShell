@@ -52,9 +52,12 @@ wm_base_config() {
   }' > "$shoji_host_path"
   echo '#!/usr/bin/env bash'
   echo "echo \"\$SHOJI_RUN_DIR\" > $(printf '%q' "$shot_dir/shoji-run-dir")"
-  # shoji-run.sh gives the session a runtime dir of its own, where no
-  # PipeWire listens; the run's null sink and every player are on the slot's.
-  printf 'export PIPEWIRE_RUNTIME_DIR=%q PULSE_RUNTIME_PATH=%q\n' "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/pulse"
+  # shoji-run.sh gives the session a runtime dir of its own, where a nested
+  # Hyprland shares the slot's: the slot's PipeWire, and whatever a leg
+  # wrote there before the session (the login marker), linked in beside the
+  # run's own socket and bus.
+  # shoji-run.sh makes the run's own dir inside the slot's, so not that one.
+  printf 'for e in %q/*; do case ${e##*/} in shoji-run-*) continue ;; esac; [ -e "$XDG_RUNTIME_DIR/${e##*/}" ] || ln -s "$e" "$XDG_RUNTIME_DIR/"; done\n' "$XDG_RUNTIME_DIR"
 }
 
 wm_session_env() { :; }
@@ -131,6 +134,18 @@ wm_exit_line() {
 
 wm_config_tail() {
   printf 'until [ -e %q ]; do sleep 0.2; done\n' "$shot_dir/session-over"
+}
+
+# A lone formalwm column keeps the settings' width, so the window floats,
+# placed over the whole output.
+wm_cover_output() {
+  cat <<EOS
+read -r cover_w cover_h <<< "\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0] | "\(.width / .scale | floor) \(.height / .scale | floor)"')"
+"$wmctl_bin" dispatch "hl.dsp.window.float({ window = '$1', action = 'enable' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.resize({ x = \$cover_w, y = \$cover_h, window = '$1' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, window = '$1' })" > /dev/null 2>&1
+sleep 1
+EOS
 }
 
 # formalwm's zen is a layout mode of the workspace (spec section 5): the
