@@ -450,6 +450,12 @@ impl Settings {
                 workspace(*number, &at)?;
             }
         }
+        // `std::env::set_var` panics on each of these.
+        for (name, value) in &file.env {
+            if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {
+                return Err(format!("env: `{}` cannot be set", name.escape_debug()));
+            }
+        }
         let mut rules = Vec::new();
         for (index, rule) in file.rules.into_iter().enumerate() {
             let at = format!("rules[{index}]");
@@ -837,6 +843,26 @@ mod tests {
                 "{text} gave {error:?}, wanted {needle:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_env_name_or_value_that_cannot_be_set_is_refused() {
+        for env in [
+            r#"{ "FOO": "a\u0000b" }"#,
+            r#"{ "": "x" }"#,
+            r#"{ "A=B": "x" }"#,
+            r#"{ "A\u0000": "x" }"#,
+        ] {
+            let error = Settings::parse(&format!(r#"{{ "env": {env} }}"#), None).unwrap_err();
+            assert!(error.starts_with("env:"), "{env} gave {error:?}");
+            let host = format!(r#"{{ "env": {env} }}"#);
+            assert!(
+                Settings::parse("{}", Some(&host)).is_err(),
+                "{env} in host.json"
+            );
+        }
+        let fine = Settings::parse(r#"{ "env": { "FOO": "", "BAR": "a=b" } }"#, None).unwrap();
+        assert_eq!(fine.env["BAR"], "a=b");
     }
 
     #[test]
