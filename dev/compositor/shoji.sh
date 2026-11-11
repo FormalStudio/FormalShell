@@ -46,8 +46,10 @@ wm_session_env() { :; }
 
 # wm_command <seconds>: into wm_cmd, the session: formalwm on the card,
 # the session script inside it, everything torn down once the script ends.
+# shoji-run.sh finds the card's lock and its stable tree under the slot
+# user's own HOME, so only the script gets the run's.
 wm_command() {
-  wm_cmd=(env SHOJI_BIN="$shoji_bin" SHOJI_RUN_TIMEOUT="$1" "$HOME/shoji-run.sh" -- bash "$wm_config_path")
+  wm_cmd=(env HOME="$HOME" SHOJI_BIN="$shoji_bin" SHOJI_RUN_TIMEOUT="$1" "$HOME/shoji-run.sh" -- env HOME="$iso_home" bash "$wm_config_path")
 }
 
 # The session script's tail waits for this, so the teardown is the
