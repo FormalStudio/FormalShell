@@ -34,12 +34,12 @@ tensaku, clipssh, localsend-cli, nothingctl, openscq30 and the iPhone
 bridge), built against
 bookworm's glibc 2.36.
 
-This path is new and the least proven. `dev/install-check.sh` runs
-`install.sh` from nothing in rootless containers of Arch, Debian trixie and
-Fedora inside the VM, against an aarch64 tarball, and checks a connected
-Hyprland backend, the bar, the launcher and a lock round trip through the
-installer's PAM file. That is the whole of its testing: no bare-metal
-install of any distro, and no x86_64 tarball run anywhere. Debian trixie
+This path is new and the least proven. `just smoke --installed <distro>`
+builds the x86_64 tarball from the tree and runs `install.sh` from nothing
+in a rootless container of Arch, Debian trixie or Fedora on g815's rig, and
+checks a connected Hyprland backend, the bar, the launcher and a lock round
+trip through the installer's PAM file. That is the whole of its testing: no
+bare-metal install of any distro. Debian trixie
 and Fedora carry no Hyprland package, so there you bring Hyprland 0.56 or
 newer yourself.
 

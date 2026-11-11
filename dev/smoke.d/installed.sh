@@ -1,9 +1,13 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --installed <distro>: install.sh run from nothing in a rootless podman
-# image of arch, trixie or fedora, against the tarball and install.sh that
-# dev/install-check.sh copies into ~/install-check, and the
-# ~/.local/bin/formalshell it installs run in place of the fspec package.
+# image of arch, trixie or fedora, against this tree's install.sh and the
+# release tarball the fixture builds from it (dev/tarball.sh in
+# debian:bookworm, as `just tarball` and the hosts' fspec package build it),
+# and the ~/.local/bin/formalshell it installs run in place of the fspec
+# package. The bookworm build keeps its toolchains and third-party builds in
+# the slot user's formalshell-tarball volume, so only a cold slot pays for
+# them.
 # "Nothing" is the distro's own container image plus sudo and an account:
 # install.sh installs Hyprland and the runtime tools with the distro's own
 # package manager, unpacks the tarball, and `formalshell install --yes`
@@ -29,7 +33,7 @@ leg_installed_claims="session"
 leg_installed_needs="wtype jq convert"
 
 installed_home=$HOME
-installed_src=$HOME/install-check
+installed_src="$shot_dir/installed-src"
 installed_container=formalshell-installed
 installed_prefix=/home/test/.local
 installed_dump_path="$shot_dir/installed-dump.json"
@@ -60,8 +64,6 @@ EOF
 leg_installed_validate() {
   installed_distro=$(leg_arg installed)
   command -v podman >/dev/null 2>&1 || { echo "--installed needs podman on PATH" >&2; exit 1; }
-  [ -f "$installed_src/install.sh" ] && [ -f "$installed_src/formalshell-$(uname -m)-linux.tar.gz" ] \
-    || { echo "--installed: no install.sh and formalshell-$(uname -m)-linux.tar.gz in $installed_src" >&2; exit 1; }
   case $installed_distro/$(uname -m) in
     arch/x86_64) installed_base=docker.io/library/archlinux:latest ;;
     arch/aarch64) installed_base=docker.io/menci/archlinuxarm:latest ;;
@@ -74,6 +76,13 @@ leg_installed_validate() {
 
 leg_installed_fixture() {
   local containerfile="$shot_dir/installed.Containerfile" prep
+  eval "$(installed_podman_fn)"
+  mkdir -p "$installed_src"
+  cp "$script_dir/../install.sh" "$installed_src/"
+  echo "installed: building the release tarball in debian:bookworm"
+  pm run --rm -v "$(cd "$script_dir/.." && pwd):/src" -v formalshell-tarball:/build -v "$installed_src:/out" \
+    docker.io/library/debian:bookworm /src/dev/tarball.sh /out > "$shot_dir/installed-tarball.log" 2>&1 \
+    || { tail -40 "$shot_dir/installed-tarball.log" >&2; echo "installed: dev/tarball.sh failed" >&2; exit 1; }
   # pacman's download sandbox needs Landlock, which a rootless container is
   # refused. Debian's and Fedora's images carry no sudo, and Fedora's no
   # useradd, nor the dbus-run-session the shell runs under here (a Fedora
@@ -98,7 +107,7 @@ RUN sh /src/install.sh --from /src/formalshell-$(uname -m)-linux.tar.gz --yes \\
  && (sudo pacman -Scc --noconfirm || sudo apt-get clean || sudo dnf clean all || true) > /dev/null 2>&1
 EOF
   echo "installed: $installed_distro on $installed_base from $installed_src"
-  HOME=$installed_home podman build --build-arg UID="$(id -u)" -t "$installed_image" \
+  pm build --build-arg UID="$(id -u)" -t "$installed_image" \
     -f "$containerfile" "$installed_src" > "$shot_dir/installed-build.log" 2>&1 \
     || { tail -40 "$shot_dir/installed-build.log" >&2; echo "installed: install.sh failed in $installed_distro" >&2; exit 1; }
   grep -E '^(not in|[a-z]*'"'"'s repositories|Installing|Unpacked|wrote|note|enabled|Done)' "$shot_dir/installed-build.log" | cut -c1-400
@@ -179,6 +188,9 @@ EOF
 #!/usr/bin/env bash
 $(installed_podman_fn)
 pm stop -t 3 $installed_container > /dev/null 2>&1 || true
+# Each distro image is several GB of the slot user's disk.
+pm image rm -f $installed_image > /dev/null 2>&1
+pm image prune -f > /dev/null 2>&1 || true
 EOF
   add_cleanup "bash $stop"
   hypr_exec_once "bash $script"

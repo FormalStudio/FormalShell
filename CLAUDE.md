@@ -729,8 +729,10 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
   window's arrival with its middle drawn over a still bare edge; and
   settings.json rewritten with `motion.enabled: false` turning
   `animations:enabled` off.
-- `installed.sh` `--installed <distro>`: `install.sh --from` the tarball
-  in `~/install-check`, run from nothing in a rootless podman image of
+- `installed.sh` `--installed <distro>`: `install.sh --from` this tree's
+  release tarball, built by the fixture with `dev/tarball.sh` in
+  debian:bookworm (the slot's `formalshell-tarball` volume caching its
+  toolchains), run from nothing in a rootless podman image of
   arch, trixie or fedora (pacman, apt or dnf installing Hyprland and the
   tools, `formalshell install --yes` writing the PAM file), and the shell
   it installs run from that image against the session over its Wayland
