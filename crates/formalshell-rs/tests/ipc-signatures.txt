@@ -70,6 +70,13 @@ target tray
   function menu(id: string): string
   function menucursor(delta: string): string
   function menuactivate(): string
+target appmenu
+  function status(): string
+  function items(path: string): string
+  function open(title: string): string
+  function close(): string
+  function activate(path: string): string
+  function run(id: int): string
 target overnight
   function toggle(): string
   function enable(): string

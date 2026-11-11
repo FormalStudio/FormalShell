@@ -191,9 +191,28 @@ pub fn toggle_special() -> String {
 /// A plain Escape bind running `argv`, kept in a Lua global so a later eval
 /// removes that one bind (`hl.unbind("Escape")` would take the user's own
 /// Escape binds with it). `non_consuming` passes the key on to whatever has
-/// focus, so the bind sees it without taking it from the app.
+/// focus, so the bind sees it without taking it from the app. It is made
+/// past the include's recorder, which would copy it into the `mac` submap
+/// and leave the copy behind, and is live in every submap instead.
 pub fn bind_escape(global: &str, argv: &[String]) -> String {
-    format!("{} {global} = hl.bind(\"Escape\", {}, {{ non_consuming = true }})", unbind(global), spawn(argv))
+    format!(
+        "{} {global} = (formalshell_raw and formalshell_raw.bind or hl.bind)(\"Escape\", {}, {{ non_consuming = true, submap_universal = true }})",
+        unbind(global),
+        spawn(argv)
+    )
+}
+
+/// The include's `formalshell_mac_keys`: the `mac` submap out of the binds
+/// it recorded, less the Super chords not in `reserved`. Nothing under a
+/// config that does not load the include's MAC APPS block, as
+/// [`mac_focus`] is.
+pub fn mac_keys(reserved: &[String]) -> String {
+    let list: Vec<String> = reserved.iter().map(|c| string(c)).collect();
+    format!("if formalshell_mac_keys then formalshell_mac_keys({{ {} }}) end", list.join(", "))
+}
+
+pub fn mac_focus(on: bool) -> String {
+    format!("if formalshell_mac_focus then formalshell_mac_focus({on}) end")
 }
 
 /// Showing it goes through the include's `formalshell_arrived` where the
@@ -249,8 +268,11 @@ mod tests {
         assert_eq!(toggle_special(), "hl.dsp.workspace.toggle_special(\"formalshell-console\")");
         assert_eq!(
             bind_escape("fs_esc", &["ipc".into(), "x".into()]),
-            r#"if fs_esc then fs_esc:remove() fs_esc = nil end fs_esc = hl.bind("Escape", hl.dsp.exec_cmd("'ipc' 'x'"), { non_consuming = true })"#
+            r#"if fs_esc then fs_esc:remove() fs_esc = nil end fs_esc = (formalshell_raw and formalshell_raw.bind or hl.bind)("Escape", hl.dsp.exec_cmd("'ipc' 'x'"), { non_consuming = true, submap_universal = true })"#
         );
+        assert_eq!(mac_keys(&["SUPER + H".into(), "SUPER + 1".into()]), r#"if formalshell_mac_keys then formalshell_mac_keys({ "SUPER + H", "SUPER + 1" }) end"#);
+        assert_eq!(mac_keys(&[]), "if formalshell_mac_keys then formalshell_mac_keys({  }) end");
+        assert_eq!(mac_focus(true), "if formalshell_mac_focus then formalshell_mac_focus(true) end");
         assert_eq!(cursor(true), "hl.config({ cursor = { invisible = true } })");
         assert_eq!(cursor(false), "if formalshell_arrived then formalshell_arrived() else hl.config({ cursor = { invisible = false } }) end");
         assert_eq!(exit(), "hl.dsp.exit()");

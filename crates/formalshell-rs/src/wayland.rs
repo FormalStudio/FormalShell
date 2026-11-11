@@ -989,6 +989,9 @@ impl App {
                     _ => tray::activate(ctx, key),
                 });
             }
+            Action::AppMenu { id, offset } => {
+                let _ = self.open_app_menu(id, Some(anchor + offset));
+            }
             Action::Caffeinate(on) => self.set_caffeinated(on),
             Action::OvernightOff => {
                 if let Some(record) = self.store.state.data.overnight.clone() {
@@ -1132,11 +1135,16 @@ impl App {
         if live!(self).bar.pointer(&mut self.kit, bar_hover, at, &self.store, Instant::now()) {
             live!(self).dirty = true;
         }
+        let mut off_card = false;
         if let Some(menu) = self.tray_menu.as_mut() {
             let hit = (owner == Some(Target::Menu)).then(|| menu.menu_hit(at.0, at.1)).flatten();
             if let Some(m) = &mut menu.menu {
                 m.hover(hit);
             }
+            off_card = owner == Some(Target::Menu) && hit.is_none() && !menu.win.on_card(at.0, at.1);
+        }
+        if off_card {
+            self.app_menu_scrub(at.0, at.1);
         }
         self.hover_toasts((owner == Some(Target::Toasts)).then_some(at));
         if let Some(h) = &mut self.panel {

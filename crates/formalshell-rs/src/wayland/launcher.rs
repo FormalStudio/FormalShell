@@ -1088,6 +1088,7 @@ impl App {
                     | Topic::Theme
                     | Topic::Media
                     | Topic::Tray
+                    | Topic::AppMenu
                     | Topic::Notifications
                     | Topic::Clipboard
                     | Topic::Localsend
@@ -1123,6 +1124,7 @@ impl App {
             }
             Topic::PluginOutput => self.launcher_plugins(),
             Topic::Tray => self.launcher_tray(),
+            Topic::AppMenu => self.launcher_appmenu(),
             Topic::Notifications => self.launcher_store_changed(),
             Topic::Clipboard => {
                 self.launcher_clipboard();
@@ -1500,6 +1502,18 @@ impl App {
         self.apply(Diff::Menu(index::Diff::Source(Provider::Tray, rows)));
     }
 
+    /// The menu route's rows: the focused Mac app's commands.
+    pub(super) fn launcher_appmenu(&mut self) {
+        let commands: Option<Vec<fs_menu::providers::MenuCommand>> = self.store.appmenu.menu.as_ref().map(|m| {
+            m.commands()
+                .into_iter()
+                .map(|c| fs_menu::providers::MenuCommand { id: c.id, label: c.label, path: c.path, enabled: c.enabled, checked: c.checked, shortcut: c.shortcut })
+                .collect()
+        });
+        let rows = fs_menu::providers::app_menu_provider(commands.as_deref());
+        self.apply(Diff::Menu(index::Diff::Source(Provider::AppMenu, rows)));
+    }
+
     /// What every store change the launcher's index reads asks of it.
     pub(super) fn launcher_inputs(&mut self) {
         let l = &self.store.lights;
@@ -1533,6 +1547,9 @@ impl App {
             self.launch.launches = Some(self.store.state.data.picks.clone());
             index::ask(Ask::Apps(index::launches(&self.store.state.data.picks)));
         }
+        // Nothing publishes the menu until a Mac app is focused, and its
+        // route wants its note before that.
+        self.launcher_appmenu();
     }
 }
 

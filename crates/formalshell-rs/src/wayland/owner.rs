@@ -465,13 +465,14 @@ impl Owner for Cards {
     /// the item's menu, the compositor the Spaces peek, and the open panel
     /// redraws on what it declares.
     fn reads(&self, app: &App, topic: Topic) -> bool {
-        matches!(topic, Topic::Theme | Topic::Tray | Topic::Compositor) || app.panel.as_ref().is_some_and(|p| p.module.reads().contains(&topic))
+        matches!(topic, Topic::Theme | Topic::Tray | Topic::AppMenu | Topic::Compositor) || app.panel.as_ref().is_some_and(|p| p.module.reads().contains(&topic))
     }
 
     fn changed(&self, app: &mut App, topic: Topic) {
         match topic {
             Topic::Theme => app.restyle_cards(),
             Topic::Tray => app.tray_changed(),
+            Topic::AppMenu => app.appmenu_changed(),
             Topic::Compositor => app.preview_changed(),
             _ => {}
         }
@@ -540,7 +541,7 @@ impl Owner for Cards {
                     Pointer::Taken
                 }
                 None if app.tray_menu.as_ref().is_some_and(|p| !p.win.on_card(x, y)) => {
-                    app.close_tray_menu();
+                    app.app_menu_press_off_card(x, y);
                     Pointer::Taken
                 }
                 None => {

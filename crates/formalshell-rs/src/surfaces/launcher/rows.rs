@@ -282,6 +282,10 @@ pub(super) fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected:
     if !value.is_empty() {
         trail.push(row_words(value).ink(Ink::Dim).end());
     }
+    if !row.keys.is_empty() {
+        let caps = crate::services::appmenu::keycaps(&row.keys);
+        trail.push(w::chord_keys(s, &caps.iter().map(String::as_str).collect::<Vec<_>>()).fade(0.6));
+    }
     if checked && !confirming {
         trail.push(w::icon("check"));
     }

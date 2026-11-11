@@ -11,6 +11,7 @@
 
 mod activity;
 mod airplay;
+mod appmenu;
 mod bluetooth;
 mod bar;
 mod caffeinate;
@@ -96,6 +97,7 @@ fn targets() -> Vec<Target<App>> {
         bluetooth::target(),
         visualizer::target(),
         tray::target(),
+        appmenu::target(),
         overnight::target(),
         earbuds::target(),
         display::target(),

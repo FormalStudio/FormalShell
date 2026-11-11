@@ -220,6 +220,11 @@ pub enum Command {
     SetOutputScale(String, f64),
     SetOutputMirror(String, String),
     SetOutputColor(String, Color),
+    /// The `mac` submap built again for these reserved chords
+    /// (`services/mackeys.rs`).
+    MacKeys(Vec<String>),
+    /// Into the `mac` submap or out of it.
+    MacFocus(bool),
     /// The pointer hidden or shown on every output, the session's arrival
     /// and departure.
     Cursor { hidden: bool },

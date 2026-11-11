@@ -45,7 +45,7 @@ use crate::surfaces::desktop_clock::{self as glass, Digits, FaceSettings, Glass,
 
 /// The cards in the order they give up their place when the column runs
 /// short: the first is the first to go.
-const DROPS: [&str; 4] = ["media", "software", "activity", "notifications"];
+const DROPS: [&str; 5] = ["media", "software", "activity", "notifications", "menu"];
 
 /// Pond's sidebar lengths at our card: Pond's 156 wide card is 136 here, so
 /// each is Pond's times 136/156, rounded (Pond's in the comments). They
@@ -230,6 +230,8 @@ pub struct Sidebar {
     motion_slot: u64,
     motion: Option<motion_art::Want>,
     seen: bool,
+    /// The Mac app's menu whose card is up, for its title's mark.
+    app_menu: Option<i32>,
 }
 
 impl Drop for Sidebar {
@@ -264,7 +266,13 @@ impl Sidebar {
             motion_slot: motion_art::slot(),
             motion: None,
             seen: true,
+            app_menu: None,
         }
+    }
+
+    /// The Mac app's menu whose card is up; true when it changed.
+    pub fn set_app_menu(&mut self, open: Option<i32>) -> bool {
+        std::mem::replace(&mut self.app_menu, open) != open
     }
 
     /// Off screen under a fullscreen window and back.
@@ -326,7 +334,7 @@ impl Sidebar {
         let art = if collapsed { g.rail.art } else { g.art };
         let (cover, motion) = store.media.active().map(|a| crate::ui::w::chrome_cover(store, &a, art, raster)).unwrap_or_default();
         let build = |map: &minimap::Map, kit: &mut Kit| {
-            if collapsed { rail(store, map, &g, &cover) } else { cards(theme, store, map, &g, &cover, &self.icons, width, kit, now) }
+            if collapsed { rail(store, map, &g, &cover) } else { cards(theme, store, map, &g, &cover, &self.icons, self.app_menu, width, kit, now) }
         };
         // Measured whole first: every row, from the top.
         let want = self.map.first;
@@ -445,6 +453,14 @@ impl Sidebar {
             ui.hits.iter().rposition(|h| h.on.is_some() && x >= h.rect.x && x < h.rect.right() && y >= h.rect.y && y < h.rect.bottom())
         };
         at(&self.foot).map(|i| i + self.top.hits.len()).or_else(|| at(&self.top))
+    }
+
+    /// The Mac menu title under a point of the column.
+    pub fn app_menu_at(&self, x: f64, y: f64) -> Option<i32> {
+        match self.hit_at(self.hit(x, y)?)?.on.as_ref()?.get::<Intent>()? {
+            Intent::AppMenu(id) => Some(*id),
+            _ => None,
+        }
     }
 
     fn hit_at(&self, i: usize) -> Option<&crate::ui::Hit> {
@@ -567,6 +583,8 @@ pub enum Intent {
     Overflow,
     /// Folded to the rail (true) or open again.
     Collapse(bool),
+    /// A top-level menu of the focused Mac app, by its dbusmenu id.
+    AppMenu(i32),
 }
 
 impl crate::ui::on::HitId for Intent {}
@@ -581,6 +599,7 @@ impl std::fmt::Display for Intent {
             Intent::Overflow => f.write_str("overflow"),
             Intent::Collapse(true) => f.write_str("collapse"),
             Intent::Collapse(false) => f.write_str("expand"),
+            Intent::AppMenu(id) => write!(f, "appmenu:{id}"),
         }
     }
 }
@@ -600,6 +619,7 @@ impl Intent {
                 set_collapsed(collapsed);
                 Action::None
             }
+            Intent::AppMenu(id) => Action::AppMenu { id, offset: 0.0 },
         }
     }
 }
@@ -626,6 +646,7 @@ pub const DRAWN: &[Builtin] = &[
     Builtin::Launcher,
     Builtin::Workspaces,
     Builtin::ActiveWindow,
+    Builtin::AppMenu,
     Builtin::Clock,
     Builtin::NowPlaying,
     Builtin::Visualizer,
@@ -795,7 +816,7 @@ impl ClockCard {
 
 /// Every card that has something to show, top to bottom, by name.
 #[allow(clippy::too_many_arguments)]
-fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>, icons: &HashMap<NotificationId, Option<Bitmap>>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
+fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>, icons: &HashMap<NotificationId, Option<Bitmap>>, app_menu: Option<i32>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
     let s = &theme.space;
     let inner = |h: f64| (h - s.md * 2.0).max(0.0);
     let battery = if store.power.battery.is_some() { g.battery_h } else { 0.0 };
@@ -803,6 +824,9 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
         "time",
         w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), Intent::Panel(PanelId::Calendar)).fill(),
     )];
+    if let Some(menu) = menu_card(theme, store, g, app_menu) {
+        out.push(("menu", menu));
+    }
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
     if let Some(media) = media(store, g, cover) {
         out.push(("media", w::action_card(media.height(inner(g.media_h)), Intent::Panel(PanelId::Media)).fill()));
@@ -817,6 +841,33 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
         out.push(("software", w::card(w::column(s.row_gap, software)).fill()));
     }
     out
+}
+
+/// The focused Mac app's menu titles stacked in a card, the application
+/// menu first under the app's name: each row opens its menu beside the
+/// column. Absent unless a Mac window holds focus and its app has a menu.
+fn menu_card(theme: &Theme, store: &Store, g: &Geo, open: Option<i32>) -> Option<El> {
+    let titles = store.appmenu.titles();
+    if titles.is_empty() {
+        return None;
+    }
+    let s = &theme.space;
+    let rows = titles
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let label = w::label(t.label.clone()).weight(if i == 0 { Weight::Semibold } else { Weight::Medium }).elide();
+            w::cell(label.pad_start(g.row_pad - s.md).fill())
+                .ghost()
+                .cell_state(|c| c.small = true)
+                .selected(open == Some(t.id))
+                .interactive()
+                .on(Intent::AppMenu(t.id))
+                .height(s.control_height)
+                .fill()
+        })
+        .collect();
+    Some(w::card(w::column(0.0, rows)).cell_state(|c| c.inset = Some((s.xs, s.xs))).fill())
 }
 
 /// The Software card's rows: the upstream's commits the spec
@@ -998,6 +1049,10 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
     let bare = |c: &mut crate::ui::el::CellState| c.inset = Some((0.0, 0.0));
     let square = |child: El| w::cell(w::column(0.0, vec![child.centred()]).fill()).ghost().cell_state(bare).height(r.square).fill();
     let mut out = vec![("time", w::action_card(w::space(r.time_h), Intent::Panel(PanelId::Calendar)).cell_state(bare).fill())];
+    if let Some(app) = store.appmenu.titles().first() {
+        let icon = w::icon("menu").size(Type::Caption).ink(Ink::Muted);
+        out.push(("menu", w::action_card(square(icon), Intent::AppMenu(0)).cell_state(bare).tip(format!("{} menu", app.label)).fill()));
+    }
     out.push(("spaces", w::card(map.rail_view()).cell_state(bare).fill()));
     if store.media.active().is_some() {
         out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), Intent::Panel(PanelId::Media)).cell_state(bare).fill()));

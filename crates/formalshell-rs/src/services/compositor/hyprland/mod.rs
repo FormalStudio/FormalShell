@@ -349,6 +349,8 @@ async fn commands(
                 };
                 eval(&lua).await;
             }
+            Command::MacKeys(reserved) => eval(&lua::mac_keys(&reserved)).await,
+            Command::MacFocus(on) => eval(&lua::mac_focus(on)).await,
             Command::Cursor { hidden } => eval(&lua::cursor(hidden)).await,
             Command::Reload => reload(&ctx, &shared),
             Command::Exit => dispatch(&lua::exit()).await,

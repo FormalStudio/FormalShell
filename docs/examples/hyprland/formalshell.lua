@@ -1,3 +1,107 @@
+-- MAC APPS
+-- A Mac app under atoll takes SUPER as Command, and Hyprland takes a bound
+-- SUPER chord before any window sees it. While a Mac window has focus the
+-- shell switches to the submap `mac`, which holds every bind of the default
+-- map except the SUPER and SUPER + SHIFT chords the user has not reserved
+-- (settings.json `macApps.reservedBinds`), so those reach the app.
+--
+-- Lua cannot list the binds with their actions, so they are recorded as the
+-- config makes them: load this file before any bind that should keep
+-- working over a Mac window. The names are global because the shell calls
+-- them through `hyprctl eval`, and a reload runs this file again in a state
+-- that may still hold them.
+formalshell_binds = {}
+if not formalshell_raw then
+  formalshell_raw = { bind = hl.bind, unbind = hl.unbind, define_submap = hl.define_submap }
+  formalshell_submap_depth = 0
+  hl.bind = function(chord, action, opts)
+    local handle = formalshell_raw.bind(chord, action, opts)
+    if formalshell_submap_depth == 0 then
+      formalshell_binds[#formalshell_binds + 1] = { chord = chord, action = action, opts = opts, handle = handle }
+    end
+    return handle
+  end
+  hl.unbind = function(chord)
+    for i = #formalshell_binds, 1, -1 do
+      if formalshell_binds[i].chord == chord then
+        table.remove(formalshell_binds, i)
+      end
+    end
+    return formalshell_raw.unbind(chord)
+  end
+  hl.define_submap = function(...)
+    formalshell_submap_depth = formalshell_submap_depth + 1
+    local ok, err = pcall(formalshell_raw.define_submap, ...)
+    formalshell_submap_depth = formalshell_submap_depth - 1
+    if not ok then
+      error(err, 0)
+    end
+  end
+end
+
+-- "SUPER + SHIFT + code:10" and "super+shift+1" are one chord: modifiers
+-- upper case and sorted, the key lower case, a digit row keycode as its digit.
+local function mac_chord(chord)
+  local mods, key = {}, ""
+  for part in tostring(chord):gmatch("[^+]+") do
+    local word = part:match("^%s*(.-)%s*$")
+    local upper = word:upper()
+    if upper == "CONTROL" then
+      upper = "CTRL"
+    end
+    if upper == "SUPER" or upper == "SHIFT" or upper == "CTRL" or upper == "ALT" then
+      mods[#mods + 1] = upper
+    else
+      key = word:lower()
+    end
+  end
+  local code = tonumber(key:match("^code:(%d+)$"))
+  if code and code >= 10 and code <= 19 then
+    key = tostring((code - 9) % 10)
+  end
+  table.sort(mods)
+  return table.concat(mods, "+"), key
+end
+
+-- SUPER alone or with SHIFT on a key: the two layers Mac key equivalents use.
+local function mac_handed(mods, key)
+  if mods ~= "SUPER" and mods ~= "SHIFT+SUPER" then
+    return false
+  end
+  return not (key:match("^mouse") or key:match("^switch:"))
+end
+
+-- Builds the submap from the recorded binds, replacing the one before.
+function formalshell_mac_keys(reserved)
+  for _, handle in ipairs(formalshell_mac_binds or {}) do
+    handle:remove()
+  end
+  formalshell_mac_binds = {}
+  local keep = {}
+  for _, chord in ipairs(reserved) do
+    local mods, key = mac_chord(chord)
+    keep[mods .. "+" .. key] = true
+  end
+  formalshell_raw.define_submap("mac", function()
+    for _, bind in ipairs(formalshell_binds) do
+      local mods, key = mac_chord(bind.chord)
+      if not mac_handed(mods, key) or keep[mods .. "+" .. key] then
+        formalshell_mac_binds[#formalshell_mac_binds + 1] = formalshell_raw.bind(bind.chord, bind.action, bind.opts)
+      end
+    end
+  end)
+end
+
+-- Into the submap and out of it, leaving a submap of the user's own alone.
+function formalshell_mac_focus(on)
+  local current = hl.get_current_submap()
+  if on and current == "" then
+    hl.dispatch(hl.dsp.submap("mac"))
+  elseif not on and current == "mac" then
+    hl.dispatch(hl.dsp.submap("reset"))
+  end
+end
+
 -- Window rounding, the blur behind the shell's surfaces and the frame and
 -- shadow round every window follow the shell's own theme: ThemeEngine
 -- publishes formalshell-chrome.lua, a table with rounding (the cards' radius),
@@ -361,6 +465,7 @@ fs_bind("SUPER + CTRL + S", "menu summon share")
 fs_bind("SUPER + CTRL + R", "menu summon reminder")
 fs_bind("SUPER + Escape", "menu summon system")
 fs_bind("SUPER + K", "menu summon keybinds")
+fs_bind("SUPER + ALT + M", "menu summon appmenu")
 fs_bind("SUPER + O", "workspaces overview toggle")
 fs_bind("SUPER + Z", "zen toggle")
 fs_bind("SUPER + CTRL + Q", "menu summon calc")

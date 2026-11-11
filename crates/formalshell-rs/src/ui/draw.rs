@@ -406,6 +406,8 @@ pub fn keycap(key: &str) -> (String, &'static str) {
         "enter-glyph" => "corner-down-left",
         "tab-glyph" => "arrow-right-to-line",
         "shift-glyph" => "arrow-big-up",
+        // The Cmd-position key, as a Mac app's menu marks it.
+        "super-glyph" => "command",
         "up" => "arrow-up",
         "down" => "arrow-down",
         "left" => "arrow-left",

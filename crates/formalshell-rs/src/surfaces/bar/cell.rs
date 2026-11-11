@@ -42,6 +42,9 @@ pub enum Action {
     /// A click on one tray item; `offset` is that item's centre along the
     /// strip from the cell's own centre, for a menu to hang under it.
     Tray { key: String, click: TrayClick, offset: f64 },
+    /// A click on one of the focused Mac app's menu titles, by its
+    /// dbusmenu id; `offset` as a tray item's.
+    AppMenu { id: i32, offset: f64 },
     /// The audio cell's wheel: the default sink's volume.
     Volume(fs_audio::Visual),
     ToggleMute,

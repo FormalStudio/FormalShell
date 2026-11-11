@@ -1,7 +1,10 @@
-//! A tray item's dbusmenu tree in a card of the `menu` role.
+//! A dbusmenu tree (a tray item's, or one menu of the focused Mac app) in
+//! a card of the `menu` role.
 //! Submenus expand in place as indented rows (one surface, no cascade), a
 //! check rides the trailing slot of a ticked row and a chevron the slot of a
-//! submenu, separators are one `border` rule with an `sm` gap either side.
+//! submenu, a key equivalent sits before that slot in the meta ink,
+//! separators are one `border` rule with an `sm` gap either side and a
+//! section heading is a caption no cursor stops on.
 //! The cursor walks the rows over IPC, the pointer and, once the keyboard
 //! reaches panels, real keys; a hovered row takes it.
 
@@ -51,6 +54,11 @@ impl Look {
             width: s.popup_width_default,
         }
     }
+}
+
+/// A rule or a heading: drawn, never under the cursor.
+fn inert(node: &MenuNode) -> bool {
+    node.separator || node.section
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -160,9 +168,9 @@ impl Menu {
         }
         self.rows = rows;
         self.scroll = self.scroll.min(self.max_scroll());
-        let bad = self.cursor.is_none_or(|c| c >= self.rows.len());
+        let bad = self.cursor.is_none_or(|c| self.rows.get(c).is_none_or(|r| inert(&r.node)));
         if bad {
-            self.cursor = (!self.rows.is_empty()).then_some(0);
+            self.cursor = self.rows.iter().position(|r| !inert(&r.node));
         }
     }
 
@@ -229,7 +237,7 @@ impl Menu {
         };
         for _ in 0..n {
             idx = (idx + delta).rem_euclid(n);
-            if !self.rows[idx as usize].node.separator {
+            if !inert(&self.rows[idx as usize].node) {
                 break;
             }
         }
@@ -245,7 +253,7 @@ impl Menu {
 
     pub fn activate(&mut self, i: usize) -> Outcome {
         let Some(row) = self.rows.get(i) else { return Outcome::None };
-        if row.node.separator || !row.node.enabled {
+        if inert(&row.node) || !row.node.enabled {
             return Outcome::None;
         }
         let id = row.node.id;
@@ -267,7 +275,12 @@ impl Menu {
         if inside(&self.close) {
             return Some(Hit::Close);
         }
-        self.rects.iter().position(inside).filter(|i| !self.rows[*i].node.separator && self.in_body(x, y)).map(Hit::Row)
+        self.rects.iter().position(inside).filter(|i| !inert(&self.rows[*i].node) && self.in_body(x, y)).map(Hit::Row)
+    }
+
+    /// Each laid-out row's dbusmenu id and its box in the card's surface.
+    pub fn row_boxes(&self) -> impl Iterator<Item = (i32, IRect)> + '_ {
+        self.rows.iter().zip(&self.rects).map(|(row, rect)| (row.node.id, *rect))
     }
 
     /// The pointer over a row takes the cursor; a disabled row takes
@@ -337,6 +350,12 @@ impl Menu {
                 p.rect(IRect::new(r.x, r.y + (r.h - bw) / 2, r.w, bw), a(look.border), 0.0);
                 continue;
             }
+            if row.node.section {
+                let style = kit.weight(k.sans, k.caption, WEIGHTS.medium);
+                let label = kit.elided(&row.node.label, style, (width - look.control_px as i32 * 2).max(0) as f64);
+                p.text(&label, (left + look.control_px as i32, r.y + (r.h - label.line_height()) / 2), a(k.muted), &[]);
+                continue;
+            }
             let cursor_here = self.cursor_active && self.cursor == Some(i);
             if cursor_here {
                 p.rect(r, a(look.accent), 0.0);
@@ -364,6 +383,15 @@ impl Menu {
                 p.text(&t, (right, r.y + (r.h - t.line_height()) / 2), a(fg), &[]);
                 right -= look.icon_gap as i32;
             }
+            // The key equivalent, right to left: the key, then its modifiers.
+            let meta = if !row.node.enabled || !cursor_here { k.muted } else { look.accent_fg };
+            for (n, key) in crate::services::appmenu::keycaps(&row.node.shortcut).iter().rev().enumerate() {
+                let (text, glyph) = crate::ui::keycap(key);
+                let t = if glyph.is_empty() { kit.shape(&text, kit.weight(k.sans, k.caption, WEIGHTS.medium)) } else { kit.icon(glyph) };
+                right -= t.width;
+                p.text(&t, (right, r.y + (r.h - t.line_height()) / 2), a(meta), &[]);
+                right -= if n + 1 == row.node.shortcut.len() { look.icon_gap as i32 } else { (look.sm / 2.0).round() as i32 };
+            }
             if let Some(raw) = &row.node.icon {
                 let entry = self.icons.entry(row.node.id).or_insert(((0, 0.0), None));
                 if entry.0 != (size, scale) {
@@ -387,7 +415,7 @@ mod tests {
     use super::*;
 
     fn node(id: i32, label: &str) -> MenuNode {
-        MenuNode { id, label: label.into(), enabled: true, separator: false, icon: None, checked: false, has_children: false, children: Vec::new() }
+        MenuNode { id, label: label.into(), enabled: true, separator: false, icon: None, checked: false, has_children: false, shortcut: Vec::new(), section: false, children: Vec::new() }
     }
 
     /// The tray-stub's fixture tree: plain, disabled, checked, a rule and a

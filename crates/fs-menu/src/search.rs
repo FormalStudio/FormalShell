@@ -2,10 +2,11 @@
 //!
 //! A set or learned abbreviation leads, and a loose match (the initials or
 //! subsequence tiers) follows every other. Among the rest a hit ranks by
-//! its type first (`group`: apps and commands, then files and folders, then
-//! clipboard history), so a recent file never sits above the app it was
-//! named after, and a two-letter query's loose app matches never crowd an
-//! exact file out of the 40. Inside a type a hit ranks by a pair, compared tier first:
+//! its type first (`group`: apps and commands, then the focused Mac app's
+//! menu, then files and folders, then clipboard history), so a recent file
+//! never sits above the app it was named after, and a two-letter query's
+//! loose app matches never crowd an exact file out of the 40. Inside a type
+//! a hit ranks by a pair, compared tier first:
 //! `(tier, bonus)`. The bonus (the root bonus, the app demotion, a learned
 //! abbreviation's boost) only reorders rows inside a tier, however large it
 //! grows. Then shallower depth, then the picks ledger's frecency, then
@@ -120,12 +121,14 @@ fn bonus(node: &Node, depth: usize) -> i32 {
     b
 }
 
-/// The type order: apps and commands 0, files and folders 1, clipboard
-/// history 2.
+/// The type order: apps and commands 0, the focused Mac app's menu 1, files
+/// and folders 2, clipboard history 3.
 fn group(node: &Node) -> u8 {
     if crate::providers::clipboard_entry_id(node).is_some() {
-        2
+        3
     } else if crate::providers::is_file_subject(node) || crate::providers::is_folder_subject(node) {
+        2
+    } else if crate::providers::is_menu_command(node) {
         1
     } else {
         0

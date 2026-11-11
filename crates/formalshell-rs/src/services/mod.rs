@@ -11,6 +11,7 @@ pub mod agents;
 pub mod airplay;
 pub mod ams;
 pub mod appicon;
+pub mod appmenu;
 pub mod barpaint;
 pub mod battery;
 pub mod bus;
@@ -49,6 +50,7 @@ pub mod info;
 pub mod launch;
 pub mod kopuz;
 pub mod lyrics;
+pub mod mackeys;
 pub mod plugins;
 pub mod polkit;
 pub mod power;
@@ -106,6 +108,7 @@ const SERVICES: &[fn(&Ctx)] = &[
     devices::earbuds::start,
     display::start,
     tray::start,
+    appmenu::start,
     activity::start,
     notifications::start,
     menu::start,
@@ -149,6 +152,7 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
             None
         }
         Topic::Config => {
+            mackeys::sync(store);
             lights_palette(store);
             lyrics::sync(&store.media, &store.config, &store.lyrics);
             Some(notifications::Op::Dedupe(crate::settings::iphone_dedupe(&store.config)).into())
@@ -173,7 +177,12 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
             notifications::scale(scales.largest());
             None
         }
-        Topic::Compositor | Topic::Launch => launch::windows_changed(store),
+        Topic::Compositor => {
+            appmenu::follow(store);
+            mackeys::sync(store);
+            launch::windows_changed(store)
+        }
+        Topic::Launch => launch::windows_changed(store),
         Topic::Menu | Topic::Activity => packages::land(store),
         Topic::Bluetooth
         | Topic::Network

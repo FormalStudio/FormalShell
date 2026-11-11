@@ -214,6 +214,10 @@ pub struct MenuItem {
     pub check: CheckState,
     /// `children-display == "submenu"`, or the root.
     pub has_children: bool,
+    /// The first key equivalent of `shortcut`: its modifiers, then the key.
+    pub shortcut: Vec<String>,
+    /// `x-atoll-section`: a heading over the rows after it, not a choice.
+    pub section: bool,
     pub children: Vec<MenuItem>,
 }
 
@@ -230,6 +234,8 @@ impl MenuItem {
             toggle: Toggle::None,
             check: CheckState::Unchecked,
             has_children: false,
+            shortcut: Vec::new(),
+            section: false,
             children: Vec::new(),
         }
     }
@@ -287,6 +293,8 @@ impl MenuItem {
             "toggle-type" => self.toggle = Toggle::None,
             "toggle-state" => self.check = CheckState::Unchecked,
             "children-display" => self.has_children = false,
+            "shortcut" => self.shortcut = Vec::new(),
+            "x-atoll-section" => self.section = false,
             _ => {}
         }
     }
@@ -328,6 +336,12 @@ impl MenuItem {
         }
         if let Some(v) = prop::<String>(props, "children-display") {
             self.has_children = v == "submenu";
+        }
+        if let Some(v) = prop::<Vec<Vec<String>>>(props, "shortcut") {
+            self.shortcut = v.into_iter().next().unwrap_or_default();
+        }
+        if let Some(v) = prop::<bool>(props, "x-atoll-section") {
+            self.section = v;
         }
     }
 }

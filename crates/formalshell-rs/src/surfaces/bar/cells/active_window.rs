@@ -1,7 +1,9 @@
 //! The held-focus window's app icon and desktop-entry
 //! name, then its title as the strip's second free label. The name crossfades
 //! when it changes. With no desktop entry resolved the name is the app id in
-//! the meta ink and there is no icon.
+//! the meta ink and there is no icon. A Mac app whose menu the shell holds
+//! is named by that menu's first title (`app_menu`), so its window is the
+//! title alone here, and nothing when the title is that name again.
 
 use fs_chrome::bar::panels::PanelId;
 
@@ -26,11 +28,13 @@ struct Held {
     name: Option<String>,
     icon: Pic,
     size: f64,
+    /// The name the app's menu gives it.
+    menu: Option<String>,
 }
 
 impl Cell for ActiveWindow {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Compositor, Topic::AppIcon]
+        &[Topic::Compositor, Topic::AppIcon, Topic::AppMenu]
     }
 
     fn read(&mut self, env: &Env) -> bool {
@@ -63,6 +67,7 @@ impl Cell for ActiveWindow {
             name: resolved.and_then(|i| i.entry.as_ref()).map(|e| if e.name.is_empty() { w.app_id.clone() } else { e.name.clone() }),
             icon: Pic(resolved.and_then(|i| i.image.clone())),
             size,
+            menu: w.is_mac().then(|| env.store.appmenu.titles().first().map(|t| t.label.clone())).flatten(),
         };
         let changed = self.window.as_ref() != Some(&next);
         self.window = Some(next);
@@ -71,6 +76,13 @@ impl Cell for ActiveWindow {
 
     fn view(&self, look: &Look) -> View {
         let Some(w) = &self.window else { return View::hidden() };
+        if let Some(app) = &w.menu {
+            return if w.title.is_empty() || w.title == *app {
+                View::hidden()
+            } else {
+                View::new(vec![Part::Free { text: w.title.clone(), dim: true, lead: 0.0, ceiling: f64::INFINITY, cross: false }], look.xs)
+            };
+        }
         let mut parts = Vec::new();
         if w.icon.0.is_some() {
             parts.push(Part::AppIcon { image: w.icon.clone(), size: w.size });

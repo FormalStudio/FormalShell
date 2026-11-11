@@ -84,6 +84,7 @@ impl<'de> Deserialize<'de> for Kind {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Provider {
     Apps,
+    AppMenu,
     Clipboard,
     Calc,
     Emoji,
@@ -109,8 +110,9 @@ pub enum Provider {
 }
 
 impl Provider {
-    const NAMED: [(Provider, &'static str); 22] = [
+    const NAMED: [(Provider, &'static str); 23] = [
         (Provider::Apps, "apps"),
+        (Provider::AppMenu, "appMenu"),
         (Provider::Clipboard, "clipboard"),
         (Provider::Calc, "calc"),
         (Provider::Emoji, "emoji"),
@@ -366,6 +368,9 @@ pub struct Node {
     pub prefix: Option<String>,
     /// The dim trailing slot of a row.
     pub desc: Option<String>,
+    /// A key equivalent drawn as keycaps at the row's end: modifiers, then
+    /// the key.
+    pub keys: Vec<String>,
     pub icon_source: String,
     pub thumb_source: String,
     pub clipssh_path: String,

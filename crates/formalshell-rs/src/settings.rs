@@ -327,6 +327,28 @@ pub fn console_command(doc: &(impl Doc + ?Sized)) -> Vec<String> {
     console_command_set(doc).unwrap_or_else(|| vec!["ghostty".into(), format!("--class={}", CONSOLE_APP_ID.default)])
 }
 
+// Mac apps
+
+/// The Super chords the window manager keeps while a Mac window has focus.
+const MAC_RESERVED_BINDS: [&str; 28] = [
+    "SUPER + H", "SUPER + J", "SUPER + K", "SUPER + L",
+    "SUPER + SHIFT + H", "SUPER + SHIFT + J", "SUPER + SHIFT + K", "SUPER + SHIFT + L",
+    "SUPER + 1", "SUPER + 2", "SUPER + 3", "SUPER + 4", "SUPER + 5", "SUPER + 6", "SUPER + 7", "SUPER + 8", "SUPER + 9",
+    "SUPER + SHIFT + 1", "SUPER + SHIFT + 2", "SUPER + SHIFT + 3", "SUPER + SHIFT + 4", "SUPER + SHIFT + 5",
+    "SUPER + SHIFT + 6", "SUPER + SHIFT + 7", "SUPER + SHIFT + 8", "SUPER + SHIFT + 9",
+    "SUPER + Space", "SUPER + Escape",
+];
+
+/// `macApps.reservedBinds`: every other Super and Super+Shift chord goes to
+/// the app as Command (`services/mackeys.rs`). A list replaces the default
+/// whole, an empty one hands every chord over.
+pub fn mac_reserved_binds(doc: &(impl Doc + ?Sized)) -> Vec<String> {
+    match lookup(doc.doc(), "macApps.reservedBinds") {
+        Some(Value::Array(_)) => strings(doc, "macApps.reservedBinds"),
+        _ => MAC_RESERVED_BINDS.iter().map(|c| (*c).to_owned()).collect(),
+    }
+}
+
 // Launcher
 
 pub const APP_GRID: Flag = Flag::new("menu.appGrid", false);

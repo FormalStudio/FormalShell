@@ -5,6 +5,7 @@
 
 mod activity;
 mod active_window;
+pub mod app_menu;
 mod audio;
 pub mod battery;
 mod bell;
@@ -49,6 +50,7 @@ pub fn build(entry: &Entry, region_entries: &[Entry]) -> Vec<Box<dyn Cell>> {
             Builtin::Launcher => Box::new(launcher::Launcher::default()),
             Builtin::Workspaces => Box::new(workspaces::Workspaces::default()),
             Builtin::ActiveWindow => Box::new(active_window::ActiveWindow::default()),
+            Builtin::AppMenu => Box::new(app_menu::AppMenu::default()),
             Builtin::Clock => Box::new(clock::Clock::default()),
             Builtin::NowPlaying => Box::new(now_playing::NowPlaying::default()),
             Builtin::Audio => Box::new(audio::Audio::default()),

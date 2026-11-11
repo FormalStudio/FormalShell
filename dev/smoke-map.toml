@@ -295,6 +295,19 @@ runs = ["--tray", "--tray-overflow", "--panel power", "--panel network", "--powe
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formalshell-rs/src/surfaces/panel/tray.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/wayland/tray_menu.rs", "crates/formalshell-rs/src/services/tray.rs", "crates/formalshell-rs/src/ipc/tray.rs", "crates/fs-tray/**"]
 runs = ["--tray", "--tray-overflow", "--tray --sidebar", "--tray-overflow --sidebar"]
 
+# A Mac app's menu: the registrar and the followed dbusmenu, the bar's
+# titles, the sidebar's menu card, the menu card the tray shares with it,
+# the launcher's menu route, and the stub that plays the app.
+[[rule]]
+paths = ["crates/fs-tray/src/appmenu.rs", "crates/fs-tray/src/registrar.rs", "crates/fs-tray/src/dbusmenu.rs", "crates/formalshell-rs/src/services/appmenu.rs", "crates/formalshell-rs/src/ipc/appmenu.rs", "crates/formalshell-rs/src/surfaces/bar/cells/app_menu.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/wayland/tray_menu.rs", "crates/fs-menu/src/providers/appmenu.rs", "dev/mac-stub.py"]
+runs = ["--mac-menu", "--mac-menu --sidebar"]
+
+# The Super chords handed to a focused Mac window: the include's recorder
+# and submap, the shell's switch into it, and the reserved list.
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/mackeys.rs", "crates/formalshell-rs/src/services/compositor/hyprland/lua.rs", "crates/fs-types/src/compositor.rs", "docs/examples/hyprland/formalshell.lua", "dev/mac-stub.py"]
+runs = ["--mac-keys"]
+
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/ui/spectrum/**"]
 runs = ["--visualizer", "--visualizer-styles", "--spectrum"]

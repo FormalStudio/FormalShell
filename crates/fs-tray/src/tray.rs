@@ -6,7 +6,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicU32, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use fs_dbus::{Owner, OwnerWatch};
@@ -20,10 +19,11 @@ use zbus::{
     fdo::{DBusProxy, RequestNameFlags, RequestNameReply},
     message::{Message, Type},
     names::BusName,
-    zvariant::{OwnedValue, Value},
+    zvariant::OwnedValue,
 };
 
 use crate::{
+    dbusmenu::{Address, MENU_IFACE, MenuEventKind, call},
     types::{Item, MenuItem, apply_properties},
     watcher::{
         SharedWatcher, WATCHER_IFACE, WATCHER_NAME, WATCHER_PATH, Watcher, WatcherState, qualify,
@@ -33,7 +33,6 @@ use crate::{
 
 const ITEM_IFACE: &str = "org.kde.StatusNotifierItem";
 const PROPS_IFACE: &str = "org.freedesktop.DBus.Properties";
-const MENU_IFACE: &str = "com.canonical.dbusmenu";
 
 static HOST_SEQ: AtomicU32 = AtomicU32::new(0);
 
@@ -44,23 +43,6 @@ pub enum Event {
     Changed { key: String },
     /// The open menu of this item changed (LayoutUpdated or ItemsPropertiesUpdated).
     MenuChanged { key: String },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MenuEventKind {
-    Clicked,
-    Opened,
-    Closed,
-}
-
-impl MenuEventKind {
-    fn wire(self) -> &'static str {
-        match self {
-            Self::Clicked => "clicked",
-            Self::Opened => "opened",
-            Self::Closed => "closed",
-        }
-    }
 }
 
 struct Entry {
@@ -147,30 +129,6 @@ fn split_key(key: &str) -> (&str, String) {
         Some((service, rest)) => (service, format!("/{rest}")),
         None => (key, "/StatusNotifierItem".to_owned()),
     }
-}
-
-async fn call<R>(
-    conn: &Connection,
-    dest: &str,
-    path: &str,
-    iface: &str,
-    member: &str,
-    body: &(impl serde::Serialize + zbus::zvariant::DynamicType),
-) -> zbus::Result<R>
-where
-    R: for<'d> serde::Deserialize<'d> + zbus::zvariant::Type,
-{
-    let msg = conn
-        .call_method(Some(dest), path, Some(iface), member, body)
-        .await?;
-    msg.body().deserialize::<R>()
-}
-
-fn now_secs() -> u32 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as u32)
-        .unwrap_or(0)
 }
 
 impl Tray {
@@ -366,15 +324,7 @@ impl Tray {
 
     pub async fn menu_event(&self, key: &str, id: i32, kind: MenuEventKind) -> zbus::Result<()> {
         let (service, path) = self.menu_target(key)?;
-        call::<()>(
-            &self.shared.conn,
-            &service,
-            &path,
-            MENU_IFACE,
-            "Event",
-            &(id, kind.wire(), Value::I32(0), now_secs()),
-        )
-        .await
+        Address { service, path }.event(&self.shared.conn, id, kind).await
     }
 
     pub async fn menu_click(&self, key: &str, id: i32) -> zbus::Result<()> {
@@ -390,19 +340,11 @@ impl Tray {
         about_to_show: bool,
     ) -> zbus::Result<()> {
         let conn = &self.shared.conn;
+        let menu = Address { service: service.to_owned(), path: path.to_owned() };
         if about_to_show {
-            let _ = call::<bool>(conn, service, path, MENU_IFACE, "AboutToShow", &(parent,)).await;
+            let _ = menu.about_to_show(conn, parent).await;
         }
-        let (_rev, layout): (u32, RawLayout) = call(
-            conn,
-            service,
-            path,
-            MENU_IFACE,
-            "GetLayout",
-            &(parent, -1i32, Vec::<&str>::new()),
-        )
-        .await?;
-        let node = build_layout(layout);
+        let node = menu.layout(conn, parent).await?;
         let mut entries = self.shared.entries.lock().unwrap();
         let Some(e) = entries.iter_mut().find(|e| e.item.key == key) else {
             return Ok(());
@@ -416,36 +358,6 @@ impl Tray {
         }
         Ok(())
     }
-}
-
-#[derive(Debug, serde::Deserialize, zbus::zvariant::Type)]
-struct RawLayout {
-    id: i32,
-    props: HashMap<String, OwnedValue>,
-    children: Vec<OwnedValue>,
-}
-
-fn build_layout(raw: RawLayout) -> MenuItem {
-    let mut node = MenuItem::new(raw.id);
-    node.set_properties(&raw.props);
-    if raw.id == 0 {
-        node.has_children = true;
-    }
-    node.children = raw
-        .children
-        .into_iter()
-        .filter_map(|child| {
-            let structure = zbus::zvariant::Structure::try_from(Value::from(child)).ok()?;
-            let (id, props, children) =
-                <(i32, HashMap<String, OwnedValue>, Vec<OwnedValue>)>::try_from(structure).ok()?;
-            Some(build_layout(RawLayout {
-                id,
-                props,
-                children,
-            }))
-        })
-        .collect();
-    node
 }
 
 fn map_signals(

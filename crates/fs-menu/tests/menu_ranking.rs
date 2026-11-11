@@ -104,7 +104,7 @@ root "noteboo": apps.notebook
 root "notebo": apps.notebook
 root "note": apps.notes apps.notebook
 root "no": system.notifications apps.notes apps.notebook toggles.dnd monitor info panels.network panels.monitor
-root "app": apps panels.appmenu install wallpaper
+root "app": apps panels.appmenu appmenu install wallpaper
 root "firefox": apps.firefox
 root "mpv": apps.mpv
 root "2+2": calc.result
@@ -118,7 +118,7 @@ apps "no": apps.notes apps.notebook
 apps "": 
 apps "fx": apps.foxtrot apps.fx-editor apps.firefox
 file row: files.b1004f719a3b1497 notebook.txt
-pinned nb: apps.notebook toggles.dnd
+pinned nb: apps.notebook appmenu toggles.dnd
 learned nt: apps.notes files wifi panels.quicksettings monitor info install panels.network panels.monitor system.notifications toggles.overnight toggles.caffeinate toggles.dnd apps.notebook
 plugin zeta: plugin.zeta
 emoji sob: emoji.😭 😭

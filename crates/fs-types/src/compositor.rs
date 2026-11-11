@@ -94,10 +94,24 @@ pub struct Window {
     /// place: never listed among the workspaces, never offered to switch to.
     #[serde(skip)]
     pub special: bool,
+    /// The window's xdg-toplevel-tag, empty for none.
+    #[serde(skip)]
+    pub xdg_tag: String,
     pub is_focused: bool,
     pub is_floating: bool,
     pub is_urgent: bool,
     pub rect: Option<IRect>,
+}
+
+/// The xdg-toplevel-tag atoll puts on every window of a Mac app.
+pub const MAC_TAG: &str = "atoll";
+
+impl Window {
+    /// A Mac app's window, the only kind the menu bar and the `mac` submap
+    /// are for.
+    pub fn is_mac(&self) -> bool {
+        self.xdg_tag == MAC_TAG
+    }
 }
 
 /// One of the compositor's key binds, its sourced files and submaps already

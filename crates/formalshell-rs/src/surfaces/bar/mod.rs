@@ -38,7 +38,7 @@ use crate::surfaces::card::Join;
 use crate::surfaces::sidebar::{self, Sidebar};
 use crate::paint::{Kit, Painter};
 use cell::{Action, Button, Env};
-use cells::{tray::Tray, workspaces::Workspaces};
+use cells::{app_menu::AppMenu, tray::Tray, workspaces::Workspaces};
 use slot::{Pass, Slot};
 
 /// The two cells whose text runs free, in the order they keep their room.
@@ -1185,6 +1185,55 @@ impl Bar {
         };
         let s = strip.slots.iter().find(|s| s.builtin == Some(Builtin::Bell) && !s.rect.is_empty())?;
         Some(self.rect_anchor(s.rect))
+    }
+
+    /// Where the title of the Mac app's menu `id` sits along the line.
+    pub fn app_menu_anchor(&self, id: i32) -> Option<f64> {
+        let strip = match &self.body {
+            Body::Sidebar(sb) => return sb.anchor_of(crate::surfaces::sidebar::Intent::AppMenu(id)),
+            Body::Strip(strip) => strip,
+        };
+        let s = strip.slots.iter().find(|s| s.builtin == Some(Builtin::AppMenu) && !s.rect.is_empty())?;
+        let mid = s.builtin::<AppMenu>(Builtin::AppMenu)?.title_mid(id)?;
+        Some(if self.vertical() { s.rect.y as f64 + mid } else { s.rect.x as f64 + mid })
+    }
+
+    /// Each title of the Mac app's menu on the strip: its id and its box
+    /// along the line, from the strip's start. None on a vertical strip or
+    /// a sidebar, which draw no titles.
+    pub fn app_menu_titles(&self) -> Vec<(i32, f64, f64)> {
+        let Body::Strip(strip) = &self.body else { return Vec::new() };
+        if self.vertical() {
+            return Vec::new();
+        }
+        let origin = self.strip().x;
+        strip
+            .slots
+            .iter()
+            .filter(|s| !s.rect.is_empty())
+            .filter_map(|s| Some((s.rect.x - origin, s.builtin::<AppMenu>(Builtin::AppMenu)?)))
+            .flat_map(|(x, cell)| cell.title_boxes().map(move |(id, start, extent)| (id, f64::from(x) + start, extent)))
+            .collect()
+    }
+
+    /// The Mac menu title under a point of the bar.
+    pub fn app_menu_at(&self, x: f64, y: f64) -> Option<i32> {
+        let strip = match &self.body {
+            Body::Sidebar(sb) => return sb.app_menu_at(x, y),
+            Body::Strip(strip) => strip,
+        };
+        let s = &strip.slots[self.hit(x, y)?];
+        let along = if self.vertical() { y - f64::from(s.rect.y) } else { x - f64::from(s.rect.x) };
+        s.builtin::<AppMenu>(Builtin::AppMenu)?.title_at(along)
+    }
+
+    /// The Mac app's menu whose card is up, for its title's mark; true
+    /// when the bar draws differently for it.
+    pub fn set_app_menu(&mut self, open: Option<i32>) -> bool {
+        match &mut self.body {
+            Body::Sidebar(sb) => sb.set_app_menu(open),
+            Body::Strip(strip) => strip.slots.iter_mut().filter_map(|s| s.builtin_mut::<AppMenu>(Builtin::AppMenu)).fold(false, |moved, cell| cell.set_open(open) || moved),
+        }
     }
 
     fn rect_anchor(&self, r: IRect) -> f64 {
