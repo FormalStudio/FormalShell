@@ -29,7 +29,8 @@ failure exiting 1:
   the room after its last ink, and on a headerless card ending on a box (a
   strip of chips) the room above and below each equal that side room,
   within 1px. A headerless card ending on words is an empty line centred
-  in its row, whose ink sits as high as its glyphs do.
+  in its row, whose ink sits as high as its glyphs do, its sides held
+  within 2 logical pixels for the glyphs' side bearings.
 
 Ink is anything off the card's fill, the fill being the commonest colour
 down each gutter, taken per side so a rim leaning one way does not count. The pointer stays off the card in these
@@ -209,8 +210,12 @@ trail = next((x1 - x for x in range(x1 - 3, x0 + 2, -1) if any(ink_in(x, y, "rig
 if lead is None or trail is None:
     say("even insets", True, "an empty card")
 else:
-    say("even insets", abs(lead - trail) <= 1, f"{lead}px before the first ink, {trail}px after the last")
     xs = range(x0 + RADIUS, x1 - RADIUS)
+    # A line of words is centred by its advance, so its ink carries the
+    # first and last glyphs' side bearings, which differ letter to letter.
+    words = not header and low is not None and low[1] < len(xs) // 2
+    slack = math.ceil(2 * scale) if words else 1
+    say("even insets", abs(lead - trail) <= slack, f"{lead}px before the first ink, {trail}px after the last")
     # A header's top is its title's words: a control in the row (a button
     # on the right, the launcher's mode token on the left) stands taller
     # than the words and is centred on the same line. A box's top border
