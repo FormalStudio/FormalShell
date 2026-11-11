@@ -123,13 +123,12 @@ impl Chord {
     }
 
     /// ShojiWM's shortcut for the chord. A pointer button has none: the
-    /// core binds drags by modifier, not through shortcuts. A keycode here
-    /// is xkb's, as Hyprland counts them; ShojiWM names a key by its evdev
-    /// code, which is 8 less.
+    /// core binds drags by modifier, not through shortcuts. A keycode is
+    /// xkb's on both sides.
     pub fn shortcut(&self) -> Option<String> {
         let key = match &self.key {
             Key::Sym(name) => name.clone(),
-            Key::Code(code) => format!("code:{}", code.saturating_sub(8)),
+            Key::Code(code) => format!("code:{code}"),
             Key::WheelUp => "WheelScrollUp".to_owned(),
             Key::WheelDown => "WheelScrollDown".to_owned(),
             Key::Button(_) => return None,
@@ -159,7 +158,7 @@ mod tests {
         assert_eq!(chord.key, Key::Code(10));
         assert_eq!(chord.mod_names(), ["SUPER", "SHIFT"]);
         assert_eq!(chord.canonical(), "SUPER+SHIFT+code:10");
-        assert_eq!(chord.shortcut().unwrap(), "Super+Shift+code:2");
+        assert_eq!(chord.shortcut().unwrap(), "Super+Shift+code:10");
     }
 
     #[test]

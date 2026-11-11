@@ -864,6 +864,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fwm-hand"
+version = "0.2.0"
+dependencies = [
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+]
+
+[[package]]
 name = "gbm"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2165,6 +2174,7 @@ dependencies = [
  "hashbrown 0.15.5",
  "input",
  "lcms2",
+ "libc",
  "mimalloc",
  "png",
  "resvg",

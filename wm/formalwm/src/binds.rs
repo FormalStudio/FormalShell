@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use formalwm_core::{
     action::{Action, Width, WorkspaceRef},
-    chord::Key,
+    chord::{Key, Mods},
     model::Big,
 };
 use shojiwm_rs::prelude::*;
@@ -19,10 +19,24 @@ impl Engine {
         for id in self.bind_ids.drain(..) {
             COMPOSITOR.key.unbind(&id);
         }
-        let mut groups: BTreeMap<(String, bool), (KeyBindOptions, Vec<Action>)> = BTreeMap::new();
+        if let Some(grab) = self.release_grab.take() {
+            grab.release();
+        }
+        let settings = self.settings.clone();
+        self.releases.clear();
+        for bind in settings.binds.iter().filter(|bind| bind.release) {
+            if let Some(modifier) = bind.chord.modifier_key() {
+                let actions = self.releases.entry(modifier).or_default();
+                if !actions.contains(&bind.action) {
+                    actions.push(bind.action.clone());
+                }
+            }
+        }
+        type Group = (KeyBindOptions, Vec<Action>, Option<&'static str>);
+        let mut groups: BTreeMap<(String, bool), Group> = BTreeMap::new();
         let mut drags = (None, None);
-        for bind in &self.settings.binds {
-            let modifier = || {
+        for bind in &settings.binds {
+            let held = || {
                 let mods = bind.chord.mods;
                 [
                     (mods.logo, "Super"),
@@ -31,9 +45,10 @@ impl Engine {
                     (mods.shift, "Shift"),
                 ]
                 .into_iter()
-                .find(|(held, _)| *held)
+                .filter(|(held, _)| *held)
                 .map(|(_, name)| name)
             };
+            let modifier = || held().next();
             match (&bind.action, &bind.chord.key) {
                 // The core moves and resizes by a held modifier and the
                 // left and right buttons.
@@ -49,10 +64,12 @@ impl Engine {
                     match shortcut {
                         Some(shortcut) => {
                             // Both Alt keys let go are one shortcut here.
-                            let (options, actions) =
+                            let (options, actions, waits) =
                                 groups.entry((shortcut, bind.release)).or_default();
                             if bind.release {
                                 *options = options.on_release();
+                            } else if waits.is_none() {
+                                *waits = held().find(|name| self.releases.contains_key(name));
                             }
                             options.locked |= bind.locked;
                             options.repeat |= bind.repeat && !bind.release;
@@ -68,13 +85,16 @@ impl Engine {
                 }
             }
         }
-        for (index, ((shortcut, _), (options, actions))) in groups.into_iter().enumerate() {
+        for (index, ((shortcut, _), (options, actions, waits))) in groups.into_iter().enumerate() {
             let id = format!("formalwm:{index}");
             let handler = move || {
                 let actions = actions.clone();
                 enter(move |engine| {
                     for action in &actions {
                         engine.run(action);
+                    }
+                    if let Some(modifier) = waits {
+                        engine.await_release(modifier);
                     }
                 })
             };
@@ -88,6 +108,71 @@ impl Engine {
             COMPOSITOR.pointer.bind_window_resize_modifier(modifier);
         }
         self.bind_escapes();
+    }
+
+    /// The core fires a bind on a modifier's release only when the modifier
+    /// was tapped alone. Letting it go after a chord, which is how Alt+Tab
+    /// commits, is watched here: from a bind on that modifier until it is
+    /// let go the engine has the keys and runs their binds itself.
+    fn await_release(&mut self, modifier: &'static str) {
+        let grabbing = |grab: &Option<InputGrab>| grab.as_ref().is_some_and(InputGrab::is_active);
+        if grabbing(&self.release_grab) || grabbing(&self.overview.grab) {
+            return;
+        }
+        let options = InputGrabOptions::new()
+            .on_key(move |event| {
+                let key = event.key.clone();
+                let pressed = event.state == InputGrabState::Pressed;
+                let mods = Mods {
+                    logo: event.modifiers.logo,
+                    shift: event.modifiers.shift,
+                    ctrl: event.modifiers.ctrl,
+                    alt: event.modifiers.alt,
+                };
+                enter(move |engine| engine.release_key(modifier, &key, mods, pressed));
+            })
+            .on_cancel(|_| enter(|engine| engine.release_grab = None));
+        self.release_grab = Some(COMPOSITOR.input.grab(options));
+    }
+
+    fn release_key(&mut self, modifier: &str, key: &str, mods: Mods, pressed: bool) {
+        if pressed {
+            return self.run_chord(key, mods);
+        }
+        let let_go = matches!(
+            (modifier, key),
+            ("Alt", "Alt_L" | "Alt_R")
+                | ("Super", "Super_L" | "Super_R")
+                | ("Shift", "Shift_L" | "Shift_R")
+                | ("Ctrl", "Control_L" | "Control_R")
+        );
+        if !let_go {
+            return;
+        }
+        if let Some(grab) = self.release_grab.take() {
+            grab.release();
+        }
+        for action in self.releases.get(modifier).cloned().unwrap_or_default() {
+            self.run(&action);
+        }
+    }
+
+    /// Runs the binds of a chord the engine was given instead of the core:
+    /// under a grab no bind of the core's fires.
+    pub fn run_chord(&mut self, key: &str, mods: Mods) {
+        let actions: Vec<Action> = self
+            .settings
+            .binds
+            .iter()
+            .filter(|bind| !bind.release && bind.chord.mods == mods)
+            .filter(
+                |bind| matches!(&bind.chord.key, Key::Sym(name) if name.eq_ignore_ascii_case(key)),
+            )
+            .map(|bind| bind.action.clone())
+            .collect();
+        for action in actions {
+            self.run(&action);
+        }
     }
 
     /// `bind.escape`: while the shell has something open, a plain Escape

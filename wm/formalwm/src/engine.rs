@@ -5,6 +5,7 @@
 use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 use formalwm_core::{
+    action::Action,
     color::Rgba,
     model::{Layer, Model, WorkspaceSpec},
     rules,
@@ -64,6 +65,10 @@ pub struct Engine {
     pub asked_focus: Option<String>,
     pub bind_ids: Vec<String>,
     pub escapes: BTreeMap<String, Vec<String>>,
+    /// What letting go of a modifier runs, by the modifier's name.
+    pub releases: BTreeMap<&'static str, Vec<Action>>,
+    /// Held from a bind on such a modifier until the modifier is let go.
+    pub release_grab: Option<InputGrab>,
     /// The shell asked for no cursor, or it has not arrived yet.
     pub cursor_hidden: bool,
     pub shell_arrived: bool,
@@ -76,9 +81,11 @@ pub struct Engine {
     pub hold: drag::Hold,
 }
 
+type Turn = Box<dyn FnOnce(&mut Engine)>;
+
 thread_local! {
     static ENGINE: RefCell<Option<Engine>> = const { RefCell::new(None) };
-    static DEFERRED: RefCell<Vec<Box<dyn FnOnce(&mut Engine)>>> = const { RefCell::new(Vec::new()) };
+    static DEFERRED: RefCell<Vec<Turn>> = const { RefCell::new(Vec::new()) };
     /// What the output and input factories read; they run inside turns.
     static SETTINGS: RefCell<Rc<Settings>> = RefCell::new(Rc::new(Settings::default()));
 }
@@ -96,6 +103,16 @@ pub fn set_settings(settings: Rc<Settings>) {
     SETTINGS.with(|cell| *cell.borrow_mut() = settings);
 }
 
+/// What the turn put off, in the order it was asked; each may put off more.
+fn run_deferred(engine: &mut Engine) {
+    while let Some(next) = DEFERRED.with(|deferred| {
+        let mut deferred = deferred.borrow_mut();
+        (!deferred.is_empty()).then(|| deferred.remove(0))
+    }) {
+        next(engine);
+    }
+}
+
 /// Runs `f` on the engine. Called from inside a turn, it runs when that
 /// turn ends.
 pub fn enter(f: impl FnOnce(&mut Engine) + 'static) {
@@ -105,12 +122,7 @@ pub fn enter(f: impl FnOnce(&mut Engine) + 'static) {
                 return;
             };
             f(engine);
-            while let Some(next) = DEFERRED.with(|deferred| {
-                let mut deferred = deferred.borrow_mut();
-                (!deferred.is_empty()).then(|| deferred.remove(0))
-            }) {
-                next(engine);
-            }
+            run_deferred(engine);
         }
         Err(_) => DEFERRED.with(|deferred| deferred.borrow_mut().push(Box::new(f))),
     });
@@ -123,12 +135,7 @@ pub fn ask<R>(f: impl FnOnce(&mut Engine) -> Result<R, String>) -> Result<R, Str
         let mut guard = cell.try_borrow_mut().map_err(|_| "busy".to_owned())?;
         let engine = guard.as_mut().ok_or("not started")?;
         let result = f(engine);
-        while let Some(next) = DEFERRED.with(|deferred| {
-            let mut deferred = deferred.borrow_mut();
-            (!deferred.is_empty()).then(|| deferred.remove(0))
-        }) {
-            next(engine);
-        }
+        run_deferred(engine);
         result
     })
 }
@@ -231,6 +238,7 @@ impl Engine {
                 self.write(win, visual, border, overview);
             }
         });
+        self.present_drag();
         self.restage(&frame);
     }
 

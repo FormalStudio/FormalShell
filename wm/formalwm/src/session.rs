@@ -277,6 +277,9 @@ pub fn exit() {
         tracing::error!("SHOJIWM_SOCKET is not set, cannot ask the compositor to quit");
         return;
     };
+    // The core does not tell the config it is quitting, so nothing else
+    // would take the JSON socket's file away.
+    let _ = std::fs::remove_file(shojiwm_rs::ipc::default_socket_path());
     std::thread::spawn(move || {
         if let Ok(mut socket) = UnixStream::connect(path) {
             let _ = socket.write_all(b"quit\n");
