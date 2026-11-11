@@ -86,6 +86,16 @@ front() {
   [ "\$(active)" = "\$1" ] && until_jq 10 "\$m-front.json" "any(.apps[]; .app == \\"\$1\\" and .focused)" call dock status
 }
 layers() { "$hyprctl_bin" -j layers > "\$1" 2>&1; }
+# need <step...>: the step, or the drive over at the first one that failed,
+# named in \$m-gave-up.txt beside the dock's status then. Every later step
+# stands on this one, and a run of waits each at its limit outlasts the
+# session.
+need() {
+  "\$@" && return
+  echo "\$*" > "\$m-gave-up.txt"
+  call dock status > "\$m-gave-up.json" 2>&1
+  exit 0
+}
 tile() { "$python3_bin" "$stub" --tile "\$@" >> "\$m-tile.log" 2>&1; }
 # The middle of an app's cell, and of a row of the open menu, off the
 # status in \$2.
@@ -95,25 +105,25 @@ row() { "\$jq" -r --arg label "\$1" '.menu.rows[] | select(.label == \$label) | 
 # card is out and at rest.
 edge() {
   park \$((W / 2)) \$((H - 1))
-  until_jq 10 "\$1" '.shown and all(.apps[]; .rect != null)' call dock status
+  until_jq 10 "\$1" '.shown and all(.apps[]; .rect != null)' call dock status || return 1
   until_settled
   call dock status > "\$1" 2>&1
 }
 # menu <path>: a right click on the stub's icon, and the status once its
 # own dock menu has landed in the card.
 menu() {
-  edge "\$1"
+  edge "\$1" || return 1
   park \$(cell \$stub "\$1"); click right
-  until_jq 10 "\$1" '.menu.app == "org.atoll.stub" and any(.menu.rows[]; .label == "New Document")' call dock status
+  until_jq 10 "\$1" '.menu.app == "org.atoll.stub" and any(.menu.rows[]; .label == "New Document")' call dock status || return 1
   until_settled
   call dock status > "\$1" 2>&1
 }
 hidden() { until_jq 10 "\$1" '.shown | not' call dock status; }
 
 spawn_foot \$foot
-until_window \$foot
-front \$foot
-until_jq 10 "\$m-native.json" 'any(.apps[]; .app == "formalshell-dock")' call dock status
+need until_window \$foot
+need front \$foot
+need until_jq 10 "\$m-native.json" 'any(.apps[]; .app == "formalshell-dock")' call dock status
 layers "\$m-native-layers.json"
 park \$((W / 2)) \$((H - 1))
 sleep 1
@@ -121,22 +131,22 @@ call dock status > "\$m-native-edge.json" 2>&1
 park
 
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
-until_window \$stub 15
-front \$stub
-until_jq 10 "\$m-strip.json" '.exists and .strip and any(.apps[]; .app == "org.atoll.stub" and .icon)' call dock status
+need until_window \$stub 15
+need front \$stub
+need until_jq 10 "\$m-strip.json" '.exists and .strip and any(.apps[]; .app == "org.atoll.stub" and .icon)' call dock status
 layers "\$m-strip-layers.json"
 until_settled
 shoot "\$m-hidden.png"
 
-edge "\$m-out.json"
+need edge "\$m-out.json"
 shoot "\$m-out.png"
 
 tile count=3 count-visible=true progress=0.4 progress-visible=true
-until_jq 10 "\$m-count.json" 'any(.apps[]; .app == "org.atoll.stub" and .badge == "3" and .progress == 0.4)' call dock status
+need until_jq 10 "\$m-count.json" 'any(.apps[]; .app == "org.atoll.stub" and .badge == "3" and .progress == 0.4)' call dock status
 until_settled
 shoot "\$m-count.png"
 tile count=0 count-visible=true x-atoll-badge=New progress-visible=false
-until_jq 10 "\$m-badge.json" 'any(.apps[]; .app == "org.atoll.stub" and .badge == "New" and .progress == null)' call dock status
+need until_jq 10 "\$m-badge.json" 'any(.apps[]; .app == "org.atoll.stub" and .badge == "New" and .progress == null)' call dock status
 until_settled
 shoot "\$m-badge.png"
 
@@ -147,43 +157,43 @@ park \$(cell \$stub "\$m-out.json"); click
 front \$stub; echo "\$?" > "\$m-click-stub.txt"
 call dock status > "\$m-on-stub.json" 2>&1
 
-menu "\$m-menu.json"
+need menu "\$m-menu.json"
 shoot "\$m-menu.png"
 park \$(row "New Document" "\$m-menu.json"); click
 for _ in \$(seq 1 20); do grep -q '^dock: Event(1, clicked)\$' "\$log" 2>/dev/null && break; sleep 0.25; done
-until_jq 10 "\$m-menu-shut.json" '.menu == null' call dock status
-hidden "\$m-gone.json"
+need until_jq 10 "\$m-menu-shut.json" '.menu == null' call dock status
+need hidden "\$m-gone.json"
 
-menu "\$m-menu-keep.json"
+need menu "\$m-menu-keep.json"
 park \$(row "Keep in Dock" "\$m-menu-keep.json"); click
-until_jq 10 "\$m-pinned.json" '.apps[0].app == "org.atoll.stub" and .apps[0].pinned and .rule == 1' call dock status
-edge "\$m-ruled.json"
+need until_jq 10 "\$m-pinned.json" '.apps[0].app == "org.atoll.stub" and .apps[0].pinned and .rule == 1' call dock status
+need edge "\$m-ruled.json"
 shoot "\$m-ruled.png"
 park
-hidden "\$m-left.json"
+need hidden "\$m-left.json"
 
 "$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:\$foot' })" > /dev/null 2>&1
-front \$foot
-hidden "\$m-before-urgent.json"
+need front \$foot
+need hidden "\$m-before-urgent.json"
 tile urgent=true
-until_jq 10 "\$m-urgent.json" '.shown and any(.apps[]; .app == "org.atoll.stub" and .urgent)' call dock status
+need until_jq 10 "\$m-urgent.json" '.shown and any(.apps[]; .app == "org.atoll.stub" and .urgent)' call dock status
 burst "\$m-hop" 12 0 -g "\$("\$jq" -r '.rect | "\(.x - 20),\(.y - 40) \(.width + 40)x\(.height + 44)"' "\$m-ruled.json")"
-hidden "\$m-urgent-gone.json"
+need hidden "\$m-urgent-gone.json"
 tile urgent=false
 
 call dock open > "\$m-open.txt" 2>&1
-until_jq 10 "\$m-held.json" '.shown and .held' call dock status
+need until_jq 10 "\$m-held.json" '.shown and .held' call dock status
 call dock activate \$stub > /dev/null 2>&1
 front \$stub; echo "\$?" > "\$m-activate.txt"
 sleep 1
 call dock status > "\$m-held-refocused.json" 2>&1
 call dock close > /dev/null 2>&1
-hidden "\$m-dismissed.json"
+need hidden "\$m-dismissed.json"
 
-menu "\$m-menu-quit.json"
+need menu "\$m-menu-quit.json"
 park \$(row "Quit" "\$m-menu-quit.json"); click
 for _ in \$(seq 1 20); do grep -qx quit "\$log" 2>/dev/null && break; sleep 0.25; done
-until_jq 10 "\$m-quit.json" '(.exists | not) and any(.apps[]; .app == "org.atoll.stub" and .pinned and (.running | not))' call dock status
+need until_jq 10 "\$m-quit.json" '(.exists | not) and any(.apps[]; .app == "org.atoll.stub" and .pinned and (.running | not))' call dock status
 layers "\$m-quit-layers.json"
 call dock unpin \$stub > /dev/null 2>&1
 EOF
@@ -205,6 +215,7 @@ leg_dock_assert() {
     [ ! -f "$m-$shot.png" ] || echo "SMOKE_DOCK_$(echo "$shot" | tr 'a-z-' 'A-Z_') $m-$shot.png"
   done
   echo "SMOKE_DOCK_SHELL $shell_log_path"
+  [ ! -f "$m-gave-up.txt" ] || fail "--dock: the drive stopped at a step that never came true: $(cat "$m-gave-up.txt"): $(cat "$m-gave-up.json" 2>/dev/null)"
   expect_jq "$m-native.json" '(.exists | not) and (.strip | not) and (.shown | not)' "--dock: a foot window alone gave the dock a surface"
   expect_jq "$m-native-layers.json" "$in_dock == 0" "--dock: a layer is in the dock's namespace with no Mac window" "$layers_jq"'[layers[].namespace]'
   expect_jq "$m-native-edge.json" '.shown | not' "--dock: the pointer on the bottom edge brought the dock out with no Mac window"

@@ -273,11 +273,11 @@ leg_activity_assert() {
 
   jq -e --arg id "launcher:$act_app_id" "$item"' | .state == "running" and .title == "Smoke Activity" and .progress == {"fraction": 0.4}
     and (.urgent | not)' "$m-l-1.json" > /dev/null || fail "activity: the LauncherEntry progress did not land: $(cat "$m-l-1.json")"
-  jq -e --arg app "$act_app_id" '.badges == [{"app": $app, "count": 3, "urgent": false}]' "$m-l-1.json" > /dev/null \
+  jq -e --arg app "$act_app_id" '.badges == [{"app": $app, "count": 3, "text": "", "urgent": false}]' "$m-l-1.json" > /dev/null \
     || fail "activity: the LauncherEntry count is not the app's badge: $(cat "$m-l-1.json")"
   jq -e --arg id "launcher:$act_app_id" "$item"' | .progress.fraction == 0.8 and .urgent' "$m-l-2.json" > /dev/null \
     || fail "activity: a partial update did not merge into the entry: $(cat "$m-l-2.json")"
-  jq -e --arg app "$act_app_id" '.badges == [{"app": $app, "count": 3, "urgent": true}] and .groups[0].urgent' "$m-l-2.json" > /dev/null \
+  jq -e --arg app "$act_app_id" '.badges == [{"app": $app, "count": 3, "text": "", "urgent": true}] and .groups[0].urgent' "$m-l-2.json" > /dev/null \
     || fail "activity: urgent did not reach the badge and the group: $(cat "$m-l-2.json")"
   jq -e --arg id "launcher:$act_app_id" "$item"' | .state == "done" and (.urgent | not)' "$m-l-3.json" > /dev/null \
     || fail "activity: hiding the progress did not end the item: $(cat "$m-l-3.json")"
