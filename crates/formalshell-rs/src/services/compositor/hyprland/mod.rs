@@ -38,8 +38,10 @@ const RETRY_FIRST: Duration = Duration::from_millis(250);
 const RETRY_MAX: Duration = Duration::from_secs(5);
 const HYPRCTL_TIMEOUT: Duration = Duration::from_secs(5);
 
+pub const INSTANCE_ENV: &str = "HYPRLAND_INSTANCE_SIGNATURE";
+
 pub fn instance() -> Option<String> {
-    std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok()
+    std::env::var(INSTANCE_ENV).ok()
 }
 
 fn socket_dir() -> io::Result<PathBuf> {

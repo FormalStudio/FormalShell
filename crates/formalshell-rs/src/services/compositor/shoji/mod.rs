@@ -42,7 +42,7 @@ const RETRY_MAX: Duration = Duration::from_secs(5);
 const ASK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// ShojiWM's control socket (`quit`, `reload`), which marks its session.
-const CONTROL_ENV: &str = "SHOJIWM_SOCKET";
+pub const CONTROL_ENV: &str = "SHOJIWM_SOCKET";
 
 pub fn session() -> bool {
     std::env::var_os(CONTROL_ENV).is_some_and(|v| !v.is_empty())
@@ -54,10 +54,6 @@ fn socket_path() -> Option<PathBuf> {
     let runtime = crate::paths::session_runtime()?;
     let display = std::env::var("WAYLAND_DISPLAY").ok().filter(|d| !d.is_empty());
     Some(proto::socket_path(Some(&runtime.to_string_lossy()), display.as_deref()).into())
-}
-
-pub fn instance() -> Option<String> {
-    crate::paths::shoji_instance()
 }
 
 pub async fn binds() -> Result<Vec<Bind>, ()> {

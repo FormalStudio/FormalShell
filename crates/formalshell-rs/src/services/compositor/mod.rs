@@ -310,10 +310,28 @@ pub fn escape_bind(name: &'static str, argv: Option<&[String]>) {
 /// One run of the session's compositor, `None` outside one. An output
 /// setting sent over IPC lives as long as that run.
 pub fn instance() -> Option<String> {
-    match kind() {
-        Kind::Hyprland => hyprland::instance(),
-        Kind::Shoji => shoji::instance(),
+    instance_in(kind(), &|k| std::env::var(k).ok())
+}
+
+/// `instance` for `kind`, its variables read through `var`.
+pub fn instance_in(kind: Kind, var: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    match kind {
+        Kind::Hyprland => var(hyprland::INSTANCE_ENV),
+        Kind::Shoji => crate::paths::shoji_instance(&var(shoji::CONTROL_ENV)?),
     }
+    .filter(|v| !v.is_empty())
+}
+
+/// `<runtime>/formalshell/<name>-<instance>`: a file that outlives one
+/// shell and belongs to one run of the selected compositor, since socket
+/// names like `wayland-1` come back with the next session.
+pub fn file(name: &str) -> std::path::PathBuf {
+    crate::paths::shell_runtime().join(file_name(name, kind(), &|k| std::env::var(k).ok()))
+}
+
+fn file_name(name: &str, kind: Kind, var: &dyn Fn(&str) -> Option<String>) -> String {
+    let id = instance_in(kind, var).or_else(|| var("WAYLAND_DISPLAY").filter(|v| !v.is_empty())).unwrap_or_default();
+    format!("{name}-{}", id.replace('/', "_"))
 }
 
 /// The compositor's binds for the launcher's keybinds route.
@@ -391,5 +409,18 @@ mod tests {
         assert!(parked(&s, "unknown"));
         s.overlaid.clear();
         assert!(parked(&s, "over"));
+    }
+
+    #[test]
+    fn a_compositor_file_belongs_to_the_selected_compositor() {
+        let both = |k: &str| match k {
+            "HYPRLAND_INSTANCE_SIGNATURE" => Some("host-sig".to_owned()),
+            "SHOJIWM_SOCKET" => Some("/run/user/1/shojiwm.wayland-1.sock".to_owned()),
+            "WAYLAND_DISPLAY" => Some("wayland-1".to_owned()),
+            _ => None,
+        };
+        assert_eq!(file_name("locked", Kind::Shoji, &both), "locked-shojiwm.wayland-1.sock-0");
+        assert_eq!(file_name("locked", Kind::Hyprland, &both), "locked-host-sig");
+        assert_eq!(file_name("locked", Kind::Shoji, &|k| (k == "WAYLAND_DISPLAY").then(|| "wayland-1".into())), "locked-wayland-1");
     }
 }

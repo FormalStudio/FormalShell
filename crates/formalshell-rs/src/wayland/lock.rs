@@ -311,7 +311,7 @@ impl Dispatch2<ExtIdleNotificationV1, App> for LockIdle {
 /// Present while this session's built-in lock is held, whichever shell
 /// holds it.
 fn held_marker() -> std::path::PathBuf {
-    crate::paths::compositor_file("locked")
+    crate::services::compositor::file("locked")
 }
 
 fn mark_held(held: bool) {

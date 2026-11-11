@@ -85,7 +85,7 @@ pub(super) struct State {
 /// theme publish reloads the config mid-arrival, so it cannot be written
 /// any earlier. A shell that starts with it present is a restart.
 fn arrival_marker() -> PathBuf {
-    crate::paths::compositor_file("arrived")
+    crate::services::compositor::file("arrived")
 }
 
 fn mark_arrived() {
