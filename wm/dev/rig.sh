@@ -1,9 +1,10 @@
 #!/bin/bash
 # Builds and tests formalwm on the rig's Shoji slot, where its headers are:
-# copies wm/, crates/fs-wm-proto and the ShojiWM worktree it depends on to
-# ~/fwm on the guest, laid out as here so the path dependencies hold, and
-# runs cargo there in the `shoji-build` image with ~/fwm-build for a target
-# directory. ~/fwm-target/release-fast/formalwm is the build others run;
+# copies wm/ and crates/fs-wm-proto to ~/fwm on the guest, laid out as here
+# so the path between them holds, and runs cargo there in the `shoji-build`
+# image with ~/fwm-build for a target directory. The ShojiWM worktree goes
+# along for its own tests (--manifest-path /src/Developer/ShojiWM-wt/rs-sdk/Cargo.toml);
+# formalwm builds against the rev its manifest names. ~/fwm-target/release-fast/formalwm is the build others run;
 # `promote` puts the last build there, after it has been run.
 #   wm/dev/rig.sh build --profile release-fast -p formalwm
 #   wm/dev/rig.sh test -p formalwm-core
