@@ -63,6 +63,13 @@ fn the_state_the_socket_publishes() {
         Some("formalshell-console")
     );
     assert!(!win("console").shown && win("console").floating);
+    assert!(
+        state
+            .windows
+            .iter()
+            .filter(|w| w.overlay.is_none())
+            .all(|w| w.shown)
+    );
     assert_eq!(win("a").overlay, None);
 }
 

@@ -8,6 +8,7 @@ pub mod color;
 pub mod geom;
 pub mod model;
 pub mod motion;
+pub mod overview;
 pub mod rules;
 pub mod scene;
 pub mod settings;
