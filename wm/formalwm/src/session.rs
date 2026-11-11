@@ -68,6 +68,13 @@ pub fn settings_dir() -> PathBuf {
         .join("formalwm")
 }
 
+/// `FORMALWM_START_LOCKED=1`, set by a login that asked for no password:
+/// nothing is drawn until the shell has locked and been unlocked. An
+/// environment variable, since the command line is the core's.
+pub fn starts_locked() -> bool {
+    std::env::var("FORMALWM_START_LOCKED").is_ok_and(|value| value == "1")
+}
+
 pub fn override_of(output: &str) -> OutputOverride {
     OVERRIDES.with(|overrides| overrides.borrow().get(output).cloned().unwrap_or_default())
 }
@@ -370,7 +377,10 @@ pub fn setup() {
             engine.xwayland_primary();
             engine.start_shell();
         });
-        wait_for_shell(Instant::now());
+        // Locked with no shell, the session stays dark, pointer and all.
+        if !starts_locked() {
+            wait_for_shell(Instant::now());
+        }
     });
 }
 

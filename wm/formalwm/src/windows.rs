@@ -66,9 +66,10 @@ pub fn setup(signals: Signals) {
         .kde_default_decoration(|_| WindowDecorationModeSnapshot::Server);
 
     COMPOSITOR.window.composition(move |window| {
-        // Read here on purpose: either one changes what the frame is made of.
+        // Read here on purpose: each one changes what the frame is made of.
         let look = signals.look.get();
         let full = window.state(&FULL).get();
+        let blurred = window.state(&BLUR).get();
 
         let managed = ManagedWindow::new()
             .rect(window.state(&RECT))
@@ -114,11 +115,18 @@ pub fn setup(signals: Signals) {
                 }]
             }));
         }
+        // A node of the frame and not the core's `behind` slot: under a
+        // window drawn below full opacity that slot shows the window again.
+        let client = if blurred {
+            ShaderEffect::new(crate::layers::blur()).child(ClientWindow::new())
+        } else {
+            ClientWindow::new()
+        };
         managed.child(
             WindowBorder::new()
                 .style(style)
                 .resize_hit_area(8, 14)
-                .child(ClientWindow::new()),
+                .child(client),
         )
     });
 

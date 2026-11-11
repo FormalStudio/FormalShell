@@ -82,5 +82,6 @@ fn main() -> std::process::ExitCode {
     ConfigBuilder::new(setup)
         .name("formalwm")
         .asset_root(layers::install_assets())
+        .start_locked(session::starts_locked())
         .run()
 }

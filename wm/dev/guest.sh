@@ -19,9 +19,19 @@ fi
 cat > "$config/formalwm/formalshell-start.sh" <<'START'
 test -S "$XDG_RUNTIME_DIR/shojiwm-$WAYLAND_DISPLAY.sock" && up=up || up=missing
 echo "display $WAYLAND_DISPLAY, socket $up" > "$XDG_CONFIG_HOME/started"
+# A locked start, as the locked login has it: the marker the shell takes
+# the lock on, a window started with the session, and a screenshot as often
+# as grim can take one from here on.
+if [ "${FORMALWM_START_LOCKED:-}" = 1 ]; then
+  mkdir -p "$XDG_CONFIG_HOME/burst" "$XDG_RUNTIME_DIR/formalshell"
+  : > "$XDG_RUNTIME_DIR/formalshell/login-lock"
+  ( for i in $(seq -w 70); do grim "$XDG_CONFIG_HOME/burst/$i-$(date +%s%3N).png"; done ) > /dev/null 2>&1 &
+  "$(dirname "$SHOJI_BIN")/fwm-drag" autostart > /dev/null 2>&1 &
+fi
 [ -z "${FWM_SHELL:-}" ] || exec "$FWM_SHELL" > "$XDG_CONFIG_HOME/shell.log" 2>&1
 START
 export FWM_SHELL=${FWM_SHELL:-} FWM_KEYS=${FWM_KEYS:-} FORMALWM_FRAMES="$config/frames"
+[ -z "${FWM_LOCKED:-}" ] || export FORMALWM_START_LOCKED=1
 # FWM_TIMING has the core log every frame's render and cpu time and the
 # rate it presents at.
 if [ -n "${FWM_TIMING:-}" ]; then
