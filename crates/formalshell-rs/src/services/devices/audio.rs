@@ -282,6 +282,13 @@ async fn run(ctx: Ctx) {
             while let Ok(more) = events.try_recv() {
                 c.graph.apply(more);
             }
+            // Before the first sync lands the graph is half read: a default
+            // sink whose Props have not arrived reads as a volume it does not
+            // have, and the OSD shows the move to the real one. An empty
+            // graph (a disconnect) is a whole picture of no audio.
+            if !c.graph.ready && !c.graph.nodes.is_empty() {
+                return None;
+            }
             Some((snapshot(&c.graph, listed), routing(&c.graph, routed_streams)))
         });
         if let Some((audio, routed)) = audio {
