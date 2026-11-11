@@ -172,11 +172,16 @@ pub fn open(store: &Store, id: &str) {
 
 /// Spawns `argv`, which starts desktop entry `id`, its launch shown until a
 /// new window of it maps. An id the launcher's tree does not hold has no
-/// window to wait on, so its spawn shows nothing.
+/// window to wait on, so its spawn shows nothing. Nor does a running Mac
+/// app's: a second `atoll run` hands what it was given to the running
+/// instance, which need not open a window for it.
 pub fn spawn(store: &Store, id: &str, argv: &[String]) {
     compositor::spawn(argv);
     let Some(entry) = entry(store, id) else { return };
     let before = match_windows(Some(&entry), &store.compositor.snapshot.windows);
+    if !entry.bundle_id.is_empty() && !before.is_empty() {
+        return;
+    }
     let title = if entry.name.is_empty() { entry.id.clone() } else { entry.name.clone() };
     let app = entry.id.clone();
     if let Some(p) = PUBLISHER.get() {

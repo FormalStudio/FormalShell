@@ -35,6 +35,8 @@ pub enum Origin {
     Notification,
     /// An app the shell spawned, until a window of it maps.
     Launch,
+    /// An `atoll uninstall` the shell ran.
+    Atoll,
 }
 
 impl Origin {
@@ -44,6 +46,7 @@ impl Origin {
             Origin::LauncherEntry => "launcherEntry",
             Origin::Notification => "notification",
             Origin::Launch => "launch",
+            Origin::Atoll => "atoll",
         }
     }
 }
@@ -72,7 +75,8 @@ impl State {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Item {
     /// Unique across origins: `fspec:<op id>`, `launcher:<desktop id>`,
-    /// `notification:<id>`, `launch:<desktop id>`.
+    /// `notification:<id>`, `launch:<desktop id>`,
+    /// `atoll:uninstall:<desktop id>`.
     pub id: String,
     pub origin: Origin,
     /// The grouping key: one row per source.

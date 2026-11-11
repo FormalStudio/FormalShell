@@ -85,6 +85,7 @@ target dock
   function unpin(id: string): string
   function activate(id: string): string
   function menu(id: string): string
+  function choose(id: string, item: int): string
   function quit(id: string): string
 target overnight
   function toggle(): string

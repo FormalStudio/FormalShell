@@ -12,6 +12,7 @@ pub mod airplay;
 pub mod ams;
 pub mod appicon;
 pub mod appmenu;
+pub mod atoll;
 pub mod barpaint;
 pub mod battery;
 pub mod bus;

@@ -258,6 +258,8 @@ pub struct Launchable {
     pub entry: DesktopEntry,
     pub path: PathBuf,
     pub actions: Vec<Action>,
+    pub bundle_id: String,
+    pub mime_types: Vec<String>,
 }
 
 pub fn scan_apps(dirs: &[PathBuf]) -> Vec<Launchable> {
@@ -266,7 +268,7 @@ pub fn scan_apps(dirs: &[PathBuf]) -> Vec<Launchable> {
         .into_iter()
         .map(|entry| {
             let more = extras.remove(&entry.id).unwrap_or_default();
-            Launchable { entry, path: more.path, actions: more.actions }
+            Launchable { entry, path: more.path, actions: more.actions, bundle_id: more.bundle_id, mime_types: more.mime_types }
         })
         .collect()
 }
@@ -277,6 +279,8 @@ struct Extras {
     terminal: bool,
     actions: Vec<Action>,
     path: PathBuf,
+    bundle_id: String,
+    mime_types: Vec<String>,
 }
 
 fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
@@ -353,7 +357,8 @@ fn parse_entry(id: &str, path: &Path, desktops: &[String]) -> Option<(DesktopEnt
         command: fs_system::exec::split_exec(fields.get("Exec").copied().unwrap_or_default()),
         generic_name: text("GenericName"),
     };
-    Some((entry, Extras { terminal: flag("Terminal"), actions, path: path.to_owned() }))
+    let mime_types = fields.get("MimeType").copied().unwrap_or_default().split(';').filter(|t| !t.is_empty()).map(str::to_owned).collect();
+    Some((entry, Extras { terminal: flag("Terminal"), actions, path: path.to_owned(), bundle_id: text("X-Atoll-BundleId"), mime_types }))
 }
 
 #[cfg(test)]

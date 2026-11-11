@@ -116,6 +116,17 @@ impl Menu {
     }
 }
 
+impl DockMenu {
+    /// What can be chosen in it: each enabled leaf's id, and its label
+    /// under the titles above it.
+    pub fn choices(&self) -> Vec<(i32, String)> {
+        let mut out = Vec::new();
+        collect(&self.root, &mut Vec::new(), &mut out);
+        let label = |c: Command| c.path.into_iter().chain([c.label]).collect::<Vec<_>>().join(" \u{203A} ");
+        out.into_iter().filter(|c| c.enabled).map(|c| (c.id, label(c))).collect()
+    }
+}
+
 /// A shortcut as the caps `ui::keycap` draws: the keys the user
 /// presses, Super and Shift as their glyphs.
 pub fn keycaps(shortcut: &[String]) -> Vec<String> {

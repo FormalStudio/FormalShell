@@ -538,7 +538,7 @@ pub fn act(store: &Store, runtime: &Runtime, verb: Verb, source: &str) -> Result
         Verb::Open => {
             let lead = g.lead();
             match (lead.origin, lead.app.as_deref(), lead.notification()) {
-                (Origin::Fspec, ..) => return Ok(Done::Panel),
+                (Origin::Fspec | Origin::Atoll, ..) => return Ok(Done::Panel),
                 (Origin::LauncherEntry | Origin::Launch, Some(app), _) => focus_app(store, app),
                 (Origin::Notification, _, Some(id)) => notify(runtime, Op::Invoke(id, "default".into())),
                 _ => {}

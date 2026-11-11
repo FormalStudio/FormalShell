@@ -495,8 +495,26 @@ impl App {
         }
     }
 
+    /// The app filed under `app`, else the one a window of which goes by
+    /// it: a Mac app's desktop entry and its windows may differ in case.
     fn dock_index(&self, app: &str) -> Result<usize, String> {
-        self.dock.entries.iter().position(|e| e.item.app.eq_ignore_ascii_case(app)).ok_or_else(|| format!("no app '{app}' in the dock"))
+        let entries = &self.dock.entries;
+        let key = app.to_lowercase();
+        let found = entries.iter().position(|e| e.item.app.eq_ignore_ascii_case(app)).or_else(|| entries.iter().position(|e| e.keys.contains(&key)));
+        found.ok_or_else(|| format!("no app '{app}' in the dock"))
+    }
+
+    /// The process of the running Mac app `app`.
+    pub(super) fn dock_mac_pid(&self, app: &str) -> Result<u32, String> {
+        let e = &self.dock.entries[self.dock_index(app)?];
+        e.pid.filter(|pid| appmenu::registered(*pid)).ok_or_else(|| format!("'{app}' is not a running Mac app"))
+    }
+
+    /// `dock choose`: an item of the app's own dock menu, by its id there.
+    pub fn dock_choose(&mut self, app: &str, item: i32) -> Result<(), String> {
+        let pid = self.dock_mac_pid(app)?;
+        self.runtime.service(move |ctx| appmenu::dock_click(ctx, pid, item));
+        Ok(())
     }
 
     /// The rows of an app's menu: its own dock menu where it is a Mac app

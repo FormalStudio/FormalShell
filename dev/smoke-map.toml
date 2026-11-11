@@ -316,6 +316,13 @@ runs = ["--mac-keys"]
 paths = ["crates/fs-chrome/src/dock.rs", "crates/formalshell-rs/src/surfaces/dock.rs", "crates/formalshell-rs/src/wayland/dock.rs", "crates/formalshell-rs/src/ipc/dock.rs", "crates/fs-activity/src/launcher.rs", "crates/formalshell-rs/src/services/appmenu.rs", "crates/formalshell-rs/src/wayland/tray_menu.rs", "crates/formalshell-rs/src/surfaces/popup.rs", "dev/mac-stub.py"]
 runs = ["--dock"]
 
+# A Mac app in the launcher: its entry's bundle id and types, its row, its
+# column's dock actions, own dock menu and Quit, atoll's uninstall, and a
+# file's Open with by its type.
+[[rule]]
+paths = ["crates/fs-menu/src/mime.rs", "crates/fs-menu/src/actions.rs", "crates/fs-menu/src/intent.rs", "crates/formalshell-rs/src/services/atoll.rs", "crates/formalshell-rs/src/services/launch.rs", "crates/formalshell-rs/src/services/appicon.rs", "crates/formalshell-rs/src/services/appmenu.rs", "crates/formalshell-rs/src/surfaces/launcher/rows.rs", "crates/formalshell-rs/src/wayland/dock.rs", "crates/formalshell-rs/src/ipc/dock.rs", "dev/mac-stub.py"]
+runs = ["--mac-launcher"]
+
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/ui/spectrum/**"]
 runs = ["--visualizer", "--visualizer-styles", "--spectrum"]

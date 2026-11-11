@@ -501,6 +501,11 @@ impl App {
                 Request::Plugin(id, line) => plugins::send(&id, line),
                 Request::Plugins(open) => plugins::launcher(open),
                 Request::PeerScan => localsend::command(localsend::Cmd::Scan { force: false }),
+                Request::DockMenu(app) => {
+                    if let Ok(pid) = self.dock_mac_pid(&app) {
+                        self.runtime.service(move |ctx| crate::services::appmenu::dock_menu(ctx, pid));
+                    }
+                }
                 Request::Clipboard(cmd) => clipboard::command(cmd),
                 Request::Picked { node, query, now } => index::record_pick(&self.store, &node, &query, now),
                 Request::MoveAbbreviation { old, new, subject } => index::move_abbreviation(&self.store, &old, &new, &subject),
@@ -621,6 +626,12 @@ impl App {
             }
             Intent::PackageInstall(id) => packages::install(&self.store, id),
             Intent::PackageUninstall(id) => packages::send(packages::Cmd::Uninstall(id.clone())),
+            Intent::AppUninstall(id) => {
+                if let Some((argv, name)) = crate::services::atoll::uninstall_of(&self.store, id) {
+                    let id = id.clone();
+                    self.runtime.service(move |ctx| crate::services::atoll::uninstall(ctx, id, name, argv));
+                }
+            }
             Intent::PowerSuspend => power::request(power::Action::Suspend),
             Intent::PowerReboot => power::request(power::Action::Reboot),
             Intent::PowerOff => power::request(power::Action::PowerOff),
@@ -1124,7 +1135,10 @@ impl App {
             }
             Topic::PluginOutput => self.launcher_plugins(),
             Topic::Tray => self.launcher_tray(),
-            Topic::AppMenu => self.launcher_appmenu(),
+            Topic::AppMenu => {
+                self.launcher_appmenu();
+                self.launcher_dock_answer();
+            }
             Topic::Notifications => self.launcher_store_changed(),
             Topic::Clipboard => {
                 self.launcher_clipboard();
@@ -1512,6 +1526,16 @@ impl App {
         });
         let rows = fs_menu::providers::app_menu_provider(commands.as_deref());
         self.apply(Diff::Menu(index::Diff::Source(Provider::AppMenu, rows)));
+    }
+
+    /// The dock menu a Mac app answered with, into its open column.
+    fn launcher_dock_answer(&mut self) {
+        let Some(app) = self.launcher.column_app().map(str::to_owned) else { return };
+        let Ok(pid) = self.dock_mac_pid(&app) else { return };
+        let Some(choices) = self.store.appmenu.dock.as_ref().filter(|d| d.pid == pid).map(|d| d.choices()) else { return };
+        if self.launcher.dock_answer(&app, &choices) {
+            self.launcher_store_changed();
+        }
     }
 
     /// What every store change the launcher's index reads asks of it.

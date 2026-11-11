@@ -1,6 +1,7 @@
 //! `dock`: what the dock holds and whether it is out, and what a pointer
 //! does on it by an app's id: held out and put away, an app kept or let go,
-//! its icon clicked, its menu opened and the app quit.
+//! its icon clicked, its menu opened, an item of a Mac app's own dock menu
+//! chosen and the app quit.
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
@@ -17,6 +18,7 @@ pub fn target() -> Target<App> {
             Function { name: "unpin", params: &[("id", Type::String)], ret: Type::String, call: unpin },
             Function { name: "activate", params: &[("id", Type::String)], ret: Type::String, call: activate },
             Function { name: "menu", params: &[("id", Type::String)], ret: Type::String, call: menu },
+            Function { name: "choose", params: &[("id", Type::String), ("item", Type::Int)], ret: Type::String, call: choose },
             Function { name: "quit", params: &[("id", Type::String)], ret: Type::String, call: quit },
         ],
     }
@@ -53,6 +55,11 @@ fn activate(app: &mut App, args: &[Value]) -> Reply {
 
 fn menu(app: &mut App, args: &[Value]) -> Reply {
     app.dock_menu_for(args[0].str())?;
+    ok()
+}
+
+fn choose(app: &mut App, args: &[Value]) -> Reply {
+    app.dock_choose(args[0].str(), args[1].int())?;
     ok()
 }
 

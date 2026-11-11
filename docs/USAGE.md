@@ -739,8 +739,19 @@ fs dock pin org.gnome.Nautilus
 fs dock unpin org.gnome.Nautilus
 fs dock activate com.coteditor.CotEditor   # what a click on its icon does
 fs dock menu com.coteditor.CotEditor       # what a right click opens
+fs dock choose com.coteditor.CotEditor 4   # an item of the app's own dock menu, by its id there
 fs dock quit com.coteditor.CotEditor       # what Quit in that menu does
 ```
+
+**In the launcher** a Mac app is a row like any other, trailing `Mac`.
+Enter focuses it when it runs. Tab lists its actions, and among them
+everything the dock offers, so none of it needs the pointer: **Keep in
+Dock** or **Remove from Dock**, and for a running app **Quit**, which is
+the app's own Quit, and the items of its own dock menu. A Mac app you
+installed with `atoll install` carries **Uninstall** last: the first Enter
+arms it, the second runs `atoll uninstall`, and Activity shows how it
+ended. A file's **Open with** lists the apps that say they open its type
+first, Mac apps among them, then every other app under `Other apps`.
 
 ```sh
 fs appmenu status                    # {"pid":…,"titles":[…],"open":null,"rows":[],"macKeys":true}

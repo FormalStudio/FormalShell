@@ -332,6 +332,10 @@ pub struct DesktopEntry {
     pub path: String,
     /// Its `[Desktop Action]` groups: the group key and its `Name`.
     pub actions: Vec<(String, String)>,
+    /// `X-Atoll-BundleId`: the entry is a Mac app's, installed by atoll.
+    pub bundle_id: String,
+    /// `MimeType`: the types it says it opens.
+    pub mime_types: Vec<String>,
 }
 
 /// A tree node and, equally, a display row.
