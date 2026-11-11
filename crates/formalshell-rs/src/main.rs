@@ -67,7 +67,7 @@ fn main() {
 
     let conn = Connection::connect_to_env().expect("no Wayland compositor to connect to");
     trace::phase("wayland connect");
-    let (globals, queue) = registry_queue_init::<App>(&conn).expect("wl_registry");
+    let (globals, mut queue) = registry_queue_init::<App>(&conn).expect("wl_registry");
     let qh = queue.handle();
     trace::phase("wayland");
     gpu::resolve(settings::render_backend(&services::config::read_file()), &conn, &globals);
@@ -75,6 +75,13 @@ fn main() {
 
     let mut event_loop: EventLoop<'static, App> = EventLoop::try_new().expect("event loop");
     let handle = event_loop.handle();
+    let mut app = App::new(conn.display(), &globals, &qh, handle.clone(), Runtime::default(), started, motion_scale(), prompter);
+    app.warm_bar_faces();
+    trace::phase("app");
+    // The bar's configure, and the layout it asks for, are handled before
+    // the services start: their opening burst of diffs would otherwise
+    // reach the loop ahead of the configure and hold the first frame back.
+    queue.roundtrip(&mut app).expect("the compositor's first configures");
     WaylandSource::new(conn.clone(), queue).insert(handle.clone()).expect("wayland source");
 
     let (sender, inbox) = channel::channel::<Msg>();
@@ -85,14 +92,8 @@ fn main() {
             }
         })
         .expect("runtime channel");
-    let runtime = Runtime::start(Publisher::new(sender), |ctx| {
-        services::start(ctx);
-    });
+    app.runtime.start(Publisher::new(sender), services::start);
     trace::phase("runtime");
-
-    let mut app = App::new(conn.display(), &globals, &qh, handle.clone(), runtime, started, motion_scale(), prompter);
-    app.warm_bar_faces();
-    trace::phase("app");
     gpu::watch(&handle, App::gpu_up);
     ipc::listen(&handle);
 

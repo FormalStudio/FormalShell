@@ -38,13 +38,14 @@ impl Ctx {
     }
 }
 
-/// The thread ends when the UI's [`super::Runtime`] is dropped.
+/// The thread ends when the UI's [`super::Runtime`] is dropped. What was
+/// sent on `rx` before it started runs after `services`.
 pub fn spawn(
+    rx: async_channel::Receiver<Request>,
     publisher: Publisher,
     pool: Pool,
     services: impl FnOnce(&Ctx) + Send + 'static,
-) -> async_channel::Sender<Request> {
-    let (tx, rx) = async_channel::unbounded::<Request>();
+) {
     std::thread::Builder::new()
         .name("fs-service".into())
         .spawn(move || {
@@ -59,5 +60,4 @@ pub fn spawn(
             }));
         })
         .expect("spawn the service thread");
-    tx
 }
