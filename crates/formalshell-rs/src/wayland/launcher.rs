@@ -502,6 +502,8 @@ impl App {
                 Request::Plugins(open) => plugins::launcher(open),
                 Request::PeerScan => localsend::command(localsend::Cmd::Scan { force: false }),
                 Request::Clipboard(cmd) => clipboard::command(cmd),
+                Request::Picked { node, query, now } => index::record_pick(&self.store, &node, &query, now),
+                Request::MoveAbbreviation { old, new, subject } => index::move_abbreviation(&self.store, &old, &new, &subject),
                 Request::Selected(answer) => {
                     write_selection(&crate::surfaces::launcher::selection_path(), &answer);
                     self.selection_answer(answer);
@@ -716,7 +718,7 @@ impl App {
         } else if token == LIGHTS_COLOR {
             self.lights_answer(value, cancelled);
         } else if token == ABBREV_EDIT {
-            self.launcher.edit_answer(&self.store, value, cancelled);
+            self.launcher.edit_answer(value, cancelled);
         }
     }
 

@@ -513,6 +513,10 @@ pub enum Request {
     Wallpaper(state::Choice, Option<fs_theme::theme::Mode>),
     /// A Style preview's mode, under `theme mode`'s rules.
     Mode(fs_theme::theme::Mode),
+    /// One pick of `node` under `query`, for the picks ledger.
+    Picked { node: Box<Node>, query: String, now: f64 },
+    /// `subject` pinned under `new` and forgotten from `old`.
+    MoveAbbreviation { old: String, new: String, subject: String },
 }
 
 /// One answer of a select, input or image select step. A secret value is
@@ -2010,17 +2014,17 @@ impl Model {
             }
             _ => return Out::None,
         };
-        self.picked(store, node);
+        self.picked(node);
         self.close();
         Out::Target(pick)
     }
 
     /// `Edit abbreviation`'s answer: the subject pinned under the new
     /// abbreviation, the one it edits forgotten.
-    pub fn edit_answer(&mut self, store: &Store, value: Option<String>, cancelled: bool) {
+    pub fn edit_answer(&mut self, value: Option<String>, cancelled: bool) {
         let Some((subject, old)) = self.editing.take() else { return };
         let Some(new) = value.filter(|_| !cancelled).as_deref().and_then(fs_menu::abbrev::key) else { return };
-        index::move_abbreviation(store, &old, &new, &subject);
+        self.ask(Request::MoveAbbreviation { old, new, subject });
     }
 
     /// Enter: the row's first action.
@@ -2055,9 +2059,9 @@ impl Model {
         }
     }
 
-    fn picked(&self, store: &Store, node: &Node) {
+    fn picked(&self, node: &Node) {
         if self.mode == Mode::Menu {
-            index::record_pick(store, node, self.list_text(), crate::runtime::now_ms() as f64);
+            self.ask(Request::Picked { node: Box::new(node.clone()), query: self.list_text().to_owned(), now: crate::runtime::now_ms() as f64 });
         }
     }
 
@@ -2077,7 +2081,7 @@ impl Model {
         self.confirm.clear();
         let out = match &action.run {
             Run::Into(id) => {
-                self.picked(store, node);
+                self.picked(node);
                 let into = if *id != fs_menu::actions::subject_id(node).to_string() {
                     None
                 } else if node.kind == NodeKind::App {
@@ -2123,7 +2127,7 @@ impl Model {
                     // The picker closes the card itself once a tile takes
                     // the picture.
                     Intent::WallpaperSet(_) => {
-                        self.picked(store, node);
+                        self.picked(node);
                         return Out::Intent(intent.clone(), subject, true);
                     }
                     Intent::WallpaperSetFor(..) => return Out::Intent(intent.clone(), subject, true),
@@ -2138,7 +2142,7 @@ impl Model {
                 if action.paste_after {
                     self.paste = true;
                 }
-                self.picked(store, node);
+                self.picked(node);
                 return Out::Intent(intent.clone(), subject, action.keep_open);
             }
             Run::Spawn(argv) => Out::Spawn(argv.clone()),
@@ -2148,7 +2152,7 @@ impl Model {
         if action.paste_after {
             self.paste = true;
         }
-        self.picked(store, node);
+        self.picked(node);
         if action.keep_open {
             return out;
         }
