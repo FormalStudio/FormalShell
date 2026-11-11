@@ -77,7 +77,8 @@ leg_launcher_overflow_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 focus() { "$wmctl_bin" dispatch "hl.dsp.focus({ monitor = '\${1:-$launcher_overflow_output}' })" > /dev/null 2>&1; sleep 0.4; }
-width=\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
+# Outputs are laid out in logical pixels: the first one's width over its scale.
+width=\$("$wmctl_bin" -j monitors | "$jq_bin" '.[0] | .width / .scale | round')
 "$wmctl_bin" output create headless "$launcher_overflow_output" > /dev/null 2>&1
 # A theme change reloads the compositor's config, which drops this rule.
 place() { "$wmctl_bin" eval "hl.monitor({ output = \\"$launcher_overflow_output\\", mode = \\"1280x720@60\\", position = \\"\${width}x0\\", scale = 1 })" > /dev/null 2>&1; sleep 3; }

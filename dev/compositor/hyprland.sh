@@ -32,8 +32,8 @@ wm_autostart() {
 
 # wm_bind [--repeat] [--release] [--transparent] [--title <text>] <chord> <action> [<arg>]:
 # a bind in the session's own table. The chord and action are formalwm's
-# spelling (SUPER+T, wm/core/src/action.rs); --transparent is Hyprland's own,
-# a bind another on the same keys does not shadow, and formalwm has none.
+# spelling (SUPER+T, wm/core/src/action.rs); --transparent is a modifier's
+# release bind that still fires after a chord with it, formalwm's passthrough.
 wm_bind() {
   local opts=() chord action arg dsp joined
   while :; do
@@ -169,6 +169,27 @@ wm_config_tail() { :; }
 # wm_cover_output <selector>: drive-script lines that make a lone window
 # cover the output. Hyprland's default dwindle already does, gaps being 0.
 wm_cover_output() { :; }
+
+# wm_full_width_columns: a lone tiled window spans the work area. Hyprland's
+# already does.
+wm_full_width_columns() { :; }
+
+# wm_overview_phase: a drive-script line printing the overview's phase,
+# open or closed. The shell draws it under Hyprland.
+wm_overview_phase() {
+  printf '%s call debug dump 2>/dev/null | %q -r .overview.phase\n' "$ipc" "$jq_bin"
+}
+
+# wm_lock_release_control: drive-script lines that release a window's
+# pointer lock, for a leg proving its probe sees a release. Hyprland drops
+# the lock when any layer maps, the overlay `debug join` hangs here.
+wm_lock_release_control() {
+  printf '%s call debug join top 100 200 > /dev/null 2>&1\nsleep 1\n%s call debug joinClear > /dev/null 2>&1\n' "$ipc" "$ipc"
+}
+
+# The palette role the focused border takes: primary, as wm_border_from_palette
+# wires it.
+wm_border_role=primary
 
 # The shell writes ~/.config/hypr/formalshell-colors.lua for this one.
 wm_hypr_palette=true

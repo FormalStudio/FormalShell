@@ -75,12 +75,12 @@ shoji_host() {
 
 # The forms of hyprland.sh's helpers of the same names; see there.
 wm_bind() {
-  local repeat=false release=false title=""
+  local repeat=false release=false passthrough=false title=""
   while :; do
     case $1 in
       --repeat) repeat=true ;;
       --release) release=true ;;
-      --transparent) ;;
+      --transparent) passthrough=true ;;
       --title) title=$2; shift ;;
       *) break ;;
     esac
@@ -93,8 +93,8 @@ wm_bind() {
       echo "SMOKE_FAIL: formalwm swaps windows up or down in a column; $1's sideways swap is Hyprland's dwindle" >&2
       exit 1 ;;
   esac
-  shoji_host '.binds += [{ chord: $chord, action: $action, args: $args, title: $title, repeat: $repeat, release: $release }]' \
-    --arg chord "$1" --arg action "$2" --arg title "$title" --argjson repeat "$repeat" --argjson release "$release" \
+  shoji_host '.binds += [{ chord: $chord, action: $action, args: $args, title: $title, repeat: $repeat, release: $release, passthrough: $passthrough }]' \
+    --arg chord "$1" --arg action "$2" --arg title "$title" --argjson repeat "$repeat" --argjson release "$release" --argjson passthrough "$passthrough" \
     --argjson args "$("$jq_bin" -nc '$ARGS.positional' --args "${@:3}")"
 }
 
@@ -149,6 +149,28 @@ read -r cover_w cover_h <<< "\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0] | 
 sleep 1
 EOS
 }
+
+# A lone formalwm column is half the output wide and centred; a full width
+# one starts a gap in from the reserved edge, where a tiled Hyprland
+# window starts.
+wm_full_width_columns() {
+  shoji_host '.layout.columnWidth = 1.0'
+}
+
+# The overview is formalwm's own (spec section 4), which the shell opens.
+wm_overview_phase() {
+  printf '%q overview\n' "$wmctl_bin"
+}
+
+# formalwm keeps a lock under a layer that takes no keyboard, as the
+# protocol allows; a window taking focus releases it.
+wm_lock_release_control() {
+  printf '%q --app-id=formalshell-lock-control sh -c "sleep 3" > /dev/null 2>&1 &\nsleep 4\n' "$foot_bin"
+}
+
+# The palette role the focused border takes: the shipped style's focused
+# window border, which the shell sends through theme.set.
+wm_border_role=border
 
 # The shell sends formalwm its palette through theme.set and writes no
 # Hyprland palette file.

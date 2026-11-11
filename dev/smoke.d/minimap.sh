@@ -151,7 +151,7 @@ drag "\$ax" "\$ay" 600 "\$ay" 200
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[10]}" 2>&1
 "$wmctl_bin" -j clients > "${minimap_clients[7]}" 2>&1
-$ipc call debug dump 2>/dev/null | "$jq_bin" -r '.overview.phase' > "$shot_dir/minimap-out-overview.txt" 2>&1
+{ $(wm_overview_phase); } > "$shot_dir/minimap-out-overview.txt" 2>&1
 $ipc call workspaces overview close > /dev/null 2>&1
 sleep 1
 "$wmctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1

@@ -292,6 +292,7 @@ sleep 1
 "$wmctl_bin" -j layers > "$sidebar_layers_right" 2>&1
 EOS
   wm_window_gaps 10 2
+  wm_full_width_columns
   wm_exec_once "bash $script"
 }
 

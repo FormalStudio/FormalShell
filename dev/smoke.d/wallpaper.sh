@@ -157,10 +157,12 @@ leg_wallpaper_assert() {
   if grep -qiF "$hypr_sentinel" "$hypr_border_path"; then
     fail "general:col.active_border still carries the seeded sentinel, so no hyprctl reload reached the compositor"
   fi
-  if ! grep -qiF "$theme_primary" "$hypr_border_path"; then
-    fail "general:col.active_border does not carry the wallpaper primary $theme_primary. Got: $(cat "$hypr_border_path")"
+  local border
+  border=$("$jq_bin" -r --arg r "$wm_border_role" '.[$r] // empty | ltrimstr("#")' "$theme_json_path" 2>/dev/null)
+  if [ -z "$border" ] || ! grep -qiF "$border" "$hypr_border_path"; then
+    fail "general:col.active_border does not carry the wallpaper $wm_border_role '$border'. Got: $(cat "$hypr_border_path")"
   fi
-  echo "SMOKE_WALLPAPER_HYPRRELOAD general:col.active_border is $theme_primary after the shell's hyprctl reload"
+  echo "SMOKE_WALLPAPER_HYPRRELOAD general:col.active_border is $wm_border_role $border after the shell's theme reached the compositor"
   if [ ! -s "$wallpaper_get_path" ] || ! grep -qF "$wp2_path" "$wallpaper_get_path"; then
     fail "wallpaper get did not report the second wallpaper. Got: $(cat "$wallpaper_get_path" 2>/dev/null)"
   fi

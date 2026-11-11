@@ -50,6 +50,9 @@ lock_media_light_png="$shot_dir/lock-media-light-frame.png"
 lock_media_unlocked_txt="$shot_dir/lock-media-unlocked.txt"
 
 leg_lock_media_fixture() {
+  # Two rethemes under one lock with nothing typed between them, longer
+  # than the default 30s on a slow rig, and a blanked lock reads black.
+  settings_pin '.lock.blankAfterSeconds = 300'
   $convert_bin -size 64x64 "xc:#E03131" -size 64x64 "xc:#F08C00" -size 64x64 "xc:#FFD700" \
     -size 64x64 "xc:#2F9E44" -size 64x64 "xc:#1971C2" -size 64x64 "xc:#9C36B5" \
     +append -resize "64x64!" "$lock_media_art"

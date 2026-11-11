@@ -72,16 +72,27 @@ leg_hdr_assert() {
     || fail "a refused HDR request reached state.json: $(cat "$hdr_state_path")"
 
   cat "$hdr_rule_path"; echo
-  "$jq_bin" -e --slurpfile mon "$hdr_monitors_path" '
-      .rule as $r | $mon[0][0] as $m
-      | $r.output == $m.name
-        and $r.mode == "\($m.width)x\($m.height)@\($m.refreshRate * 100000 | round / 100000)"
-        and $r.position == "\($m.x)x\($m.y)"
-        and (($r.scale | tonumber) - $m.scale | fabs) < 0.005
-        and $r.transform == $m.transform
-        and ($r | has("vrr") | not) and (.lua | contains("vrr") | not)
-        and $r.cm == "hdr" and $r.bitdepth == 10' "$hdr_rule_path" > /dev/null \
-    || fail "the rule builder disagrees with hyprctl monitors: $(cat "$hdr_rule_path") vs $("$jq_bin" -c '.[0] | {name,width,height,refreshRate,x,y,scale,transform}' "$hdr_monitors_path")"
+  # formalwm takes HDR as the output's colour state over its socket, so
+  # there the rule is the outputs.set request, naming the output alone.
+  if "$jq_bin" -e 'has("method")' "$hdr_rule_path" > /dev/null 2>&1; then
+    "$jq_bin" -e --slurpfile mon "$hdr_monitors_path" '
+        .method == "outputs.set" and .params.name == $mon[0][0].name
+        and (.params | keys) == ["color", "name"]
+        and .params.color.cm == "hdr" and .params.color.bitdepth == 10' "$hdr_rule_path" > /dev/null \
+      || fail "the outputs.set request does not turn HDR on for hyprctl monitors' output alone: $(cat "$hdr_rule_path")"
+    echo "SMOKE_HDR_RULE outputs.set for $("$jq_bin" -r '.params.name' "$hdr_rule_path")"
+  else
+    "$jq_bin" -e --slurpfile mon "$hdr_monitors_path" '
+        .rule as $r | $mon[0][0] as $m
+        | $r.output == $m.name
+          and $r.mode == "\($m.width)x\($m.height)@\($m.refreshRate * 100000 | round / 100000)"
+          and $r.position == "\($m.x)x\($m.y)"
+          and (($r.scale | tonumber) - $m.scale | fabs) < 0.005
+          and $r.transform == $m.transform
+          and ($r | has("vrr") | not) and (.lua | contains("vrr") | not)
+          and $r.cm == "hdr" and $r.bitdepth == 10' "$hdr_rule_path" > /dev/null \
+      || fail "the rule builder disagrees with hyprctl monitors: $(cat "$hdr_rule_path") vs $("$jq_bin" -c '.[0] | {name,width,height,refreshRate,x,y,scale,transform}' "$hdr_monitors_path")"
+  fi
 
   [ -f "$hdr_panel_png" ] || fail "no display panel screenshot produced"
   echo "SMOKE_HDR_PANEL $hdr_panel_png"

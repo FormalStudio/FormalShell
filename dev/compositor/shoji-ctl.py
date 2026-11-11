@@ -130,6 +130,7 @@ def monitors(state):
             "y": o["y"],
             "scale": o["scale"],
             "transform": row.get("transform", 0),
+            "mirrorOf": row.get("mirrorOf") or "none",
             "focused": o["name"] == state["focusedOutput"],
             "activeWorkspace": {"id": active["idx"], "name": active["name"]} if active else {"id": -1, "name": ""},
             "disabled": False,
@@ -197,6 +198,8 @@ def read(verb, args, as_json):
         return monitors(state)
     if verb == "layers":
         return layers(state)
+    if verb == "overview":
+        return "open" if state["overview"] else "closed"
     raise Unsupported(verb)
 
 

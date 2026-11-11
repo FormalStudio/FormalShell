@@ -37,9 +37,8 @@
 # land over it: its log gains no `unlocked`, the notifications layer is a
 # column narrower than the output whose input region the shell logged as
 # empty, no OSD layer maps, and the active window and cursor stay put. A
-# `debug join` over the same window last is the control: an overlay map
-# the shell does not hold back, which has to log `unlocked`, so the probe
-# can see a release at all. Hyprland only activates a constraint again when
+# release last is the control (wm_lock_release_control), which has to log
+# `unlocked`, so the probe can see a release at all. Hyprland only activates a constraint again when
 # keyboard focus moves onto its surface (`CFocusState::rawSurfaceFocus`), so
 # the float and resize that release the first lock are followed by focus
 # leaving the window and coming back, the lock active again before the
@@ -64,7 +63,7 @@
 # still has to send it no `motion`.
 leg_fullscreen_flag="--fullscreen"
 leg_fullscreen_order=200
-leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace"
+leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace foot"
 leg_fullscreen_fixture_window=keep
 leg_fullscreen_claims="screen=shared bar.layout.center frame=10/20"
 
@@ -187,9 +186,7 @@ sleep 1
 sleep 6
 { echo "after"; "$wmctl_bin" cursorpos; "$wmctl_bin" -j activewindow | "$jq_bin" -r .class; } >> "$fullscreen_lock_state" 2>&1
 echo "0 control" >> "$fullscreen_lock_log"
-$ipc call debug join top 100 200 > /dev/null 2>&1
-sleep 1
-$ipc call debug joinClear > /dev/null 2>&1
+$(wm_lock_release_control)
 $ipc call notifications dismissOne > /dev/null 2>&1
 sleep 1
 fs_phase() {
