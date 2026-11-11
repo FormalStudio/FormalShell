@@ -3,7 +3,7 @@
 
 use std::{
     cell::RefCell,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
     os::unix::net::UnixStream,
     path::PathBuf,
@@ -50,6 +50,8 @@ pub struct OutputOverride {
 
 thread_local! {
     static OVERRIDES: RefCell<BTreeMap<String, OutputOverride>> = const { RefCell::new(BTreeMap::new()) };
+    /// The outputs `outputs.create` made: the only ones `outputs.remove` takes.
+    static CREATED: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     /// The ext-workspace model as of the last turn; its factory runs inside
     /// turns and cannot read the engine.
     static WORKSPACES: RefCell<RuntimeWorkspaceConfigUpdate> = RefCell::new(RuntimeWorkspaceConfigUpdate::default());
@@ -85,6 +87,58 @@ pub fn override_output(request: proto::OutputSet) {
         }
     });
     COMPOSITOR.output.reconfigure();
+}
+
+/// `outputs.create`. The core puts an output no settings place to the right
+/// of the others at y 0.
+pub fn create_output(request: proto::OutputCreate) -> Result<String, String> {
+    if request.width <= 0 || request.height <= 0 {
+        return Err(format!(
+            "outputs.create: {}x{} is not a size",
+            request.width, request.height
+        ));
+    }
+    let scale = request.scale.unwrap_or(1.0);
+    if scale.is_nan() || scale <= 0.0 {
+        return Err(format!("outputs.create: {scale} is not a scale"));
+    }
+    if let Some(name) = &request.name {
+        let taken = COMPOSITOR.output.get(name).is_some()
+            || CREATED.with(|created| created.borrow().contains(name));
+        if name.is_empty() || taken {
+            return Err(format!(
+                "outputs.create: `{name}` is no name for a new output"
+            ));
+        }
+    }
+    let name = COMPOSITOR.output.create(HeadlessOutputOptions {
+        name: request.name,
+        width: request.width,
+        height: request.height,
+        scale: Some(scale),
+    });
+    CREATED.with(|created| created.borrow_mut().insert(name.clone()));
+    // Over the scale of the settings' rule for a display they do not list.
+    OVERRIDES.with(|overrides| {
+        overrides
+            .borrow_mut()
+            .entry(name.clone())
+            .or_default()
+            .scale = Some(scale);
+    });
+    Ok(name)
+}
+
+/// `outputs.remove`: only what `outputs.create` made.
+pub fn remove_output(name: &str) -> Result<(), String> {
+    if !CREATED.with(|created| created.borrow_mut().remove(name)) {
+        return Err(format!(
+            "outputs.remove: `{name}` is not an output outputs.create made"
+        ));
+    }
+    OVERRIDES.with(|overrides| overrides.borrow_mut().remove(name));
+    COMPOSITOR.output.remove(name);
+    Ok(())
 }
 
 fn facts(output: &WaylandOutputSnapshot) -> OutputFacts<'_> {

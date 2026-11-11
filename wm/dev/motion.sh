@@ -72,12 +72,13 @@ mark; foot -a five >/dev/null 2>&1 & sleep 1.5
 echo "five w: $(path five w)"; echo "five o: $(jq -c --argjson from "$MARK" 'select(.t >= $from) | .windows[] | select(.app == "five") | .o * 100 | round' "$XDG_CONFIG_HOME/frames" | tr '\n' ' ')"
 shot 89-before-closing
 # The two fast clocks slowed to two seconds, so a screenshot can catch the
-# way out: the shrink on spatialFast, the fade on effectsFast.
+# way out: the shrink on spatialFast, the fade on effectsFast (its prompt
+# goes grey in 90-closing; the window behind is the neighbour closing up).
 ipc theme.set '{"colors":{},"chrome":{"motion":{"families":{"spatialFast":{"curve":[0.42,1.67,0.21,0.9],"ms":2000},"effectsFast":{"curve":[0.31,0.94,0.34,1],"ms":2000}}}}}' >/dev/null; sleep 0.5
 read -r x y <<< "$(ipc state.get | jq -r '.windows[] | select(.appId == "five") | .rect | "\(.x) \(.y)"')"
 mark; key Super+q 0.2; shot 90-closing; sleep 2.2
 echo "three x: $(path three x)"
-echo "five's top-left corner, where the shrink leaves the desk bare: $(px diff "$run/89-before-closing.png" "$run/90-closing.png" "$x" "$y" 12 300); its middle, fading: $(px diff "$run/89-before-closing.png" "$run/90-closing.png" "$((x + 200))" "$((y + 300))" 100 100)"
+echo "five's top-left corner, where the shrink leaves the desk bare: $(px diff "$run/89-before-closing.png" "$run/90-closing.png" "$x" "$y" 12 300)"
 ipc theme.set '{"colors":{},"chrome":{}}' >/dev/null; sleep 0.5
 
 step "the console drops in from above with its dim, whole, then turned back"
