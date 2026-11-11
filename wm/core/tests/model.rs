@@ -545,3 +545,25 @@ fn a_zen_or_big_window_that_changes_workspace_leaves_no_mark_behind() {
     model.close("a");
     assert_eq!(model.workspace("1").unwrap().focused(), None);
 }
+
+#[test]
+fn an_overlay_shown_on_an_output_that_goes_is_parked() {
+    let mut model = two_outputs();
+    let rule = Placement {
+        overlay: Some("formalshell-console".into()),
+        floating: true,
+        ..Placement::default()
+    };
+    open_with(&mut model, "console", rule);
+    model.focus_workspace("4");
+    assert!(model.show_overlay("console"));
+    assert_eq!(place(&model, "console").output, "B");
+
+    model.set_outputs(vec![output("A", 0.0, 1920.0, 1080.0)]);
+    let parked = place(&model, "console");
+    assert_eq!((parked.shown, parked.output.as_str()), (false, "A"));
+    assert!(!model.focus_window("console"));
+    assert_eq!(model.focused_output, "A");
+    assert!(model.show_overlay("console"));
+    assert_eq!(focused(&model), "console");
+}

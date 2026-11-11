@@ -329,6 +329,11 @@ impl Model {
             self.shown
                 .insert(output.geo.name.clone(), output.active.clone());
         }
+        for overlay in &mut self.overlays {
+            if overlay.shown_on.as_deref().is_some_and(|name| !has(name)) {
+                overlay.shown_on = None;
+            }
+        }
         for geo in outputs {
             let on_output = |id: &str| {
                 self.workspaces
