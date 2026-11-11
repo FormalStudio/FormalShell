@@ -22,7 +22,15 @@ pub fn entries<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<O
 /// `None` unless `value` is an object; entries of the wrong type are dropped.
 pub fn map<T: DeserializeOwned>(value: Value) -> Option<BTreeMap<String, T>> {
     let Value::Object(object) = value else { return None };
-    Some(object.into_iter().filter_map(|(k, v)| Some((k, serde_json::from_value(v).ok()?))).collect())
+    // Inserted one at a time: collecting sorts, and each `T` would carry a
+    // stable sort of its own for keys that arrive unique.
+    let mut map = BTreeMap::new();
+    for (k, v) in object {
+        if let Ok(v) = serde_json::from_value(v) {
+            map.insert(k, v);
+        }
+    }
+    Some(map)
 }
 
 /// `None` unless `value` is an array; items of the wrong type are dropped.
