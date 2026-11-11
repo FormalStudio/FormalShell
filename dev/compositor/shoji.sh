@@ -56,8 +56,10 @@ wm_base_config() {
   # Hyprland shares the slot's: the slot's PipeWire, and whatever a leg
   # wrote there before the session (the login marker), linked in beside the
   # run's own socket and bus.
-  # shoji-run.sh makes the run's own dir inside the slot's, so not that one.
-  printf 'for e in %q/*; do case ${e##*/} in shoji-run-*) continue ;; esac; [ -e "$XDG_RUNTIME_DIR/${e##*/}" ] || ln -s "$e" "$XDG_RUNTIME_DIR/"; done\n' "$XDG_RUNTIME_DIR"
+  # shoji-run.sh makes the run's own dir inside the slot's, so not that one,
+  # and a Pulse client refuses a linked pulse dir (ELOOP), so it is named.
+  printf 'for e in %q/*; do case ${e##*/} in shoji-run-* | pulse) continue ;; esac; [ -e "$XDG_RUNTIME_DIR/${e##*/}" ] || ln -s "$e" "$XDG_RUNTIME_DIR/"; done\n' "$XDG_RUNTIME_DIR"
+  printf 'export PULSE_RUNTIME_PATH=%q\n' "$XDG_RUNTIME_DIR/pulse"
 }
 
 wm_session_env() { :; }
