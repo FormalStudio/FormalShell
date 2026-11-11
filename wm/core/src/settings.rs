@@ -303,7 +303,8 @@ pub struct Bind {
     pub repeat: bool,
     /// Fires when the key is let go.
     pub release: bool,
-    /// The key still reaches the focused window.
+    /// Hyprland's `transparent`: on a modifier's release, fires after a
+    /// chord with that modifier too, not only after a tap.
     pub passthrough: bool,
 }
 

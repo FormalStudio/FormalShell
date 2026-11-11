@@ -5,7 +5,6 @@
 use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 use formalwm_core::{
-    action::Action,
     color::Rgba,
     model::{Layer, Model, WorkspaceSpec},
     rules,
@@ -68,19 +67,12 @@ pub struct Engine {
     pub asked_focus: Option<String>,
     pub bind_ids: Vec<String>,
     pub escapes: BTreeMap<String, Vec<String>>,
-    /// What letting go of a modifier runs, by the modifier's name.
-    pub releases: BTreeMap<&'static str, Vec<Action>>,
-    /// Held from a bind on such a modifier until the modifier is let go.
-    pub release_grab: Option<InputGrab>,
     /// The shell asked for no cursor, or it has not arrived yet.
     pub cursor_hidden: bool,
     pub shell_arrived: bool,
     /// The pointer went idle over a window whose rule hides it then.
     pub cursor_idle: bool,
     pub idle_timer: Option<TimerHandle>,
-    /// The lid as last read, while the settings name a lid output.
-    pub lid_shut: bool,
-    pub lid_timer: Option<TimerHandle>,
     pub gesture: gestures::Gesture,
     pub overview: overview::Overview,
     pub drag: Option<drag::Drag>,

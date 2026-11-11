@@ -209,7 +209,7 @@ impl Engine {
                 app_id: &app_id,
                 title: &title,
                 xwayland,
-                tag: "",
+                tag: &window.tag().get_untracked().unwrap_or_default(),
                 floating: dialog,
             },
         );

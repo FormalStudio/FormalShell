@@ -3,12 +3,13 @@
 //!
 //!   fwm-drag source > "$SHOJI_RUN_DIR/drag.log"
 //!
-//! `fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed]`. It prints what
+//! `fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed] [--tag TAG]`. It prints what
 //! becomes of each drag, which carries an orange square for its icon: `sent` when the target asks for the text,
 //! `dropped`, `finished`, `cancelled`, `enter` when the pointer comes over
 //! it, and `configure WxH` for each size the compositor asks of it. An empty APP_ID or TITLE sets none,
 //! and `--fixed` allows no other size, which is how a dialog looks to the
-//! compositor: enough to stand in for the windows the rules name.
+//! compositor, and `--tag` gives it an xdg-toplevel-tag: enough to stand in
+//! for the windows the rules name.
 
 use std::{error::Error, fs::File, io::Write};
 
@@ -19,7 +20,10 @@ use wayland_client::{
         wl_data_source, wl_pointer, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface,
     },
 };
-use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols::xdg::{
+    shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base},
+    toplevel_tag::v1::client::xdg_toplevel_tag_manager_v1::XdgToplevelTagManagerV1,
+};
 
 const TEXT: &str = "dropped-by-fwm-drag";
 
@@ -29,6 +33,7 @@ struct Source {
     shm: Option<wl_shm::WlShm>,
     seat: Option<wl_seat::WlSeat>,
     shell: Option<xdg_wm_base::XdgWmBase>,
+    tags: Option<XdgToplevelTagManagerV1>,
     data: Option<wl_data_device_manager::WlDataDeviceManager>,
     device: Option<wl_data_device::WlDataDevice>,
     pointer: Option<wl_pointer::WlPointer>,
@@ -65,6 +70,7 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Source {
             "wl_shm" => source.shm = Some(registry.bind(name, 1, queue, ())),
             "wl_seat" => source.seat = Some(registry.bind(name, version.min(5), queue, ())),
             "xdg_wm_base" => source.shell = Some(registry.bind(name, 1, queue, ())),
+            "xdg_toplevel_tag_manager_v1" => source.tags = Some(registry.bind(name, 1, queue, ())),
             "wl_data_device_manager" => {
                 source.data = Some(registry.bind(name, version.min(3), queue, ()))
             }
@@ -253,13 +259,15 @@ delegate_noop!(Source: wl_shm_pool::WlShmPool);
 delegate_noop!(Source: ignore wl_shm::WlShm);
 delegate_noop!(Source: ignore wl_surface::WlSurface);
 delegate_noop!(Source: ignore wl_buffer::WlBuffer);
+delegate_noop!(Source: ignore XdgToplevelTagManagerV1);
 delegate_noop!(Source: ignore wl_data_offer::WlDataOffer);
 
 fn main() -> Result<(), Box<dyn Error>> {
-    const USAGE: &str = "fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed]";
+    const USAGE: &str = "fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed] [--tag TAG]";
     let mut args = std::env::args().skip(1);
     let app_id = args.next().ok_or(USAGE)?;
     let (mut title, mut size, mut fixed) = (app_id.clone(), (400, 300), false);
+    let mut tag = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--title" => title = args.next().ok_or(USAGE)?,
@@ -269,6 +277,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 size = (w.parse()?, h.parse()?);
             }
             "--fixed" => fixed = true,
+            "--tag" => tag = Some(args.next().ok_or(USAGE)?),
             _ => return Err(USAGE.into()),
         }
     }
@@ -299,6 +308,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if !title.is_empty() {
         toplevel.set_title(title);
+    }
+    if let Some(tag) = tag {
+        let tags = source
+            .tags
+            .clone()
+            .ok_or("no xdg_toplevel_tag_manager_v1")?;
+        tags.set_toplevel_tag(&toplevel, tag);
     }
     if fixed {
         toplevel.set_min_size(size.0 as i32, size.1 as i32);

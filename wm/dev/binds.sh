@@ -27,9 +27,20 @@ for chord in Super+space Super+period Super+ntilde Super+plus Super+Shift+t Supe
   XF86AudioMute XF86AudioMicMute XF86AudioPlay XF86AudioPause XF86AudioNext XF86AudioPrev \
   Super+Shift+F23 Super+b; do press "$chord"; done
 
-step "Alt+Tab steps the switcher, Shift reverses, letting Alt go commits"
+step "Alt+Tab steps the switcher, Shift reverses, letting Alt go commits, with no key after it"
 key Alt+Tab 1; pressed Alt+Tab
 key Alt+Shift+Tab 1; pressed Alt+Shift+Tab
+wtype -M alt -k Tab -s 300 -k Tab -s 300 -m alt; sleep 0.8; pressed "Alt+Tab, Tab"
+"$SHOJI_BIN" --key Alt+Tab >/dev/null; sleep 1; pressed "--key Alt+Tab"
+
+step "while Alt is held the pointer is free: another window hears it, and a click focuses it"
+win left > "$run/left.out"; sleep 1.2; win right > "$run/right.out"; sleep 1.2; focus_app
+wtype -M alt -k Tab -s 2500 -m alt & held=$!
+sleep 0.7; before=$(grep -c enter "$run/left.out")
+hand at $(centre left) wait 300 press release; sleep 0.5
+echo "left heard the pointer: $(($(grep -c enter "$run/left.out") - before)) time, focus: $(focus_app), so far: $(tr '\n' '|' < "$run/spied")"
+wait "$held"; sleep 0.6; pressed "Alt let go"
+for app in left right; do ipc window.close "{\"id\":\"$(id_of "$app")\"}" >/dev/null; done; sleep 0.8
 
 step "the keys that repeat while held, and one that does not"
 for chord in XF86AudioRaiseVolume XF86AudioLowerVolume XF86MonBrightnessUp XF86MonBrightnessDown XF86AudioMute; do

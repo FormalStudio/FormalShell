@@ -52,6 +52,12 @@ step "Sushi floats centred at the size it chose"
 win org.gnome.NautilusPreviewer --size 300x200 >/dev/null; sleep 1.2; row org.gnome.NautilusPreviewer
 ipc window.close "{\"id\":\"$(id_of org.gnome.NautilusPreviewer)\"}" >/dev/null; sleep 0.8
 
+step "a window with Atoll's tag floats at its own size; the same app without it tiles"
+win com.apple.TextEdit --tag atoll --size 420x260 >/dev/null; sleep 1.2; row com.apple.TextEdit
+ipc window.close "{\"id\":\"$(id_of com.apple.TextEdit)\"}" >/dev/null; sleep 0.8
+win com.apple.TextEdit --size 420x260 >/dev/null; sleep 1.2; row com.apple.TextEdit
+ipc window.close "{\"id\":\"$(id_of com.apple.TextEdit)\"}" >/dev/null; sleep 0.8
+
 step "picture in picture: floating, 28%, bottom right, on every workspace"
 win "" --title "Picture in picture" --size 800x600 >/dev/null; sleep 1.2; row "" "Picture in picture"
 shot 62-pip; ipc workspace.focus '{"id":"6"}' >/dev/null; sleep 1.2

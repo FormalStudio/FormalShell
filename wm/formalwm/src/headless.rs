@@ -1,6 +1,6 @@
 //! The engine on a compositor with no backend, two outputs and a real
 //! client connected to it, for what the rig has no hardware for: a host's
-//! workspaces on their outputs and the touchpad's swipes.
+//! workspaces on their outputs, the touchpad's swipes and the lid.
 //!
 //! The session is ShojiWM's own test harness
 //! (`src/shojiwm_rs/tests/common/mod.rs`), MIT, Copyright (c) 2026 bea4dev.
@@ -8,9 +8,9 @@
 use std::{os::unix::net::UnixStream, time::Duration};
 
 use fs_wm_proto as proto;
-use shojiwm_lib::state::ShojiWM;
+use shojiwm_lib::{config::RuntimeOutputMode, state::ShojiWM};
 use shojiwm_rs::{
-    ConfigBuilder, RuntimeBoot,
+    COMPOSITOR, ConfigBuilder, RuntimeBoot,
     cli::CommonArgs,
     ssd::{GestureSwipeEventSnapshot, GestureSwipePhaseSnapshot as Phase},
 };
@@ -31,7 +31,8 @@ const HOST: &str = r#"{
   "outputs": [
     { "name": "TEST-1", "defaultWorkspace": 1 },
     { "name": "TEST-2", "workspaces": [4, 8], "defaultWorkspace": 4 }
-  ]
+  ],
+  "lidOutput": "TEST-2"
 }"#;
 const WIDTH: f64 = 1024.0;
 const HEIGHT: f64 = 768.0;
@@ -393,4 +394,32 @@ fn two_outputs_and_the_touchpad() {
     assert_eq!(seen.focused_workspace_id, "4");
     let rect = slack.rect.as_ref().unwrap();
     assert!(rect.x >= WIDTH as i32, "the window is on the second output");
+
+    // The lid: the host's lid output is off while it is shut.
+    let off = |session: &Session| {
+        session
+            .state
+            .runtime_output_configs
+            .get("TEST-2")
+            .is_some_and(|config| config.mode == Some(RuntimeOutputMode::Disabled))
+    };
+    assert!(!off(&session));
+    session.state.lid_switch_toggled(true);
+    session.roundtrip();
+    assert!(off(&session), "shut, the lid output is disabled");
+    assert_eq!(
+        state()
+            .workspaces
+            .iter()
+            .filter(|ws| ws.output == "TEST-2")
+            .count(),
+        0
+    );
+    // The way back is not seen here: without a backend the compositor
+    // stops listing an output it has disabled, where the tty backend keeps
+    // the connector. The settings are asked again all the same.
+    session.state.lid_switch_toggled(false);
+    session.roundtrip();
+    let lid = COMPOSITOR.input.lid_switch().get_untracked();
+    assert_eq!(lid.map(|lid| lid.closed), Some(false));
 }
