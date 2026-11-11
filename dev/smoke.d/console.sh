@@ -10,6 +10,7 @@
 leg_console_flag="--console"
 leg_console_order=90
 leg_console_claims="console"
+leg_console_compositors="hyprland shoji"
 leg_console_needs="foot jq"
 
 console_status_open_path="$shot_dir/console-status-open.json"

@@ -12,6 +12,7 @@
 leg_base_flag="--base"
 leg_base_order=5
 leg_base_needs="jq"
+leg_base_compositors="hyprland shoji"
 leg_base_claims="session"
 leg_base_fixture_window=keep
 

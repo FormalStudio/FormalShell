@@ -15,6 +15,10 @@ either. A leg defines:
   `need_<name>` there for one with more to it (`mpv` and its MPRIS script,
   `python3` with PyGObject, `pil` for python3 with PIL). A new tool goes into
   that table, never into a leg.
+- `leg_<n>_compositors` `"hyprland shoji"`: the `FS_COMPOSITOR` values it
+  runs under, `hyprland` when unset; a run under any other refuses it. A
+  leg that prints config lines or calls `$wmctl_bin` beyond what
+  `dev/compositor/shoji-ctl.py` answers stays Hyprland's.
 - `leg_<n>_vm_only` `"<why>"` for a leg that needs root or a real system
   service (NetworkManager, logind, polkit): a nested run on a real host
   gets a private, empty system bus and refuses the leg with `SMOKE_FAIL`.

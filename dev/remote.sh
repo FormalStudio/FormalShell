@@ -296,7 +296,7 @@ cmd_smoke() {
   cmd_sync
   local out_file status=0
   out_file=$(mktemp)
-  remote_run "$(rig_forward_env FS_RESULT FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_SMOKE_SCALE FS_CARGO_PROFILE)./dev/smoke.sh $*" > "$out_file" 2>&1 || status=$?
+  remote_run "$(rig_forward_env FS_RESULT FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_SMOKE_SCALE FS_CARGO_PROFILE FS_COMPOSITOR FS_SHOJI_BIN)./dev/smoke.sh $*" > "$out_file" 2>&1 || status=$?
   cat "$out_file"
   rig_pull_smoke "$target" "$rig" "$artifacts" "$status" "$out_file" "$@" || status=$?
   rm -f "$out_file"

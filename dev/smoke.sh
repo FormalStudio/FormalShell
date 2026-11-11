@@ -314,6 +314,20 @@ if [ ${#active_legs[@]} -eq 0 ]; then
   active_legs=(base)
 fi
 
+# A leg runs under the compositors its leg_<n>_compositors names, Hyprland
+# alone when it names none: its config lines and its $wmctl_bin calls are
+# written for those.
+for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
+  compositors_var="leg_${leg_name}_compositors"
+  case " ${!compositors_var:-hyprland} " in
+    *" $FS_COMPOSITOR "*) ;;
+    *)
+      flag_var="leg_${leg_name}_flag"
+      echo "SMOKE_FAIL: ${!flag_var%% *} runs under ${!compositors_var:-hyprland}, not FS_COMPOSITOR=$FS_COMPOSITOR" >&2
+      exit 1 ;;
+  esac
+done
+
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   scale1_var="leg_${leg_name}_scale1"
   [ -n "${!scale1_var:-}" ] || continue
@@ -1323,6 +1337,7 @@ pw_unload_modules
 $(wm_exit_line)
 EOF
 wm_exec_once "bash $shot_script" >> "$cfg"
+wm_config_tail >> "$cfg"
 
 # The systemctl shim keeps the nested compositor off the user manager it
 # shares with the host session (see host_env_names). The restore only runs

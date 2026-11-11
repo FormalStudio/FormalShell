@@ -38,6 +38,7 @@
 leg_switcher_flag="--switcher"
 leg_switcher_order=102
 leg_switcher_needs="foot jq convert"
+leg_switcher_compositors="hyprland shoji"
 # The base run's fixture window is the third of the three, and the one the
 # commit lands on.
 leg_switcher_fixture_window=keep

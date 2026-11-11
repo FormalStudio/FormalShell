@@ -59,6 +59,7 @@
 leg_spaces_flag="--spaces"
 leg_spaces_order=196
 leg_spaces_needs="foot jq convert wlrctl"
+leg_spaces_compositors="hyprland shoji"
 leg_spaces_fixture_window=keep
 leg_spaces_claims="pointer workspaces"
 

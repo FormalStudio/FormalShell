@@ -85,5 +85,8 @@ wm_exit_line() {
   printf '%q dispatch "hl.dsp.exit()"\n' "$wmctl_bin"
 }
 
+# Hyprland ends the session on its exit dispatch; the config needs no tail.
+wm_config_tail() { :; }
+
 # What a compositor process of this run still carries on its command line.
 wm_leftover_pattern="--config $wm_config_path"
