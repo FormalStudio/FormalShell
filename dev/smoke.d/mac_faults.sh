@@ -38,7 +38,9 @@
 # by hand as a shell would have. With the foot window in front the include
 # is told, as the shell would tell it, that the stub is in front and a Mac
 # window: the foot window is not taken for one, the map stays the default
-# one and SUPER + C leaves its mark.
+# one and SUPER + C leaves its mark. What was said is kept for the stub:
+# SUPER + H onto it and the session is in `mac` with nobody asking again,
+# SUPER + L and it is out.
 #
 # The shell back. With no shell the session is put in `mac` over the foot
 # window by hand, which is where a shell that died between a window's focus
@@ -204,12 +206,18 @@ echo \$(( \$(follows) - before )) > "\$m-follows-after.txt"
 front formalshell-mac-faults
 
 stub_address=\$("$hyprctl_bin" -j clients 2>/dev/null | "\$jq" -r 'first(.[] | select(.class == "org.atoll.stub") | .address) // empty')
-"$hyprctl_bin" eval 'formalshell_mac_keys({})' > /dev/null 2>&1
+"$hyprctl_bin" eval 'formalshell_mac_keys({ "SUPER + H", "SUPER + L" })' > /dev/null 2>&1
 "$hyprctl_bin" eval "formalshell_mac_focus(true, \"address:\$stub_address\")" > "\$m-late.txt" 2>&1
 sleep 0.5
 submap > "\$m-submap-late.txt"
 "$wtype_bin" -M logo c -m logo
 mark c "\$m-mark-c-late.txt"
+"$wtype_bin" -M logo h -m logo
+front org.atoll.stub
+in_submap mac "\$m-submap-late-stub.txt"
+"$wtype_bin" -M logo l -m logo
+front formalshell-mac-faults
+in_submap default "\$m-submap-late-out.txt"
 
 "$hyprctl_bin" dispatch 'hl.dsp.submap("mac")' > /dev/null 2>&1
 in_submap mac "\$m-submap-forced.txt"
@@ -310,6 +318,8 @@ leg_mac_faults_assert() {
 
   is late default "told of the stub while the foot window was in front, the include took the foot window for a Mac window: $(cat "$m-late.txt" 2>/dev/null)"
   [ "$(count "$m-mark-c-late.txt")" = 3 ] || fail "--mac-faults: SUPER + C did not fire over the foot window after an ask about the stub arrived late (marks $(count "$m-mark-c-late.txt"))"
+  is late-stub mac "focus on the stub after an ask about it arrived late left the session on the default map with nobody to ask again"
+  is late-out default "focus back on the foot window after the late ask left the session in the mac submap"
 
   is forced mac "the session could not be put in the mac submap by hand"
   is back default "the shell started again left the session in the mac submap over the foot window"

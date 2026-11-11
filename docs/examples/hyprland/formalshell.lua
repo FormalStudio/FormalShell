@@ -109,17 +109,20 @@ end
 
 -- The shell says whether the window it found in front, `selector`, is a Mac
 -- window; no selector is no window in front. Focus may have moved since the
--- shell looked: what it says of a window that is no longer the one in front
--- is dropped, or that window's answer would land on this one.
+-- shell looked: what it says is kept for the window it looked at, and the
+-- map is left as it is unless that window is still the one in front, or
+-- its answer would land on another. `window.active` applies it when focus
+-- comes back; the shell does not ask twice about one window.
 function formalshell_mac_focus(on, selector)
   local window = hl.get_active_window()
+  local asked = window
   if selector then
-    local asked = hl.get_window(selector)
-    if not window or not asked or asked.address ~= window.address then
-      return
-    end
+    asked = hl.get_window(selector)
   end
-  formalshell_mac_window = on and window and window.address or nil
+  formalshell_mac_window = on and asked and asked.address or nil
+  if selector and not (window and asked and asked.address == window.address) then
+    return
+  end
   mac_follow(window)
 end
 
