@@ -1263,11 +1263,14 @@ impl App {
         let qh = self.qh.clone();
         let theme = &self.store.theme.theme;
         let Some(w) = &mut self.launch.win else { return };
-        let moving = w.shown.content_animating(now) || self.launcher.rows_moving(now);
         let t1 = Instant::now();
         // A frame still being drawn in slices keeps the scene it started on.
         let rastering = w.shown.modal.win.surface.rastering() || w.shown.modal.layer.as_ref().is_some_and(|l| l.surface.rastering());
-        let wants = (self.launcher.dirty || moving || !w.shown.modal.win.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now);
+        // Content that moves lays out again off the card's frame callback,
+        // which marks the model dirty (`launcher_frame`). Laid out every turn
+        // instead, the content layer commits each turn without a callback,
+        // and the compositor's release of the last buffer brings the next.
+        let wants = (self.launcher.dirty || !w.shown.modal.win.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now);
         // A layout held back by a sliced frame runs once it is out, even
         // when whatever moved has stopped by then.
         if rastering && wants {
