@@ -134,17 +134,19 @@ leg_wallpaper_assert() {
   if [ -z "$theme_primary" ]; then
     fail "no primary in $theme_json_path"
   fi
-  [ -s "$hypr_lua_path" ] || fail "no Hyprland palette written at $hypr_lua_path"
-  # dofile is what a hyprland.lua reads this with, so a file that is not a
-  # table literal comes back nil and every colour silently falls through to
-  # the config's static fallback.
-  head -c 8 "$hypr_lua_path" | grep -q '^--' || fail "$hypr_lua_path does not start with a Lua comment"
-  grep -q '^return {' "$hypr_lua_path" || fail "$hypr_lua_path has no 'return {' table literal"
-  lua_primary=$(sed -n 's/^ *primary = "rgb(\([0-9a-fA-F]\{6\}\))",$/\1/p' "$hypr_lua_path" | head -1)
-  if [ "$lua_primary" != "$theme_primary" ]; then
-    fail "formalshell-colors.lua primary is '$lua_primary', theme.json's is '$theme_primary'"
+  if [ "$wm_hypr_palette" = true ]; then
+    [ -s "$hypr_lua_path" ] || fail "no Hyprland palette written at $hypr_lua_path"
+    # dofile is what a hyprland.lua reads this with, so a file that is not a
+    # table literal comes back nil and every colour silently falls through to
+    # the config's static fallback.
+    head -c 8 "$hypr_lua_path" | grep -q '^--' || fail "$hypr_lua_path does not start with a Lua comment"
+    grep -q '^return {' "$hypr_lua_path" || fail "$hypr_lua_path has no 'return {' table literal"
+    lua_primary=$(sed -n 's/^ *primary = "rgb(\([0-9a-fA-F]\{6\}\))",$/\1/p' "$hypr_lua_path" | head -1)
+    if [ "$lua_primary" != "$theme_primary" ]; then
+      fail "formalshell-colors.lua primary is '$lua_primary', theme.json's is '$theme_primary'"
+    fi
+    echo "SMOKE_WALLPAPER_HYPRCOLORS primary $theme_primary in theme.json and formalshell-colors.lua"
   fi
-  echo "SMOKE_WALLPAPER_HYPRCOLORS primary $theme_primary in theme.json and formalshell-colors.lua"
 
   # And the claim neither file can make on its own: the value reached the
   # RUNNING compositor. The rig disables Hyprland's config watcher, so the

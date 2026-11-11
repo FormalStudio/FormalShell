@@ -148,6 +148,10 @@ sleep 1
 EOS
 }
 
+# The shell sends formalwm its palette through theme.set and writes no
+# Hyprland palette file.
+wm_hypr_palette=false
+
 # formalwm's zen is a layout mode of the workspace (spec section 5): the
 # window stays tiled, centred, and each other column slides off its own side.
 wm_zen=layout

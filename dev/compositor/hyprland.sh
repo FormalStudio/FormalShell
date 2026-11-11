@@ -170,6 +170,9 @@ wm_config_tail() { :; }
 # cover the output. Hyprland's default dwindle already does, gaps being 0.
 wm_cover_output() { :; }
 
+# The shell writes ~/.config/hypr/formalshell-colors.lua for this one.
+wm_hypr_palette=true
+
 # How zen holds its window: the shell floats it, centred, and Hyprland's
 # scrolling layout centres the narrower tape left of it.
 wm_zen=float
