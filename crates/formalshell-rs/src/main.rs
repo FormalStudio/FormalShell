@@ -131,14 +131,16 @@ fn motion_scale() -> f64 {
 /// glibc's mmap threshold climbs to 32 MiB once a large block is freed, and
 /// a canvas or scene after that comes out of the heap and stays in RSS
 /// after it is dropped (the screensaver's, the launcher's). Pinned, every
-/// such buffer is its own mapping, gone with its owner. Fewer arenas keep
-/// the threads' small allocations from each holding their own slack.
+/// such buffer is its own mapping, gone with its owner. One arena keeps the
+/// threads' small allocations from each holding their own slack: with two,
+/// which thread lands on the second follows the order threads first
+/// allocate in, and the same live set held up to a megabyte more.
 fn tune_malloc() {
     #[cfg(target_env = "gnu")]
     // SAFETY: mallopt only sets allocator parameters, before any thread.
     unsafe {
         libc::mallopt(libc::M_MMAP_THRESHOLD, 256 * 1024);
-        libc::mallopt(libc::M_ARENA_MAX, 2);
+        libc::mallopt(libc::M_ARENA_MAX, 1);
     }
 }
 
