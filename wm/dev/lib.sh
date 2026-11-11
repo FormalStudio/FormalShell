@@ -17,3 +17,17 @@ focus_app() { ipc state.get | jq -r '. as $s | [.windows[] | select(.id == $s.fo
 centre() { ipc state.get | jq -r --arg app "$1" '.windows[] | select(.appId == $app) | .rect | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"'; }
 lensed() { ipc state.get | jq -r --arg app "$1" '.windows[] | select(.appId == $app) | .rect | "\(256 + (.x + .width / 2) / 2 | floor) \(192 + (.y + .height / 2) / 2 | floor)"'; }
 hold() { "$SHOJI_BIN" --key "$1" --hold "$2" >/dev/null; sleep 0.2; }
+# The frames the engine presented since `mark`, from its frame log: for each
+# app the biggest step between two frames, and where it ended.
+mark() { MARK=$(date +%s%3N); }
+steps() {
+  jq -c --argjson from "$MARK" 'select(.t >= $from)' "$XDG_CONFIG_HOME/frames" | jq -sc '
+    . as $f | [range(1; length) | . as $i | $f[$i].windows[] | . as $w
+      | ($f[$i - 1].windows[] | select(.app == $w.app)) as $p
+      | {app: $w.app, dx: ($w.x - $p.x | fabs), dy: ($w.y - $p.y | fabs), dt: ($f[$i].t - $f[$i - 1].t)}]
+    | group_by(.app) | map({app: .[0].app, frames: length, dx: (map(.dx) | max | round), dy: (map(.dy) | max | round)})
+    | {frames: ($f | length), ms: (($f[-1].t - $f[0].t) | round), overview: ([$f[].overview] | {min: (min * 100 | round), max: (max * 100 | round)}), steps: .}'
+}
+drawn() { tail -1 "$XDG_CONFIG_HOME/frames" | jq -c '[.windows[] | {app, x: (.x | round), y: (.y | round), w: (.w | round), h: (.h | round), o: (.o * 100 | round)}]'; }
+px() { python3 "$(dirname "${BASH_SOURCE[0]}")/px.py" "$@"; }
+win() { "$(dirname "$SHOJI_BIN")/fwm-drag" "$@" & }

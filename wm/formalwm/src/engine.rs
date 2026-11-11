@@ -36,6 +36,9 @@ pub struct Look {
     pub border: f64,
     pub rounding: f64,
     pub shadow: Option<(BoxShadow, BoxShadow)>,
+    /// How long the colours take between focused and not, and on what
+    /// curve; no time at all with motion off.
+    pub tint: (f64, [f64; 4]),
 }
 
 /// The signals the compositions read; they never read the engine itself,
@@ -170,6 +173,14 @@ pub fn look_of(theme: &proto::Theme) -> Look {
                 shade(&chrome.shadow_inactive_color),
             )
         }),
+        tint: (
+            if chrome.motion.enabled {
+                chrome.motion.families.effects_slow.ms
+            } else {
+                0.0
+            },
+            chrome.motion.families.effects_slow.curve,
+        ),
     }
 }
 
@@ -239,11 +250,20 @@ impl Engine {
             }
         });
         self.present_drag();
+        crate::trace::frame(self, &frame);
         self.restage(&frame);
     }
 
     fn write(&self, win: &Win, visual: &Visual, border: f64, overview: bool) {
         let window = win.handle;
+        // The core's first configure carries the rect's size whatever FORCE
+        // says; no size at all is what lets the client pick its own.
+        if !win.sized {
+            let at = visual.rect;
+            return window
+                .state(&windows::RECT)
+                .set(Rect::new(at.x, at.y, 0.0, 0.0));
+        }
         let full = visual.layer == Layer::Fullscreen;
         let grow = if full { 0.0 } else { border };
         let (w, h) = visual.size;

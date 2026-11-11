@@ -16,8 +16,12 @@ use crate::{
     tape::WinId,
 };
 
-/// What a window opens from and closes to, Hyprland's `popin`.
-const POP_IN: f64 = 0.9;
+/// Hyprland's `popin`: an unstyled `windows` leaf opens a window from a
+/// point five pixels across at its centre, `popin 90%` closes it to that
+/// share of its size.
+const OPEN_FROM: f64 = 0.0;
+const OPEN_SIDE: f64 = 5.0;
+const CLOSE_TO: f64 = 0.9;
 
 /// A pixel in the units of a stack position or a scale, near enough: both
 /// are fractions of something about a thousand pixels across.
@@ -201,7 +205,7 @@ impl Scene {
                     self.actors.insert(place.id.clone(), next);
                 }
                 _ => {
-                    let mut pop = Spring::at(POP_IN);
+                    let mut pop = Spring::at(OPEN_FROM);
                     pop.target = 1.0;
                     let mut presence = Tween::at(0.0);
                     presence.retarget(1.0, &self.families.effects);
@@ -236,7 +240,7 @@ impl Scene {
         let families = self.families;
         if let Some(actor) = self.actors.get_mut(id) {
             actor.closing = true;
-            actor.pop.target = POP_IN;
+            actor.pop.target = CLOSE_TO;
             actor.presence.retarget(0.0, &families.effects_fast);
         }
         if !self.enabled {
@@ -265,6 +269,23 @@ impl Scene {
             }
             actor.pop.jump(1.0);
             actor.presence.jump(1.0);
+        }
+    }
+
+    /// Plays a window's way in from its start: its client has drawn it,
+    /// which is the first there is to show.
+    pub fn arrive(&mut self, id: &str) {
+        if !self.enabled {
+            return;
+        }
+        let effects = self.families.effects;
+        if let Some(actor) = self.actors.get_mut(id)
+            && !actor.closing
+        {
+            actor.pop = Spring::at(OPEN_FROM);
+            actor.pop.target = 1.0;
+            actor.presence = Tween::at(0.0);
+            actor.presence.retarget(1.0, &effects);
         }
     }
 
@@ -388,12 +409,9 @@ impl Scene {
         let drawn = self.drawn(actor);
         let (cx, cy) = drawn.center();
         let pop = actor.pop.value;
-        let rect = Rect::new(
-            cx - drawn.w * pop / 2.0,
-            cy - drawn.h * pop / 2.0,
-            drawn.w * pop,
-            drawn.h * pop,
-        );
+        let side = |full: f64| (full * pop).max(OPEN_SIDE.min(full));
+        let (w, h) = (side(drawn.w), side(drawn.h));
+        let rect = Rect::new(cx - w / 2.0, cy - h / 2.0, w, h);
         let family = if actor.closing {
             &self.families.effects_fast
         } else {

@@ -53,11 +53,15 @@ fn a_new_window_pops_in_and_fades_up() {
     scene.sync(&model);
     let first = scene.visual("a").unwrap();
     assert_eq!(first.opacity, 0.0);
-    assert!((first.rect.w / first.size.0 - 0.9).abs() < 1e-9);
+    assert_eq!((first.rect.w, first.rect.h), (5.0, 5.0));
+    assert_eq!(first.rect.center(), place(&model, "a").rect.center());
     scene.step(0.05);
     let mid = scene.visual("a").unwrap();
     assert!(mid.opacity > 0.0 && mid.opacity < 1.0);
     assert!(mid.rect.w > first.rect.w);
+    // The client's first picture starts it over.
+    scene.arrive("a");
+    assert_eq!(scene.visual("a").unwrap(), first);
     settle(&mut scene);
     assert_eq!(drawn(&scene, "a"), place(&model, "a").rect);
 }

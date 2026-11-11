@@ -3,8 +3,12 @@
 //!
 //!   fwm-drag source > "$SHOJI_RUN_DIR/drag.log"
 //!
-//! `fwm-drag APP_ID`. It prints what becomes of each drag: `sent` when the
-//! target asks for the text, `dropped`, `finished`, `cancelled`.
+//! `fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed]`. It prints what
+//! becomes of each drag: `sent` when the target asks for the text,
+//! `dropped`, `finished`, `cancelled`, `enter` when the pointer comes over
+//! it, and `configure WxH` for each size the compositor asks of it. An empty APP_ID or TITLE sets none,
+//! and `--fixed` allows no other size, which is how a dialog looks to the
+//! compositor: enough to stand in for the windows the rules name.
 
 use std::{error::Error, fs::File, io::Write};
 
@@ -91,8 +95,11 @@ impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Source {
         _: &QueueHandle<Self>,
     ) {
         match event {
-            xdg_toplevel::Event::Configure { width, height, .. } if width > 0 && height > 0 => {
-                source.size = (width as u32, height as u32);
+            xdg_toplevel::Event::Configure { width, height, .. } => {
+                println!("configure {width}x{height}");
+                if width > 0 && height > 0 {
+                    source.size = (width as u32, height as u32);
+                }
             }
             xdg_toplevel::Event::Close => source.closed = true,
             _ => {}
@@ -156,13 +163,14 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Source {
         _: &Connection,
         queue: &QueueHandle<Self>,
     ) {
-        let wl_pointer::Event::Button {
-            serial,
-            state: WEnum::Value(wl_pointer::ButtonState::Pressed),
-            ..
-        } = event
-        else {
-            return;
+        let serial = match event {
+            wl_pointer::Event::Enter { .. } => return println!("enter"),
+            wl_pointer::Event::Button {
+                serial,
+                state: WEnum::Value(wl_pointer::ButtonState::Pressed),
+                ..
+            } => serial,
+            _ => return,
         };
         let (Some(data), Some(device), Some(surface)) =
             (&source.data, &source.device, &source.surface)
@@ -232,13 +240,28 @@ delegate_noop!(Source: ignore wl_buffer::WlBuffer);
 delegate_noop!(Source: ignore wl_data_offer::WlDataOffer);
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let app_id = std::env::args().nth(1).ok_or("fwm-drag APP_ID")?;
+    const USAGE: &str = "fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed]";
+    let mut args = std::env::args().skip(1);
+    let app_id = args.next().ok_or(USAGE)?;
+    let (mut title, mut size, mut fixed) = (app_id.clone(), (400, 300), false);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--title" => title = args.next().ok_or(USAGE)?,
+            "--size" => {
+                let text = args.next().ok_or(USAGE)?;
+                let (w, h) = text.split_once('x').ok_or(USAGE)?;
+                size = (w.parse()?, h.parse()?);
+            }
+            "--fixed" => fixed = true,
+            _ => return Err(USAGE.into()),
+        }
+    }
     let connection = Connection::connect_to_env()?;
     let mut events = connection.new_event_queue();
     let queue = events.handle();
     connection.display().get_registry(&queue, ());
     let mut source = Source {
-        size: (400, 300),
+        size,
         ..Source::default()
     };
     events.roundtrip(&mut source)?;
@@ -255,8 +278,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     let surface = compositor.create_surface(&queue, ());
     let shell_surface = shell.get_xdg_surface(&surface, &queue, ());
     let toplevel = shell_surface.get_toplevel(&queue, ());
-    toplevel.set_app_id(app_id.clone());
-    toplevel.set_title(app_id);
+    if !app_id.is_empty() {
+        toplevel.set_app_id(app_id);
+    }
+    if !title.is_empty() {
+        toplevel.set_title(title);
+    }
+    if fixed {
+        toplevel.set_min_size(size.0 as i32, size.1 as i32);
+        toplevel.set_max_size(size.0 as i32, size.1 as i32);
+    }
     surface.commit();
     source.surface = Some(surface);
 

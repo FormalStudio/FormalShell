@@ -395,6 +395,32 @@ fn workspaces_by_stack_position_and_by_neighbour() {
 }
 
 #[test]
+fn the_wheel_walks_the_workspaces_that_hold_a_window_and_wraps() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    open(&mut model, "c");
+    model.move_to_workspace("b", "4", false);
+    model.move_to_workspace("c", "8", false);
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        model.focus_occupied_workspace(1);
+        seen.push(model.focused_workspace().unwrap().id.clone());
+    }
+    assert_eq!(seen, ["4", "8", "1", "4"]);
+    model.focus_occupied_workspace(-1);
+    model.focus_occupied_workspace(-1);
+    assert_eq!(model.focused_workspace().unwrap().id, "8");
+    // An empty workspace in view is a stop of its own.
+    model.focus_workspace("6");
+    model.focus_occupied_workspace(1);
+    assert_eq!(model.focused_workspace().unwrap().id, "8");
+    model.focus_workspace("6");
+    model.focus_occupied_workspace(-1);
+    assert_eq!(model.focused_workspace().unwrap().id, "4");
+}
+
+#[test]
 fn a_settings_reload_keeps_every_window_where_it_is() {
     let mut model = desk();
     open(&mut model, "a");

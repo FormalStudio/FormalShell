@@ -241,10 +241,11 @@ impl Engine {
             Action::Workspace(WorkspaceRef::Relative(step)) => {
                 self.model.focus_workspace_relative(*step)
             }
-            Action::MoveToWorkspace(number) => focused.is_some_and(|id| {
-                self.model
-                    .move_to_workspace(&id, &number.to_string(), false)
-            }),
+            Action::Workspace(WorkspaceRef::Occupied(step)) => {
+                self.model.focus_occupied_workspace(*step)
+            }
+            Action::MoveToWorkspace(number) => focused
+                .is_some_and(|id| self.model.move_to_workspace(&id, &number.to_string(), true)),
             Action::Overview(open) => {
                 self.set_overview(*open);
                 false
