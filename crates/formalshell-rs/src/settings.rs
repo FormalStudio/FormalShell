@@ -349,6 +349,12 @@ pub fn mac_reserved_binds(doc: &(impl Doc + ?Sized)) -> Vec<String> {
     }
 }
 
+/// `dock.show`: `"mac"` only while a Mac app has a window, `"always"`
+/// while anything is pinned or open, `"never"`.
+pub const DOCK_SHOW: Word = Word::new("dock.show", "mac");
+/// How long the pointer rests on the dock's edge before it comes out, ms.
+pub const DOCK_DWELL: Number = Number::new("dock.dwell", 150.0);
+
 // Launcher
 
 pub const APP_GRID: Flag = Flag::new("menu.appGrid", false);

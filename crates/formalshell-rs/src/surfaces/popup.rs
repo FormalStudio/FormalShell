@@ -77,6 +77,27 @@ impl Popup {
         (Painter::new(&mut card.scene, &mut self.extra, Some(clip)).after(Some(top)), alpha)
     }
 
+    /// The pointer at a point of the surface, or off it. True when what
+    /// it is over changed.
+    pub fn hover(&mut self, at: Option<(f64, f64)>) -> bool {
+        let path = at.and_then(|(x, y)| self.ui.hit(x, y)).map(|h| h.path.clone());
+        let changed = path != self.ui.hover;
+        self.ui.hover = path;
+        changed
+    }
+
+    /// A button went down on what the pointer is over, or came up.
+    pub fn press(&mut self, down: bool) {
+        self.ui.pressed = if down { self.ui.hover.clone() } else { None };
+    }
+
+    /// The tooltip of what the pointer is over, and its rect in the
+    /// surface's own pixels.
+    pub fn tooltip(&self) -> Option<(String, IRect)> {
+        let path = self.ui.hover.as_ref()?;
+        self.ui.hits.iter().find(|h| &h.path == path).and_then(|h| Some((h.tip.clone()?, h.rect)))
+    }
+
     /// Every control's `on` and rect, in the surface's own pixels.
     pub fn controls(&self) -> Vec<(String, IRect)> {
         self.ui.hits.iter().filter_map(|h| Some((h.on.clone()?.into(), h.rect))).collect()

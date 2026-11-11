@@ -1,6 +1,6 @@
 //! Pure logic behind the bar and the screen chrome: the bar layout resolver,
 //! the workspace cell model, frame geometry, the palette dither, the backdrop
-//! grid and sculpture, hot corner arming and the plugin manifest resolver. Plain data in, plain data out, no IO.
+//! grid and sculpture, hot corner arming, the dock's contents and the plugin manifest resolver. Plain data in, plain data out, no IO.
 
 // A NaN input must read as "no value", which `!(x > 0.0)` says and `x <= 0.0` does not.
 #![allow(clippy::neg_cmp_op_on_partial_ord)]
@@ -8,6 +8,7 @@
 pub mod bar;
 pub mod clock_face;
 pub mod dither;
+pub mod dock;
 pub mod frame;
 pub mod grid;
 pub mod hot_corners;

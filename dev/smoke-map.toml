@@ -308,6 +308,14 @@ runs = ["--mac-menu", "--mac-menu --sidebar"]
 paths = ["crates/formalshell-rs/src/services/mackeys.rs", "crates/formalshell-rs/src/services/compositor/hyprland/lua.rs", "crates/fs-types/src/compositor.rs", "docs/examples/hyprland/formalshell.lua", "dev/mac-stub.py"]
 runs = ["--mac-keys"]
 
+# The dock: its apps and whether it exists, its row, its controller, its
+# IPC, the tile it reads off a Mac app's LauncherEntry, the dock menu and
+# the Quit it asks of the app's own menus, the menu card it hangs off its
+# icons, and the stub that plays the app.
+[[rule]]
+paths = ["crates/fs-chrome/src/dock.rs", "crates/formalshell-rs/src/surfaces/dock.rs", "crates/formalshell-rs/src/wayland/dock.rs", "crates/formalshell-rs/src/ipc/dock.rs", "crates/fs-activity/src/launcher.rs", "crates/formalshell-rs/src/services/appmenu.rs", "crates/formalshell-rs/src/wayland/tray_menu.rs", "crates/formalshell-rs/src/surfaces/popup.rs", "dev/mac-stub.py"]
+runs = ["--dock"]
+
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/ui/spectrum/**"]
 runs = ["--visualizer", "--visualizer-styles", "--spectrum"]

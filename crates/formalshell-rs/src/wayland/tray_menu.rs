@@ -24,6 +24,18 @@ pub enum Source {
     Tray(String),
     /// One top-level menu of the focused Mac app, by its dbusmenu id.
     App(i32),
+    /// An app's menu in the dock, by the dock's id for it.
+    Dock(String),
+}
+
+/// The line a menu card hangs off: its edge, how far in it lies, how long
+/// it runs and the room past it.
+#[derive(Clone, Copy)]
+pub(super) struct Hang {
+    pub edge: Edge,
+    pub line_at: f64,
+    pub length: i32,
+    pub cap: f64,
 }
 
 /// The menu card.
@@ -32,6 +44,8 @@ pub struct Popout {
     /// The dbusmenu it draws (`traymenu`).
     pub(super) menu: Option<Menu>,
     pub(super) source: Source,
+    /// The line it hangs off, end to end.
+    length: i32,
 }
 
 impl Popout {
@@ -166,33 +180,43 @@ impl App {
     }
 
     fn open_menu_card(&mut self, source: Source, key: String, title: String, anchor: Option<f64>, over_panel: bool) {
-        let now = Instant::now();
-        self.drop_tray_menu();
-        self.tips.hide(None, now);
         let owner_edge = self.panel.as_ref().filter(|h| over_panel && h.is_open()).map(|h| h.win.card.rest().y1);
-        if owner_edge.is_none() {
-            self.close_panels();
-        }
         let chrome = self.chrome();
         let theme = &self.store.theme.theme;
         let edge = chrome.edge;
-        let vertical = edge.is_vertical();
         let line_at = owner_edge.unwrap_or(chrome.line());
         let (_, output_height) = self.output_size();
         let pad = theme.space.screen_padding;
-        let cap = if vertical { output_height - pad * 2.0 } else { output_height - line_at - theme.space.bar_margin - pad };
+        let cap = if edge.is_vertical() { output_height - pad * 2.0 } else { output_height - line_at - theme.space.bar_margin - pad };
+        let length = live!(self).bar.length();
+        let hang = Hang { edge, line_at, length, cap };
+        self.open_menu_card_on(source, key, title, anchor.unwrap_or(length as f64), hang, owner_edge.is_none());
+    }
+
+    /// The menu card off `hang`, centred on `anchor` along it. The panels
+    /// shut first unless the card hangs off one.
+    pub(super) fn open_menu_card_on(&mut self, source: Source, key: String, title: String, anchor: f64, hang: Hang, shut_panels: bool) {
+        let now = Instant::now();
+        self.drop_tray_menu();
+        self.tips.hide(None, now);
+        if shut_panels {
+            self.close_panels();
+        }
+        let theme = &self.store.theme.theme;
+        let Hang { edge, line_at, length, cap } = hang;
+        let vertical = edge.is_vertical();
+        let pad = theme.space.screen_padding;
         let mut menu = Menu::new(theme, key, title);
         menu.cap = cap.max(menu.width());
         let width = menu.width();
         let oriented = |h: f64| if vertical { (h, width) } else { (width, h) };
-        let anchor = anchor.unwrap_or(live!(self).bar.length() as f64);
         menu.anchor = anchor;
-        let size = Sizing::Card { size: oriented(menu.cap), anchor, length: live!(self).bar.length() };
+        let size = Sizing::Card { size: oriented(menu.cap), anchor, length };
         let mut card = Card::new(theme, CardSpec { role: fs_theme::style::Role::Menu, ..CardSpec::new(edge, line_at, size) }, self.cast);
-        card.resize(now, anchor, live!(self).bar.length(), pad, oriented(menu.height().min(menu.cap)));
+        card.resize(now, anchor, length, pad, oriented(menu.height().min(menu.cap)));
         menu.morph.jump(menu.height().min(menu.cap));
         let surface = self.popout_surface(&card, Layer::Overlay);
-        let mut popout = Popout { win: CardWindow::new(card, surface), menu: Some(menu), source };
+        let mut popout = Popout { win: CardWindow::new(card, surface), menu: Some(menu), source, length };
         Self::set_popout_input(&self.compositor, &mut popout);
         self.tray_menu = Some(popout);
         self.mark_app_menu();
@@ -209,6 +233,7 @@ impl App {
         match p.source.clone() {
             Source::Tray(key) => self.runtime.service(move |ctx| tray::close_menu(ctx, key)),
             Source::App(id) => appmenu::closed(id),
+            Source::Dock(_) => self.dock_menu_closed(now),
         }
         self.mark_app_menu();
         live!(self).dirty = true;
@@ -223,10 +248,9 @@ impl App {
     /// The menu's card at the height its rows ask for, capped to the room.
     pub(super) fn resize_menu(&mut self) {
         let now = Instant::now();
-        let vertical = live!(self).bar.edge().is_vertical();
-        let length = live!(self).bar.length();
         let pad = self.store.theme.theme.space.screen_padding;
         if let Some(p) = &mut self.tray_menu {
+            let (vertical, length) = (p.win.card.edge.is_vertical(), p.length);
             let mapped = p.win.card.is_open() && p.win.surface.mapped();
             if let Some(m) = &mut p.menu {
                 let (w, h) = (m.width(), m.height().min(m.cap));
@@ -247,10 +271,9 @@ impl App {
 
     /// The menu's card on its way to the height its rows ask for, a frame at a time.
     pub(super) fn step_menu(&mut self, now: Instant) {
-        let vertical = live!(self).bar.edge().is_vertical();
-        let length = live!(self).bar.length();
         let pad = self.store.theme.theme.space.screen_padding;
         let Some(p) = &mut self.tray_menu else { return };
+        let (vertical, length) = (p.win.card.edge.is_vertical(), p.length);
         let Some(m) = &p.menu else { return };
         if !m.morph.running(now) {
             return;
@@ -299,6 +322,10 @@ impl App {
             }
             (Outcome::Click(id), Source::App(_)) => {
                 appmenu::click(id);
+                self.close_tray_menu();
+            }
+            (Outcome::Click(id), Source::Dock(_)) => {
+                self.dock_menu_click(id);
                 self.close_tray_menu();
             }
             (Outcome::Toggled(id, opened), source) => {

@@ -279,6 +279,11 @@ impl Menu {
     }
 
     /// Each laid-out row's dbusmenu id and its box in the card's surface.
+    /// Each row's id, its words and its box in the card's surface.
+    pub fn row_names(&self) -> impl Iterator<Item = (i32, &str, IRect)> + '_ {
+        self.rows.iter().zip(&self.rects).map(|(row, rect)| (row.node.id, row.node.label.as_str(), *rect))
+    }
+
     pub fn row_boxes(&self) -> impl Iterator<Item = (i32, IRect)> + '_ {
         self.rows.iter().zip(&self.rects).map(|(row, rect)| (row.node.id, *rect))
     }

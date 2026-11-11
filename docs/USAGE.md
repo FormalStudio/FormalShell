@@ -701,6 +701,47 @@ instead needs its `MAC APPS` block at the top. Without it Mac apps still
 run and still show their menus, but a SUPER chord you have bound goes to
 the window manager.
 
+**The dock** is for the pointer and for what a Mac app shows on its dock
+tile, and it is only there while a Mac app has a window. It takes no room:
+rest the pointer on the bottom edge of the screen (the top edge under a
+bottom bar) and it comes out; it goes again shortly after the pointer
+leaves, or as soon as you focus another window. It holds every open app,
+with the ones you kept ahead of a rule. A dot marks an app with a window. A
+Mac app's badge sits on its icon's corner and its progress along the
+icon's foot, and an app asking for attention brings the dock out by itself
+and hops.
+
+A click goes to the app's next window, or starts an app you kept that is
+not running. A middle click starts another instance. A right click opens
+the app's menu: a Mac app's own dock menu, its windows, its desktop
+entry's actions, **Keep in Dock** or **Remove from Dock**, and **Quit**,
+which asks a Mac app through its own Quit command so it can ask about
+unsaved work.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{
+  "dock": {
+    "show": "mac",   // "always": while anything is kept or open; "never"
+    "dwell": 150     // ms the pointer rests on the edge before the dock comes out
+  }
+}
+```
+
+The kept apps are `dockPins` in state.json, ids as `fs dock status` lists
+them.
+
+```sh
+fs dock status              # {"exists":…,"shown":…,"apps":[{"app":…,"badge":…,"progress":…}],"menu":…}
+fs dock open                # out, and held until `fs dock close`
+fs dock close
+fs dock pin org.gnome.Nautilus
+fs dock unpin org.gnome.Nautilus
+fs dock activate com.coteditor.CotEditor   # what a click on its icon does
+fs dock menu com.coteditor.CotEditor       # what a right click opens
+fs dock quit com.coteditor.CotEditor       # what Quit in that menu does
+```
+
 ```sh
 fs appmenu status                    # {"pid":…,"titles":[…],"open":null,"rows":[],"macKeys":true}
 fs appmenu items File/Export         # the items under a title or a submenu

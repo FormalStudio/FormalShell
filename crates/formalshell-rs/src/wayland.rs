@@ -19,6 +19,7 @@ mod caffeinate;
 pub mod capture;
 pub mod capture_host;
 mod console;
+mod dock;
 pub(crate) mod desktop_clock;
 mod headset;
 mod profiles;
@@ -126,10 +127,11 @@ pub enum Role {
     Menu,
     /// The power profile pill beside the sidebar's Settings tiles.
     Profiles,
+    Dock,
 }
 
 impl Role {
-    pub const ALL: [Role; 10] = [
+    pub const ALL: [Role; 11] = [
         Role::Panel,
         Role::Outgoing,
         Role::Launcher,
@@ -140,6 +142,7 @@ impl Role {
         Role::Osd,
         Role::Menu,
         Role::Profiles,
+        Role::Dock,
     ];
 
     /// The card's rim reads the reactive rims' field. The headset card and
@@ -184,6 +187,9 @@ enum Target {
     Osd,
     Headset,
     Profiles,
+    Dock,
+    /// The strip the pointer rests on to bring the dock out.
+    DockEdge,
     Zone(usize),
     /// An output's wallpaper, or its bar while that is a spare.
     Head(usize, heads::Part),
@@ -232,6 +238,7 @@ pub struct App {
     headset: headset::Headset,
     /// The power profile pill beside the Settings tiles (`profiles.rs`).
     profiles: Option<profiles::Pill>,
+    dock: dock::Dock,
     thumbnails: capture::Capture,
     pub switcher: switcher::State,
     pub overview: overview::State,
@@ -344,6 +351,7 @@ impl App {
             osd: osd::Osd::default(),
             headset: headset::Headset::default(),
             profiles: None,
+            dock: dock::Dock::default(),
             thumbnails: capture::Capture::bind(globals, qh),
             switcher: switcher::State::default(),
             overview: overview::State::default(),
@@ -767,6 +775,7 @@ impl App {
             Role::Osd => self.osd.pill.as_ref().map(|p| &p.win),
             Role::Menu => self.tray_menu.as_ref().map(|p| &p.win),
             Role::Profiles => self.profiles.as_ref().map(|p| &p.popup.win),
+            Role::Dock => self.dock.card.as_ref().map(|d| &d.popup.win),
             Role::Launcher | Role::Atlas | Role::Polkit | Role::Overlay => self.modal(role).map(|m| &m.win),
         }
     }
@@ -779,6 +788,7 @@ impl App {
             Role::Osd => self.osd.pill.as_mut().map(|p| &mut p.win),
             Role::Menu => self.tray_menu.as_mut().map(|p| &mut p.win),
             Role::Profiles => self.profiles.as_mut().map(|p| &mut p.popup.win),
+            Role::Dock => self.dock.card.as_mut().map(|d| &mut d.popup.win),
             Role::Launcher | Role::Atlas | Role::Polkit | Role::Overlay => self.modal_mut(role).map(|m| &mut m.win),
         }
     }
@@ -1171,6 +1181,7 @@ impl App {
                 rect,
                 bar: None,
             }),
+            Some(Target::Dock) => self.dock_tip(),
             _ => None,
         };
         match ask {
@@ -1246,6 +1257,7 @@ impl App {
             Some(Target::Panel) => self.panel.as_ref().is_some_and(|h| h.hand()),
             Some(Target::Headset) => true,
             Some(Target::Profiles) => true,
+            Some(Target::Dock) => self.dock_hand(),
             _ => false,
         };
         let shape = if hand { Shape::Pointer } else { Shape::Default };

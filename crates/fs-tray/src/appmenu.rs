@@ -150,6 +150,11 @@ impl AppMenus {
         let _ = self.shared.asks.try_send(Ask::Event(id, kind));
     }
 
+    /// The main menu the process `pid` registered.
+    pub fn registered(&self, pid: u32) -> Option<Address> {
+        self.shared.registry.for_pid(pid)
+    }
+
     /// Where the process `pid` serves `path`, when it registered a menu:
     /// its bus name is the registration's.
     pub fn sibling(&self, pid: u32, path: &str) -> Option<Address> {

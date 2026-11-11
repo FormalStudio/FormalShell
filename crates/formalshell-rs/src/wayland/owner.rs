@@ -93,6 +93,7 @@ pub(super) static LIFECYCLE: &[&dyn Owner] = &[
     &Osd,
     &Headset,
     &Profiles,
+    &Dock,
     &JoinPreview,
     &Zones,
     &Scrim,
@@ -124,6 +125,7 @@ pub(super) static INPUT: &[&dyn Owner] = &[
     &Region,
     &Atlas,
     &Profiles,
+    &Dock,
     &Launcher,
     &Switcher,
     &Overview,
@@ -1263,6 +1265,84 @@ impl Owner for Profiles {
 
     fn counts(&self, app: &App, out: &mut Vec<String>) {
         out.extend(app.profiles.as_ref().map(|p| p.popup.win.surface.report()));
+    }
+}
+
+/// The dock and the strip that brings it out.
+struct Dock;
+
+impl Owner for Dock {
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        if app.dock_owns(surface) {
+            Some(Target::Dock)
+        } else {
+            app.dock_strip_owns(surface).then_some(Target::DockEdge)
+        }
+    }
+
+    /// The strip's events end here; the card's go on to the shared hover
+    /// for its tooltip and the hand.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        match target {
+            Some(Target::DockEdge) => {
+                app.dock_strip_pointer(&e.kind);
+                Pointer::Taken
+            }
+            Some(Target::Dock) => {
+                app.dock_pointer(&e.kind, e.position);
+                Pointer::Pass
+            }
+            _ => Pointer::Pass,
+        }
+    }
+
+    fn reads(&self, _: &App, topic: Topic) -> bool {
+        matches!(topic, Topic::Compositor | Topic::State | Topic::Config | Topic::Activity | Topic::AppIcon | Topic::AppMenu | Topic::Display)
+    }
+
+    fn changed(&self, app: &mut App, topic: Topic) {
+        if topic != Topic::AppMenu {
+            app.dock_sync();
+        }
+        app.dock_menu_changed();
+    }
+
+    fn configure(&self, app: &mut App, surface: &WlSurface, size: (i32, i32)) {
+        if app.dock_strip_owns(surface) {
+            app.dock_strip_configure(size.0);
+        } else {
+            app.dock_configure();
+        }
+    }
+
+    fn frame(&self, app: &mut App, _: &WlSurface, now: Instant) {
+        app.dock_frame(now);
+    }
+
+    fn closed(&self, app: &mut App, surface: &WlSurface) {
+        if app.dock_owns(surface) {
+            app.dock_closed();
+        }
+    }
+
+    fn output_gone(&self, app: &mut App, output: &WlOutput) {
+        app.dock_output_gone(output);
+    }
+
+    fn present(&self, app: &mut App, now: Instant) {
+        app.dock_present(now);
+    }
+
+    fn wake(&self, app: &App, _: Instant) -> Option<Instant> {
+        app.dock_wake()
+    }
+
+    fn report(&self, app: &App, dump: &mut Map<String, Value>) {
+        dump.insert("dock".into(), app.dock_status());
+    }
+
+    fn counts(&self, app: &App, out: &mut Vec<String>) {
+        out.extend(app.dock.card.as_ref().map(|d| d.popup.win.surface.report()));
     }
 }
 

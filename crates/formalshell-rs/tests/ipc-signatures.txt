@@ -77,6 +77,15 @@ target appmenu
   function close(): string
   function activate(path: string): string
   function run(id: int): string
+target dock
+  function status(): string
+  function open(): string
+  function close(): string
+  function pin(id: string): string
+  function unpin(id: string): string
+  function activate(id: string): string
+  function menu(id: string): string
+  function quit(id: string): string
 target overnight
   function toggle(): string
   function enable(): string

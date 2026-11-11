@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""A stand-in for a Mac app under atoll, for the --mac-menu and --mac-keys legs.
+"""A stand-in for a Mac app under atoll, for the --mac-menu, --mac-keys and --dock legs.
 
 One process, because the shell pairs a menu with a window by process id: it
 maps an xdg_toplevel tagged `atoll` (xdg_toplevel_tag_v1, which is how the
 shell knows a Mac window) and serves a com.canonical.dbusmenu at
 /org/atoll/MainMenu, which it names to the shell's registrar
 (com.canonical.AppMenu.Registrar on the bus name org.atoll.AppMenu.Registrar)
-whenever that name gets an owner, as atoll does.
+whenever that name gets an owner, as atoll does. Its dock menu is a second
+dbusmenu at /org/atoll/DockMenu on the same connection, and its dock tile a
+com.canonical.Unity.LauncherEntry `Update` for application://<app id>.desktop,
+sent from that connection too, since a tile's marks go when its sender
+leaves the bus. The tile changes when the leg says so: the stub owns
+org.atoll.Stub and takes `Tile(a{sv})` at /org/atoll/Stub, the properties
+going out as they came in, and --tile is the client of that, sending the
+running stub its properties and leaving (a whole number an int64, true or
+false a boolean, any other number a double, the rest a string):
+
+    dev/mac-stub.py --tile count=3 count-visible=true progress=0.4 progress-visible=true
 
 --log takes one line per thing that reached the stub:
 
@@ -15,6 +25,9 @@ whenever that name gets an owner, as atoll does.
     key <keysym> <down|up> mods=<depressed xkb mask>
     menu: AboutToShow(<id>)
     menu: Event(<id>, <eventId>)
+    dock: AboutToShow(<id>)
+    dock: Event(<id>, <eventId>)
+    tile: <the properties' names>
     quit
 
 The menu is fixed (MENU): an application menu, File with a submenu and a
@@ -51,6 +64,18 @@ REGISTRAR = "org.atoll.AppMenu.Registrar"
 REGISTRAR_IFACE = "com.canonical.AppMenu.Registrar"
 REGISTRAR_PATH = "/com/canonical/AppMenu/Registrar"
 MENU_PATH = "/org/atoll/MainMenu"
+DOCK_PATH = "/org/atoll/DockMenu"
+CONTROL = "org.atoll.Stub"
+CONTROL_PATH = "/org/atoll/Stub"
+LAUNCHER_ENTRY = "com.canonical.Unity.LauncherEntry"
+
+CONTROL_XML = """<node>
+  <interface name="org.atoll.Stub">
+    <method name="Tile">
+      <arg type="a{sv}" direction="in" name="properties"/>
+    </method>
+  </interface>
+</node>"""
 
 MENU_XML = """<node>
   <interface name="com.canonical.dbusmenu">
@@ -140,6 +165,14 @@ def tree(name):
     }
 
 
+def dock_tree():
+    return {
+        0: {"props": {"children-display": "submenu"}, "children": [1, 2]},
+        1: item("New Document"),
+        2: item("Show All Windows"),
+    }
+
+
 def variant(value):
     if isinstance(value, bool):
         return GLib.Variant("b", value)
@@ -154,6 +187,7 @@ class Stub:
     def __init__(self, args):
         self.args = args
         self.menu = tree(args.name)
+        self.menus = {MENU_PATH: self.menu, DOCK_PATH: dock_tree()}
         self.revision = 1
         self.loop = GLib.MainLoop()
         self.bus = None
@@ -177,26 +211,28 @@ class Stub:
 
     # The menu.
 
-    def layout(self, item_id):
-        node = self.menu[item_id]
+    def layout(self, menu, item_id):
+        node = menu[item_id]
         # Each child goes in raw: the "av" field boxes it itself.
-        children = [self.layout(c) for c in node["children"]]
+        children = [self.layout(menu, c) for c in node["children"]]
         return GLib.Variant("(ia{sv}av)", (item_id, {k: variant(v) for k, v in node["props"].items()}, children))
 
     def emit(self, signal, params):
         self.bus.emit_signal(None, MENU_PATH, "com.canonical.dbusmenu", signal, params)
 
-    def on_call(self, _conn, _sender, _path, _iface, method, params, invocation):
+    def on_call(self, _conn, _sender, path, _iface, method, params, invocation):
+        menu, main = self.menus[path], path == MENU_PATH
+        said = "menu" if main else "dock"
         if method == "GetLayout":
             parent = params.unpack()[0]
-            if parent not in self.menu:
+            if parent not in menu:
                 invocation.return_dbus_error("org.freedesktop.DBus.Error.InvalidArgs", f"no menu item {parent}")
                 return
-            invocation.return_value(GLib.Variant.new_tuple(GLib.Variant("u", self.revision), self.layout(parent)))
+            invocation.return_value(GLib.Variant.new_tuple(GLib.Variant("u", self.revision), self.layout(menu, parent)))
         elif method == "AboutToShow":
             (item_id,) = params.unpack()
-            self.log(f"menu: AboutToShow({item_id})")
-            fill = item_id == WINDOW_MENU and not self.menu[WINDOW_MENU]["children"]
+            self.log(f"{said}: AboutToShow({item_id})")
+            fill = main and item_id == WINDOW_MENU and not self.menu[WINDOW_MENU]["children"]
             if fill:
                 self.menu[WINDOW_ITEM] = item(f"{self.args.name} Document", **{"toggle-type": "checkmark", "toggle-state": 1})
                 self.menu[WINDOW_MENU]["children"] = [WINDOW_ITEM]
@@ -205,9 +241,9 @@ class Stub:
             invocation.return_value(GLib.Variant("(b)", (fill,)))
         elif method == "Event":
             item_id, event, _data, _time = params.unpack()
-            self.log(f"menu: Event({item_id}, {event})")
+            self.log(f"{said}: Event({item_id}, {event})")
             invocation.return_value(None)
-            if event != "clicked":
+            if event != "clicked" or not main:
                 return
             if item_id == RULER:
                 props = self.menu[RULER]["props"]
@@ -227,6 +263,16 @@ class Stub:
             "IconThemePath": GLib.Variant("as", []),
         }.get(name)
 
+    def on_control(self, _conn, _sender, _path, _iface, _method, params, invocation):
+        (props,) = params.unpack()
+        self.log(f"tile: {' '.join(sorted(props))}")
+        uri = f"application://{self.args.app_id}.desktop"
+        self.bus.emit_signal(
+            None, "/com/canonical/unity/launcherentry/1", LAUNCHER_ENTRY, "Update",
+            GLib.Variant.new_tuple(GLib.Variant("s", uri), params.get_child_value(0)),
+        )
+        invocation.return_value(None)
+
     def register(self, *_):
         self.bus.call(
             REGISTRAR, REGISTRAR_PATH, REGISTRAR_IFACE, "RegisterWindow",
@@ -243,7 +289,11 @@ class Stub:
     def serve(self):
         self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         info = Gio.DBusNodeInfo.new_for_xml(MENU_XML).lookup_interface("com.canonical.dbusmenu")
-        self.bus.register_object(MENU_PATH, info, self.on_call, self.on_get, None)
+        for path in self.menus:
+            self.bus.register_object(path, info, self.on_call, self.on_get, None)
+        control = Gio.DBusNodeInfo.new_for_xml(CONTROL_XML).lookup_interface(CONTROL)
+        self.bus.register_object(CONTROL_PATH, control, self.on_control, None, None)
+        Gio.bus_own_name_on_connection(self.bus, CONTROL, Gio.BusNameOwnerFlags.NONE, None, None)
         Gio.bus_watch_name_on_connection(self.bus, REGISTRAR, Gio.BusNameWatcherFlags.NONE, self.register, None)
 
     # The window.
@@ -364,13 +414,37 @@ class Stub:
         return True
 
 
+def tile_value(text):
+    if text in ("true", "false"):
+        return GLib.Variant("b", text == "true")
+    try:
+        return GLib.Variant("x", int(text))
+    except ValueError:
+        pass
+    try:
+        return GLib.Variant("d", float(text))
+    except ValueError:
+        return GLib.Variant("s", text)
+
+
+def send_tile(pairs):
+    props = {name: tile_value(value) for name, _, value in (pair.partition("=") for pair in pairs)}
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    bus.call_sync(CONTROL, CONTROL_PATH, CONTROL, "Tile", GLib.Variant("(a{sv})", (props,)), None, Gio.DBusCallFlags.NONE, 2000, None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--name", default="Stub", help="the app's name: its window title and its application menu")
     parser.add_argument("--app-id", default="org.atoll.stub")
     parser.add_argument("--color", default="3a6ea5", help="the window's fill, RRGGBB")
     parser.add_argument("--log", help="append what reached the stub here, a line each")
-    stub = Stub(parser.parse_args())
+    parser.add_argument("--tile", nargs="+", metavar="NAME=VALUE", help="send the running stub's dock tile these properties and leave")
+    args = parser.parse_args()
+    if args.tile:
+        send_tile(args.tile)
+        return
+    stub = Stub(args)
     stub.serve()
     stub.map()
     stub.loop.run()

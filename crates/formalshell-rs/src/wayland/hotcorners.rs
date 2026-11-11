@@ -170,6 +170,15 @@ impl App {
         }
     }
 
+    /// The side of the squares on screen, 0 with none: what else lies
+    /// along an edge stands clear of them.
+    pub(super) fn hot_corner_size(&self) -> i32 {
+        match &self.hot.config {
+            Some(c) if !self.hot.wins.is_empty() => c.size as i32,
+            _ => 0,
+        }
+    }
+
     pub(super) fn hot_corner_owns(&self, surface: &WlSurface) -> bool {
         self.hot.wins.iter().any(|w| w.layer.wl_surface() == surface)
     }

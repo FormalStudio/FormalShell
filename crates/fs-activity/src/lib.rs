@@ -158,7 +158,20 @@ impl Item {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Badge {
     pub count: Option<i64>,
+    /// A badge that is not a count, shown in the count's place.
+    pub text: String,
     pub urgent: bool,
+}
+
+impl Badge {
+    /// What the icon's badge reads, none for urgency alone.
+    pub fn label(&self) -> Option<String> {
+        match self.count {
+            _ if !self.text.is_empty() => Some(self.text.clone()),
+            Some(n) if n > 0 => Some(n.to_string()),
+            _ => None,
+        }
+    }
 }
 
 /// A notification as Activity reads it.
@@ -462,7 +475,11 @@ impl Activity {
     /// bar; the count and urgency as the app's badge.
     pub fn launcher(&mut self, app: &str, title: &str, entry: &Entry, now: i64) -> bool {
         let badge = (entry.count_visible || entry.urgent)
-            .then(|| Badge { count: entry.count_visible.then_some(entry.count), urgent: entry.urgent });
+            .then(|| Badge {
+                count: entry.count_visible.then_some(entry.count),
+                text: if entry.count_visible { entry.badge.clone() } else { String::new() },
+                urgent: entry.urgent,
+            });
         let mut changed = match badge {
             Some(b) if self.badges.get(app) != Some(&b) => {
                 self.badges.insert(app.to_owned(), b);
@@ -588,7 +605,7 @@ impl Activity {
             })
             .collect();
         let badges: Vec<Value> =
-            self.badges.iter().map(|(app, b)| json!({"app": app, "count": b.count, "urgent": b.urgent})).collect();
+            self.badges.iter().map(|(app, b)| json!({"app": app, "count": b.count, "text": b.text, "urgent": b.urgent})).collect();
         json!({
             "groups": groups,
             "history": self.history.iter().map(Item::to_json).collect::<Vec<_>>(),
@@ -736,7 +753,13 @@ mod tests {
         assert!(!a.launcher("firefox", "Firefox", &e, 200), "an unchanged entry changed something");
         let item = a.get("launcher:firefox").unwrap();
         assert_eq!((item.source.as_str(), item.progress.fraction().unwrap().to_percent().rounded(), item.started_ms), ("app:firefox", 25, 100));
-        assert_eq!(a.badges()["firefox"], Badge { count: Some(3), urgent: false });
+        assert_eq!(a.badges()["firefox"], Badge { count: Some(3), text: String::new(), urgent: false });
+        assert_eq!(a.badges()["firefox"].label().as_deref(), Some("3"));
+        e.apply(launcher::Prop::Badge("new".into()));
+        assert!(a.launcher("firefox", "Firefox", &e, 150));
+        assert_eq!(a.badges()["firefox"].label().as_deref(), Some("new"));
+        e.apply(launcher::Prop::Badge(String::new()));
+        assert!(a.launcher("firefox", "Firefox", &e, 160));
         e.apply(launcher::Prop::Urgent(true));
         assert!(a.launcher("firefox", "Firefox", &e, 250));
         e.apply(launcher::Prop::ProgressVisible(false));

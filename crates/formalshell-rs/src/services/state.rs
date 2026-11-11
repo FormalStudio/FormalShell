@@ -131,6 +131,8 @@ keys! {
     lights: Option<lights::Record> => Lights,
     hdr: Option<hdr::Wants> => Hdr,
     sidebar_collapsed: bool => SidebarCollapsed,
+    /// The apps kept in the dock, desktop ids in dock order.
+    dock_pins: Vec<String> => DockPins,
     /// Upper-case addresses.
     earbuds_faces: BTreeMap<String, earbuds::Face> => EarbudsFaces,
     /// The settings UI's overrides, a settings.json-shaped object the config
@@ -526,6 +528,9 @@ mod tests {
     "calendarLifeExpectancy": 80,
     "clockFormat": "h:mm AP",
     "dnd": true,
+    "dockPins": [
+        "org.atoll.Stub"
+    ],
     "earbudsFaces": {
         "2C:BE:EE:65:A0:21": {
             "art": "b175_black",
@@ -625,6 +630,7 @@ mod tests {
     "calendarLifeExpectancy": 0,
     "clockFormat": "",
     "dnd": false,
+    "dockPins": [],
     "earbudsFaces": {},
     "emojiUses": [
         {

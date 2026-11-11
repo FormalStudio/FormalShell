@@ -22,13 +22,23 @@ pub struct Menu {
     pub root: MenuNode,
 }
 
+/// A Mac app's dock menu (`applicationDockMenu:`), as last read for the
+/// dock's menu card.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DockMenu {
+    pub pid: u32,
+    pub root: MenuNode,
+}
+
 #[derive(Default)]
 pub struct State {
     pub menu: Option<Menu>,
+    pub dock: Option<DockMenu>,
 }
 
 pub enum Diff {
     Menu(Option<Menu>),
+    Dock(Option<DockMenu>),
 }
 
 impl State {
@@ -37,6 +47,11 @@ impl State {
             Diff::Menu(menu) => {
                 let changed = menu != self.menu;
                 self.menu = menu;
+                changed
+            }
+            Diff::Dock(dock) => {
+                let changed = dock != self.dock;
+                self.dock = dock;
                 changed
             }
         }
@@ -186,6 +201,78 @@ pub fn click(id: i32) {
     }
 }
 
+/// Where a Mac app serves its dock menu, beside its main menu.
+const DOCK_PATH: &str = "/org/atoll/DockMenu";
+
+/// Whether the process named a menu to the registrar, which only a Mac app
+/// does.
+pub fn registered(pid: u32) -> bool {
+    MENUS.get().is_some_and(|menus| menus.registered(pid).is_some())
+}
+
+/// Reads the dock menu of the Mac app `pid` into `store.appmenu.dock`, the
+/// app told first that it is about to show.
+pub fn dock_menu(ctx: &Ctx, pid: u32) {
+    let Some(address) = MENUS.get().and_then(|menus| menus.sibling(pid, DOCK_PATH)) else { return };
+    let publisher = ctx.clone();
+    ctx.spawn(async move {
+        let read = async {
+            let conn = crate::services::bus::session().await?;
+            address.about_to_show(&conn, 0).await?;
+            address.layout(&conn, 0).await
+        };
+        match read.await {
+            Ok(tree) => publisher.publish(store::Diff::AppMenu(Diff::Dock(Some(DockMenu { pid, root: node_of(&tree, 1.0) })))),
+            Err(err) => eprintln!("appmenu: dock menu of {pid}: {err}"),
+        }
+    });
+}
+
+/// Runs the item `id` of the dock menu of `pid`.
+pub fn dock_click(ctx: &Ctx, pid: u32, id: i32) {
+    let Some(address) = MENUS.get().and_then(|menus| menus.sibling(pid, DOCK_PATH)) else { return };
+    ctx.spawn(async move {
+        let sent = async { address.event(&crate::services::bus::session().await?, id, MenuEventKind::Clicked).await };
+        if let Err(err) = sent.await {
+            eprintln!("appmenu: dock menu of {pid}: {err}");
+        }
+    });
+}
+
+/// The application menu's Quit: the item on Command and Q, else the last
+/// one named Quit.
+pub fn quit_item(root: &MenuNode) -> Option<i32> {
+    let items = &root.children.first()?.children;
+    let live = |c: &&MenuNode| !c.separator && !c.has_children && c.enabled;
+    let keyed = items.iter().filter(live).find(|c| c.shortcut.len() == 2 && c.shortcut[0] == "Super" && c.shortcut[1].eq_ignore_ascii_case("q"));
+    keyed.or_else(|| items.iter().rev().filter(live).find(|c| c.label.starts_with("Quit"))).map(|c| c.id)
+}
+
+/// Chooses Quit in the main menu of the Mac app `pid`, so the app asks
+/// about unsaved work as it does for its own key. `closed` runs where the
+/// menu holds no Quit.
+pub fn quit(ctx: &Ctx, pid: u32, closed: impl FnOnce() + Send + 'static) {
+    let Some(address) = MENUS.get().and_then(|menus| menus.registered(pid)) else { return closed() };
+    ctx.spawn(async move {
+        let sent = async {
+            let conn = crate::services::bus::session().await?;
+            let tree = address.layout(&conn, 0).await?;
+            match quit_item(&node_of(&tree, 1.0)) {
+                Some(id) => address.event(&conn, id, MenuEventKind::Clicked).await.map(|()| true),
+                None => Ok(false),
+            }
+        };
+        match sent.await {
+            Ok(true) => {}
+            Ok(false) => closed(),
+            Err(err) => {
+                eprintln!("appmenu: quit {pid}: {err}");
+                closed();
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,7 +298,7 @@ mod tests {
         let export = node(6, "Export", vec![node(7, "PDF", Vec::new())]);
         let file = node(2, "File", vec![node(3, "New", Vec::new()), rule, export]);
         let app = node(1, "TextEdit", vec![node(8, "Quit TextEdit", Vec::new())]);
-        State { menu: Some(Menu { pid: 9, root: node(0, "", vec![app, file]) }) }
+        State { menu: Some(Menu { pid: 9, root: node(0, "", vec![app, file]) }), dock: None }
     }
 
     #[test]
@@ -221,6 +308,19 @@ mod tests {
         assert_eq!(s.at_path("File").map(|n| n.id), Some(2));
         assert_eq!(s.at_path("File/Missing"), None);
         assert_eq!(s.at_path(""), None);
+    }
+
+    #[test]
+    fn quit_is_the_application_menus_command_q() {
+        let mut s = state();
+        assert_eq!(quit_item(&s.menu.as_ref().unwrap().root), Some(8));
+        let app = &mut s.menu.as_mut().unwrap().root.children[0];
+        let mut keyed = node(9, "Beenden", Vec::new());
+        keyed.shortcut = vec!["Super".into(), "Q".into()];
+        app.children.insert(0, keyed);
+        assert_eq!(quit_item(&s.menu.as_ref().unwrap().root), Some(9));
+        s.menu.as_mut().unwrap().root.children[0].children.clear();
+        assert_eq!(quit_item(&s.menu.as_ref().unwrap().root), None);
     }
 
     #[test]
