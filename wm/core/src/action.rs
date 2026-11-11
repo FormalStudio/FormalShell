@@ -18,6 +18,9 @@ pub enum WorkspaceRef {
     Previous,
     /// A neighbour in the focused output's stack.
     Relative(isize),
+    /// Hyprland's `e+1`: the next workspace of the output that holds a
+    /// window, round from the last to the first.
+    Occupied(isize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -134,9 +137,18 @@ impl Action {
                 ))
             }
             "workspace" => {
-                let arg = first.ok_or("`workspace` needs a number, `previous`, `+1` or `-1`")?;
+                let arg = first
+                    .ok_or("`workspace` needs a number, `previous`, `+1`, `-1`, `e+1` or `e-1`")?;
                 if arg == "previous" {
                     return Ok(Action::Workspace(WorkspaceRef::Previous));
+                }
+                if let Some(step) = arg.strip_prefix('e') {
+                    return step
+                        .parse()
+                        .ok()
+                        .filter(|_| step.starts_with('+') || step.starts_with('-'))
+                        .map(|step| Action::Workspace(WorkspaceRef::Occupied(step)))
+                        .ok_or_else(|| format!("`workspace`: bad workspace `{arg}`"));
                 }
                 let value: isize = arg
                     .parse()
@@ -236,6 +248,15 @@ mod tests {
             parse("workspace", &["previous"]),
             Ok(Action::Workspace(WorkspaceRef::Previous))
         );
+        assert_eq!(
+            parse("workspace", &["e+1"]),
+            Ok(Action::Workspace(WorkspaceRef::Occupied(1)))
+        );
+        assert_eq!(
+            parse("workspace", &["e-1"]),
+            Ok(Action::Workspace(WorkspaceRef::Occupied(-1)))
+        );
+        assert!(parse("workspace", &["e1"]).is_err());
         assert!(parse("workspace", &["0"]).is_err());
     }
 

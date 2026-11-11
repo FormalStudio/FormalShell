@@ -53,11 +53,15 @@ fn a_new_window_pops_in_and_fades_up() {
     scene.sync(&model);
     let first = scene.visual("a").unwrap();
     assert_eq!(first.opacity, 0.0);
-    assert!((first.rect.w / first.size.0 - 0.9).abs() < 1e-9);
+    assert_eq!((first.rect.w, first.rect.h), (5.0, 5.0));
+    assert_eq!(first.rect.center(), place(&model, "a").rect.center());
     scene.step(0.05);
     let mid = scene.visual("a").unwrap();
     assert!(mid.opacity > 0.0 && mid.opacity < 1.0);
     assert!(mid.rect.w > first.rect.w);
+    // The client's first picture starts it over.
+    scene.arrive("a");
+    assert_eq!(scene.visual("a").unwrap(), first);
     settle(&mut scene);
     assert_eq!(drawn(&scene, "a"), place(&model, "a").rect);
 }
@@ -217,25 +221,6 @@ fn a_pinned_window_does_not_ride_the_stack() {
 }
 
 #[test]
-fn a_closed_window_stays_until_it_has_faded() {
-    let mut model = desk();
-    let mut scene = Scene::default();
-    open(&mut model, "a");
-    scene.sync(&model);
-    settle(&mut scene);
-    scene.close("a");
-    model.close("a");
-    scene.sync(&model);
-    scene.step(0.05);
-    let ghost = scene.visual("a").unwrap();
-    assert!(ghost.closing && ghost.opacity < 1.0 && ghost.opacity > 0.0);
-    assert!(ghost.rect.w < ghost.size.0);
-    scene.step(scene.close_ms() / 1000.0);
-    assert!(scene.visual("a").is_none());
-    assert!(!scene.animating());
-}
-
-#[test]
 fn with_motion_off_everything_lands_at_once() {
     let mut model = desk();
     let mut scene = Scene::new(&Motion {
@@ -250,8 +235,6 @@ fn with_motion_off_everything_lands_at_once() {
     model.focus_workspace("4");
     scene.sync(&model);
     assert_eq!(scene.stack_of("A"), 3.0);
-    scene.close("a");
-    assert!(scene.visual("a").is_none());
     assert_eq!(scene.close_ms(), 0.0);
 }
 

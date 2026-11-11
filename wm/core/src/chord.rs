@@ -17,7 +17,9 @@ pub enum Key {
     Code(u32),
     /// A Linux button code, `BTN_LEFT` is 272.
     Button(u32),
-    /// Hyprland's `mouse_up`: the wheel turned toward the user.
+    /// Hyprland's `mouse_up`. It names the wheel by the sign of the axis
+    /// it reads, so `mouse_up` is the wheel turned toward the user, the
+    /// way that scrolls a page down, and `mouse_down` away.
     WheelUp,
     WheelDown,
 }
@@ -129,8 +131,8 @@ impl Chord {
         let key = match &self.key {
             Key::Sym(name) => name.clone(),
             Key::Code(code) => format!("code:{code}"),
-            Key::WheelUp => "WheelScrollUp".to_owned(),
-            Key::WheelDown => "WheelScrollDown".to_owned(),
+            Key::WheelUp => "WheelScrollDown".to_owned(),
+            Key::WheelDown => "WheelScrollUp".to_owned(),
             Key::Button(_) => return None,
         };
         let mut parts: Vec<&str> = [
@@ -190,6 +192,10 @@ mod tests {
                 .unwrap()
                 .shortcut()
                 .unwrap(),
+            "Super+WheelScrollUp"
+        );
+        assert_eq!(
+            Chord::parse("SUPER+mouse_up").unwrap().shortcut().unwrap(),
             "Super+WheelScrollDown"
         );
         let drag = Chord::parse("SUPER+mouse:272").unwrap();

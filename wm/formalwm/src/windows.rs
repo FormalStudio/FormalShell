@@ -45,6 +45,18 @@ const REST: ManagedTransform = ManagedTransform {
 /// Hyprland's `popin`: a closing window shrinks to this.
 const POP_OUT: f64 = 0.9;
 
+fn blend(from: Color, to: Color, t: f64) -> Color {
+    let channel = |from: u8, to: u8| {
+        (from as f64 + (to as f64 - from as f64) * t.clamp(0.0, 1.0)).round() as u8
+    };
+    Color {
+        r: channel(from.r, to.r),
+        g: channel(from.g, to.g),
+        b: channel(from.b, to.b),
+        a: channel(from.a, to.a),
+    }
+}
+
 pub fn setup(signals: Signals) {
     COMPOSITOR
         .window
@@ -74,18 +86,33 @@ pub fn setup(signals: Signals) {
             return managed.allow_tearing(true).child(ClientWindow::new());
         }
 
+        // Hyprland's `border` leaf: the colours cross over, they do not flip.
         let focused = window.is_focused();
+        let lit = |focused: bool| if focused { 1.0 } else { 0.0 };
+        let mix = Animation::new(lit(focused.get_untracked()));
+        let (ms, [x1, y1, x2, y2]) = look.tint;
+        effect(move || {
+            let to = lit(focused.get());
+            if ms < 1.0 {
+                mix.set(to);
+            } else if mix.get_untracked() != to {
+                mix.start(AnimationOptions::to(to, ms).easing(cubic_bezier(x1, y1, x2, y2)));
+            }
+        });
         let mut style = Style::new()
             .border(
                 look.border,
-                focused.map(move |focused| if *focused { look.active } else { look.inactive }),
+                derive(move || blend(look.inactive, look.active, mix.get())),
             )
             .border_radius(look.rounding)
             .padding(0.0);
         if let Some((active, inactive)) = look.shadow {
-            style = style.box_shadow(
-                focused.map(move |focused| vec![if *focused { active } else { inactive }]),
-            );
+            style = style.box_shadow(derive(move || {
+                vec![BoxShadow {
+                    color: blend(inactive.color, active.color, mix.get()),
+                    ..if mix.get() > 0.5 { active } else { inactive }
+                }]
+            }));
         }
         managed.child(
             WindowBorder::new()
@@ -207,7 +234,7 @@ impl Engine {
                 id: id.clone(),
                 title,
                 app_id,
-                pid: 0,
+                pid: window.pid().map_or(0, i64::from),
                 size: None,
             },
             Placement {
@@ -236,8 +263,9 @@ impl Engine {
         let Some(win) = self.windows.get(&id) else {
             return;
         };
+        self.scene.arrive(&id);
         if win.sized {
-            return;
+            return self.commit();
         }
         let natural = window.position().get_untracked();
         let effect = win.effect.clone();
@@ -245,30 +273,30 @@ impl Engine {
             win.sized = true;
         }
         window.state(&FORCE).set(true);
-        if natural.width < 1.0 || natural.height < 1.0 {
-            return;
-        }
-        let Some(output) = self
+        let output = self
             .model
             .output_of(&id)
             .and_then(|name| self.model.output(&name))
-            .map(|output| output.geo.rect)
-        else {
-            return;
-        };
-        let (w, h) = (natural.width.min(output.w), natural.height.min(output.h));
-        let local =
-            rules::float_rect(&effect, (output.w, output.h), Some((w, h))).unwrap_or(Box2::new(
-                ((output.w - w) / 2.0).round(),
-                ((output.h - h) / 2.0).round(),
-                w,
-                h,
-            ));
-        if self.model.place(&id, local.translate(output.x, output.y)) {
-            self.scene.sync(&self.model);
-            self.scene.land(&id);
-            self.commit();
+            .map(|output| output.geo.rect);
+        if let Some(output) = output
+            && natural.width >= 1.0
+            && natural.height >= 1.0
+        {
+            let (w, h) = (natural.width.min(output.w), natural.height.min(output.h));
+            let local = rules::float_rect(&effect, (output.w, output.h), Some((w, h))).unwrap_or(
+                Box2::new(
+                    ((output.w - w) / 2.0).round(),
+                    ((output.h - h) / 2.0).round(),
+                    w,
+                    h,
+                ),
+            );
+            if self.model.place(&id, local.translate(output.x, output.y)) {
+                self.scene.sync(&self.model);
+                self.scene.land(&id);
+            }
         }
+        self.commit();
     }
 
     fn renamed(&mut self, window: Window, title: &str, app_id: &str) {
@@ -288,18 +316,26 @@ impl Engine {
         if ms > 0 {
             let rect = window.rect();
             let (dw, dh) = (rect.width * (1.0 - POP_OUT), rect.height * (1.0 - POP_OUT));
-            let [x1, y1, x2, y2] = self.theme.chrome.motion.families.effects_fast.curve;
-            let easing = cubic_bezier(x1, y1, x2, y2);
+            // `windowsOut` and `fadeOut`: the shrink rides spatialFast for
+            // as far as the fade on effectsFast lets it be seen.
+            let families = self.theme.chrome.motion.families;
+            let curve = |[x1, y1, x2, y2]: [f64; 4]| cubic_bezier(x1, y1, x2, y2);
             window.schedule_animation(
                 ManagedAnimation::new("close")
                     .rect(
                         Some(Rect::new(0.0, 0.0, 0.0, 0.0)),
                         Rect::new(dw / 2.0, dh / 2.0, -dw, -dh),
-                        ms,
-                        easing,
+                        families.spatial_fast.ms as u64,
+                        curve(families.spatial_fast.curve),
                         AnimationMode::Add,
                     )
-                    .opacity(Some(1.0), 0.0, ms, easing, AnimationMode::Multiply),
+                    .opacity(
+                        Some(1.0),
+                        0.0,
+                        ms,
+                        curve(families.effects_fast.curve),
+                        AnimationMode::Multiply,
+                    ),
             );
         }
         self.forget(&id);

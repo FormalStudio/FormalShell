@@ -2,7 +2,8 @@
 //! `settings.json` under `~/.config/formalwm/`, in the dialect the shell's
 //! own hand-written files use (JSON with `//` comments and trailing commas,
 //! camelCase keys), with an optional `host.json` beside it merged over it
-//! for what differs per machine. A file with an unknown key, a bad pattern,
+//! for what differs per machine (its `outputs` are listed first, the
+//! shared ones after). A file with an unknown key, a bad pattern,
 //! chord or action is refused whole.
 
 use std::{collections::BTreeMap, path::Path};
@@ -113,7 +114,8 @@ pub struct OutputSettings {
     pub name: Option<String>,
     /// Make, model and serial as the monitor reports them, or their start.
     pub description: Option<String>,
-    /// `2560x1440@144`, `2560x1440`, or absent for the best mode.
+    /// `2560x1440@144`, `2560x1440`, `highrr` for the highest refresh rate
+    /// the monitor has, `preferred` or absent for the mode it asks for.
     pub mode: Option<String>,
     /// Absent places it beside the others.
     pub position: Option<[i32; 2]>,
@@ -144,6 +146,27 @@ pub struct Mode {
     pub refresh: Option<f64>,
 }
 
+/// The mode an output's entry asks for.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ModeChoice {
+    /// The monitor's own.
+    Preferred,
+    /// Hyprland's `highrr`: the highest refresh rate, and of the modes that
+    /// have it the one with the most pixels.
+    HighRefresh,
+    Exact(Mode),
+}
+
+impl ModeChoice {
+    /// Which of a monitor's modes (width, height, Hz) `highrr` takes.
+    pub fn highest_refresh(modes: &[(i32, i32, f64)]) -> Option<(i32, i32, f64)> {
+        let rank = |&(w, h, hz): &(i32, i32, f64)| {
+            ((hz * 1000.0).round() as i64, i64::from(w) * i64::from(h))
+        };
+        modes.iter().copied().max_by_key(rank)
+    }
+}
+
 impl OutputFacts<'_> {
     /// Whether `description` is this output's make, model and serial, or
     /// their start.
@@ -163,23 +186,32 @@ impl OutputSettings {
             .is_none_or(|description| facts.described_by(description))
     }
 
-    pub fn mode(&self) -> Option<Mode> {
-        parse_mode(self.mode.as_deref()?).ok()
+    pub fn mode(&self) -> ModeChoice {
+        self.mode
+            .as_deref()
+            .and_then(|mode| parse_mode(mode).ok())
+            .unwrap_or(ModeChoice::Preferred)
     }
 }
 
-fn parse_mode(text: &str) -> Result<Mode, String> {
-    let bad = || format!("bad mode `{text}`, expected 2560x1440 or 2560x1440@144");
+fn parse_mode(text: &str) -> Result<ModeChoice, String> {
+    match text {
+        "preferred" => return Ok(ModeChoice::Preferred),
+        "highrr" => return Ok(ModeChoice::HighRefresh),
+        _ => {}
+    }
+    let bad =
+        || format!("bad mode `{text}`, expected 2560x1440, 2560x1440@144, highrr or preferred");
     let (size, refresh) = match text.split_once('@') {
         Some((size, refresh)) => (size, Some(refresh.parse::<f64>().map_err(|_| bad())?)),
         None => (text, None),
     };
     let (width, height) = size.split_once('x').ok_or_else(bad)?;
-    Ok(Mode {
+    Ok(ModeChoice::Exact(Mode {
         width: width.parse().map_err(|_| bad())?,
         height: height.parse().map_err(|_| bad())?,
         refresh,
-    })
+    }))
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
@@ -363,7 +395,17 @@ impl Settings {
         if let Some(host) = host {
             let host: Value = serde_json::from_str(&strip_jsonc(host))
                 .map_err(|error| format!("host.json: {error}"))?;
+            // A host's monitors go ahead of the shared ones instead of in
+            // their place, so the shared rule for a display nobody listed
+            // still stands behind them.
+            let shared = match (value.get("outputs"), host.get("outputs")) {
+                (Some(Value::Array(shared)), Some(Value::Array(_))) => shared.clone(),
+                _ => Vec::new(),
+            };
             merge(&mut value, host);
+            if let Some(Value::Array(outputs)) = value.get_mut("outputs") {
+                outputs.extend(shared);
+            }
         }
         let file: SettingsFile =
             serde_json::from_value(value).map_err(|error| format!("settings: {error}"))?;
@@ -699,6 +741,30 @@ mod tests {
     }
 
     #[test]
+    fn a_hosts_outputs_come_before_the_shared_ones() {
+        let main = r#"{ "outputs": [{ "name": "eDP-1", "scale": 1 }, { "mode": "highrr" }] }"#;
+        let host = r#"{ "outputs": [{ "name": "eDP-1", "scale": 1.25 }, { "name": "DP-1", "mode": "2560x1440@144" }] }"#;
+        let settings = Settings::parse(main, Some(host)).unwrap();
+        let named = |name| OutputFacts {
+            name,
+            ..OutputFacts::default()
+        };
+        assert_eq!(
+            settings.output_for(&named("eDP-1")).unwrap().scale,
+            Some(1.25)
+        );
+        assert!(matches!(
+            settings.output_for(&named("DP-1")).unwrap().mode(),
+            ModeChoice::Exact(_)
+        ));
+        assert_eq!(
+            settings.output_for(&named("HDMI-A-2")).unwrap().mode(),
+            ModeChoice::HighRefresh,
+            "a display the host does not list keeps the shared rule"
+        );
+    }
+
+    #[test]
     fn a_bind_is_a_chord_to_an_action() {
         let text = r#"{ "binds": [
             { "chord": "SUPER+code:12", "action": "workspace", "args": ["3"] },
@@ -798,12 +864,28 @@ mod tests {
         let matched = settings.output_for(&desk).unwrap();
         assert_eq!(
             matched.mode(),
-            Some(Mode {
+            ModeChoice::Exact(Mode {
                 width: 2560,
                 height: 1440,
                 refresh: Some(144.0)
             })
         );
+        let modes = [
+            (3840, 2160, 60.0),
+            (1920, 1080, 119.88),
+            (2560, 1440, 119.88),
+            (1280, 720, 100.0),
+        ];
+        assert_eq!(
+            ModeChoice::highest_refresh(&modes),
+            Some((2560, 1440, 119.88))
+        );
+        let unlisted = OutputSettings {
+            mode: Some("highrr".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(unlisted.mode(), ModeChoice::HighRefresh);
+        assert_eq!(OutputSettings::default().mode(), ModeChoice::Preferred);
         assert_eq!(matched.vrr, 2);
         assert_eq!(settings.output_for(&panel).unwrap().scale, Some(1.25));
         assert_eq!(settings.output_for(&hdmi).unwrap().scale, Some(2.0));

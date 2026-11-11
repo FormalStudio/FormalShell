@@ -121,7 +121,7 @@ impl Engine {
         }
         let options = InputGrabOptions::new()
             .on_key(move |event| {
-                let key = event.key.clone();
+                let (key, code) = (event.key.clone(), event.keycode);
                 let pressed = event.state == InputGrabState::Pressed;
                 let mods = Mods {
                     logo: event.modifiers.logo,
@@ -129,45 +129,56 @@ impl Engine {
                     ctrl: event.modifiers.ctrl,
                     alt: event.modifiers.alt,
                 };
-                enter(move |engine| engine.release_key(modifier, &key, mods, pressed));
+                enter(move |engine| engine.release_key(modifier, &key, code, mods, pressed));
             })
             .on_cancel(|_| enter(|engine| engine.release_grab = None));
         self.release_grab = Some(COMPOSITOR.input.grab(options));
     }
 
-    fn release_key(&mut self, modifier: &str, key: &str, mods: Mods, pressed: bool) {
+    fn release_key(&mut self, modifier: &str, key: &str, code: u32, mods: Mods, pressed: bool) {
+        let let_go = !pressed
+            && matches!(
+                (modifier, key),
+                ("Alt", "Alt_L" | "Alt_R")
+                    | ("Super", "Super_L" | "Super_R")
+                    | ("Shift", "Shift_L" | "Shift_R")
+                    | ("Ctrl", "Control_L" | "Control_R")
+            );
+        // A virtual keyboard lets a modifier go with no key of its own:
+        // the next key arrives without it.
+        let gone = pressed
+            && !match modifier {
+                "Alt" => mods.alt,
+                "Super" => mods.logo,
+                "Shift" => mods.shift,
+                _ => mods.ctrl,
+            };
+        if let_go || gone {
+            if let Some(grab) = self.release_grab.take() {
+                grab.release();
+            }
+            for action in self.releases.get(modifier).cloned().unwrap_or_default() {
+                self.run(&action);
+            }
+        }
         if pressed {
-            return self.run_chord(key, mods);
-        }
-        let let_go = matches!(
-            (modifier, key),
-            ("Alt", "Alt_L" | "Alt_R")
-                | ("Super", "Super_L" | "Super_R")
-                | ("Shift", "Shift_L" | "Shift_R")
-                | ("Ctrl", "Control_L" | "Control_R")
-        );
-        if !let_go {
-            return;
-        }
-        if let Some(grab) = self.release_grab.take() {
-            grab.release();
-        }
-        for action in self.releases.get(modifier).cloned().unwrap_or_default() {
-            self.run(&action);
+            self.run_chord(key, code, mods);
         }
     }
 
     /// Runs the binds of a chord the engine was given instead of the core:
     /// under a grab no bind of the core's fires.
-    pub fn run_chord(&mut self, key: &str, mods: Mods) {
+    pub fn run_chord(&mut self, key: &str, code: u32, mods: Mods) {
         let actions: Vec<Action> = self
             .settings
             .binds
             .iter()
             .filter(|bind| !bind.release && bind.chord.mods == mods)
-            .filter(
-                |bind| matches!(&bind.chord.key, Key::Sym(name) if name.eq_ignore_ascii_case(key)),
-            )
+            .filter(|bind| match &bind.chord.key {
+                Key::Sym(name) => name.eq_ignore_ascii_case(key),
+                Key::Code(bound) => *bound == code,
+                _ => false,
+            })
             .map(|bind| bind.action.clone())
             .collect();
         for action in actions {
@@ -241,10 +252,11 @@ impl Engine {
             Action::Workspace(WorkspaceRef::Relative(step)) => {
                 self.model.focus_workspace_relative(*step)
             }
-            Action::MoveToWorkspace(number) => focused.is_some_and(|id| {
-                self.model
-                    .move_to_workspace(&id, &number.to_string(), false)
-            }),
+            Action::Workspace(WorkspaceRef::Occupied(step)) => {
+                self.model.focus_occupied_workspace(*step)
+            }
+            Action::MoveToWorkspace(number) => focused
+                .is_some_and(|id| self.model.move_to_workspace(&id, &number.to_string(), true)),
             Action::Overview(open) => {
                 self.set_overview(*open);
                 false

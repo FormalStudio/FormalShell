@@ -322,7 +322,7 @@ fn layers() -> Vec<proto::Layer> {
                 y: output.y.round() as i32 + layer.position.y,
                 width: layer.position.width,
                 height: layer.position.height,
-                pid: 0,
+                pid: layer.pid.map_or(0, i64::from),
                 output: layer.output_name,
             })
         })

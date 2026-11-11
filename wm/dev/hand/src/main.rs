@@ -17,7 +17,10 @@ use std::{
 
 use wayland_client::{
     Connection, Dispatch, QueueHandle, delegate_noop,
-    protocol::{wl_pointer::ButtonState, wl_registry},
+    protocol::{
+        wl_pointer::{Axis, AxisSource, ButtonState},
+        wl_registry,
+    },
 };
 use wayland_protocols_wlr::virtual_pointer::v1::client::{
     zwlr_virtual_pointer_manager_v1::ZwlrVirtualPointerManagerV1,
@@ -133,6 +136,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     ButtonState::Released
                 };
                 pointer.button(now(), code, state);
+                pointer.frame();
+            }
+            "wheel" => {
+                let notches = number(&mut words, "wheel")?;
+                pointer.axis_source(AxisSource::Wheel);
+                pointer.axis_discrete(now(), Axis::VerticalScroll, notches * 15.0, notches as i32);
                 pointer.frame();
             }
             "wait" => {

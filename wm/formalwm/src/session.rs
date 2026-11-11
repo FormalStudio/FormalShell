@@ -8,12 +8,13 @@ use std::{
     os::unix::net::UnixStream,
     path::PathBuf,
     rc::Rc,
+    time::Instant,
 };
 
 use formalwm_core::{
     geom::Rect as Box2,
     model::OutputGeo,
-    settings::{Accel, OutputFacts, Pointer, Settings, Touchpad},
+    settings::{Accel, ModeChoice, OutputFacts, Pointer, Settings, Touchpad},
 };
 use fs_wm_proto::{self as proto, event};
 use serde_json::json;
@@ -161,13 +162,29 @@ pub fn setup() {
                     .or(entry.and_then(|entry| entry.scale))
                     .unwrap_or(1.0);
                 let mut config = OutputConfig::extend(scale);
-                if let Some(mode) = entry.and_then(|entry| entry.mode()) {
-                    config.resolution = Some(OutputResolution::Exact {
+                let choice = entry.map_or(ModeChoice::Preferred, |entry| entry.mode());
+                config.resolution = match choice {
+                    ModeChoice::Preferred => None,
+                    ModeChoice::Exact(mode) => Some(OutputResolution::Exact {
                         width: mode.width,
                         height: mode.height,
                         refresh_rate: mode.refresh,
-                    });
-                }
+                    }),
+                    ModeChoice::HighRefresh => {
+                        let modes: Vec<(i32, i32, f64)> = output
+                            .available_modes
+                            .iter()
+                            .map(|mode| (mode.width, mode.height, mode.refresh_rate))
+                            .collect();
+                        ModeChoice::highest_refresh(&modes).map(|(width, height, hz)| {
+                            OutputResolution::Exact {
+                                width: width as u16,
+                                height: height as u16,
+                                refresh_rate: Some(hz),
+                            }
+                        })
+                    }
+                };
                 if let Some([x, y]) = entry.and_then(|entry| entry.position) {
                     config.position = Some(OutputPosition::Exact { x, y });
                 }
@@ -257,15 +274,25 @@ pub fn setup() {
             engine.xwayland_primary();
             engine.start_shell();
         });
-        set_timeout(SHELL_WAIT_MS, || {
-            enter(|engine| {
-                if !engine.shell_arrived {
-                    engine.cursor_hidden = false;
-                    engine.apply_cursor();
-                    engine.publish();
-                }
-            })
-        });
+        wait_for_shell(Instant::now());
+    });
+}
+
+/// Shows the pointer when the shell has not come for it in time. The wall
+/// clock decides: the compositor's own has no time yet when the session
+/// starts, and a timer set then comes due at its first tick.
+fn wait_for_shell(started: Instant) {
+    let left = SHELL_WAIT_MS - started.elapsed().as_secs_f64() * 1000.0;
+    if left > 0.0 {
+        set_timeout(left, move || wait_for_shell(started));
+        return;
+    }
+    enter(|engine| {
+        if !engine.shell_arrived {
+            engine.cursor_hidden = false;
+            engine.apply_cursor();
+            engine.publish();
+        }
     });
 }
 
@@ -396,6 +423,8 @@ impl Engine {
     pub fn apply_settings(&mut self) {
         let settings = self.settings.clone();
         engine::set_settings(settings.clone());
+        COMPOSITOR.output.reconfigure();
+        COMPOSITOR.input.reconfigure();
         COMPOSITOR.env.apply(settings.env.clone());
         COMPOSITOR
             .cursor

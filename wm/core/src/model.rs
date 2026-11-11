@@ -1034,6 +1034,27 @@ impl Model {
         self.focus_workspace(&id)
     }
 
+    /// Hyprland's `e+1`: `delta` steps through the focused output's
+    /// workspaces that hold a window, the one in view counted with them,
+    /// round from the last to the first.
+    pub fn focus_occupied_workspace(&mut self, delta: isize) -> bool {
+        let Some(current) = self.focused_workspace().map(|ws| ws.id.clone()) else {
+            return false;
+        };
+        let occupied: Vec<WsId> = self
+            .stack(&self.focused_output)
+            .into_iter()
+            .filter(|ws| !ws.is_empty() || ws.id == current)
+            .map(|ws| ws.id.clone())
+            .collect();
+        let Some(at) = occupied.iter().position(|id| *id == current) else {
+            return false;
+        };
+        let next = (at as isize + delta).rem_euclid(occupied.len() as isize) as usize;
+        let id = occupied[next].clone();
+        self.focus_workspace(&id)
+    }
+
     pub fn focus_previous_workspace(&mut self) -> bool {
         match self.previous_workspace.clone() {
             Some(id) => self.focus_workspace(&id),

@@ -4,7 +4,7 @@
 use formalwm_core::{
     action::{Action, WorkspaceRef},
     rules::{Facts, resolve},
-    settings::{OutputFacts, Settings},
+    settings::{ModeChoice, OutputFacts, Settings},
 };
 
 fn example(host: Option<&str>) -> Settings {
@@ -130,6 +130,14 @@ fn g815_lays_its_outputs_over_the_shared_file() {
         Some([2560, 0])
     );
     assert_eq!(settings.output_for(&portable).unwrap().scale, Some(1.6));
+    let beamer = OutputFacts {
+        name: "HDMI-A-2",
+        ..OutputFacts::default()
+    };
+    assert_eq!(
+        settings.output_for(&beamer).unwrap().mode(),
+        ModeChoice::HighRefresh
+    );
     assert_eq!(settings.output_for(&panel).unwrap().vrr, 3);
     assert!(settings.is_lid_output(&panel));
     assert!(!settings.is_lid_output(&desk));

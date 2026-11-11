@@ -76,6 +76,7 @@ pub fn setup() {
             enter(|engine| {
                 engine.hold.data_drag = false;
                 engine.hold_end();
+                engine.focus();
                 engine.regrab_overview();
             })
         });
@@ -85,7 +86,8 @@ pub fn setup() {
 
 /// The card that rides the pointer while data is dragged: the client's
 /// icon, what a drop would do, in the theme's surface colours. A drop
-/// nobody takes flies back to where the drag started.
+/// nobody takes flies back to where the drag started. Its size and place
+/// ride the spatial clocks, its opacity the effects ones.
 fn show_card(drag: &DragSession) {
     let Ok((theme, enabled)) =
         crate::engine::ask(|engine| Ok((engine.theme.clone(), engine.theme.chrome.motion.enabled)))
@@ -99,17 +101,23 @@ fn show_card(drag: &DragSession) {
     let (surface, line, text, accent) = (
         role("background"),
         role("border"),
-        role("foreground"),
+        role("primaryForeground"),
         role("primary"),
     );
     let rounding = theme.chrome.rounding.max(0) as f64;
 
     let appear = Animation::new(0.0);
+    let fade = Animation::new(0.0);
     let finish = Animation::new(0.0);
     appear.start(
         AnimationOptions::to(1.0, ms(families.spatial_fast.ms))
             .from(0.0)
             .easing(curve(families.spatial_fast.curve)),
+    );
+    fade.start(
+        AnimationOptions::to(1.0, ms(families.effects_fast.ms))
+            .from(0.0)
+            .easing(curve(families.effects_fast.curve)),
     );
     let ended = drag.ended();
     let origin = drag.origin();
@@ -145,7 +153,7 @@ fn show_card(drag: &DragSession) {
                 .child(drag.icon_slot(None::<Element>));
             if let Some(badge) = badge {
                 card = card.child(
-                    Flex::row()
+                    Flex::column()
                         .style(
                             Style::new()
                                 .size(18.0, 18.0)
@@ -174,24 +182,26 @@ fn show_card(drag: &DragSession) {
             }))
             .x(position(|point| point.x))
             .y(position(|point| point.y))
-            .opacity(derive(move || match ended.get() {
-                None => appear.get(),
-                Some(_) => 1.0 - finish.get(),
-            }))
+            .opacity(derive(move || fade.get()))
             .scale(derive(move || 0.9 + 0.1 * appear.get()))
             .content(card),
     );
     drag.on_end(move |end| {
-        let family = if end.accepted {
-            families.effects_fast
-        } else {
-            families.spatial
+        let leave = move || {
+            fade.start_then(
+                AnimationOptions::to(0.0, ms(families.effects_fast.ms))
+                    .easing(curve(families.effects_fast.curve)),
+                move |_| view.dispose(),
+            );
         };
+        if end.accepted {
+            return leave();
+        }
         finish.start_then(
-            AnimationOptions::to(1.0, ms(family.ms))
+            AnimationOptions::to(1.0, ms(families.spatial.ms))
                 .from(0.0)
-                .easing(curve(family.curve)),
-            move |_| view.dispose(),
+                .easing(curve(families.spatial.curve)),
+            move |_| leave(),
         );
     });
 }

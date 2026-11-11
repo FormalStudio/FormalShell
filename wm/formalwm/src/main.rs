@@ -10,6 +10,7 @@ mod layers;
 mod overview;
 mod session;
 mod stage;
+mod trace;
 mod windows;
 
 use std::{collections::BTreeMap, rc::Rc};
