@@ -517,3 +517,31 @@ fn closing_the_last_window_leaves_no_focus() {
     assert_eq!(focused(&model), "");
     assert!(model.layout().is_empty());
 }
+
+#[test]
+fn a_zen_or_big_window_that_changes_workspace_leaves_no_mark_behind() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_workspace("2");
+    open(&mut model, "c");
+    model.focus_workspace("1");
+
+    assert!(model.set_zen(Some("b"), Some(true)));
+    assert!(model.swap("b", "c"));
+    let one = model.workspace("1").unwrap();
+    assert_eq!(one.zen, None);
+    assert_eq!(focused(&model), "c", "the focus is a window that is here");
+    assert_eq!(place(&model, "a").rect.x, 8.0, "the tape is back in view");
+
+    assert!(model.set_zen(Some("c"), Some(true)));
+    assert!(model.move_column("c", Some("b")));
+    assert_eq!(model.workspace("1").unwrap().zen, None);
+    assert_eq!(focused(&model), "a");
+
+    assert!(model.set_big("a", Some(Big::Fullscreen)));
+    assert!(model.move_column("a", Some("b")));
+    assert_eq!(model.workspace("1").unwrap().big, None);
+    model.close("a");
+    assert_eq!(model.workspace("1").unwrap().focused(), None);
+}

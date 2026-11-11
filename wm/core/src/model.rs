@@ -126,6 +126,16 @@ impl Workspace {
     pub fn windows(&self) -> impl Iterator<Item = &WinId> {
         self.tape.windows().chain(self.floats.iter())
     }
+
+    /// Forgets the zen and big marks of a window that is leaving.
+    fn unmark(&mut self, id: &str) {
+        if self.big.as_ref().is_some_and(|(big, _)| big == id) {
+            self.big = None;
+        }
+        if self.zen.as_deref() == Some(id) {
+            self.zen = None;
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -603,12 +613,7 @@ impl Model {
                     if ws.floats.is_empty() {
                         ws.float_focused = false;
                     }
-                    if ws.big.as_ref().is_some_and(|(big, _)| big == id) {
-                        ws.big = None;
-                    }
-                    if ws.zen.as_deref() == Some(id) {
-                        ws.zen = None;
-                    }
+                    ws.unmark(id);
                 }
             }
         }
@@ -898,9 +903,11 @@ impl Model {
         }
         if let Some(ws) = self.workspace_mut(&ws_a) {
             ws.tape.replace(a, b.to_owned());
+            ws.unmark(a);
         }
         if let Some(ws) = self.workspace_mut(&ws_b) {
             ws.tape.replace(b, a.to_owned());
+            ws.unmark(b);
         }
         for (id, ws) in [(a, ws_b), (b, ws_a)] {
             if let Some(window) = self.window_mut(id) {
@@ -943,6 +950,9 @@ impl Model {
             .tape
             .focus
             .min(source.tape.columns.len().saturating_sub(1));
+        for window in &column.windows {
+            source.unmark(window);
+        }
         let strip_from = self.strip_w(&from);
         if let Some(source) = self.workspace_mut(&from) {
             source.tape.fit(strip_from);
