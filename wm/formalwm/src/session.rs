@@ -144,6 +144,7 @@ fn device_name(name: &str) -> String {
 pub fn setup() {
     COMPOSITOR.output.configure(|context| {
         let settings = engine::settings();
+        let lid_shut = settings.lid_output.is_some() && crate::lid::shut();
         context
             .connected
             .iter()
@@ -154,7 +155,7 @@ pub fn setup() {
                     .enabled
                     .or(entry.and_then(|entry| entry.enabled))
                     .unwrap_or(true);
-                if !enabled {
+                if !enabled || (lid_shut && settings.is_lid_output(&facts(output))) {
                     return (output.name.clone(), Some(OutputConfig::disabled()));
                 }
                 let scale = over
@@ -416,7 +417,18 @@ impl Engine {
         for win in self.windows.values() {
             win.handle
                 .set_close_animation_duration(self.scene.close_ms() as u64);
+            win.handle
+                .state(&crate::windows::BLUR)
+                .set(self.blurs(&win.effect));
         }
+    }
+
+    /// Hyprland blurs behind what is not opaque: a window the settings or
+    /// its rule make translucent, unless the rule says `no_blur`.
+    pub fn blurs(&self, effect: &formalwm_core::rules::Effect) -> bool {
+        self.theme.chrome.blur
+            && !effect.no_blur.unwrap_or(false)
+            && effect.opacity.unwrap_or(self.settings.opacity) < 1.0
     }
 
     /// The settings that do not come through a factory.
@@ -431,6 +443,7 @@ impl Engine {
             .configure(&settings.cursor.theme, settings.cursor.size);
         self.bind_keys();
         self.apply_theme();
+        self.watch_lid();
     }
 
     /// Reads the settings again. A file with a mistake changes nothing.

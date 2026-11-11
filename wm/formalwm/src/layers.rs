@@ -54,7 +54,6 @@ fn masked(mask: Source, threshold: f64) -> Effect {
 /// Registers the effects for these settings; called again when the
 /// settings or the theme's blur change.
 pub fn install(settings: Rc<Settings>, enabled: bool) {
-    let translucent = settings.opacity < 1.0;
     COMPOSITOR.effect.layer(move |layer| {
         let rule = layer
             .namespace
@@ -67,8 +66,8 @@ pub fn install(settings: Rc<Settings>, enabled: bool) {
             _ => SurfaceEffects::none(),
         }
     });
-    COMPOSITOR.effect.window(move |window| {
-        if enabled && translucent && !window.state(&windows::NO_BLUR).get() {
+    COMPOSITOR.effect.window(|window| {
+        if window.state(&windows::BLUR).get() {
             SurfaceEffects::behind(masked(window_source(), 0.25))
         } else {
             SurfaceEffects::none()

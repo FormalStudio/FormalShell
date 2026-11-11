@@ -5,8 +5,11 @@ mod binds;
 mod drag;
 mod engine;
 mod gestures;
+#[cfg(test)]
+mod headless;
 mod ipc;
 mod layers;
+mod lid;
 mod overview;
 mod session;
 mod stage;
@@ -58,6 +61,8 @@ fn setup() {
         shell_arrived: false,
         cursor_idle: false,
         idle_timer: None,
+        lid_shut: false,
+        lid_timer: None,
         gesture: Default::default(),
         overview: Default::default(),
         drag: None,

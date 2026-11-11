@@ -78,6 +78,9 @@ pub struct Engine {
     /// The pointer went idle over a window whose rule hides it then.
     pub cursor_idle: bool,
     pub idle_timer: Option<TimerHandle>,
+    /// The lid as last read, while the settings name a lid output.
+    pub lid_shut: bool,
+    pub lid_timer: Option<TimerHandle>,
     pub gesture: gestures::Gesture,
     pub overview: overview::Overview,
     pub drag: Option<drag::Drag>,
