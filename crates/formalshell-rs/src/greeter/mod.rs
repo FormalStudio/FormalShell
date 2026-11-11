@@ -128,6 +128,7 @@ struct Greeter {
     session: usize,
     /// Picked by hand, so a user change does not bring back their own.
     picked: bool,
+    default_session: Option<String>,
     users: Vec<User>,
     user_names: Vec<String>,
     user: usize,
@@ -300,6 +301,7 @@ pub fn main(args: &[String]) {
         sessions,
         session: 0,
         picked: false,
+        default_session: settings::greeter_default_session(&doc),
         user_names: users.iter().map(|u| u.name.clone()).collect(),
         users,
         user: 0,
@@ -319,7 +321,7 @@ pub fn main(args: &[String]) {
         entered: None,
     };
     let last = sessions::remembered(&g.state_dir, None);
-    g.select(sessions::pick(&g.sessions, last.as_deref()));
+    g.select(sessions::pick(&g.sessions, last.as_deref(), g.default_session.as_deref()));
     let last_user = sessions::last_user(&g.state_dir);
     g.user = g.users.iter().position(|u| Some(&u.login) == last_user.as_ref()).unwrap_or_else(|| accounts::first_account(&g.users));
     g.open_user();
@@ -385,7 +387,7 @@ impl Greeter {
         if !self.picked
             && let Some(own) = sessions::remembered(&self.state_dir, Some(&login))
         {
-            self.select(sessions::pick(&self.sessions, Some(&own)));
+            self.select(sessions::pick(&self.sessions, Some(&own), self.default_session.as_deref()));
         }
         if self.greetd.is_some() {
             let step = self.convo.open(&login);
@@ -466,7 +468,7 @@ impl Greeter {
                 if self.convo.phase == Phase::Inactive && !self.picked {
                     let own = sessions::remembered(&self.state_dir, Some(text.as_str()));
                     if own.is_some() {
-                        self.select(sessions::pick(&self.sessions, own.as_deref()));
+                        self.select(sessions::pick(&self.sessions, own.as_deref(), self.default_session.as_deref()));
                     }
                 }
                 let step = self.convo.submit(text);

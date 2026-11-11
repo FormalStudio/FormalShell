@@ -982,6 +982,11 @@ focused workspace is in zen. `workspaces overview` and the hot corner open
 its overview, never the shell's. The console is a window the engine parks
 on its `formalshell-console` overlay and shows on request.
 
+The core sets `XDG_CURRENT_DESKTOP=ShojiWM` for the session, which is the
+name portal routing and `OnlyShowIn` match on. Screenshots (grim) and
+recordings (wf-recorder) take wlr-screencopy and window thumbnails the
+toplevel capture protocol, so none of them goes through a portal.
+
 `formalshell install` writes `~/.config/formalwm/formalshell-start.sh`,
 which formalwm runs once its socket is up: it clears both compositors'
 variables from the systemd user manager, imports the session's, and starts
@@ -3177,6 +3182,18 @@ fs lock status | jq .beforeSleep
 The greeter is optional in the same way. It ships as its own NixOS module
 (`nixosModules.formalshell-greeter`, see [`README.md`](../README.md#install)),
 so anyone happy with SDDM or GDM never enables it and loses nothing else.
+
+It preselects the session the user last started. With nothing remembered,
+which is the case after a boot into the locked login, it takes
+`greeter.defaultSession` from its own settings.json, then Hyprland:
+
+```jsonc
+// the greeter's settings.json
+{ "greeter": { "defaultSession": "formalwm" } }
+```
+
+The value is a session's id, its `.desktop` file's name without the
+extension. An id no installed session has is skipped.
 
 There is no `unlock` verb. A headless "type this password" shortcut would
 bypass exactly the input and PAM path a real unlock goes through.

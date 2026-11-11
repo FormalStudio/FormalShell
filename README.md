@@ -92,8 +92,8 @@ Hyprland 0.56 or newer yourself first.
 The greeter draws the lock screen's card: the clock, a session chip (every
 installed Wayland session, Tab or a click picks one) and power buttons on one
 side, the last user's picture, name and password field on the other. A second
-login account adds a user chip. It starts on Hyprland and remembers each
-user's last session. The lock screen is the same card in its locked state,
+login account adds a user chip. It starts on `greeter.defaultSession` when
+that is installed, else Hyprland, and remembers each user's last session. The lock screen is the same card in its locked state,
 with now playing where the chips go.
 
 ### Update and uninstall

@@ -517,6 +517,12 @@ pub fn greeter_session_dirs(doc: &(impl Doc + ?Sized), default: &[&str]) -> Vec<
     dirs.filter(|d| !d.is_empty()).unwrap_or_else(|| default.iter().map(PathBuf::from).collect())
 }
 
+/// `greeter.defaultSession`: the session id picked when nothing is
+/// remembered, none when unset or empty.
+pub fn greeter_default_session(doc: &(impl Doc + ?Sized)) -> Option<String> {
+    lookup(doc.doc(), "greeter.defaultSession").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned)
+}
+
 /// `greeter.wallpaper`, none when unset or empty.
 pub fn greeter_wallpaper(doc: &(impl Doc + ?Sized)) -> Option<String> {
     lookup(doc.doc(), "greeter.wallpaper").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_owned)
@@ -593,6 +599,8 @@ mod tests {
         assert_eq!(greeter_session_command(&json!({"greeter": {"sessionCommand": ["sway", "-d"]}})), ["sway", "-d"]);
         assert_eq!(greeter_session_command(&json!({"greeter": {"sessionCommand": ["sway", ""]}})), ["Hyprland"]);
         assert_eq!(greeter_session_command(&json!({"greeter": {"sessionCommand": []}})), ["Hyprland"]);
+        assert_eq!(greeter_default_session(&json!({"greeter": {"defaultSession": "formalwm"}})).as_deref(), Some("formalwm"));
+        assert_eq!(greeter_default_session(&json!({"greeter": {"defaultSession": ""}})), None);
     }
 
     #[test]

@@ -81,12 +81,14 @@ fn parse(id: &str, text: &str) -> Option<Session> {
     Some(Session { id: id.to_owned(), name: name.unwrap_or_else(|| id.to_owned()), exec, desktops })
 }
 
-/// The remembered session when it still exists, else Hyprland, else the
+/// The remembered session when it still exists, else the host's default
+/// (`greeter.defaultSession`) when that one does, else Hyprland, else the
 /// first.
-pub fn pick(sessions: &[Session], remembered: Option<&str>) -> usize {
+pub fn pick(sessions: &[Session], remembered: Option<&str>, default: Option<&str>) -> usize {
     let at = |id: &str| sessions.iter().position(|s| s.id == id);
     remembered
         .and_then(at)
+        .or_else(|| default.and_then(at))
         .or_else(|| at("hyprland-uwsm"))
         .or_else(|| at("hyprland"))
         .or_else(|| sessions.iter().position(|s| s.id.starts_with("hyprland")))
@@ -154,11 +156,20 @@ mod tests {
     #[test]
     fn picks_remembered_then_hyprland() {
         let list = [session("plasma"), session("hyprland"), session("hyprland-uwsm")];
-        assert_eq!(pick(&list, Some("plasma")), 0);
-        assert_eq!(pick(&list, Some("gone")), 2);
-        assert_eq!(pick(&list, None), 2);
-        assert_eq!(pick(&list[..2], None), 1);
-        assert_eq!(pick(&[session("sway")], None), 0);
+        assert_eq!(pick(&list, Some("plasma"), None), 0);
+        assert_eq!(pick(&list, Some("gone"), None), 2);
+        assert_eq!(pick(&list, None, None), 2);
+        assert_eq!(pick(&list[..2], None, None), 1);
+        assert_eq!(pick(&[session("sway")], None, None), 0);
+    }
+
+    #[test]
+    fn the_hosts_default_comes_after_the_remembered_one() {
+        let list = [session("hyprland-uwsm"), session("formalwm"), session("plasma")];
+        assert_eq!(pick(&list, None, Some("formalwm")), 1);
+        assert_eq!(pick(&list, Some("plasma"), Some("formalwm")), 2);
+        assert_eq!(pick(&list, Some("gone"), Some("formalwm")), 1);
+        assert_eq!(pick(&list, None, Some("niri")), 0);
     }
 
     #[test]
