@@ -23,8 +23,8 @@
 # `sidebar focus` and Shift+Left carry that column back one (e d f).
 # Then two moves inside workspace 4 that Hyprland posts no event for, each
 # off a real bind this leg declares: the scrolling layout's `swapcol r`
-# and, under dwindle, `hl.dsp.window.swap` to the right, the first window
-# by position focused first. Each has to change the windows' order by
+# and, under dwindle where the compositor has it, `hl.dsp.window.swap` to
+# the right, the first window by position focused first. Each has to change the windows' order by
 # position in `hyprctl clients`, and the map's row has to follow it.
 # After them, the map's rows photographed as the drags left them and
 # again once a collapse and expand draws them whole: no pixel differs, so
@@ -54,7 +54,7 @@ minimap_carried_png="$shot_dir/minimap-carried.png"
 minimap_trail_png="$shot_dir/minimap-trail.png"
 minimap_redrawn_png="$shot_dir/minimap-redrawn.png"
 minimap_trail_status="$shot_dir/minimap-trail.json"
-minimap_inner=(scrolling dwindle)
+read -ra minimap_inner <<< "$wm_layouts"
 
 leg_minimap_fixture() {
   settings_pin '.layout = "sidebar"'
@@ -69,7 +69,7 @@ leg_minimap_drive() {
   # wtype's keymap and Hyprland's keycodes disagree; switcher_keys.sh says why.
   wm_binds_by_keysym
   wm_bind SUPER+period swap-column right
-  wm_bind SUPER+Right swap-window right
+  case " $wm_layouts " in *" dwindle "*) wm_bind SUPER+Right swap-window right ;; esac
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 for _ in \$(seq 1 40); do
@@ -199,9 +199,12 @@ inner() {
   "$wmctl_bin" -j binds > "$shot_dir/minimap-inner-\$tag-binds.json" 2>&1
 }
 inner scrolling -M logo -P Super_L -k period -p Super_L -m logo
-"$wmctl_bin" eval 'hl.config({ general = { layout = "dwindle" } })' > /dev/null 2>&1
-sleep 1
-inner dwindle -M logo -P Super_L -k Right -p Super_L -m logo
+case " $wm_layouts " in
+  *" dwindle "*)
+    "$wmctl_bin" eval 'hl.config({ general = { layout = "dwindle" } })' > /dev/null 2>&1
+    sleep 1
+    inner dwindle -M logo -P Super_L -k Right -p Super_L -m logo ;;
+esac
 # Every drag has settled and the keyboard is back: the map as the drags
 # left it, then drawn whole again by a collapse and expand, the pointer
 # parked off the column for both so no hover differs. It comes after

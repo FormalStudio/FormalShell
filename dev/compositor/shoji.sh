@@ -130,4 +130,7 @@ wm_config_tail() {
   printf 'until [ -e %q ]; do sleep 0.2; done\n' "$shot_dir/session-over"
 }
 
+# formalwm's column tape, which shoji-ctl answers as Hyprland's scrolling.
+wm_layouts="scrolling"
+
 wm_leftover_pattern="bash $wm_config_path"

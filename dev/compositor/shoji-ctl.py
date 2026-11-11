@@ -59,6 +59,13 @@ def outputs_by_name(state):
     return {o["name"]: n for n, o in enumerate(state["outputs"])}
 
 
+def pid(n):
+    """The engine reports 0 for a client whose pid it does not know, and a
+    leg's `kill $(... .pid)` would be `kill 0`, the session's whole process
+    group. null makes that kill fail on its own."""
+    return n or None
+
+
 def client(state, w):
     ws = next((x for x in state["workspaces"] if x["id"] == w["workspaceId"]), None)
     rect = w["rect"] or {"x": 0, "y": 0, "width": 0, "height": 0}
@@ -80,7 +87,7 @@ def client(state, w):
         "title": w["title"],
         "initialClass": w["initialAppId"],
         "initialTitle": w["initialTitle"],
-        "pid": w["pid"],
+        "pid": pid(w["pid"]),
         "xwayland": False,
         "pinned": False,
         "fullscreen": 2 if w["fullscreen"] else 0,
@@ -141,7 +148,7 @@ def layers(state):
             "w": layer["width"],
             "h": layer["height"],
             "namespace": layer["namespace"],
-            "pid": layer["pid"],
+            "pid": pid(layer["pid"]),
         })
     return out
 
