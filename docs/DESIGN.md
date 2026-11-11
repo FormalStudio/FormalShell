@@ -322,6 +322,8 @@ bezier segment and each duration as its `speed` in tenths of a second, the
 `hl.animation`s: a window's arrival, travel and resize, a layer and a
 workspace slide on `spatial`, a window or layer leaving on `spatialFast`,
 fades on `effects` and `effectsFast`, a border's colour on `effectsSlow`.
+formalwm gets the same six in `theme.set`, each bezier's control points and
+a duration in milliseconds.
 
 A surface names a clock exactly one way. A number rides
 `Cx::tween(key, target, kind)` (`formalshell-rs/src/ui/mod.rs`), `kind` one
@@ -570,7 +572,8 @@ grid moved out of the picture onto a third layer over it; the
 the frame it stopped on under its grid.
 Hyprland follows through `formalshell-chrome.lua` (`rounding`, `blur`, and
 the `window` role's own gaps, frame and cast, written by
-`fs-theme/src/chrome.rs`), published beside the colours. A surface reads the radius ladder, the font
+`fs-theme/src/chrome.rs`), published beside the colours; formalwm takes the
+same values over its socket (`chrome.rs` `wm_chrome`, sent as `theme.set`). A surface reads the radius ladder, the font
 families and `Theme::pill_radius`.
 
 ## 2. Primitives

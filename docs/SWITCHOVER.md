@@ -26,7 +26,7 @@ wins. This is the path both development hosts use.
 Hyprland and the runtime tools from one name table, unpacks the release
 tarball under `~/.local` (or `/usr/local` with `--system`) and runs
 `formalshell install`, which writes the systemd user units, the Hyprland
-Lua files and, after asking, the `formalshell-lock` PAM file and a greetd
+Lua files, formalwm's start script and, after asking, the `formalshell-lock` PAM file and a greetd
 config. `formalshell update` rewrites only what the installer owns and
 `formalshell uninstall` reverses it. The tarball carries the shell,
 `formalshell-ipc` and the helpers distros do not package (matugen, ttfx,

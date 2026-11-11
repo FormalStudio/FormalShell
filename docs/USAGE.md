@@ -960,6 +960,33 @@ hl.config({ animations = { enabled = motion.enabled } })
 hl.curve("formalshell_spatial", { type = "bezier", points = motion.spatial.curve })
 hl.animation({ leaf = "windows", enabled = true, bezier = "formalshell_spatial", speed = motion.spatial.speed })
 ```
+### On ShojiWM (formalwm)
+
+The shell runs on either compositor and picks one from its environment at
+start: ShojiWM's engine, `formalwm`, whenever `SHOJIWM_SOCKET` is set, and
+Hyprland on `HYPRLAND_INSTANCE_SIGNATURE` otherwise. Under formalwm it holds
+one connection to the engine's JSON socket
+(`$XDG_RUNTIME_DIR/shojiwm-$WAYLAND_DISPLAY.sock`), follows its state, and
+shows the compositor as unavailable while the socket is gone, reconnecting
+once it is back.
+
+Nothing in the two sections above is written to disk there: the colours
+and every chrome and motion value go to the engine as one `theme.set`, on
+every theme change and on every connect, and the engine keeps the last one
+across its own settings reload. A settings file the engine refuses shows
+as a toast naming the error, and the running settings stand.
+
+The engine owns three things the shell draws itself under Hyprland. `zen
+toggle` asks it to zen the focused window, and the sidebar folds while the
+focused workspace is in zen. `workspaces overview` and the hot corner open
+its overview, never the shell's. The console is a window the engine parks
+on its `formalshell-console` overlay and shows on request.
+
+`formalshell install` writes `~/.config/formalwm/formalshell-start.sh`,
+which formalwm runs once its socket is up: it clears both compositors'
+variables from the systemd user manager, imports the session's, and starts
+`formalshell.service`. Hyprland's start line is the same command.
+
 ### Wallpaper dither
 
 The wallpaper renders through a limited-palette pass: six colors are derived
