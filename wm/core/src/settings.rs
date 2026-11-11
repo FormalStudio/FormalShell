@@ -144,18 +144,23 @@ pub struct Mode {
     pub refresh: Option<f64>,
 }
 
+impl OutputFacts<'_> {
+    /// Whether `description` is this output's make, model and serial, or
+    /// their start.
+    fn described_by(&self, description: &str) -> bool {
+        let reported = format!("{} {} {}", self.make, self.model, self.serial);
+        reported.starts_with(description) || self.description.starts_with(description)
+    }
+}
+
 impl OutputSettings {
     fn matches(&self, facts: &OutputFacts<'_>) -> bool {
         if let Some(name) = &self.name {
             return name == facts.name;
         }
-        let Some(description) = &self.description else {
-            return true;
-        };
-        let reported = format!("{} {} {}", facts.make, facts.model, facts.serial);
-        reported.trim() == description
-            || reported.starts_with(description.as_str())
-            || facts.description.starts_with(description.as_str())
+        self.description
+            .as_ref()
+            .is_none_or(|description| facts.described_by(description))
     }
 
     pub fn mode(&self) -> Option<Mode> {
@@ -529,6 +534,13 @@ impl Settings {
                     .map(|facts| facts.name.to_owned()),
             })
             .collect()
+    }
+
+    /// `lidOutput` names an output by its connector or its description.
+    pub fn is_lid_output(&self, facts: &OutputFacts<'_>) -> bool {
+        self.lid_output
+            .as_ref()
+            .is_some_and(|lid| lid == facts.name || facts.described_by(lid))
     }
 
     pub fn options(&self, gaps_in: f64, gaps_out: f64) -> Options {
