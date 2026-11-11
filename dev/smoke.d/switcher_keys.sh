@@ -184,8 +184,8 @@ sleep 1
 
 # The hold itself, in the background so the card can be read while Alt is
 # still down.
-"$wtype_bin" -M alt -P Alt_L -s 800 -k Tab -s 1500 -k Tab -s 2200 -p Alt_L -m alt \
-  > /dev/null 2>&1 &
+( "$wtype_bin" -M alt -P Alt_L -s 800 -k Tab -s 1500 -k Tab -s 2200 -p Alt_L -m alt > /dev/null 2>&1
+  $(wm_alt_release) ) &
 sleep 3.4
 $ipc call switcher state > "$switcher_keys_held_json" 2>&1
 "$wmctl_bin" -j layers > "$switcher_keys_layers_held" 2>&1
@@ -208,12 +208,15 @@ $ipc call switcher state > "$switcher_keys_fast_pre_state_json" 2>&1
   done ) &
 poller=\$!
 "$wtype_bin" -M alt -P Alt_L -k Tab -p Alt_L -m alt >> "$switcher_keys_wtype_log" 2>&1
+$(wm_alt_release)
 sleep 1
 "$wmctl_bin" -j activewindow > "$switcher_keys_fast_1_json" 2>&1
 "$wtype_bin" -M alt -P Alt_L -k Tab -p Alt_L -m alt >> "$switcher_keys_wtype_log" 2>&1
+$(wm_alt_release)
 sleep 1
 "$wmctl_bin" -j activewindow > "$switcher_keys_fast_2_json" 2>&1
 "$wtype_bin" -M alt -P Alt_L -k Tab -p Alt_L -m alt >> "$switcher_keys_wtype_log" 2>&1
+$(wm_alt_release)
 sleep 1
 "$wmctl_bin" -j activewindow > "$switcher_keys_fast_3_json" 2>&1
 touch "$switcher_keys_fast_done"
@@ -231,8 +234,8 @@ sleep 3
 # Tab held for a second with Alt down: one press, the 300ms delay, then a
 # step every 200ms. Then Shift+Tab once with Alt still down, then the
 # release.
-"$wtype_bin" -M alt -P Alt_L -P Tab -s 1000 -p Tab -s 1500 -M shift -k Tab -m shift -s 1500 -p Alt_L -m alt \
-  > /dev/null 2>&1 &
+( "$wtype_bin" -M alt -P Alt_L -P Tab -s 1000 -p Tab -s 1500 -M shift -k Tab -m shift -s 1500 -p Alt_L -m alt > /dev/null 2>&1
+  $(wm_alt_release) ) &
 sleep 2
 $ipc call switcher state > "$switcher_keys_repeat_json" 2>&1
 "$grim_bin" "$switcher_keys_many_png" > /dev/null 2>&1
@@ -249,7 +252,8 @@ sleep 2
 "$wmctl_bin" eval 'hl.config({ general = { layout = "scrolling" }, scrolling = { column_width = 0.5 } })' \
   > "$switcher_keys_scroll_eval" 2>&1
 sleep 3
-"$wtype_bin" -M alt -P Alt_L -k Tab -s 3000 -p Alt_L -m alt > /dev/null 2>&1 &
+( "$wtype_bin" -M alt -P Alt_L -k Tab -s 3000 -p Alt_L -m alt > /dev/null 2>&1
+  $(wm_alt_release) ) &
 sleep 2
 $ipc call switcher state > "$switcher_keys_scroll_json" 2>&1
 "$wmctl_bin" -j clients > "$switcher_keys_scroll_clients_json" 2>&1

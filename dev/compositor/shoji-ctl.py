@@ -298,6 +298,19 @@ def dispatch(text):
     raise Unsupported(f"hl.dsp.{name}")
 
 
+def key(chord):
+    """A chord pressed through the core's own input path, off the control
+    socket shoji-run.sh names in SHOJIWM_SOCKET (~/RIG.md): binds, then the
+    focused window, as a real keyboard."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(os.environ["SHOJIWM_SOCKET"])
+        s.sendall(f"key {chord}\n".encode())
+        answer = s.makefile().readline().strip()
+    if answer != "ok":
+        sys.exit(f"shoji-ctl: key {chord}: {answer or 'no answer'}")
+    return answer
+
+
 def made_path():
     return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "shoji-ctl-made-outputs")
 
@@ -358,6 +371,9 @@ def main(argv):
     if args[0] == "dispatch":
         dispatch(" ".join(args[1:]))
         print("ok")
+        return
+    if args[0] == "key" and len(args) == 2:
+        print(key(args[1]))
         return
     if args[0] == "output":
         print(output(args[1:]))

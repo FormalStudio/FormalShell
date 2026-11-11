@@ -136,6 +136,13 @@ wm_config_tail() {
   printf 'until [ -e %q ]; do sleep 0.2; done\n' "$shot_dir/session-over"
 }
 
+# wtype lets Alt go with a modifier change and no key event, which the
+# engine's Alt grab does not see, so the release goes through the core's
+# own input path as well.
+wm_alt_release() {
+  printf '%q key Alt_L > /dev/null 2>&1\n' "$wmctl_bin"
+}
+
 # A lone formalwm column keeps the settings' width, so the window floats,
 # placed over the whole output.
 wm_cover_output() {
