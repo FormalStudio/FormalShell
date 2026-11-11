@@ -572,11 +572,27 @@ impl Engine {
         let sky = self.snapshot().is_some_and(|i| super::wallpaper::sky(&i.wallpaper).is_some());
         if !present || sky {
             let _ = self.retheme.try_send(());
-        } else if let Some(inputs) = self.snapshot() {
-            // Another session (Plasma's gtkconfig) rewrites color-scheme to
-            // its own theme's mode, and a present theme.json skips the
-            // retheme that would assert ours.
-            self.sync_system_scheme(&inputs);
+        } else {
+            // A session under another compositor rethemes without writing
+            // Hyprland's colours, so they are rendered again from theme.json.
+            if self.env.hypr_files {
+                let (json, hypr) = (self.env.theme_json(), self.env.hypr_colors());
+                let wrote = blocking(&self.ctx, move || {
+                    let colors = matugen::hyprland_colors(&read_palette(&json).0);
+                    std::fs::create_dir_all(hypr.parent().unwrap_or(Path::new("/")))?;
+                    crate::paths::write_atomic(&hypr, &colors)
+                })
+                .await;
+                if let Err(err) = wrote {
+                    warn(format!("failed to write formalshell-colors.lua: {err}"));
+                }
+            }
+            if let Some(inputs) = self.snapshot() {
+                // Another session (Plasma's gtkconfig) rewrites color-scheme to
+                // its own theme's mode, and a present theme.json skips the
+                // retheme that would assert ours.
+                self.sync_system_scheme(&inputs);
+            }
         }
         self.publish_chrome().await;
         self.apply_mode_key();
@@ -1239,6 +1255,23 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
         let dconf = log_lines(&log, "dconf");
         assert!(dconf.contains(&"dconf write /org/gnome/desktop/interface/color-scheme 'prefer-dark'".to_owned()));
         assert!(dconf.contains(&"dconf write /org/gnome/desktop/interface/gtk-theme 'adw-gtk3-dark'".to_owned()));
+    }
+
+    /// A theme.json another compositor's session rethemed leaves Hyprland's
+    /// colours stale, so a Hyprland start renders them again from it.
+    #[test]
+    fn present_theme_json_renders_hyprlands_colours_again() {
+        let (env, _) = rig("stale-colours");
+        std::fs::create_dir_all(&env.state_dir).unwrap();
+        std::fs::write(env.theme_json(), r##"{"mode":"dark","primary":"#648db8"}"##).unwrap();
+        std::fs::create_dir_all(env.hypr_colors().parent().unwrap()).unwrap();
+        std::fs::write(env.hypr_colors(), "return {}").unwrap();
+        let (path, watched) = (env.hypr_colors(), env.hypr_colors());
+        drive(env, vec![(Duration::ZERO, inputs(json!({}), "/wall.png", "dark"))], move |_, _| {
+            std::fs::read_to_string(&watched).is_ok_and(|t| t != "return {}")
+        });
+        let hypr = std::fs::read_to_string(path).unwrap();
+        assert!(hypr.contains("primary = \"rgb(648db8)\""), "{hypr}");
     }
 
     /// A wallpaper: the probe reads rank 0 off stderr and the real run pins
