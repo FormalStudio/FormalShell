@@ -1,0 +1,24 @@
+# The engine: formalwm, the compositor binary, on shojiwm_rs. Its own
+# workspace because it links Smithay, libinput, gbm and libseat, which the
+# shell's build image is too old for.
+[workspace]
+resolver = "3"
+members = ["core", "formalwm"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+fs-wm-proto = { path = "../crates/fs-wm-proto" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ShojiWM's own iteration profile: optimized, no LTO, incremental.
+[profile.release-fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+debug = "line-tables-only"
