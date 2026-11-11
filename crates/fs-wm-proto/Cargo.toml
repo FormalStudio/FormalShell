@@ -1,0 +1,11 @@
+[package]
+name = "fs-wm-proto"
+version = "0.2.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

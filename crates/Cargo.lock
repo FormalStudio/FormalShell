@@ -1173,6 +1173,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs-wm-proto"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
