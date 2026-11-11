@@ -238,6 +238,15 @@ rig_pull_smoke() {
     for remote in $(grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+\.(png|log|tar)' "$out_file" | awk '{print $2}'); do
       rig_pull_one "$dest" "$remote" "$artifacts" || true
     done
+    # FS_SMOKE_PULL_DIR=<dir>: the failed run's whole shot dir (its drives'
+    # dumps and status files) into <dir>, found off the first path the run
+    # printed under it (the private system bus is there).
+    remote=$(grep -oE '/tmp/tmp\.[A-Za-z0-9]+/' "$out_file" | head -1)
+    if [ -n "${FS_SMOKE_PULL_DIR:-}" ] && [ -n "$remote" ]; then
+      mkdir -p "$FS_SMOKE_PULL_DIR" \
+        && rsync -a -e "ssh ${rig_ssh_opts[*]}" "$dest:$remote" "$FS_SMOKE_PULL_DIR/" \
+        && echo "pulled shot dir: $FS_SMOKE_PULL_DIR"
+    fi
     echo "$label: smoke run failed (exit $status)" >&2
     return "$status"
   fi
