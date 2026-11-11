@@ -287,13 +287,18 @@ async fn dispatch(lua: &str) {
 /// Monitor rules are config calls rather than dispatchers; `hyprctl eval`
 /// is the documented way in under a Lua config.
 async fn eval(lua: &str) {
+    report("eval", Ok(eval_answer(lua).await));
+}
+
+async fn eval_answer(lua: &str) -> String {
     let done = proc::capture_err(&proc::argv(&["hyprctl", "eval", lua]), HYPRCTL_TIMEOUT).await;
-    let answer = match (done.code, done.stderr.trim()) {
-        (0, _) => done.stdout,
-        (code, "") => format!("hyprctl exited {code}"),
-        (_, err) => err.to_owned(),
-    };
-    report("eval", Ok(answer));
+    // What a chunk raised comes back on stdout, under a failing exit.
+    match (done.code, done.stderr.trim(), done.stdout.trim()) {
+        (0, _, out) | (_, "", out) if !out.is_empty() => out.to_owned(),
+        (0, _, _) => String::new(),
+        (code, "", _) => format!("hyprctl exited {code}"),
+        (_, err, _) => err.to_owned(),
+    }
 }
 
 /// `hyprctl reload` on a task of its own, so the writes queued behind it do
@@ -349,7 +354,13 @@ async fn commands(
                 };
                 eval(&lua).await;
             }
-            Command::MacKeys(reserved) => eval(&lua::mac_keys(&reserved)).await,
+            Command::MacKeys(reserved) => {
+                let answer = eval_answer(&lua::mac_keys(&reserved)).await;
+                match lua::mac_recorded(&answer) {
+                    Some(recorded) => ctx.publish(store::Diff::Compositor(Diff::MacBinds(recorded))),
+                    None => report("eval", Ok(answer)),
+                }
+            }
             Command::MacFocus(on) => eval(&lua::mac_focus(on)).await,
             Command::Cursor { hidden } => eval(&lua::cursor(hidden)).await,
             Command::Reload => reload(&ctx, &shared),

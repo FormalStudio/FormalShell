@@ -202,13 +202,23 @@ pub fn bind_escape(global: &str, argv: &[String]) -> String {
     )
 }
 
+/// What [`mac_keys`] raises ahead of the count.
+const RECORDED: &str = "formalshell recorded ";
+
 /// The include's `formalshell_mac_keys`: the `mac` submap out of the binds
 /// it recorded, less the Super chords not in `reserved`. Nothing under a
 /// config that does not load the include's MAC APPS block, as
-/// [`mac_focus`] is.
+/// [`mac_focus`] is. `hyprctl eval` answers `ok` whatever a chunk returns,
+/// so the count the include answers with is raised, for [`mac_recorded`].
 pub fn mac_keys(reserved: &[String]) -> String {
     let list: Vec<String> = reserved.iter().map(|c| string(c)).collect();
-    format!("if formalshell_mac_keys then formalshell_mac_keys({{ {} }}) end", list.join(", "))
+    format!("if formalshell_mac_keys then error(\"{RECORDED}\" .. tostring(formalshell_mac_keys({{ {} }})), 0) end", list.join(", "))
+}
+
+/// How many binds the include recorded, out of what [`mac_keys`] was
+/// answered.
+pub fn mac_recorded(answer: &str) -> Option<u32> {
+    answer.rsplit_once(RECORDED)?.1.trim().parse().ok()
 }
 
 pub fn mac_focus(on: bool) -> String {
@@ -270,8 +280,14 @@ mod tests {
             bind_escape("fs_esc", &["ipc".into(), "x".into()]),
             r#"if fs_esc then fs_esc:remove() fs_esc = nil end fs_esc = (formalshell_raw and formalshell_raw.bind or hl.bind)("Escape", hl.dsp.exec_cmd("'ipc' 'x'"), { non_consuming = true, submap_universal = true })"#
         );
-        assert_eq!(mac_keys(&["SUPER + H".into(), "SUPER + 1".into()]), r#"if formalshell_mac_keys then formalshell_mac_keys({ "SUPER + H", "SUPER + 1" }) end"#);
-        assert_eq!(mac_keys(&[]), "if formalshell_mac_keys then formalshell_mac_keys({  }) end");
+        assert_eq!(
+            mac_keys(&["SUPER + H".into(), "SUPER + 1".into()]),
+            r#"if formalshell_mac_keys then error("formalshell recorded " .. tostring(formalshell_mac_keys({ "SUPER + H", "SUPER + 1" })), 0) end"#
+        );
+        assert_eq!(mac_keys(&[]), r#"if formalshell_mac_keys then error("formalshell recorded " .. tostring(formalshell_mac_keys({  })), 0) end"#);
+        assert_eq!(mac_recorded("error: formalshell recorded 41\n"), Some(41));
+        assert_eq!(mac_recorded("error: formalshell recorded nil"), None);
+        assert_eq!(mac_recorded("ok"), None);
         assert_eq!(mac_focus(true), "if formalshell_mac_focus then formalshell_mac_focus(true) end");
         assert_eq!(cursor(true), "hl.config({ cursor = { invisible = true } })");
         assert_eq!(cursor(false), "if formalshell_arrived then formalshell_arrived() else hl.config({ cursor = { invisible = false } }) end");

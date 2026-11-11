@@ -55,7 +55,6 @@ Name=Stub
 Exec="$bin/atoll" run Stub.app %U
 StartupWMClass=org.atoll.stub
 X-Atoll-BundleId=org.atoll.Stub
-Keywords=Mac;
 MimeType=text/x-stub;
 EOF
   cat > "$apps/org.atoll.brittle.desktop" <<EOF
@@ -65,7 +64,6 @@ Name=Brittle
 Exec="$bin/atoll" run Brittle.app %U
 StartupWMClass=org.atoll.brittle
 X-Atoll-BundleId=org.atoll.Brittle
-Keywords=Mac;
 EOF
   cat > "$apps/formalshell-text-probe.desktop" <<'EOF'
 [Desktop Entry]

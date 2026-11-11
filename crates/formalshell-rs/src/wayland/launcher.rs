@@ -1563,6 +1563,11 @@ impl App {
             },
             plugin_modes: index::plugin_modes(&self.store),
         };
+        // Nothing publishes the menu until a Mac app is focused, and its
+        // route wants its note before that.
+        if self.launch.buttons.is_none() {
+            self.launcher_appmenu();
+        }
         if self.launch.buttons.as_ref() != Some(&inputs) || !self.store.config.loaded {
             self.launch.buttons = Some(inputs.clone());
             index::ask(Ask::Base(inputs));
@@ -1571,9 +1576,6 @@ impl App {
             self.launch.launches = Some(self.store.state.data.picks.clone());
             index::ask(Ask::Apps(index::launches(&self.store.state.data.picks)));
         }
-        // Nothing publishes the menu until a Mac app is focused, and its
-        // route wants its note before that.
-        self.launcher_appmenu();
     }
 }
 

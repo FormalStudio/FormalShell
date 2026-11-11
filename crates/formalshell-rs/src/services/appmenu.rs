@@ -6,6 +6,7 @@
 
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{LazyLock, OnceLock};
+use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
 use fs_tray::{AppMenuEvent, AppMenus, MenuEventKind, REGISTRAR_NAME};
@@ -143,16 +144,33 @@ pub fn keycaps(shortcut: &[String]) -> Vec<String> {
 
 static MENUS: OnceLock<AppMenus> = OnceLock::new();
 
+/// How long a Mac app has to answer a call. The pump reads one app at a
+/// time, so an app that never answers would hold every menu after it.
+const ANSWER: Duration = Duration::from_secs(3);
+
 /// The process to follow, as the UI thread last said; 0 is none.
 static FOLLOW: LazyLock<(Sender<u32>, Receiver<u32>)> = LazyLock::new(async_channel::unbounded);
 static FOLLOWED: AtomicI64 = AtomicI64::new(-1);
 
-/// The compositor changed: the menu follows the window that holds focus
+/// The process of the Mac window that holds focus, 0 with none: focus held
 /// across a shell surface taking the keyboard, so an open menu card or the
 /// launcher keeps the menu it is showing.
-pub fn follow(store: &Store) {
+fn focused(store: &Store) -> u32 {
     let h = &store.compositor;
-    let pid = h.window(&h.held_focused_window_id()).filter(|w| w.is_mac()).and_then(|w| u32::try_from(w.pid).ok()).unwrap_or(0);
+    h.window(&h.held_focused_window_id()).filter(|w| w.is_mac()).and_then(|w| u32::try_from(w.pid).ok()).unwrap_or(0)
+}
+
+/// Whether the menu held is another process's than the focused window's.
+/// The store drops it on the compositor's own change, ahead of the pump
+/// that follows the focus: an app that has stopped answering holds the
+/// pump for a call's whole wait.
+pub fn stale(store: &Store) -> bool {
+    store.appmenu.menu.as_ref().is_some_and(|m| m.pid != focused(store))
+}
+
+/// The compositor changed: the menu follows the focused window.
+pub fn follow(store: &Store) {
+    let pid = focused(store);
     if FOLLOWED.swap(i64::from(pid), Ordering::Relaxed) != i64::from(pid) {
         let _ = FOLLOW.0.try_send(pid);
     }
@@ -165,7 +183,7 @@ pub fn start(ctx: &Ctx) {
 async fn run(ctx: Ctx) {
     // A connection of its own: the registrar's name is taken before any
     // app can call it, and the pump awaits replies while it holds streams.
-    let conn = match crate::services::bus::private(&ctx, zbus::connection::Builder::session()).await {
+    let conn = match crate::services::bus::private(&ctx, zbus::connection::Builder::session().map(|b| b.method_timeout(ANSWER))).await {
         Ok(conn) => conn,
         Err(err) => return eprintln!("appmenu: no session bus: {err}"),
     };
@@ -181,13 +199,13 @@ async fn run(ctx: Ctx) {
         }
     });
     while let Some(event) = events.next().await {
-        match event {
-            AppMenuEvent::Changed => {
-                let menu = menus.held().map(|h| Menu { pid: h.pid, root: node_of(&h.tree, 1.0) });
-                ctx.publish(store::Diff::AppMenu(Diff::Menu(menu)));
-            }
-            AppMenuEvent::Failed(err) => eprintln!("appmenu: {err}"),
+        if let AppMenuEvent::Failed(err) = &event {
+            eprintln!("appmenu: {err}");
         }
+        // After a failure too: a read that failed had already let go of
+        // the menu it was replacing.
+        let menu = menus.held().map(|h| Menu { pid: h.pid, root: node_of(&h.tree, 1.0) });
+        ctx.publish(store::Diff::AppMenu(Diff::Menu(menu)));
     }
 }
 

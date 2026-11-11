@@ -4,23 +4,27 @@
 //! `mac` submap: the default map less the Super and Super+Shift chords the
 //! user has not reserved (`macApps.reservedBinds`). The submap is built by
 //! the include (`docs/examples/hyprland/formalshell.lua`) out of the binds
-//! it recorded; nothing is sent in a session that never focuses a Mac
-//! window.
+//! it recorded, the first time a Mac window takes focus.
 
 use std::sync::Mutex;
+
+use fs_types::WindowId;
 
 use super::compositor::{self, Command};
 use crate::store::Store;
 
-#[derive(Default)]
 struct Sent {
     /// The reserved list and the config generation the submap was built
     /// for; a reload drops every bind, the submap's with them.
     built: Option<(Vec<String>, u64)>,
-    inside: bool,
+    /// The Mac window the session was last asked into the submap over, none
+    /// when it was asked out, and the config generation it was asked under.
+    /// Unset until the first sync: the session outlives the shell, and one
+    /// that exited over a Mac window left it in the submap.
+    asked: Option<(Option<WindowId>, u64)>,
 }
 
-static SENT: Mutex<Sent> = Mutex::new(Sent { built: None, inside: false });
+static SENT: Mutex<Sent> = Mutex::new(Sent { built: None, asked: None });
 
 /// The compositor or the settings changed.
 pub fn sync(store: &Store) {
@@ -30,26 +34,24 @@ pub fn sync(store: &Store) {
     let h = &store.compositor;
     // The compositor's own focus, not the held one: with a shell surface
     // holding the keyboard the default map is the one in force.
-    let mac = h.window(&h.snapshot.focused_window_id).is_some_and(|w| w.is_mac());
+    let mac = h.window(&h.snapshot.focused_window_id).filter(|w| w.is_mac()).map(|w| w.id.clone());
     let mut sent = SENT.lock().unwrap();
     let want = (crate::settings::mac_reserved_binds(&store.config), h.config_reloads);
-    let stale = sent.built.as_ref() != Some(&want);
-    if mac && stale {
+    if mac.is_some() && sent.built.as_ref() != Some(&want) {
         compositor::send(Command::MacKeys(want.0.clone()));
         sent.built = Some(want);
-        // A reload left the session in the default map.
-        sent.inside = false;
     }
-    if mac != sent.inside && (mac || !stale) {
-        compositor::send(Command::MacFocus(mac));
-        sent.inside = mac;
-    } else if !mac && stale {
-        sent.inside = false;
+    // Asked again per window: the include holds the submap over the one
+    // window it was last told of.
+    let ask = (mac, h.config_reloads);
+    if sent.asked.as_ref() != Some(&ask) {
+        compositor::send(Command::MacFocus(ask.0.is_some()));
+        sent.asked = Some(ask);
     }
 }
 
-/// Whether the session was last put in the `mac` submap, for `appmenu
+/// Whether the session was last asked into the `mac` submap, for `appmenu
 /// status`.
 pub fn inside() -> bool {
-    SENT.lock().unwrap().inside
+    SENT.lock().unwrap().asked.as_ref().is_some_and(|(window, _)| window.is_some())
 }

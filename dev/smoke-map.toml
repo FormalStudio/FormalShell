@@ -306,7 +306,19 @@ runs = ["--mac-menu", "--mac-menu --sidebar"]
 # and submap, the shell's switch into it, and the reserved list.
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/mackeys.rs", "crates/formalshell-rs/src/services/compositor/hyprland/lua.rs", "crates/fs-types/src/compositor.rs", "docs/examples/hyprland/formalshell.lua", "dev/mac-stub.py"]
-runs = ["--mac-keys"]
+runs = ["--mac-keys", "--mac-faults"]
+
+# What must hold round a Mac window when something gives: the submap over a
+# reload and over the shell ending and starting, and the menus over an app
+# that stops answering.
+[[rule]]
+paths = ["crates/fs-tray/src/appmenu.rs", "crates/formalshell-rs/src/services/appmenu.rs", "crates/formalshell-rs/src/store.rs", "crates/formalshell-rs/src/ipc/appmenu.rs"]
+runs = ["--mac-faults"]
+
+# The dock's icons at its own output's scale.
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/dock.rs", "crates/formalshell-rs/src/surface.rs", "crates/formalshell-rs/src/wayland/heads.rs"]
+runs = ["--dock-density"]
 
 # The dock: its apps and whether it exists, its row, its controller, its
 # IPC, the tile it reads off a Mac app's LauncherEntry, the dock menu and

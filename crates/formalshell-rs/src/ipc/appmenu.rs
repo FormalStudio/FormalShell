@@ -27,7 +27,10 @@ pub fn target() -> Target<App> {
 /// strip's start, absent where the bar draws no titles. `rows` are the
 /// open card's, each box in the card's surface. `macKeys` is whether the
 /// shell last asked the session into the `mac` submap, which a config
-/// without the include's MAC APPS block does not have.
+/// without the include's MAC APPS block does not have, and `macBinds` how
+/// many binds that block had recorded when the submap was last built, null
+/// until it is: a bind the config makes before the block is not among them
+/// and does nothing over a Mac window.
 fn status(app: &mut App, _: &[Value]) -> Reply {
     let menus = &app.store.appmenu;
     let boxes = live!(app).bar.app_menu_titles();
@@ -46,6 +49,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
         "open": app.app_menu_open(),
         "rows": rows,
         "macKeys": mackeys::inside(),
+        "macBinds": app.store.compositor.mac_binds,
     }))
 }
 

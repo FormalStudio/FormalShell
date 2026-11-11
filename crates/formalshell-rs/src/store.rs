@@ -163,6 +163,8 @@ fn implied(store: &Store, topic: Topic) -> Option<Diff> {
     match topic {
         // The theme resolves its settings out of settings.json.
         Topic::Config => Some(Diff::Theme(theme::Diff::Settings(store.config.settings().clone()))),
+        // A Mac app's menu is its window's: focus on another drops it.
+        Topic::Compositor => appmenu::stale(store).then(|| Diff::AppMenu(appmenu::Diff::Menu(None))),
         _ => None,
     }
 }

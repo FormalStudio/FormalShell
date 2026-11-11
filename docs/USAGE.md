@@ -699,7 +699,13 @@ first `hl.bind` of your config, as the `dofile` under
 [Keybinds](#keybinds) does. A config that pastes the include's contents
 instead needs its `MAC APPS` block at the top. Without it Mac apps still
 run and still show their menus, but a SUPER chord you have bound goes to
-the window manager.
+the window manager. A bind your config makes before the include is not
+recorded and does nothing over a Mac window: `fs appmenu status` gives
+`macBinds`, how many binds the include had recorded when the submap was
+last built, to hold against how many you have.
+
+The map follows the window, not the shell: with focus on any other window
+the default map is back, also when the shell has exited or is restarting.
 
 **The dock** is for the pointer and for what a Mac app shows on its dock
 tile, and it is only there while a Mac app has a window. It takes no room:
@@ -754,7 +760,7 @@ ended. A file's **Open with** lists the apps that say they open its type
 first, Mac apps among them, then every other app under `Other apps`.
 
 ```sh
-fs appmenu status                    # {"pid":…,"titles":[…],"open":null,"rows":[],"macKeys":true}
+fs appmenu status                    # {"pid":…,"titles":[…],"open":null,"rows":[],"macKeys":true,"macBinds":41}
 fs appmenu items File/Export         # the items under a title or a submenu
 fs appmenu open File                 # the card, as a click on the title
 fs appmenu close

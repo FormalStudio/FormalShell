@@ -71,7 +71,8 @@ local function mac_handed(mods, key)
   return not (key:match("^mouse") or key:match("^switch:"))
 end
 
--- Builds the submap from the recorded binds, replacing the one before.
+-- Builds the submap from the recorded binds, replacing the one before, and
+-- answers how many binds were recorded.
 function formalshell_mac_keys(reserved)
   for _, handle in ipairs(formalshell_mac_binds or {}) do
     handle:remove()
@@ -90,17 +91,39 @@ function formalshell_mac_keys(reserved)
       end
     end
   end)
+  return #formalshell_binds
 end
 
--- Into the submap and out of it, leaving a submap of the user's own alone.
-function formalshell_mac_focus(on)
+-- The submap while `window` is the one the shell last called a Mac window,
+-- the default map over any other, leaving a submap of the user's own alone.
+local function mac_follow(window)
+  local over = window ~= nil and window.address == formalshell_mac_window
   local current = hl.get_current_submap()
-  if on and current == "" then
+  if over and current == "" then
     hl.dispatch(hl.dsp.submap("mac"))
-  elseif not on and current == "mac" then
+  elseif not over and current == "mac" then
     hl.dispatch(hl.dsp.submap("reset"))
   end
 end
+
+-- The shell says whether the window in front is a Mac window.
+function formalshell_mac_focus(on)
+  local window = hl.get_active_window()
+  formalshell_mac_window = on and window and window.address or nil
+  mac_follow(window)
+end
+
+-- Focus moves without the shell saying so when the shell has exited, and
+-- when a window takes focus and gives it back between two of its looks: the
+-- map follows the window here, so no key is left dead waiting on the shell.
+hl.on("window.active", mac_follow)
+-- The last window closing moves focus to none, which is no `window.active`.
+hl.on("window.close", function(window)
+  if window ~= nil and window.address == formalshell_mac_window then
+    formalshell_mac_window = nil
+    mac_follow(nil)
+  end
+end)
 
 -- Window rounding, the blur behind the shell's surfaces and the frame and
 -- shadow round every window follow the shell's own theme: ThemeEngine

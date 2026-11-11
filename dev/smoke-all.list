@@ -98,6 +98,8 @@
 --kopuz
 --bluez-player
 --dock
+--dock-density
+--mac-faults
 --mac-keys
 --mac-launcher
 --mac-menu

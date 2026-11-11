@@ -118,6 +118,8 @@ pub struct Dock {
     asking: Vec<String>,
     focused: Option<WindowId>,
     queries: Vec<Query>,
+    /// The scale `queries` were last asked at.
+    icon_scale: f64,
     menu: Option<MenuFor>,
 }
 
@@ -131,8 +133,22 @@ impl App {
         if self.chrome().edge == Edge::Bottom { Edge::Top } else { Edge::Bottom }
     }
 
+    /// The scale of the dock's output, the live bar's. Not the store's
+    /// primary scale: that is read when the outputs change, and the live
+    /// bar moves between them without one changing.
     fn dock_scale(&self) -> f64 {
-        self.store.display.scales.primary()
+        let scales = &self.store.display.scales;
+        self.bar_wl().map_or_else(|| scales.primary(), |output| scales.on(output))
+    }
+
+    /// The apps' icons asked for at the dock's scale, when the apps or
+    /// that scale moved.
+    fn dock_probe(&mut self, queries: Vec<Query>) {
+        let scale = self.dock_scale();
+        if queries != self.dock.queries || scale != self.dock.icon_scale {
+            appicon::probe(ICON as u32, scale, queries.clone());
+            (self.dock.queries, self.dock.icon_scale) = (queries, scale);
+        }
     }
 
     /// The windows, the pins or the marks moved: the dock's apps are read
@@ -206,10 +222,7 @@ impl App {
             self.dock_hide(now);
             return;
         }
-        if queries != self.dock.queries {
-            appicon::probe(ICON as u32, scale, queries.clone());
-            self.dock.queries = queries;
-        }
+        self.dock_probe(queries);
         let asking: Vec<String> = self.dock.entries.iter().filter(|e| self.dock_urgent(e)).map(|e| e.item.app.clone()).collect();
         let rose = asking.iter().any(|app| !self.dock.asking.contains(app));
         self.dock.asking = asking;
@@ -301,6 +314,8 @@ impl App {
         let viewport = self.pixels.viewporter.get_viewport(layer.wl_surface(), &self.qh, Ignore);
         self.dock.strip = Some(Strip { layer, viewport, buffer: None, key });
         self.dock.dwell_at = None;
+        // The strip moved with the live bar, perhaps to a denser output.
+        self.dock_probe(self.dock.queries.clone());
     }
 
     pub(super) fn dock_strip_owns(&self, surface: &WlSurface) -> bool {
@@ -777,6 +792,7 @@ impl App {
         json!({
             "show": settings::DOCK_SHOW.get(&self.store.config),
             "exists": self.dock.exists,
+            "scale": self.dock_scale(),
             "strip": self.dock.strip.as_ref().is_some_and(|s| s.buffer.is_some()),
             "shown": shown.is_some(),
             "held": self.dock.held,
