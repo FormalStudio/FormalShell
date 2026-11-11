@@ -120,6 +120,14 @@ fspec vm resume "$vm" --spec "$spec" | tail -1
 
 guest_ssh() { ssh "${rig_ssh_opts[@]}" "$vm" "$@"; }
 
+# A broken save resumes (qemu's forwarded port accepts) into a guest that
+# never answers, which otherwise surfaces minutes later as the tree's rsync
+# dying with the connection.
+if ! timeout 30 ssh "${rig_ssh_opts[@]}" "$vm" true; then
+  echo "$vm: no answer over ssh 30s after its resume, so its save is broken: fspec vm stop $vm, fspec vm start $vm, fspec vm save $vm" >&2
+  exit 1
+fi
+
 rig_sync_tree "$vm"
 
 if [ -n "${FS_VM_RESULT:-}" ]; then
