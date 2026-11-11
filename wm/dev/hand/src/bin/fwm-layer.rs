@@ -9,12 +9,7 @@
 //! of the output. A WIDTH or HEIGHT of 0 takes what the compositor gives.
 //! `--color` is AARRGGBB, not premultiplied. It stays until it is killed.
 
-use std::{
-    error::Error,
-    fs::{self, File},
-    io::Write,
-    os::fd::AsFd,
-};
+use std::error::Error;
 
 use wayland_client::{
     Connection, Dispatch, QueueHandle, delegate_noop,
@@ -107,43 +102,13 @@ delegate_noop!(Sheet: ignore wl_surface::WlSurface);
 delegate_noop!(Sheet: ignore wl_buffer::WlBuffer);
 
 impl Sheet {
-    fn paint(
-        &mut self,
-        (w, h): (u32, u32),
-        queue: &QueueHandle<Self>,
-    ) -> Result<(), Box<dyn Error>> {
+    fn paint(&mut self, size: (u32, u32), queue: &QueueHandle<Self>) -> Result<(), Box<dyn Error>> {
         let (Some(shm), Some(surface)) = (&self.globals.shm, &self.surface) else {
             return Ok(());
         };
-        let [a, r, g, b] = self.color.to_be_bytes();
-        let scale = |channel: u8| (u32::from(channel) * u32::from(a) / 255) as u8;
-        // ARGB8888 in memory order, premultiplied.
-        let pixel = [scale(b), scale(g), scale(r), a];
-
-        let dir = std::env::var("XDG_RUNTIME_DIR")?;
-        let path = format!("{dir}/fwm-layer-{}", std::process::id());
-        let mut file = File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&path)?;
-        fs::remove_file(&path)?;
-        file.write_all(&pixel.repeat((w * h) as usize))?;
-        file.flush()?;
-
-        let pool = shm.create_pool(file.as_fd(), (w * h * 4) as i32, queue, ());
-        let buffer = pool.create_buffer(
-            0,
-            w as i32,
-            h as i32,
-            (w * 4) as i32,
-            wl_shm::Format::Argb8888,
-            queue,
-            (),
-        );
-        pool.destroy();
+        let buffer = fwm_hand::solid(shm, queue, size, self.color)?;
         surface.attach(Some(&buffer), 0, 0);
-        surface.damage_buffer(0, 0, w as i32, h as i32);
+        surface.damage_buffer(0, 0, size.0 as i32, size.1 as i32);
         surface.commit();
         Ok(())
     }

@@ -868,6 +868,7 @@ name = "fwm-hand"
 version = "0.2.0"
 dependencies = [
  "wayland-client",
+ "wayland-protocols",
  "wayland-protocols-wlr",
 ]
 
@@ -2173,6 +2174,7 @@ dependencies = [
  "hashbrown 0.15.5",
  "input",
  "lcms2",
+ "libc",
  "mimalloc",
  "png",
  "resvg",
