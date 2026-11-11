@@ -524,7 +524,7 @@ fn read_latency(ctx: &Ctx) {
             .filter(|n| n.is_stream() && n.is_sink())
             .filter(|n| row.as_ref().is_some_and(|r| !fs_media::media::stream_owner(&audio::stream_keys(n), std::slice::from_ref(r)).is_empty()))
             .filter_map(|n| g.latency_ms(n.id));
-        let sink = g.nodes.values().find(|n| n.media_class == "Audio/Sink" && !n.name.is_empty() && n.name == g.defaults.sink).and_then(|n| g.latency_ms(n.id));
+        let sink = g.default_sink().filter(|n| n.media_class == "Audio/Sink").and_then(|n| g.latency_ms(n.id));
         model::output_latency(streams, sink)
     });
     ctx.publish(store::Diff::Lyrics(Diff::Latency(latency.unwrap_or_else(|| model::output_latency([], None)))));
