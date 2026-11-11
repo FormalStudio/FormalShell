@@ -194,7 +194,9 @@ fn fullscreen_covers_the_output_and_maximize_what_the_layers_leave() {
     model.set_outputs(vec![geo]);
     open(&mut model, "a");
     open(&mut model, "b");
+    assert_eq!(model.fullscreen_on("A"), None);
     assert!(model.toggle_big("b", Big::Fullscreen));
+    assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("b"));
     let b = place(&model, "b");
     assert_eq!(
         (b.rect, b.layer),
@@ -202,6 +204,7 @@ fn fullscreen_covers_the_output_and_maximize_what_the_layers_leave() {
     );
     assert!(!b.scrolls);
     assert!(model.toggle_big("b", Big::Maximized));
+    assert_eq!(model.fullscreen_on("A"), None);
     assert_eq!(
         place(&model, "b").rect,
         Rect::new(0.0, 40.0, 1920.0, 1040.0)

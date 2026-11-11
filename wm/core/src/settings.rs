@@ -192,6 +192,17 @@ impl OutputSettings {
             .and_then(|mode| parse_mode(mode).ok())
             .unwrap_or(ModeChoice::Preferred)
     }
+
+    /// Whether `vrr` asks for variable refresh now. `fullscreen` is the
+    /// content type of the window fullscreen on the output, empty when its
+    /// rule names none.
+    pub fn wants_vrr(&self, fullscreen: Option<&str>) -> bool {
+        match (self.vrr, fullscreen) {
+            (1, _) | (2, Some(_)) => true,
+            (3, Some(content)) => matches!(content, "game" | "video"),
+            _ => false,
+        }
+    }
 }
 
 fn parse_mode(text: &str) -> Result<ModeChoice, String> {
@@ -888,6 +899,20 @@ mod tests {
         assert_eq!(unlisted.mode(), ModeChoice::HighRefresh);
         assert_eq!(OutputSettings::default().mode(), ModeChoice::Preferred);
         assert_eq!(matched.vrr, 2);
+        let vrr = |vrr: u8, fullscreen| {
+            OutputSettings {
+                vrr,
+                ..Default::default()
+            }
+            .wants_vrr(fullscreen)
+        };
+        assert!(!vrr(0, Some("game")));
+        assert!(vrr(1, None));
+        assert!(!vrr(2, None));
+        assert!(vrr(2, Some("")));
+        assert!(!vrr(3, Some("")));
+        assert!(vrr(3, Some("game")));
+        assert!(vrr(3, Some("video")));
         assert_eq!(settings.output_for(&panel).unwrap().scale, Some(1.25));
         assert_eq!(settings.output_for(&hdmi).unwrap().scale, Some(2.0));
         assert_eq!(settings.output_for(&other).unwrap().scale, Some(1.0));

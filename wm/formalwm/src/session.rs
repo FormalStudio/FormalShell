@@ -52,6 +52,9 @@ thread_local! {
     static OVERRIDES: RefCell<BTreeMap<String, OutputOverride>> = const { RefCell::new(BTreeMap::new()) };
     /// The outputs `outputs.create` made: the only ones `outputs.remove` takes.
     static CREATED: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    /// By output, the content type of the window fullscreen on it as of
+    /// the last turn, empty when its rule names none.
+    static FULLSCREEN: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
     /// The ext-workspace model as of the last turn; its factory runs inside
     /// turns and cannot read the engine.
     static WORKSPACES: RefCell<RuntimeWorkspaceConfigUpdate> = RefCell::new(RuntimeWorkspaceConfigUpdate::default());
@@ -139,6 +142,33 @@ pub fn remove_output(name: &str) -> Result<(), String> {
     OVERRIDES.with(|overrides| overrides.borrow_mut().remove(name));
     COMPOSITOR.output.remove(name);
     Ok(())
+}
+
+/// Each turn's fullscreen windows, which `vrr` 2 and 3 follow.
+pub fn set_fullscreen(now: BTreeMap<String, String>) {
+    let changed = FULLSCREEN.with(|last| {
+        let mut last = last.borrow_mut();
+        let changed = *last != now;
+        *last = now;
+        changed
+    });
+    if changed
+        && engine::settings()
+            .outputs
+            .iter()
+            .any(|output| output.vrr >= 2)
+    {
+        COMPOSITOR.output.reconfigure();
+    }
+}
+
+/// Whether the settings ask for variable refresh on an output now. The
+/// core keeps it off on a connector that cannot do it.
+pub fn wants_vrr(output: &WaylandOutputSnapshot) -> bool {
+    let fullscreen = FULLSCREEN.with(|last| last.borrow().get(&output.name).cloned());
+    engine::settings()
+        .output_for(&facts(output))
+        .is_some_and(|entry| entry.wants_vrr(fullscreen.as_deref()))
 }
 
 fn facts(output: &WaylandOutputSnapshot) -> OutputFacts<'_> {
@@ -257,6 +287,7 @@ pub fn setup() {
                 if let Some(color) = over.color {
                     config.hdr = Some(OutputHdr::Enabled(color.cm != "srgb"));
                 }
+                config.vrr = Some(wants_vrr(output));
                 (output.name.clone(), Some(config))
             })
             .collect()

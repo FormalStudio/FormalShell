@@ -196,11 +196,28 @@ impl Engine {
     /// After the model changed: everything that follows from it.
     pub fn commit(&mut self) {
         self.scene.sync(&self.model);
+        crate::session::set_fullscreen(self.fullscreen());
         self.focus();
         self.present();
         self.kick();
         self.publish();
         self.publish_workspaces();
+    }
+
+    /// By output, the content type its fullscreen window's rule gives it.
+    fn fullscreen(&self) -> BTreeMap<String, String> {
+        let content = |id: &String| {
+            let win = self.windows.get(id)?;
+            Some(win.effect.content.clone().unwrap_or_default())
+        };
+        self.model
+            .outputs
+            .iter()
+            .filter_map(|output| {
+                let id = self.model.fullscreen_on(&output.geo.name)?;
+                Some((output.geo.name.clone(), content(id)?))
+            })
+            .collect()
     }
 
     /// Gives the keyboard to the window the model has focused. Not while

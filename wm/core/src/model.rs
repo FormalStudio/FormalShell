@@ -794,6 +794,15 @@ impl Model {
         true
     }
 
+    /// The window fullscreen on the workspace an output shows.
+    pub fn fullscreen_on(&self, output: &str) -> Option<&WinId> {
+        let workspace = self.workspace(&self.output(output)?.active)?;
+        match &workspace.big {
+            Some((id, Big::Fullscreen)) => Some(id),
+            _ => None,
+        }
+    }
+
     pub fn big_of(&self, id: &str) -> Option<Big> {
         let Home::Workspace(workspace) = &self.window(id)?.home else {
             return None;

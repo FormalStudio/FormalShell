@@ -349,7 +349,7 @@ fn outputs() -> Vec<proto::Output> {
                 scale: output.scale,
                 transform: transform(output.transform),
                 mirror_of: over.mirror.clone().unwrap_or_default(),
-                vrr: false,
+                vrr: output.enabled && session::wants_vrr(&output),
                 // An output with no connector lists no modes; it has the one.
                 modes: output
                     .available_modes

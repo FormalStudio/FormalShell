@@ -30,7 +30,7 @@ const HOST: &str = r#"{
   "terminal": "foot",
   "outputs": [
     { "name": "TEST-1", "defaultWorkspace": 1 },
-    { "name": "TEST-2", "workspaces": [4, 8], "defaultWorkspace": 4 }
+    { "name": "TEST-2", "workspaces": [4, 8], "defaultWorkspace": 4, "vrr": 2 }
   ],
   "lidOutput": "TEST-2"
 }"#;
@@ -394,6 +394,27 @@ fn two_outputs_and_the_touchpad() {
     assert_eq!(seen.focused_workspace_id, "4");
     let rect = slack.rect.as_ref().unwrap();
     assert!(rect.x >= WIDTH as i32, "the window is on the second output");
+
+    // `vrr` 2: asked of the core only while a window is fullscreen there.
+    let vrr = |session: &Session| {
+        let config = session.state.runtime_output_configs.get("TEST-2");
+        config.and_then(|config| config.vrr)
+    };
+    let toggle = || {
+        ask(|engine| {
+            let id = engine.model.focused_window().cloned().ok_or("no focus")?;
+            engine.toggle_fullscreen(&id);
+            Ok(())
+        })
+        .unwrap();
+    };
+    assert_eq!(vrr(&session), Some(false));
+    toggle();
+    session.roundtrip();
+    assert_eq!(vrr(&session), Some(true), "fullscreen, vrr is asked for");
+    toggle();
+    session.roundtrip();
+    assert_eq!(vrr(&session), Some(false));
 
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {
