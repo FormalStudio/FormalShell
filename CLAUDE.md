@@ -61,7 +61,10 @@ pipewire, PAM or Wayland to link.
   is a shell in one. The guests are g815's, so the mac rig refuses these
   runs. A save goes stale once an apply changes a guest's disk: `fspec vm
   stop`, `fspec vm start`, `fspec vm save` after `fspec apply --host
-  fstestvm<n>`. The mac's `fspec` has to carry `vm resume` (FormalSpec main).
+  fstestvm<n>`, with the boot's autologin session ended first (`loginctl
+  terminate-session` on kyan's seat0 one) so the save sits at the greeter:
+  an active seat0 session of the shell's user lets logind power off
+  unasked, and `--power` reads the password path. The mac's `fspec` has to carry `vm resume` (FormalSpec main).
 - **The mac rig** takes over when g815 is off (it powers down around 22:00
   for the night): `FS_RIG=g815|mac` picks one, and unset, a g815 that does
   not answer ssh in 5s sends the command to `mac`, booting the guest first

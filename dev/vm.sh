@@ -30,7 +30,9 @@
 #   dev/vm.sh wants <flags>   exits 0 when the flags name a leg_<n>_vm_only leg
 #
 # A saved slot goes stale when an apply changes its disk: `fspec vm stop`,
-# `fspec vm start`, `fspec vm save` after `fspec apply --host fstestvm<n>`.
+# `fspec vm start`, `fspec vm save` after `fspec apply --host fstestvm<n>`,
+# the boot's autologin session terminated first so the save sits at the
+# greeter (CLAUDE.md, the VM rig).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo_root="$(pwd)"
