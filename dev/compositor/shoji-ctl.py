@@ -161,7 +161,11 @@ def binds():
     } for b in call("binds.list")]
 
 
-def read(verb, as_json):
+def read(verb, args, as_json):
+    if verb == "getoption":
+        if args != ["general:col.active_border"]:
+            raise Unsupported(f"getoption {' '.join(args)}")
+        return f"str: {call('state.get')['chrome']['activeBorder']}"
     if verb == "binds":
         rows = binds()
         if as_json:
@@ -317,7 +321,12 @@ def evaluate(text):
     made: hyprctl sizes a headless output after making it, and
     `outputs.create` takes the size up front, so it is made again at that
     size. The engine places a made output right of the rest, which is the
-    one position the legs ask for."""
+    one position the legs ask for. `hl.config` asking for the scrolling
+    layout, formalwm's only one, at the column width wm/example/settings.json
+    opens columns at, changes nothing."""
+    c = re.fullmatch(r"\s*hl\.config\((.*)\)\s*", text, re.S)
+    if c and lua_table(c.group(1)) in ({"layout": "scrolling"}, {"layout": "scrolling", "column_width": 0.5}):
+        return "ok"
     m = re.fullmatch(r"\s*hl\.monitor\((.*)\)\s*", text, re.S)
     t = lua_table(m.group(1)) if m else {}
     if not m or t.get("output") not in made():
@@ -349,7 +358,7 @@ def main(argv):
     if args[0] == "eval":
         print(evaluate(" ".join(args[1:])))
         return
-    out = read(args[0], as_json)
+    out = read(args[0], args[1:], as_json)
     print(json.dumps(out, indent=2) if not isinstance(out, str) else out)
 
 

@@ -291,7 +291,7 @@ until_jq 10 "$shot_dir/sidebar-edge-right.json" '.edge == "right"' call sidebar 
 sleep 1
 "$wmctl_bin" -j layers > "$sidebar_layers_right" 2>&1
 EOS
-  echo 'hl.config({ general = { gaps_out = 10, border_size = 2 } })'
+  wm_window_gaps 10 2
   wm_exec_once "bash $script"
 }
 

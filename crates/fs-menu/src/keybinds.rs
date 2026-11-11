@@ -11,11 +11,15 @@ pub const KEYBINDS_MAX_RESULTS: usize = 200;
 /// column pads with U+00A0.
 const PAD_CHAR: char = '\u{a0}';
 
+/// The bind's title when it has one, as formalwm's binds all carry an action;
+/// the action and its arguments otherwise.
 pub fn describe_action(bind: &Bind) -> String {
+    if !bind.title.is_empty() {
+        return bind.title.clone();
+    }
     let mut parts = vec![bind.action.clone()];
     parts.extend(bind.args.iter().cloned());
-    let text = fs_js::trim(&parts.join(" ")).to_string();
-    if text.is_empty() { bind.title.clone() } else { text }
+    fs_js::trim(&parts.join(" ")).to_string()
 }
 
 const WORD_BREAK: &str = " +-_./";
@@ -130,6 +134,7 @@ mod tests {
         let binds = table();
         assert_eq!(describe_action(&binds[0]), "exec formalshell-ipc call menu toggle");
         assert_eq!(describe_action(&binds[1]), "Open: the menu");
+        assert_eq!(describe_action(&bind(&["SUPER"], "Return", "terminal", "", "Terminal")), "Terminal");
     }
 
     #[test]

@@ -316,8 +316,10 @@ fi
 
 # A leg runs under the compositors its leg_<n>_compositors names, Hyprland
 # alone when it names none: its config lines and its $wmctl_bin calls are
-# written for those.
+# written for those. FS_SMOKE_ANY_COMPOSITOR=1 runs it anyway, to find out
+# whether a leg holds under another one before it says so.
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
+  [ "${FS_SMOKE_ANY_COMPOSITOR:-}" = 1 ] && break
   compositors_var="leg_${leg_name}_compositors"
   case " ${!compositors_var:-hyprland} " in
     *" $FS_COMPOSITOR "*) ;;

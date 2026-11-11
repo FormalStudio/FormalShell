@@ -45,11 +45,8 @@ leg_overview_timing() {
 
 leg_overview_drive() {
   local script="$shot_dir/overview-drive.sh"
-  cat <<EOF
--- wtype's keymap and Hyprland's keycodes disagree; switcher_keys.sh says why.
-hl.config({ input = { resolve_binds_by_sym = true } })
-hl.bind("SUPER + O", hl.dsp.exec_cmd([==[$ipc call workspaces overview toggle]==]))
-EOF
+  wm_binds_by_keysym
+  wm_bind SUPER+O sh "$ipc call workspaces overview toggle"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 log() { printf '%s\n' "\$*" >> "$overview_notes"; }

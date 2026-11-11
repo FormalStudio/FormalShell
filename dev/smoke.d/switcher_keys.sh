@@ -140,18 +140,19 @@ EOS
   # reads, and none of them go near keysym resolution.
   # A slow repeat, so a held Tab's steps can be counted: 300ms before the
   # first repeat and five a second after it.
-  echo "hl.config({ input = { resolve_binds_by_sym = true, repeat_delay = 300, repeat_rate = 5 } })"
+  wm_binds_by_keysym
+  wm_key_repeat 300 5
   # Real binds in this session's real hyprland.lua, the shipped example's
   # three plus the probes, so what is exercised is hyprland's own bind table
   # rather than anything this rig invented.
-  echo "hl.bind(\"ALT + Tab\", hl.dsp.exec_cmd([==[$ipc call switcher next]==]), { repeating = true })"
-  echo "hl.bind(\"ALT + SHIFT + Tab\", hl.dsp.exec_cmd([==[$ipc call switcher prev]==]), { repeating = true })"
-  echo "hl.bind(\"ALT + Alt_L\", hl.dsp.exec_cmd([==[$ipc call switcher commit]==]), { release = true, transparent = true })"
-  echo "hl.bind(\"ALT + Alt_L\", hl.dsp.exec_cmd([==[bash $probe plain]==]), { release = true })"
-  echo "hl.bind(\"Alt_L\", hl.dsp.exec_cmd([==[bash $probe nomods]==]), { release = true, transparent = true })"
+  wm_bind --repeat ALT+Tab sh "$ipc call switcher next"
+  wm_bind --repeat ALT+SHIFT+Tab sh "$ipc call switcher prev"
+  wm_bind --release --transparent ALT+Alt_L sh "$ipc call switcher commit"
+  wm_bind --release ALT+Alt_L sh "bash $probe plain"
+  wm_bind --release --transparent Alt_L sh "bash $probe nomods"
   # An ordinary key, as the floor under every claim below: a release bind on
   # something that is not a modifier, fired by the same wtype.
-  echo "hl.bind(\"F13\", hl.dsp.exec_cmd([==[bash $probe f13]==]), { release = true })"
+  wm_bind --release F13 sh "bash $probe f13"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 mkdir -p "$switcher_keys_probe_dir"

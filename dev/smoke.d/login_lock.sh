@@ -95,7 +95,7 @@ if [ -e "$login_lock_marker" ]; then echo present; else echo gone; fi > "$login_
 touch "$login_lock_early_done"
 EOF
   # Beside the shell's own start, not behind the arrival a drive waits on.
-  printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[bash %s]==]) end)\n' "$early"
+  wm_autostart "bash $early"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 for _ in \$(seq 1 200); do [ -e "$login_lock_early_done" ] && break; sleep 0.1; done

@@ -108,11 +108,7 @@ for _ in \$(seq 1 20); do
 done
 EOF
   wm_exec_once "bash $script"
-  # The compositor half of the palette, wired the way docs/USAGE.md tells a
-  # user to wire it. Appended after the base config's own `general` block, so
-  # this is the value that survives.
-  echo "local colors = dofile([==[$hypr_lua_path]==])"
-  echo "hl.config({ general = { col = { active_border = colors.primary } } })"
+  wm_border_from_palette "$hypr_lua_path"
 }
 
 # Reads whole pixels out of a cropped patch. The trailing [,)] tolerates an

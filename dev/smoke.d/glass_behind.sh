@@ -50,10 +50,7 @@ leg_glass_behind_timing() {
 }
 
 leg_glass_behind_drive() {
-  # The shipped rules, as the owner's hyprland.lua loads them.
-  echo 'local chrome = { blur = true }'
-  awk '/^hl.layer_rule\(\{/ { on = 1 } on { print } on && /^\}\)/ { on = 0 }' docs/examples/hyprland/formalshell.lua
-  echo 'hl.config({ decoration = { blur = { enabled = true, size = 8, passes = 2, new_optimizations = true, vibrancy = 0 } } })'
+  wm_shipped_blur
   local script="$shot_dir/glass-behind-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash

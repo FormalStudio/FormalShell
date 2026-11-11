@@ -65,11 +65,11 @@ leg_use_drive() {
   local script="$shot_dir/use-drive.sh"
   # resolve_binds_by_sym for the reason switcher_keys.sh gives: wtype ships
   # a keymap of its own.
-  echo "hl.config({ input = { resolve_binds_by_sym = true } })"
-  echo "hl.bind(\"SUPER + space\", hl.dsp.exec_cmd([==[$ipc call menu toggle]==]))"
-  echo "hl.bind(\"SUPER + T\", hl.dsp.exec_cmd([==[$ipc call theme mode toggle]==]))"
-  echo "hl.bind(\"SUPER + A\", hl.dsp.exec_cmd([==[$ipc call wallpaper set $use_wp_a]==]))"
-  echo "hl.bind(\"SUPER + B\", hl.dsp.exec_cmd([==[$ipc call wallpaper set $use_wp_b]==]))"
+  wm_binds_by_keysym
+  wm_bind SUPER+space sh "$ipc call menu toggle"
+  wm_bind SUPER+T sh "$ipc call theme mode toggle"
+  wm_bind SUPER+A sh "$ipc call wallpaper set $use_wp_a"
+  wm_bind SUPER+B sh "$ipc call wallpaper set $use_wp_b"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 d="$use_dir"

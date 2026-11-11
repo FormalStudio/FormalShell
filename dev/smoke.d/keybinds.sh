@@ -45,12 +45,12 @@ leg_keybinds_drive() {
   local script="$shot_dir/keybinds-drive.sh"
   # The fixture itself. hyprland reads this config, so these are real binds in
   # a real bind table, not a file the shell is pointed at.
-  echo 'hl.bind("SUPER + SHIFT + slash", hl.dsp.exec_cmd("hyprctl version"), { description = "exec hyprctl version" })'
-  echo 'hl.bind("SUPER + T", hl.dsp.exec_cmd("ghostty"), { description = "Open a Terminal" })'
-  echo 'hl.bind("SUPER + Q", hl.dsp.window.close(), { description = "killactive" })'
-  echo 'hl.bind("SUPER + CTRL + 1", hl.dsp.focus({ workspace = 1 }), { description = "workspace 1" })'
-  echo 'hl.bind("SUPER + N", hl.dsp.exec_cmd("notify-send"), { description = "exec notify-send {braces} // not-a-comment" })'
-  echo '-- hl.bind("SUPER + Z", hl.dsp.exit())'
+  wm_bind --title "exec hyprctl version" SUPER+SHIFT+slash sh "hyprctl version"
+  wm_bind --title "Open a Terminal" SUPER+T sh ghostty
+  wm_bind --title killactive SUPER+Q close
+  wm_bind --title "workspace 1" SUPER+CTRL+1 workspace 1
+  wm_bind --title "exec notify-send {braces} // not-a-comment" SUPER+N sh notify-send
+  wm_commented_bind SUPER+Z
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 "$wmctl_bin" binds > "$keybinds_hyprctl_plain_path" 2>&1

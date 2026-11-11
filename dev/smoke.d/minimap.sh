@@ -67,9 +67,9 @@ leg_minimap_timing() {
 leg_minimap_drive() {
   local script="$shot_dir/minimap-drive.sh"
   # wtype's keymap and Hyprland's keycodes disagree; switcher_keys.sh says why.
-  echo 'hl.config({ input = { resolve_binds_by_sym = true } })'
-  echo 'hl.bind("SUPER + period", hl.dsp.layout("swapcol r"))'
-  echo 'hl.bind("SUPER + Right", hl.dsp.window.swap({ direction = "right" }))'
+  wm_binds_by_keysym
+  wm_bind SUPER+period swap-column right
+  wm_bind SUPER+Right swap-window right
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 for _ in \$(seq 1 40); do

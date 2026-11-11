@@ -21,7 +21,85 @@ wm_exec_once() {
     printf '%s\t%s\n' "$leg_name" "$1" >> "$drives_list"
     return
   fi
+  wm_autostart "$1"
+}
+
+# The autostart line itself, for a drive that starts beside the shell
+# rather than in leg order after its arrival.
+wm_autostart() {
   printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[%s]==]) end)\n' "$1"
+}
+
+# wm_bind [--repeat] [--release] [--transparent] [--title <text>] <chord> <action> [<arg>]:
+# a bind in the session's own table. The chord and action are formalwm's
+# spelling (SUPER+T, wm/core/src/action.rs); --transparent is Hyprland's own,
+# a bind another on the same keys does not shadow, and formalwm has none.
+wm_bind() {
+  local opts=() chord action arg dsp joined
+  while :; do
+    case $1 in
+      --repeat) opts+=("repeating = true") ;;
+      --release) opts+=("release = true") ;;
+      --transparent) opts+=("transparent = true") ;;
+      --title) opts+=("description = \"$2\""); shift ;;
+      *) break ;;
+    esac
+    shift
+  done
+  chord=${1//+/ + } action=$2 arg=${3:-}
+  case $action in
+    sh) dsp="hl.dsp.exec_cmd([==[$arg]==])" ;;
+    close) dsp="hl.dsp.window.close()" ;;
+    workspace) dsp="hl.dsp.focus({ workspace = $arg })" ;;
+    swap-column) dsp="hl.dsp.layout(\"swapcol ${arg:0:1}\")" ;;
+    swap-window) dsp="hl.dsp.window.swap({ direction = \"$arg\" })" ;;
+    *) echo "SMOKE_FAIL: wm_bind: no Hyprland form for $action" >&2; exit 1 ;;
+  esac
+  if [ ${#opts[@]} -eq 0 ]; then
+    printf 'hl.bind("%s", %s)\n' "$chord" "$dsp"
+    return
+  fi
+  joined=$(printf '%s, ' "${opts[@]}")
+  printf 'hl.bind("%s", %s, { %s })\n' "$chord" "$dsp" "${joined%, }"
+}
+
+# wm_commented_bind <chord>: a bind the config carries commented out, which
+# must not reach the bind table.
+wm_commented_bind() {
+  printf -- '-- hl.bind("%s", hl.dsp.exit())\n' "${1//+/ + }"
+}
+
+# Binds resolve a keycode through the sending keyboard's own keymap, which
+# for wtype is its own; switcher_keys.sh says why the rig needs that.
+wm_binds_by_keysym() {
+  echo 'hl.config({ input = { resolve_binds_by_sym = true } })'
+}
+
+# wm_key_repeat <delay ms> <per second>
+wm_key_repeat() {
+  echo "hl.config({ input = { repeat_delay = $1, repeat_rate = $2 } })"
+}
+
+# wm_window_gaps <outer> <border>: the base config's zero gaps and border
+# widened for a leg that measures against them.
+wm_window_gaps() {
+  echo "hl.config({ general = { gaps_out = $1, border_size = $2 } })"
+}
+
+# The blur the base config turns off, back on with the shipped layer rules,
+# as the owner's hyprland.lua loads them.
+wm_shipped_blur() {
+  echo 'local chrome = { blur = true }'
+  awk '/^hl.layer_rule\(\{/ { on = 1 } on { print } on && /^\}\)/ { on = 0 }' docs/examples/hyprland/formalshell.lua
+  echo 'hl.config({ decoration = { blur = { enabled = true, size = 8, passes = 2, new_optimizations = true, vibrancy = 0 } } })'
+}
+
+# wm_border_from_palette <colors.lua>: the focused border off the shell's
+# palette, wired the way docs/USAGE.md tells a user to wire it. Appended
+# after the base config's own `general` block, so this value survives.
+wm_border_from_palette() {
+  echo "local colors = dofile([==[$1]==])"
+  echo "hl.config({ general = { col = { active_border = colors.primary } } })"
 }
 
 # The session shape every run boots with, shared with --screensaver-gif's
