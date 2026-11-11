@@ -88,7 +88,7 @@ pub fn state(model: &Model, extras: &Extras) -> proto::State {
                 initial_title: window.initial_title.clone(),
                 pid: window.pid,
                 workspace_id,
-                shown: overlay.is_some() && place.is_some_and(|place| place.shown),
+                shown: overlay.is_none() || place.is_some_and(|place| place.shown),
                 overlay,
                 focused: window.id == focused_window,
                 floating: window.floating,

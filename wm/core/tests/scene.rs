@@ -276,3 +276,21 @@ fn zen_slides_the_neighbours_off_and_back() {
     settle(&mut scene);
     assert_eq!(drawn(&scene, "a"), rest);
 }
+
+#[test]
+fn a_dropped_window_rides_to_its_place_from_where_the_hand_left_it() {
+    let mut model = common::desk();
+    common::open(&mut model, "a");
+    let mut scene = Scene::default();
+    scene.sync(&model);
+    scene.finish();
+    let rest = scene.visual("a").unwrap().rect;
+    let hand = Rect::new(rest.x + 300.0, rest.y + 120.0, rest.w, rest.h);
+    scene.carry("a", hand);
+    assert_eq!(scene.visual("a").unwrap().rect, hand);
+    for _ in 0..240 {
+        scene.step(1.0 / 60.0);
+    }
+    assert_eq!(scene.visual("a").unwrap().rect, rest);
+    assert!(!scene.animating());
+}

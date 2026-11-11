@@ -55,6 +55,9 @@ pub struct Visual {
     pub visible: bool,
     pub layer: Layer,
     pub order: usize,
+    /// How many workspaces below the one its output shows its own sits, as
+    /// drawn: 0.5 halfway through a switch. 0 for what rides no stack.
+    pub lane: f64,
     pub closing: bool,
     /// At its place with nothing left to play.
     pub settled: bool,
@@ -275,6 +278,29 @@ impl Scene {
         }
     }
 
+    /// Starts a window's way to its place from `from`, where a hand left
+    /// it.
+    pub fn carry(&mut self, id: &str, from: Rect) {
+        let Some(rest) = self.actors.get(id).map(|actor| self.composed(actor)) else {
+            return;
+        };
+        if !self.enabled {
+            return;
+        }
+        if let Some(actor) = self.actors.get_mut(id) {
+            for (spring, offset) in [
+                (&mut actor.dx, from.x - rest.x),
+                (&mut actor.dy, from.y - rest.y),
+                (&mut actor.dw, from.w - rest.w),
+                (&mut actor.dh, from.h - rest.h),
+            ] {
+                spring.value = offset;
+                spring.target = 0.0;
+            }
+            actor.pop.jump(1.0);
+        }
+    }
+
     /// Holds a tape at the model's scroll, under the fingers.
     pub fn hold_scroll(&mut self, workspace: &str) {
         if let Some(spring) = self.scroll.get_mut(workspace) {
@@ -294,9 +320,7 @@ impl Scene {
     /// Holds an output at `position` of its stack, under the fingers.
     pub fn hold_stack(&mut self, output: &str, position: f64) {
         if let Some(spring) = self.stack.get_mut(output) {
-            let target = spring.target;
             spring.jump(position);
-            spring.target = target;
         }
     }
 
@@ -391,6 +415,10 @@ impl Scene {
             visible: opacity > 0.0 && rect.intersects(&actor.output_rect),
             layer: actor.place.layer,
             order: actor.place.order,
+            lane: match actor.place.layer {
+                Layer::Pinned | Layer::Overlay => 0.0,
+                _ => actor.stack_index - self.stack_of(&actor.place.output),
+            },
             closing: actor.closing,
             settled: springs_rest && self.settled(actor),
         }
