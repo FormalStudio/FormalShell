@@ -73,8 +73,11 @@ pub mod method {
     pub const BINDS_LIST: &str = "binds.list";
     pub const CURSOR_POS: &str = "cursor.pos";
     pub const CURSOR_HIDE: &str = "cursor.hide";
+    pub const LAYERS_LIST: &str = "layers.list";
     pub const OUTPUTS_GET: &str = "outputs.get";
     pub const OUTPUTS_SET: &str = "outputs.set";
+    pub const OUTPUTS_CREATE: &str = "outputs.create";
+    pub const OUTPUTS_REMOVE: &str = "outputs.remove";
     pub const THEME_SET: &str = "theme.set";
     pub const SESSION_EXIT: &str = "session.exit";
 }
@@ -372,6 +375,31 @@ pub struct CursorHide {
     pub hidden: bool,
 }
 
+/// One row of `layers.list`: a mapped layer-shell surface. The rows come in
+/// stacking order, the bottom of the stack first.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Layer {
+    pub namespace: String,
+    pub output: String,
+    pub layer: LayerLevel,
+    /// Global logical pixels.
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    /// The client's process, 0 when the engine does not know it.
+    pub pid: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LayerLevel {
+    Background,
+    Bottom,
+    Top,
+    Overlay,
+}
+
 /// One row of `outputs.get`: every connected output, disabled ones too.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -438,6 +466,28 @@ pub struct OutputSet {
     pub mirror: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
+}
+
+/// `outputs.create`: an output with no connector, made while the session
+/// runs. It is an output like any other from then on. Answers `OutputRef`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct OutputCreate {
+    /// The engine names it when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The mode's pixels.
+    pub width: i32,
+    pub height: i32,
+    /// 1 when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+}
+
+/// `outputs.create`'s answer and `outputs.remove`'s params; only an output
+/// `outputs.create` made can be removed.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutputRef {
+    pub name: String,
 }
 
 // The theme.
@@ -616,6 +666,25 @@ mod tests {
         assert_eq!(state.windows[0].rect, Some(Rect { x: 8, y: 8, width: 1272, height: 1424 }));
         assert_eq!(state.workspaces[0].zen, None);
         assert_eq!(to_value(&state).unwrap(), wire);
+    }
+
+    #[test]
+    fn layers_and_made_outputs_read_as_the_spec_writes_them() {
+        let wire = json!([{
+            "namespace": "formalshell-bar", "output": "DP-1", "layer": "top",
+            "x": 0, "y": 0, "width": 2560, "height": 36, "pid": 4242
+        }]);
+        let layers: Vec<Layer> = from_value(wire.clone()).unwrap();
+        assert_eq!(layers[0].layer, LayerLevel::Top);
+        assert_eq!(to_value(&layers).unwrap(), wire);
+
+        let create: OutputCreate = from_str(r#"{"width": 1920, "height": 1080}"#).unwrap();
+        assert_eq!((create.name, create.scale), (None, None));
+        assert_eq!(
+            to_value(OutputCreate { name: Some("HEADLESS-2".into()), width: 1280, height: 720, scale: Some(2.0) }).unwrap(),
+            json!({ "name": "HEADLESS-2", "width": 1280, "height": 720, "scale": 2.0 })
+        );
+        assert_eq!(to_value(OutputRef { name: "HEADLESS-2".into() }).unwrap(), json!({ "name": "HEADLESS-2" }));
     }
 
     #[test]
