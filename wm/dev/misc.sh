@@ -1,17 +1,24 @@
 #!/bin/bash
 # What the other sessions leave out (FWM_HOST=host-misc.json, windows at
-# 0.8, vrr 2): variable refresh, the Caps Lock key as Escape, a window that asks for the focus, the
-# pointer left where it is, the blur behind a window and its shadow.
+# 0.8, vrr 2): variable refresh, the Caps Lock key as Escape, a window that
+# asks for the focus, the pointer left where it is, the blur behind a window
+# and its shadow.
 set -u
 . "$(dirname "$0")/lib.sh"
 run=$SHOJI_RUN_DIR
 
 step "vrr 2: asked of the core only while a window is fullscreen; the rig's connector cannot do it, which the core says each time it is asked"
-vrr() { echo "vrr $(ipc outputs.get | jq -c '.[0].vrr'), refused $(grep -c "not vrr_capable" "$SHOJI_RUN_LOG") times"; }
-open full; vrr
-key Super+Shift+f 1; vrr
-key Super+Shift+f 1; vrr
-key Super+q 1
+vrr() { echo "$1: vrr $(ipc outputs.get | jq -c '.[0].vrr'), refused $(grep -c "not vrr_capable" "$SHOJI_RUN_LOG") times"; }
+full() { key Super+Shift+f 1; vrr "$1 fullscreen"; key Super+Shift+f 1; vrr "$1 back"; key Super+q 1; }
+open plain; vrr "a window"; full plain
+
+step "vrr 3 after a reload: only for a fullscreen window that is a game or video, by a rule or by what the client declares"
+sed -i 's/"vrr": 2/"vrr": 3/' "$XDG_CONFIG_HOME/formalwm/host.json"
+printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1.5
+open plain; full plain
+win steam_app_1 > /dev/null; sleep 1.5; full "steam_app_1, a game by its rule"
+win clip --content video > /dev/null; sleep 1.5; full "a client that declares video"
+win album --content photo > /dev/null; sleep 1.5; full "a client that declares photo"
 
 step "caps:escape: the Caps Lock key runs what Escape is bound to"
 ipc bind.escape "{\"name\":\"misc\",\"argv\":[\"sh\",\"-c\",\"echo esc >> $run/esc\"]}" >/dev/null

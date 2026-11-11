@@ -132,6 +132,11 @@ pub fn setup(signals: Signals) {
             let _ = window.foreign_toplevel_id().get();
             enter(move |engine| engine.renamed(window, &title, &app_id));
         });
+        // `vrr` 3 follows what a fullscreen client says it shows.
+        scope.effect(move || {
+            let _ = window.content_type().get();
+            enter(|engine| engine.sync_fullscreen());
+        });
     });
     COMPOSITOR
         .event

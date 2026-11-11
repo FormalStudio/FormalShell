@@ -196,7 +196,7 @@ impl Engine {
     /// After the model changed: everything that follows from it.
     pub fn commit(&mut self) {
         self.scene.sync(&self.model);
-        crate::session::set_fullscreen(self.fullscreen());
+        self.sync_fullscreen();
         self.focus();
         self.present();
         self.kick();
@@ -204,11 +204,23 @@ impl Engine {
         self.publish_workspaces();
     }
 
-    /// By output, the content type its fullscreen window's rule gives it.
+    pub fn sync_fullscreen(&self) {
+        crate::session::set_fullscreen(self.fullscreen());
+    }
+
+    /// By output, the content type of its fullscreen window: the one a rule
+    /// gives it, else the one its client declares.
     fn fullscreen(&self) -> BTreeMap<String, String> {
         let content = |id: &String| {
             let win = self.windows.get(id)?;
-            Some(win.effect.content.clone().unwrap_or_default())
+            let declared = || match win.handle.content_type().get_untracked() {
+                Some(WindowContentType::Photo) => "photo",
+                Some(WindowContentType::Video) => "video",
+                Some(WindowContentType::Game) => "game",
+                None => "",
+            };
+            let ruled = win.effect.content.clone();
+            Some(ruled.unwrap_or_else(|| declared().to_owned()))
         };
         self.model
             .outputs
