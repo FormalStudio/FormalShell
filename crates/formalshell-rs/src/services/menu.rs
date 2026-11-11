@@ -205,6 +205,10 @@ pub enum Ask {
     Base(BaseInputs),
     /// The apps source again, rescanning only when a directory moved.
     Apps(Vec<Record>),
+    /// The apps source again under the launches the last `Apps` carried,
+    /// read when it runs: a copy taken when it was queued would land after
+    /// a newer `Apps` and put the older ranking back.
+    Again,
     /// Run these `when`/`checked` commands, `(id, command, is_when)`.
     Conds(Vec<(String, String, bool)>),
     Binds,
@@ -282,16 +286,19 @@ async fn run(ctx: Ctx) {
             }
             Ask::Rescan => {
                 rescan.store(true, Ordering::Relaxed);
-                let _ = tx.try_send(Ask::Apps(launches_seen.clone()));
+                let _ = tx.try_send(Ask::Again);
             }
             Ask::Scale(k) => {
                 if k != scale {
                     scale = k;
-                    let _ = tx.try_send(Ask::Apps(launches_seen.clone()));
+                    let _ = tx.try_send(Ask::Again);
                 }
             }
-            Ask::Apps(launches) => {
-                launches_seen = launches.clone();
+            a @ (Ask::Apps(_) | Ask::Again) => {
+                if let Ask::Apps(launches) = a {
+                    launches_seen = launches;
+                }
+                let launches = launches_seen.clone();
                 let (scan, rescan) = (scan.clone(), rescan.clone());
                 let done = ctx.pool().run(move || scan.lock().unwrap().apps(&launches, rescan.swap(false, Ordering::Relaxed), scale)).await;
                 if let Some((rows, icons, exec)) = done {
