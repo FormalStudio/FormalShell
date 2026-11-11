@@ -484,6 +484,9 @@ pub struct Surface<R: Role = LayerSurface> {
     mapped: bool,
     /// Whether the owner waits on `mapped` before it animates.
     pub wait_map: bool,
+    /// The frames the owner asks for come from a loop with no end (the
+    /// continuous-motion carve-out), which [`running`] leaves out.
+    pub looping: bool,
     commits: u64,
     callbacks: u64,
     /// When the outstanding frame callback was asked for, and how long the
@@ -535,7 +538,7 @@ pub struct Surface<R: Role = LayerSurface> {
 static RUNNING: Mutex<BTreeMap<&'static str, u32>> = Mutex::new(BTreeMap::new());
 
 /// One surface's place in [`running`]: on from its making until a present
-/// that commits everything and asks for no next frame.
+/// that commits everything and asks for no next frame but a loop's.
 pub struct Clock {
     name: &'static str,
     on: bool,
@@ -687,6 +690,7 @@ impl<R: Role> Surface<R> {
             frame_pending: false,
             mapped: false,
             wait_map: false,
+            looping: false,
             commits: 0,
             callbacks: 0,
             asked: None,
@@ -1046,13 +1050,14 @@ impl<R: Role> Surface<R> {
         // An animation whose frame changed nothing (a card still wholly
         // behind its line) still needs the next callback to carry on.
         let request = animating || (self.wait_map && !self.mapped);
+        let settling = (animating && !self.looping) || (self.wait_map && !self.mapped);
         // A scene that starts out clear still owes the compositor one
         // buffer before the surface can map.
         if self.commits == 0 && !scene.has_damage() && self.raster.is_empty() {
             scene.touch(IRect::new(0, 0, 1, 1));
         }
         if !scene.has_damage() && self.raster.is_empty() && !self.refade {
-            self.clock.set(request);
+            self.clock.set(settling);
             if request && self.commits > 0 {
                 let surface = self.layer.role_surface();
                 surface.frame(qh, FrameCallbackData(surface.clone()));
@@ -1071,7 +1076,7 @@ impl<R: Role> Surface<R> {
             self.audit = audit::reference(scene, self.renderer.scale(), self.renderer.is_gpu());
         }
         self.commit_frame(damage, scene.size, request, qh);
-        self.clock.set(request || !self.raster.is_empty());
+        self.clock.set(settling || !self.raster.is_empty());
     }
 
     pub fn is_gpu(&self) -> bool {

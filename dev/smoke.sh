@@ -1167,8 +1167,9 @@ until_jq() {
 # until_settled [surface...]: until `debug dump`'s `animating` names none
 # of the surfaces (any surface, with none named), 20s at most; the dump
 # in $shot_dir/settled-<pid>.json. A surface counts from its making until
-# a frame commits with no next one asked for, so a card just asked for
-# reads as moving before its first frame.
+# a frame commits with no next one asked for but a loop's (a panel's
+# pulse or travelling chevrons), so a card just asked for reads as moving
+# before its first frame.
 until_settled() {
   local claim='.animating == []' s
   if [ $# -gt 0 ]; then

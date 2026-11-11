@@ -677,6 +677,7 @@ impl Owner for Cards {
                 h.layout(&app.store, theme, &mut app.kit, now);
             }
             let animating = h.animating(now) || h.content_animating(now);
+            h.win.surface.looping = !h.settling(now);
             h.win.present(animating, &qh);
         }
         app.panel_dirty = false;

@@ -146,6 +146,9 @@ pub struct Drawn {
     /// The last node in paint order, for a caller stacking more after it.
     pub last: Option<NodeId>,
     pub animating: bool,
+    /// The part of `animating` that lands (a tween, a rim's blend); the
+    /// rest is a loop with no end, a pulse or a travelling chevron.
+    pub settling: bool,
     /// The next moment something holding still starts moving (a marquee's hold).
     pub wake: Option<Instant>,
 }
@@ -514,6 +517,7 @@ impl Cx<'_> {
         a.set(now, target, ms);
         if a.running(now) {
             self.drawn.animating = true;
+            self.drawn.settling = true;
         }
         a.value(now)
     }
@@ -577,6 +581,7 @@ impl Cx<'_> {
         }
         if a.running(now) {
             self.drawn.animating = true;
+            self.drawn.settling = true;
         }
         lerp(*from, *to, a.value(now).clamp(0.0, 1.0) as f32)
     }
@@ -585,6 +590,7 @@ impl Cx<'_> {
         self.drawn.wake = Some(self.drawn.wake.map_or(at, |w| w.min(at)));
     }
 
+    /// Another frame for a loop with no end; not [`Drawn::settling`].
     pub fn animate(&mut self) {
         self.drawn.animating = true;
     }
@@ -709,7 +715,9 @@ impl Cx<'_> {
     }
 
     pub fn put_rim(&mut self, path: &str, mut rim: crate::paint::rim::Rim) {
-        self.drawn.animating |= rim.running(self.now);
+        let running = rim.running(self.now);
+        self.drawn.animating |= running;
+        self.drawn.settling |= running;
         rim.painted();
         self.ui.rims.insert(path.to_owned(), rim);
     }

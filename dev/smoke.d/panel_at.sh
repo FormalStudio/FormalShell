@@ -15,6 +15,7 @@ panel_at_toggle_path="$shot_dir/panel-at-toggle.txt"
 panel_at_state_path="$shot_dir/panel-at-state.txt"
 panel_at_path="$shot_dir/panel-at.json"
 panel_at_shot_path="$shot_dir/panel-at.png"
+panel_at_dump_path="$shot_dir/panel-at-dump.json"
 
 # The default right region in order, with
 # the cells that open no panel dropped (tray, bell, indicators). This run
@@ -43,8 +44,8 @@ leg_panel_at_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 $ipc call panel toggleAt $n > "$panel_at_toggle_path" 2>&1
-# The power panel never reports rest, even with no power source to draw.
-sleep 2
+until_settled
+$ipc call debug dump > "$panel_at_dump_path" 2>&1
 $ipc call panel state > "$panel_at_state_path" 2>&1
 "$grim_bin" "$panel_at_shot_path" > /dev/null 2>&1
 EOF
@@ -66,6 +67,9 @@ leg_panel_at_assert() {
   fi
   if ! grep -q "^$panel_at_expected$" "$panel_at_state_path"; then
     fail "panel toggleAt $n opened '$(cat "$panel_at_state_path")', expected '$panel_at_expected'"
+  fi
+  if ! "$jq_bin" -e '.animating == []' "$panel_at_dump_path" > /dev/null 2>&1; then
+    fail "panel toggleAt $n never came to rest: $("$jq_bin" -c .animating "$panel_at_dump_path" 2>/dev/null)"
   fi
   if [ ! -f "$panel_at_shot_path" ]; then
     fail "no panel-at screenshot produced"

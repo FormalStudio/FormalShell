@@ -271,6 +271,9 @@ pub struct Host {
     pressed: Option<String>,
     dragging: Option<(String, IRect, f64)>,
     pub wake: Option<Instant>,
+    /// The last draw's content had a tween or a rim still landing, rather
+    /// than only a loop asking for frames.
+    content_settling: bool,
     /// The frame's height, the most the output leaves it and whether the
     /// content was cut to that, as of the last layout.
     pub fit: std::cell::Cell<(f64, f64, bool)>,
@@ -334,6 +337,7 @@ impl Host {
             pressed: None,
             dragging: None,
             wake: None,
+            content_settling: false,
             fit: std::cell::Cell::new((0.0, 0.0, false)),
             name,
             from: Origin::Ipc,
@@ -634,6 +638,7 @@ impl Host {
             (self.win.card.scene.size.h as f64 - s.screen_padding * 2.0).round() as i32,
         )));
         self.wake = None;
+        self.content_settling = false;
         let v = self.view(store, theme, now);
         let head = if self.module.header() { Some(self.header(&v, &s)) } else { None };
         let body = self.module.body(&v);
@@ -646,6 +651,7 @@ impl Host {
             let r = Rect::new(fx + s.panel_inset, fy + vpad, fx + fw - head_end, fy + vpad + head_h);
             let d = self.head.draw(&head, r, Some(clip), alpha, theme, kit, scene, now);
             self.wake = if d.animating { Some(now) } else { d.wake };
+            self.content_settling = d.settling;
             let mut p = Painter::new(scene, &mut self.rule_nodes, Some(clip));
             let (sx, sw) = ((fx + s.panel_inset).round() as i32, (fw - s.panel_inset * 2.0).max(0.0).round() as i32);
             let seam = IRect::new(sx, (fy + f.rule(theme)).round() as i32, sw, theme.border_width.round().max(1.0) as i32);
@@ -678,6 +684,7 @@ impl Host {
         let origin = (fx + pad, top - scroll);
         let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + self.content_h), Some(body_clip), alpha, theme, kit, scene, now);
         self.wake_by(d.wake);
+        self.content_settling |= d.settling;
         // A panel moves the cursor on its own clock too (into a menu once
         // its rows show), not only after a key.
         self.cursor.take(self.module.as_mut(), &self.body.stops);
@@ -726,6 +733,12 @@ impl Host {
     /// Whether the content asks for frames on its own (a marquee, a fade).
     pub fn content_animating(&self, now: Instant) -> bool {
         self.wake.is_some_and(|w| w <= now)
+    }
+
+    /// Whether the frames asked for land somewhere: the card or a tween in
+    /// it moving, not only a loop such as the power flow's chevrons.
+    pub fn settling(&self, now: Instant) -> bool {
+        self.animating(now) || self.content_settling
     }
 
     /// The smallest scroll that shows the cursor row.
