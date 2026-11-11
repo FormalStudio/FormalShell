@@ -346,7 +346,8 @@ pub struct BindEscape {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Bind {
     pub chord: String,
-    /// `SUPER`, `SHIFT`, `CTRL`, `ALT`, in that order.
+    /// Of `SUPER`, `CTRL`, `ALT`, `SHIFT`, `CAPS`, `MOD2`, `MOD3`, `MOD5`. The
+    /// engine binds the first four and lists them in that order.
     pub mods: Vec<String>,
     /// A keysym name, `code:<n>` for a keycode, or a pointer name
     /// (`mouse:272`, `mouse_up`, `mouse_down`).

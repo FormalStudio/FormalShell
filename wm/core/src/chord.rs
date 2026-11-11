@@ -1,5 +1,5 @@
 //! Key chords as the settings write them and the socket lists them:
-//! `SUPER+SHIFT+code:10`. The modifiers are `SUPER`, `SHIFT`, `CTRL`, `ALT`;
+//! `SUPER+SHIFT+code:10`. The modifiers are `SUPER`, `CTRL`, `ALT`, `SHIFT`;
 //! the key is an xkb keysym name, `code:<n>` for a keycode, `mouse:<n>` for
 //! a pointer button, or `mouse_up` and `mouse_down` for the wheel.
 
@@ -80,9 +80,9 @@ impl Chord {
     pub fn mod_names(&self) -> Vec<String> {
         [
             (self.mods.logo, "SUPER"),
-            (self.mods.shift, "SHIFT"),
             (self.mods.ctrl, "CTRL"),
             (self.mods.alt, "ALT"),
+            (self.mods.shift, "SHIFT"),
         ]
         .into_iter()
         .filter(|(held, _)| *held)
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn modifiers_list_in_the_wire_order_whatever_the_file_says() {
         let chord = Chord::parse("alt+Shift+super+Tab").unwrap();
-        assert_eq!(chord.canonical(), "SUPER+SHIFT+ALT+Tab");
+        assert_eq!(chord.canonical(), "SUPER+ALT+SHIFT+Tab");
     }
 
     #[test]
