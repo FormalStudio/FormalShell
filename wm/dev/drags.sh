@@ -40,7 +40,7 @@ sleep 1.3; tape; shot 77-edge; wait "$drag"
 hand glide 14 400 300 wait 1200; tape
 hand glide $(centre src) 300 wait 100 release; sleep 0.8; said
 
-step "let go at the edge without moving on: the core still has the window that was there before the tape moved"
+step "let go at the edge without moving on: the drop is offered to the window the tape brought under the pointer, its own, which takes none"
 hand at $(centre src) press glide 1018 400 300 wait 1200 glide 14 400 300 wait 1200 release; sleep 0.8; tape; said
 
 step "held in the corner the overview opens; held over the next workspace there, the session goes to it"

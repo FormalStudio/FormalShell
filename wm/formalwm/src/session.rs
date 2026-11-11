@@ -198,7 +198,14 @@ fn device_name(name: &str) -> String {
 pub fn setup() {
     COMPOSITOR.output.configure(|context| {
         let settings = engine::settings();
-        let lid_shut = settings.lid_output.is_some() && crate::lid::shut();
+        // The lid output is off while the lid is shut, also at the start
+        // and across a reload: the core keeps the switch's last report.
+        let lid_shut = settings.lid_output.is_some()
+            && COMPOSITOR
+                .input
+                .lid_switch()
+                .get_untracked()
+                .is_some_and(|lid| lid.closed);
         context
             .connected
             .iter()
@@ -290,6 +297,9 @@ pub fn setup() {
         }
     });
 
+    COMPOSITOR
+        .event
+        .on_lid_switch(|_| COMPOSITOR.output.reconfigure());
     COMPOSITOR.event.on_output_change(|change| {
         let added = !change.added.is_empty();
         enter(move |engine| {
@@ -497,7 +507,6 @@ impl Engine {
             .configure(&settings.cursor.theme, settings.cursor.size);
         self.bind_keys();
         self.apply_theme();
-        self.watch_lid();
     }
 
     /// Reads the settings again. A file with a mistake changes nothing.

@@ -145,10 +145,10 @@ impl Engine {
         }
         let options = InputGrabOptions::new()
             .on_key(|event| {
-                if event.state != InputGrabState::Pressed {
-                    return;
-                }
                 let (key, code) = (event.key.clone(), event.keycode);
+                if event.state != InputGrabState::Pressed {
+                    return enter(move |engine| engine.run_release(&key));
+                }
                 let mods = Mods {
                     logo: event.modifiers.logo,
                     shift: event.modifiers.shift,
