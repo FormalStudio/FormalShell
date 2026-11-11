@@ -17,7 +17,7 @@ use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_io::{Async, Timer};
 use futures_lite::{AsyncBufReadExt, AsyncWriteExt, StreamExt, io::BufReader};
@@ -118,7 +118,8 @@ struct Backend {
     /// The live connection's queue of lines, none while there is none.
     out: Option<async_channel::Sender<String>>,
     next_id: u64,
-    pending: HashMap<u64, Ask>,
+    /// Each unanswered request and when it went out.
+    pending: HashMap<u64, (Ask, Instant)>,
     /// The last `theme.set`, sent again on every connect.
     theme: Option<String>,
     /// The last of each published value, so an unchanged one is not sent
@@ -143,8 +144,12 @@ impl Backend {
             return;
         }
         self.next_id += 1;
-        self.pending.insert(self.next_id, ask);
+        self.pending.insert(self.next_id, (ask, Instant::now()));
         self.send(call.line(Some(self.next_id)));
+    }
+
+    fn oldest(&self) -> Option<Instant> {
+        self.pending.values().map(|&(_, at)| at).min()
     }
 
     fn forget(&mut self) {
@@ -162,13 +167,15 @@ pub async fn run(ctx: Ctx, rx: async_channel::Receiver<Command>) {
         eprintln!("shoji: XDG_RUNTIME_DIR is not set");
         return;
     };
-    serve(ctx, rx, path).await
+    serve(ctx, rx, path, ASK_TIMEOUT).await
 }
 
-async fn serve(ctx: Ctx, rx: async_channel::Receiver<Command>, path: PathBuf) {
+/// `answer_within`: how long a request on the live connection may go
+/// unanswered before the connection counts as gone.
+async fn serve(ctx: Ctx, rx: async_channel::Receiver<Command>, path: PathBuf, answer_within: Duration) {
     let shared: Shared = Rc::default();
     ctx.spawn(commands(shared.clone(), rx));
-    connection(ctx, shared, path).await
+    connection(ctx, shared, path, answer_within).await
 }
 
 async fn commands(shared: Shared, rx: async_channel::Receiver<Command>) {
@@ -192,7 +199,7 @@ async fn commands(shared: Shared, rx: async_channel::Receiver<Command>) {
 }
 
 /// The socket, reconnected for as long as the shell runs.
-async fn connection(ctx: Ctx, shared: Shared, path: PathBuf) {
+async fn connection(ctx: Ctx, shared: Shared, path: PathBuf, answer_within: Duration) {
     let mut retry = Backoff::new(RETRY_FIRST, RETRY_MAX);
     let (mut failing, mut connected_once) = (false, false);
     loop {
@@ -224,10 +231,34 @@ async fn connection(ctx: Ctx, shared: Shared, path: PathBuf) {
 
         let mut answered = false;
         let mut lines = BufReader::new(&*stream).lines();
-        while let Some(Ok(line)) = lines.next().await {
-            if receive(&ctx, &shared, &line) == Some(Ask::State) {
-                answered = true;
-                retry.reset();
+        loop {
+            // Woken at the oldest request's deadline, or a timeout from now
+            // to look again at one sent while this read waited.
+            let wake = shared.borrow().oldest().unwrap_or_else(Instant::now) + answer_within;
+            let read = futures_lite::future::or(async { Some(lines.next().await.and_then(Result::ok)) }, async {
+                Timer::at(wake).await;
+                None
+            })
+            .await;
+            match read {
+                Some(Some(line)) => {
+                    if receive(&ctx, &shared, &line) == Some(Ask::State) {
+                        answered = true;
+                        retry.reset();
+                    }
+                }
+                Some(None) => break,
+                // An engine that holds the socket open and answers nothing
+                // is as gone as a closed one.
+                None if shared.borrow().oldest().is_some_and(|at| at.elapsed() >= answer_within) => {
+                    eprintln!("shoji: no answer within {answer_within:?}");
+                    answered = false;
+                    if shared.borrow().pending.values().any(|&(ask, _)| ask == Ask::Outputs) {
+                        ctx.publish(store::Diff::Compositor(Diff::Outputs(Vec::new(), OutputsState::Failed)));
+                    }
+                    break;
+                }
+                None => {}
             }
         }
         eprintln!("shoji: socket closed");
@@ -258,7 +289,7 @@ fn receive(ctx: &Ctx, shared: &Shared, line: &str) -> Option<Ask> {
     let broadcast = match serde_json::from_str(line) {
         Ok(Incoming::Broadcast(broadcast)) => broadcast,
         Ok(Incoming::Answer(answer)) => {
-            let ask = shared.borrow_mut().pending.remove(&answer.id)?;
+            let (ask, _) = shared.borrow_mut().pending.remove(&answer.id)?;
             match answer.outcome {
                 proto::Outcome::Result(result) => match ask {
                     Ask::State => apply_state(ctx, shared, result),

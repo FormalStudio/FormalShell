@@ -20,6 +20,7 @@ use super::*;
 use crate::runtime::{Msg, Publisher, Runtime};
 
 const FIXTURE: &str = include_str!("fixture.json");
+const ANSWER_WITHIN: Duration = Duration::from_millis(400);
 
 #[derive(Default)]
 struct Inner {
@@ -28,18 +29,27 @@ struct Inner {
     state: Value,
 }
 
-/// `slam` takes each connection and closes it at once, answering nothing.
+/// How the fake engine treats a connection.
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+    Answer,
+    /// Takes each connection and closes it at once.
+    Slam,
+    /// Keeps each connection open and answers nothing.
+    Mute,
+}
+
 struct Fake {
     path: PathBuf,
     inner: Arc<Mutex<Inner>>,
     accepted: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
     accept: Option<JoinHandle<()>>,
-    slam: bool,
+    mode: Mode,
 }
 
 impl Fake {
-    fn start(path: &Path, slam: bool) -> Self {
+    fn start(path: &Path, mode: Mode) -> Self {
         let inner = Inner { state: serde_json::from_str(FIXTURE).unwrap(), ..Inner::default() };
         let mut fake = Fake {
             path: path.to_owned(),
@@ -47,7 +57,7 @@ impl Fake {
             accepted: Arc::default(),
             stop: Arc::default(),
             accept: None,
-            slam,
+            mode,
         };
         fake.listen();
         fake
@@ -58,7 +68,7 @@ impl Fake {
         let listener = UnixListener::bind(&self.path).unwrap();
         listener.set_nonblocking(true).unwrap();
         self.stop.store(false, Ordering::SeqCst);
-        let (inner, stop, accepted, slam) = (self.inner.clone(), self.stop.clone(), self.accepted.clone(), self.slam);
+        let (inner, stop, accepted, mode) = (self.inner.clone(), self.stop.clone(), self.accepted.clone(), self.mode);
         self.accept = Some(std::thread::spawn(move || {
             while !stop.load(Ordering::SeqCst) {
                 let Ok((stream, _)) = listener.accept() else {
@@ -66,11 +76,14 @@ impl Fake {
                     continue;
                 };
                 accepted.fetch_add(1, Ordering::SeqCst);
-                if slam {
+                if mode == Mode::Slam {
                     continue;
                 }
                 stream.set_nonblocking(false).unwrap();
                 inner.lock().unwrap().conns.push(stream.try_clone().unwrap());
+                if mode == Mode::Mute {
+                    continue;
+                }
                 let inner = inner.clone();
                 std::thread::spawn(move || answer(stream, inner));
             }
@@ -175,7 +188,7 @@ impl Rig {
         let (commands, rx) = async_channel::unbounded();
         let path = path.to_owned();
         let runtime = Runtime::start(Publisher::new(sender), move |ctx| {
-            ctx.spawn(serve(ctx.clone(), rx, path));
+            ctx.spawn(serve(ctx.clone(), rx, path, ANSWER_WITHIN));
         });
         Rig { event_loop, seen: Seen::default(), commands, _runtime: runtime }
     }
@@ -214,7 +227,7 @@ fn socket(dir: &tempfile::TempDir) -> PathBuf {
 fn follows_the_state_sends_commands_in_order_and_recovers_from_a_restart() {
     let dir = tempfile::tempdir().unwrap();
     let path = socket(&dir);
-    let mut fake = Fake::start(&path, false);
+    let mut fake = Fake::start(&path, Mode::Answer);
     let mut rig = Rig::start(&path);
 
     rig.until("the first state", |s| s.snapshots.last().is_some_and(|s| s.available));
@@ -264,7 +277,7 @@ fn follows_the_state_sends_commands_in_order_and_recovers_from_a_restart() {
 fn a_socket_that_closes_at_once_is_retried_with_a_backoff() {
     let dir = tempfile::tempdir().unwrap();
     let path = socket(&dir);
-    let fake = Fake::start(&path, true);
+    let fake = Fake::start(&path, Mode::Slam);
     let mut rig = Rig::start(&path);
     let started = Instant::now();
     while started.elapsed() < Duration::from_millis(1200) {
@@ -277,10 +290,21 @@ fn a_socket_that_closes_at_once_is_retried_with_a_backoff() {
 }
 
 #[test]
+fn an_engine_that_stops_answering_is_dropped_and_reconnected() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = socket(&dir);
+    let fake = Fake::start(&path, Mode::Mute);
+    let mut rig = Rig::start(&path);
+    rig.until("the compositor published unavailable", |s| !s.snapshots.is_empty());
+    assert!(rig.seen.snapshots.iter().all(|s| !s.available));
+    rig.until("a second connection", |_| fake.accepted.load(Ordering::SeqCst) >= 2);
+}
+
+#[test]
 fn asks_on_a_connection_of_their_own() {
     let dir = tempfile::tempdir().unwrap();
     let path = socket(&dir);
-    let _fake = Fake::start(&path, false);
+    let _fake = Fake::start(&path, Mode::Answer);
     let answer = async_io::block_on(ask(&path, Call::bare(method::BINDS_LIST))).unwrap();
     let binds = model::binds(serde_json::from_value(answer).unwrap());
     assert_eq!((binds[0].chord.as_str(), binds[0].mods.as_slice(), binds[0].args.as_slice()), ("SUPER+Return", ["SUPER"].as_slice(), ["foot".to_owned()].as_slice()));
