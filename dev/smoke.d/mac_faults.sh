@@ -25,13 +25,28 @@
 # window, and SUPER + C leaves its mark. SUPER + H back onto the stub and
 # the session is in `mac` again, SUPER + L and it is out.
 #
+# A reload with the shell gone. Hyprland reloads by itself when its config
+# is saved. Back on the stub and in `mac`, `hyprctl reload` drops the
+# submap's binds and no shell is there to build them again: the include
+# leaves `mac` as it loads, SUPER + L moves focus to the foot window and
+# SUPER + C leaves its mark. Two more reloads and one focus change runs the
+# include's follow as many times as one did before them: a reload does not
+# leave a second pair of handlers behind. The config counts the runs, a
+# line in a file for each read of the submap, which the follow makes once.
+#
+# An ask that arrives late. The reloads left no `mac` submap, so it is built
+# by hand as a shell would have. With the foot window in front the include
+# is told, as the shell would tell it, that the stub is in front and a Mac
+# window: the foot window is not taken for one, the map stays the default
+# one and SUPER + C leaves its mark.
+#
 # The shell back. With no shell the session is put in `mac` over the foot
 # window by hand, which is where a shell that died between a window's focus
-# and its own asking leaves it. The shell started again asks the session out
-# on its first look at the compositor: the map is the default one and
-# SUPER + C leaves its mark. Back on the stub the submap is `mac`, the menu
-# is held again, SUPER + C reaches the stub and SUPER + CTRL + P leaves its
-# mark.
+# and its own asking leaves it. The shell started again
+# asks the session out on its first look at the compositor: the map is the
+# default one and SUPER + C leaves its mark. Back on the stub the submap is
+# `mac`, the menu is held again, SUPER + C reaches the stub and
+# SUPER + CTRL + P leaves its mark.
 #
 # An app that stops answering. The stub is stopped (SIGSTOP) and its File
 # menu asked to open, an AboutToShow it never answers. With focus on the
@@ -52,9 +67,10 @@ mac_faults_log="$shot_dir/mac-faults-stub.log"
 mac_faults_other_log="$shot_dir/mac-faults-other.log"
 mac_faults_marks="$shot_dir/mac-faults-marks.txt"
 mac_faults_again="$shot_dir/mac-faults-again"
+mac_faults_follows="$shot_dir/mac-faults-follows.txt"
 
 leg_mac_faults_timing() {
-  leg_timing 130
+  leg_timing 150
 }
 
 leg_mac_faults_shell() {
@@ -85,6 +101,18 @@ hl.bind("SUPER + H", hl.dsp.focus({ direction = "l" }))
 hl.bind("SUPER + L", hl.dsp.focus({ direction = "r" }))
 hl.bind("SUPER + C", hl.dsp.exec_cmd("sh -c 'echo c >> $mac_faults_marks'"))
 hl.bind("SUPER + CTRL + P", hl.dsp.exec_cmd("sh -c 'echo p >> $mac_faults_marks'"))
+formalshell_faults_loads = (formalshell_faults_loads or 0) + 1
+if not formalshell_faults_submap then
+  formalshell_faults_submap = hl.get_current_submap
+  hl.get_current_submap = function()
+    local file = io.open("$mac_faults_follows", "a")
+    if file then
+      file:write(formalshell_faults_loads, "\n")
+      file:close()
+    end
+    return formalshell_faults_submap()
+  end
+end
 EOF
   local script="$shot_dir/mac-faults-drive.sh"
   local stub="$PWD/dev/mac-stub.py"
@@ -107,6 +135,7 @@ front() { for _ in \$(seq 1 40); do [ "\$(active)" = "\$1" ] && return 0; sleep 
 pid_of() { "$hyprctl_bin" -j clients 2>/dev/null | "\$jq" -r --arg c "\$1" 'first(.[] | select(.class == \$c) | .pid) // empty'; }
 seen() { sleep 0.6; grep -c "\$1" "\$log" > "\$2" 2>/dev/null || true; }
 mark() { sleep 0.6; grep -c "^\$1\\\$" "\$marks" > "\$2" 2>/dev/null || true; }
+follows() { wc -l < "$mac_faults_follows" 2>/dev/null | tr -d '[:space:]'; }
 # end_shell: the shell ended as a session's logout ends it, and gone.
 end_shell() {
   local pid
@@ -148,6 +177,39 @@ in_submap mac "\$m-submap-ended-again.txt"
 "$wtype_bin" -M logo l -m logo
 front formalshell-mac-faults
 in_submap default "\$m-submap-ended-out.txt"
+
+before=\$(follows)
+"$wtype_bin" -M logo h -m logo
+front org.atoll.stub
+in_submap mac "\$m-submap-ended-third.txt"
+sleep 0.5
+echo \$(( \$(follows) - before )) > "\$m-follows-before.txt"
+"$hyprctl_bin" reload > "\$m-reload-ended.txt" 2>&1
+sleep 1
+submap > "\$m-submap-ended-reload.txt"
+"$wtype_bin" -M logo l -m logo
+front formalshell-mac-faults; echo "\$?" > "\$m-left-stub-reload.txt"
+"$wtype_bin" -M logo c -m logo
+mark c "\$m-mark-c-ended-reload.txt"
+"$hyprctl_bin" reload > /dev/null 2>&1
+sleep 1
+"$hyprctl_bin" reload > /dev/null 2>&1
+sleep 1
+before=\$(follows)
+"$wtype_bin" -M logo h -m logo
+front org.atoll.stub
+sleep 0.5
+echo \$(( \$(follows) - before )) > "\$m-follows-after.txt"
+"$wtype_bin" -M logo l -m logo
+front formalshell-mac-faults
+
+stub_address=\$("$hyprctl_bin" -j clients 2>/dev/null | "\$jq" -r 'first(.[] | select(.class == "org.atoll.stub") | .address) // empty')
+"$hyprctl_bin" eval 'formalshell_mac_keys({})' > /dev/null 2>&1
+"$hyprctl_bin" eval "formalshell_mac_focus(true, \"address:\$stub_address\")" > "\$m-late.txt" 2>&1
+sleep 0.5
+submap > "\$m-submap-late.txt"
+"$wtype_bin" -M logo c -m logo
+mark c "\$m-mark-c-late.txt"
 
 "$hyprctl_bin" dispatch 'hl.dsp.submap("mac")' > /dev/null 2>&1
 in_submap mac "\$m-submap-forced.txt"
@@ -237,16 +299,28 @@ leg_mac_faults_assert() {
   is ended-again mac "with the shell gone, focus back on the stub did not put the session in the mac submap"
   is ended-out default "with the shell gone, focus on the foot window a second time left the session in the mac submap"
 
+  is ended-third mac "with the shell gone, focus on the stub a third time did not put the session in the mac submap"
+  is ended-reload default "a reload with the shell gone and the stub in front left the session in a mac submap with no bind in it"
+  [ "$(count "$m-left-stub-reload.txt")" = 0 ] || fail "--mac-faults: SUPER + L did not move focus off the stub after a reload with the shell gone"
+  [ "$(count "$m-mark-c-ended-reload.txt")" = 2 ] || fail "--mac-faults: SUPER + C did not fire over the foot window after a reload with the shell gone (marks $(count "$m-mark-c-ended-reload.txt"))"
+  echo "follow runs for one focus change: $(count "$m-follows-before.txt") before two more reloads, $(count "$m-follows-after.txt") after; config loads seen by a run: $(sort -u "$mac_faults_follows" 2>/dev/null | tr '\n' ' ')"
+  [ "$(count "$m-follows-before.txt")" -ge 1 ] 2>/dev/null || fail "--mac-faults: the include's follow did not run on a focus change (runs $(count "$m-follows-before.txt"))"
+  [ "$(count "$m-follows-after.txt")" = "$(count "$m-follows-before.txt")" ] \
+    || fail "--mac-faults: one focus change ran the include's follow $(count "$m-follows-after.txt") times after two more reloads, $(count "$m-follows-before.txt") before them: a reload left handlers behind"
+
+  is late default "told of the stub while the foot window was in front, the include took the foot window for a Mac window: $(cat "$m-late.txt" 2>/dev/null)"
+  [ "$(count "$m-mark-c-late.txt")" = 3 ] || fail "--mac-faults: SUPER + C did not fire over the foot window after an ask about the stub arrived late (marks $(count "$m-mark-c-late.txt"))"
+
   is forced mac "the session could not be put in the mac submap by hand"
   is back default "the shell started again left the session in the mac submap over the foot window"
   expect_jq "$m-outside.json" '.macKeys | not' "--mac-faults: the shell started again reads the session as in the mac submap over the foot window"
-  [ "$(count "$m-mark-c-back.txt")" = 2 ] || fail "--mac-faults: SUPER + C did not fire over the foot window after the shell came back (marks $(count "$m-mark-c-back.txt"))"
+  [ "$(count "$m-mark-c-back.txt")" = 4 ] || fail "--mac-faults: SUPER + C did not fire over the foot window after the shell came back (marks $(count "$m-mark-c-back.txt"))"
 
   [ "$(count "$m-back-on-stub.txt")" = 0 ] || fail "--mac-faults: SUPER + H did not move focus back onto the stub"
   expect_jq "$m-inside-again.json" '.macKeys and (.titles | length == 4)' "--mac-faults: the shell started again does not hold the stub's menu with the stub in front"
   is again mac "the stub in front of the shell started again did not put the session in the mac submap"
   [ "$(count "$m-super-c-again.txt")" = 2 ] || fail "--mac-faults: SUPER + C did not reach the stub after the shell came back (got $(count "$m-super-c-again.txt"))"
-  [ "$(count "$m-mark-c-again.txt")" = 2 ] || fail "--mac-faults: the window manager's SUPER + C fired over the stub after the shell came back"
+  [ "$(count "$m-mark-c-again.txt")" = 4 ] || fail "--mac-faults: the window manager's SUPER + C fired over the stub after the shell came back"
   [ "$(count "$m-mark-p-again.txt")" = 2 ] || fail "--mac-faults: SUPER + CTRL + P did not fire over the stub after the shell came back (marks $(count "$m-mark-p-again.txt"))"
 
   expect_jq "$m-hung-away.json" '.titles == []' "--mac-faults: the bar still shows the titles of a stub that stopped answering, over the foot window" '{pid, titles: [.titles[].label]}'
@@ -257,7 +331,7 @@ leg_mac_faults_assert() {
   is alone mac "the second stub alone in front did not put the session in the mac submap"
   expect_jq "$m-clients-none.json" '. == []' "--mac-faults: a window was left open for the last step" '[.[] | {class, title}]'
   is none default "with the shell gone and the last Mac window closed, the session stayed in the mac submap"
-  [ "$(count "$m-mark-c-none.txt")" = 3 ] || fail "--mac-faults: SUPER + C did not fire with the shell gone and no window open (marks $(count "$m-mark-c-none.txt"))"
+  [ "$(count "$m-mark-c-none.txt")" = 5 ] || fail "--mac-faults: SUPER + C did not fire with the shell gone and no window open (marks $(count "$m-mark-c-none.txt"))"
   expect_jq "$m-last.json" '.macKeys | not' "--mac-faults: the shell did not come back at the end"
   echo "SMOKE_MAC_FAULTS ok reload rebuilt the submap, the default map came back with the shell gone, back and with no window left, a stub that stopped answering held nothing up"
 }

@@ -706,6 +706,8 @@ last built, to hold against how many you have.
 
 The map follows the window, not the shell: with focus on any other window
 the default map is back, also when the shell has exited or is restarting.
+A config reload with no shell running puts the default map back over a Mac
+window too, until a shell is there to hand it its chords again.
 
 **The dock** is for the pointer and for what a Mac app shows on its dock
 tile, and it is only there while a Mac app has a window. It takes no room:

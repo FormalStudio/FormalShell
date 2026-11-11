@@ -45,7 +45,7 @@ pub fn sync(store: &Store) {
     // window it was last told of.
     let ask = (mac, h.config_reloads);
     if sent.asked.as_ref() != Some(&ask) {
-        compositor::send(Command::MacFocus(ask.0.is_some()));
+        compositor::send(Command::MacFocus(ask.0.is_some(), h.snapshot.focused_window_id.clone()));
         sent.asked = Some(ask);
     }
 }

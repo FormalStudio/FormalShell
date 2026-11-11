@@ -236,8 +236,9 @@ pub enum Command {
     /// The `mac` submap built again for these reserved chords
     /// (`services/mackeys.rs`).
     MacKeys(Vec<String>),
-    /// Into the `mac` submap or out of it.
-    MacFocus(bool),
+    /// Whether the window found in front, none for no window, is a Mac
+    /// window: into the `mac` submap over it or out of it.
+    MacFocus(bool, WindowId),
     /// The pointer hidden or shown on every output, the session's arrival
     /// and departure.
     Cursor { hidden: bool },

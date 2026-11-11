@@ -361,7 +361,7 @@ async fn commands(
                     None => report("eval", Ok(answer)),
                 }
             }
-            Command::MacFocus(on) => eval(&lua::mac_focus(on)).await,
+            Command::MacFocus(on, window) => eval(&lua::mac_focus(on, &window)).await,
             Command::Cursor { hidden } => eval(&lua::cursor(hidden)).await,
             Command::Reload => reload(&ctx, &shared),
             Command::Exit => dispatch(&lua::exit()).await,

@@ -8,8 +8,9 @@
 -- Lua cannot list the binds with their actions, so they are recorded as the
 -- config makes them: load this file before any bind that should keep
 -- working over a Mac window. The names are global because the shell calls
--- them through `hyprctl eval`, and a reload runs this file again in a state
--- that may still hold them.
+-- them through `hyprctl eval`. A reload runs this file again in a new Lua
+-- state: the globals and the `hl.on` handlers of the one before are gone
+-- with its binds (dev/smoke.d/mac_faults.sh counts them).
 formalshell_binds = {}
 if not formalshell_raw then
   formalshell_raw = { bind = hl.bind, unbind = hl.unbind, define_submap = hl.define_submap }
@@ -106,12 +107,27 @@ local function mac_follow(window)
   end
 end
 
--- The shell says whether the window in front is a Mac window.
-function formalshell_mac_focus(on)
+-- The shell says whether the window it found in front, `selector`, is a Mac
+-- window; no selector is no window in front. Focus may have moved since the
+-- shell looked: what it says of a window that is no longer the one in front
+-- is dropped, or that window's answer would land on this one.
+function formalshell_mac_focus(on, selector)
   local window = hl.get_active_window()
+  if selector then
+    local asked = hl.get_window(selector)
+    if not window or not asked or asked.address ~= window.address then
+      return
+    end
+  end
   formalshell_mac_window = on and window and window.address or nil
   mac_follow(window)
 end
+
+-- A reload drops every bind, the submap's with them, and leaves the session
+-- in the submap it was in: with a Mac window in front that is `mac` with no
+-- bind in it and every key dead. Out of it here; a running shell builds the
+-- submap and asks again after each reload.
+mac_follow(nil)
 
 -- Focus moves without the shell saying so when the shell has exited, and
 -- when a window takes focus and gives it back between two of its looks: the

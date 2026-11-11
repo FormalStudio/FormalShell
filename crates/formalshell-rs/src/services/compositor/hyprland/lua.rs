@@ -221,8 +221,12 @@ pub fn mac_recorded(answer: &str) -> Option<u32> {
     answer.rsplit_once(RECORDED)?.1.trim().parse().ok()
 }
 
-pub fn mac_focus(on: bool) -> String {
-    format!("if formalshell_mac_focus then formalshell_mac_focus({on}) end")
+/// The include's `formalshell_mac_focus`: whether `window`, the one the
+/// shell found in front, is a Mac window. The include drops the answer when
+/// another window is in front by the time it arrives.
+pub fn mac_focus(on: bool, window: &WindowId) -> String {
+    let asked = if window.is_empty() { "nil".to_owned() } else { string(&selector(window)) };
+    format!("if formalshell_mac_focus then formalshell_mac_focus({on}, {asked}) end")
 }
 
 /// Showing it goes through the include's `formalshell_arrived` where the
@@ -288,7 +292,8 @@ mod tests {
         assert_eq!(mac_recorded("error: formalshell recorded 41\n"), Some(41));
         assert_eq!(mac_recorded("error: formalshell recorded nil"), None);
         assert_eq!(mac_recorded("ok"), None);
-        assert_eq!(mac_focus(true), "if formalshell_mac_focus then formalshell_mac_focus(true) end");
+        assert_eq!(mac_focus(true, &id("ab")), r#"if formalshell_mac_focus then formalshell_mac_focus(true, "address:0xab") end"#);
+        assert_eq!(mac_focus(false, &id("")), "if formalshell_mac_focus then formalshell_mac_focus(false, nil) end");
         assert_eq!(cursor(true), "hl.config({ cursor = { invisible = true } })");
         assert_eq!(cursor(false), "if formalshell_arrived then formalshell_arrived() else hl.config({ cursor = { invisible = false } }) end");
         assert_eq!(exit(), "hl.dsp.exit()");
