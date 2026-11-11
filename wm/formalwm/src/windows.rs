@@ -30,8 +30,8 @@ pub static FULL: WindowStateKey<bool> = WindowStateKey::new("full", |_| false);
 /// the size it wants.
 pub static FORCE: WindowStateKey<bool> = WindowStateKey::new("force", |_| true);
 
-/// A rule keeps the blur from behind this window.
-pub static NO_BLUR: WindowStateKey<bool> = WindowStateKey::new("no-blur", |_| false);
+/// The desk behind this window is blurred.
+pub static BLUR: WindowStateKey<bool> = WindowStateKey::new("blur", |_| false);
 
 const REST: ManagedTransform = ManagedTransform {
     origin_x: 0.0,
@@ -228,7 +228,7 @@ impl Engine {
         let float_rect = rules::float_rect(&effect, area, None);
         let sized = effect.size.is_some();
         window.state(&FORCE).set(!floating || sized);
-        window.state(&NO_BLUR).set(effect.no_blur.unwrap_or(false));
+        window.state(&BLUR).set(self.blurs(&effect));
         self.model.open(
             NewWindow {
                 id: id.clone(),

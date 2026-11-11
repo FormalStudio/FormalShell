@@ -258,14 +258,13 @@ pub fn serve() -> Option<IpcServer> {
         session::override_output(request);
         Ok(Value::Null)
     });
-    // The core has no outputs without a connector yet.
     server.handle(method::OUTPUTS_CREATE, |value| {
-        params::<proto::OutputCreate>(value)?;
-        Err("outputs.create: the core cannot make an output yet".to_owned())
+        let name = session::create_output(params::<proto::OutputCreate>(value)?)?;
+        serde_json::to_value(proto::OutputRef { name }).map_err(|error| error.to_string())
     });
     server.handle(method::OUTPUTS_REMOVE, |value| {
-        params::<proto::OutputRef>(value)?;
-        Err("outputs.remove: the core cannot remove an output yet".to_owned())
+        session::remove_output(&params::<proto::OutputRef>(value)?.name)?;
+        Ok(Value::Null)
     });
     server.handle(method::THEME_SET, |value| {
         let theme = params::<proto::Theme>(value)?;
@@ -351,9 +350,11 @@ fn outputs() -> Vec<proto::Output> {
                 transform: transform(output.transform),
                 mirror_of: over.mirror.clone().unwrap_or_default(),
                 vrr: false,
+                // An output with no connector lists no modes; it has the one.
                 modes: output
                     .available_modes
                     .iter()
+                    .chain(mode.iter().filter(|_| output.available_modes.is_empty()))
                     .map(|mode| proto::Mode {
                         width: mode.width,
                         height: mode.height,

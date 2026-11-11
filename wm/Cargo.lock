@@ -818,8 +818,12 @@ dependencies = [
  "fs-wm-proto",
  "serde",
  "serde_json",
+ "shojiwm_lib",
  "shojiwm_rs",
+ "smithay",
  "tracing",
+ "wayland-client",
+ "wayland-protocols",
 ]
 
 [[package]]

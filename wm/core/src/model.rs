@@ -3,6 +3,8 @@
 //! operation of the binds and the socket is a method here; nothing in this
 //! file touches the compositor.
 
+use std::collections::BTreeMap;
+
 use crate::{
     geom::Rect,
     tape::{Side, Tape, WinId},
@@ -74,6 +76,8 @@ pub struct Workspace {
     pub name: String,
     pub output: String,
     pub pin: Option<String>,
+    /// The output it was on when that one went; it goes back there.
+    pub from: Option<String>,
     /// From the settings. One opened in the overview is not, and goes when
     /// it is empty and off screen.
     pub named: bool,
@@ -93,6 +97,7 @@ impl Workspace {
             name,
             output: String::new(),
             pin,
+            from: None,
             named,
             tape: Tape::default(),
             floats: Vec::new(),
@@ -234,6 +239,8 @@ pub struct Model {
     pub focused_output: String,
     /// Where `workspace previous` goes.
     pub previous_workspace: Option<WsId>,
+    /// What an output that went was showing, for when it returns.
+    shown: BTreeMap<String, WsId>,
     next_dynamic: u32,
 }
 
@@ -285,18 +292,33 @@ impl Model {
     }
 
     /// The connected, enabled outputs. Each workspace goes to the output it
-    /// is pinned to, stays where it is, or falls to the first output.
+    /// is pinned to, back to the one it left, stays where it is, or falls
+    /// to the first output.
     pub fn set_outputs(&mut self, outputs: Vec<OutputGeo>) {
         let has = |name: &str| outputs.iter().any(|o| o.name == name);
         let first = outputs.first().map(|o| o.name.clone()).unwrap_or_default();
         for ws in &mut self.workspaces {
-            ws.output = match &ws.pin {
-                Some(pin) if has(pin) => pin.clone(),
+            let back = ws.from.clone().filter(|name| has(name));
+            ws.output = match (&ws.pin, back) {
+                (Some(pin), _) if has(pin) => pin.clone(),
+                (_, Some(back)) => back,
                 _ if has(&ws.output) => ws.output.clone(),
-                _ => first.clone(),
+                _ => {
+                    if ws.from.is_none() && !ws.output.is_empty() {
+                        ws.from = Some(ws.output.clone());
+                    }
+                    first.clone()
+                }
             };
+            if ws.from.as_deref() == Some(ws.output.as_str()) {
+                ws.from = None;
+            }
         }
         let old = std::mem::take(&mut self.outputs);
+        for output in old.iter().filter(|o| !has(&o.geo.name)) {
+            self.shown
+                .insert(output.geo.name.clone(), output.active.clone());
+        }
         for geo in outputs {
             let on_output = |id: &str| {
                 self.workspaces
@@ -307,6 +329,7 @@ impl Model {
                 .iter()
                 .find(|o| o.geo.name == geo.name)
                 .map(|o| o.active.clone())
+                .or_else(|| self.shown.remove(&geo.name))
                 .filter(|id| on_output(id));
             let active = kept
                 .or_else(|| geo.default_workspace.clone().filter(|id| on_output(id)))

@@ -3,7 +3,7 @@
 
 use std::{
     cell::RefCell,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
     os::unix::net::UnixStream,
     path::PathBuf,
@@ -50,6 +50,8 @@ pub struct OutputOverride {
 
 thread_local! {
     static OVERRIDES: RefCell<BTreeMap<String, OutputOverride>> = const { RefCell::new(BTreeMap::new()) };
+    /// The outputs `outputs.create` made: the only ones `outputs.remove` takes.
+    static CREATED: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     /// The ext-workspace model as of the last turn; its factory runs inside
     /// turns and cannot read the engine.
     static WORKSPACES: RefCell<RuntimeWorkspaceConfigUpdate> = RefCell::new(RuntimeWorkspaceConfigUpdate::default());
@@ -85,6 +87,58 @@ pub fn override_output(request: proto::OutputSet) {
         }
     });
     COMPOSITOR.output.reconfigure();
+}
+
+/// `outputs.create`. The core puts an output no settings place to the right
+/// of the others at y 0.
+pub fn create_output(request: proto::OutputCreate) -> Result<String, String> {
+    if request.width <= 0 || request.height <= 0 {
+        return Err(format!(
+            "outputs.create: {}x{} is not a size",
+            request.width, request.height
+        ));
+    }
+    let scale = request.scale.unwrap_or(1.0);
+    if scale.is_nan() || scale <= 0.0 {
+        return Err(format!("outputs.create: {scale} is not a scale"));
+    }
+    if let Some(name) = &request.name {
+        let taken = COMPOSITOR.output.get(name).is_some()
+            || CREATED.with(|created| created.borrow().contains(name));
+        if name.is_empty() || taken {
+            return Err(format!(
+                "outputs.create: `{name}` is no name for a new output"
+            ));
+        }
+    }
+    let name = COMPOSITOR.output.create(HeadlessOutputOptions {
+        name: request.name,
+        width: request.width,
+        height: request.height,
+        scale: Some(scale),
+    });
+    CREATED.with(|created| created.borrow_mut().insert(name.clone()));
+    // Over the scale of the settings' rule for a display they do not list.
+    OVERRIDES.with(|overrides| {
+        overrides
+            .borrow_mut()
+            .entry(name.clone())
+            .or_default()
+            .scale = Some(scale);
+    });
+    Ok(name)
+}
+
+/// `outputs.remove`: only what `outputs.create` made.
+pub fn remove_output(name: &str) -> Result<(), String> {
+    if !CREATED.with(|created| created.borrow_mut().remove(name)) {
+        return Err(format!(
+            "outputs.remove: `{name}` is not an output outputs.create made"
+        ));
+    }
+    OVERRIDES.with(|overrides| overrides.borrow_mut().remove(name));
+    COMPOSITOR.output.remove(name);
+    Ok(())
 }
 
 fn facts(output: &WaylandOutputSnapshot) -> OutputFacts<'_> {
@@ -144,6 +198,7 @@ fn device_name(name: &str) -> String {
 pub fn setup() {
     COMPOSITOR.output.configure(|context| {
         let settings = engine::settings();
+        let lid_shut = settings.lid_output.is_some() && crate::lid::shut();
         context
             .connected
             .iter()
@@ -154,7 +209,7 @@ pub fn setup() {
                     .enabled
                     .or(entry.and_then(|entry| entry.enabled))
                     .unwrap_or(true);
-                if !enabled {
+                if !enabled || (lid_shut && settings.is_lid_output(&facts(output))) {
                     return (output.name.clone(), Some(OutputConfig::disabled()));
                 }
                 let scale = over
@@ -416,7 +471,18 @@ impl Engine {
         for win in self.windows.values() {
             win.handle
                 .set_close_animation_duration(self.scene.close_ms() as u64);
+            win.handle
+                .state(&crate::windows::BLUR)
+                .set(self.blurs(&win.effect));
         }
+    }
+
+    /// Hyprland blurs behind what is not opaque: a window the settings or
+    /// its rule make translucent, unless the rule says `no_blur`.
+    pub fn blurs(&self, effect: &formalwm_core::rules::Effect) -> bool {
+        self.theme.chrome.blur
+            && !effect.no_blur.unwrap_or(false)
+            && effect.opacity.unwrap_or(self.settings.opacity) < 1.0
     }
 
     /// The settings that do not come through a factory.
@@ -431,6 +497,7 @@ impl Engine {
             .configure(&settings.cursor.theme, settings.cursor.size);
         self.bind_keys();
         self.apply_theme();
+        self.watch_lid();
     }
 
     /// Reads the settings again. A file with a mistake changes nothing.

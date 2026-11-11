@@ -95,6 +95,31 @@ fn an_unplugged_outputs_workspaces_fall_to_the_first_and_return() {
 }
 
 #[test]
+fn an_output_that_returns_shows_what_it_showed_and_takes_its_workspaces_back() {
+    let mut model = desk();
+    model.set_outputs(vec![
+        output("A", 0.0, 1920.0, 1080.0),
+        output("C", 1920.0, 1280.0, 720.0),
+    ]);
+    let own = model.active_workspace("C").unwrap().id.clone();
+    model.focus_workspace(&own);
+    open(&mut model, "note");
+    model.focus_workspace("3");
+    model.set_outputs(vec![output("C", 1920.0, 1280.0, 720.0)]);
+    assert_eq!(model.workspace("3").unwrap().output, "C");
+    model.set_outputs(Vec::new());
+    assert_eq!(model.focused_workspace().map(|ws| ws.id.as_str()), None);
+    model.set_outputs(vec![
+        output("A", 0.0, 1920.0, 1080.0),
+        output("C", 1920.0, 1280.0, 720.0),
+    ]);
+    assert_eq!(model.active_workspace("A").unwrap().id, "3");
+    assert_eq!(model.active_workspace("C").unwrap().id, own);
+    assert_eq!(place(&model, "note").output, "C");
+    assert_eq!(model.stack("A").len(), 9);
+}
+
+#[test]
 fn an_output_with_no_workspace_of_its_own_gets_one() {
     let mut model = desk();
     model.set_outputs(vec![

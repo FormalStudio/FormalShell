@@ -42,8 +42,13 @@ shot 23-float-moved; key Super+v 1
 
 step "a tile held in the corner opens the overview; held over the next workspace it goes there, and lands there"
 hold Super 5000
+t0=$(date +%s%3N); opened=never
 hand at $(centre two) press glide 2 2 500 wait 1300 glide 512 720 600 wait 700 release & drag=$!
-sleep 1.7; ipc state.get | jq -c '.overview'; shot 24-corner; wait "$drag"; sleep 1.5
+for _ in $(seq 16); do
+  if [ "$(ipc state.get | jq -c '.overview')" = true ]; then opened="$(($(date +%s%3N) - t0)) ms"; break; fi
+  sleep 0.1
+done
+echo "the overview opened $opened after the hand set off for the corner"; shot 24-corner; wait "$drag"; sleep 1.5
 ipc state.get | jq -c '{overview, ws: .focusedWorkspaceId}'; cols | jq -c '[.[] | {app, ws, c}]'; shot 25-sprung
 
 step "the same, let go at once over the next workspace: it lands there and the overview stays"
@@ -82,14 +87,12 @@ ipc window.fullscreen "{\"id\":\"$(id_of five)\"}" >/dev/null; sleep 1.2
 ipc window.close "{\"id\":\"$(id_of four)\"}" >/dev/null; sleep 1; here
 ipc window.focus '{"id":"no-such-window"}' 2>&1
 
-step "outputs.get, scale 2 and back, the outputs the core cannot make yet"
+step "outputs.get, scale 2 and back, an output that is not there"
 ipc outputs.get | jq -c '.[] | {name, enabled, x, y, width, height, refresh, scale, transform, modes: (.modes | length)}'
 ipc outputs.set "{\"name\":\"$out\",\"scale\":2}" >/dev/null; sleep 1.5
 ipc state.get | jq -c '.outputs'; cols | jq -c '[.[] | select(.app == "five") | .rect]'; shot 30-scale2
 ipc outputs.set "{\"name\":\"$out\",\"scale\":1}" >/dev/null; sleep 1.5
 ipc state.get | jq -c '.outputs'; cols | jq -c '[.[] | select(.app == "five") | .rect]'
-ipc outputs.create '{"width":1280,"height":720}' 2>&1
-ipc outputs.remove '{"name":"HEADLESS-2"}' 2>&1
 ipc outputs.set '{"name":"nope","scale":2}' 2>&1
 
 step "binds from a reloaded file: one that repeats, one that does not, one on release; bind.escape"
@@ -114,4 +117,4 @@ step "the log, then session.exit"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx\|unknown key .code:" | cut -c1-300 | tail -12
 ipc session.exit; sleep 2
 test -S "$SHOJI_IPC_SOCKET" && echo "the socket is still there" || echo "the socket is gone"
-pgrep -u "$USER" -c formalwm
+echo "formalwm processes left: $(pgrep -u "$USER" -c formalwm)"
