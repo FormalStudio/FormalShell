@@ -1185,7 +1185,10 @@ fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interact
     let knob = interactive.then(|| (t.box_style(Role::TrackKnob, None), t.metric(Role::TrackKnob, "size")));
     let inset = knob.as_ref().map_or(0.0, |(_, size)| size / 2.0);
     let travel = (ri.w as f64 - inset * 2.0).max(0.0);
-    let w = cx.tween(&format!("{path}.fill"), inset + travel * value.clamp(0.0, 1.0), Clock::SpatialFast);
+    // The fill paints whole pixels, so the target is the pixel it lands
+    // on: a value read off the clock at every draw (the calendar's year)
+    // would otherwise retarget the tween each frame and never let it land.
+    let w = cx.tween(&format!("{path}.fill"), (inset + travel * value.clamp(0.0, 1.0)).round(), Clock::SpatialFast);
     let alpha = cx.alpha;
     let mut p = cx.painter(path);
     boxes::paint(&mut p, ri, &groove, radius, alpha, 0.0);
