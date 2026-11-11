@@ -11,7 +11,7 @@ wm='fwm/Developer/ecosystem/FormalShell-wt/shoji/wm'
 rsync -a "$here/dev/" "$guest:$wm/dev/"
 rsync -a "$here/example/" "$guest:$wm/example/"
 status=0
-"$sdk/dev/rig/shoji-rig" "FWM_TIMEOUT=${FWM_TIMEOUT:-240} FWM_SHELL=${FWM_SHELL:-} FWM_HOST=${FWM_HOST:-} bash $wm/dev/guest.sh ${1:-session.sh}" || status=$?
+"$sdk/dev/rig/shoji-rig" "FWM_TIMEOUT=${FWM_TIMEOUT:-240} FWM_SHELL=${FWM_SHELL:-} FWM_HOST=${FWM_HOST:-} FWM_TIMING=${FWM_TIMING:-} FWM_KEYS=${FWM_KEYS:-} bash $wm/dev/guest.sh ${1:-session.sh}" || status=$?
 run=$(ssh "$guest" cat fwm-last-run)
 mkdir -p "$here/target/rig"
 rsync -a --delete --include '*.png' --include 'log/***' --exclude '*' "$guest:$run/" "$here/target/rig/"

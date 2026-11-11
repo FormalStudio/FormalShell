@@ -234,7 +234,7 @@ impl Engine {
                 id: id.clone(),
                 title,
                 app_id,
-                pid: 0,
+                pid: window.pid().map_or(0, i64::from),
                 size: None,
             },
             Placement {
@@ -316,18 +316,26 @@ impl Engine {
         if ms > 0 {
             let rect = window.rect();
             let (dw, dh) = (rect.width * (1.0 - POP_OUT), rect.height * (1.0 - POP_OUT));
-            let [x1, y1, x2, y2] = self.theme.chrome.motion.families.effects_fast.curve;
-            let easing = cubic_bezier(x1, y1, x2, y2);
+            // `windowsOut` and `fadeOut`: the shrink rides spatialFast for
+            // as far as the fade on effectsFast lets it be seen.
+            let families = self.theme.chrome.motion.families;
+            let curve = |[x1, y1, x2, y2]: [f64; 4]| cubic_bezier(x1, y1, x2, y2);
             window.schedule_animation(
                 ManagedAnimation::new("close")
                     .rect(
                         Some(Rect::new(0.0, 0.0, 0.0, 0.0)),
                         Rect::new(dw / 2.0, dh / 2.0, -dw, -dh),
-                        ms,
-                        easing,
+                        families.spatial_fast.ms as u64,
+                        curve(families.spatial_fast.curve),
                         AnimationMode::Add,
                     )
-                    .opacity(Some(1.0), 0.0, ms, easing, AnimationMode::Multiply),
+                    .opacity(
+                        Some(1.0),
+                        0.0,
+                        ms,
+                        curve(families.effects_fast.curve),
+                        AnimationMode::Multiply,
+                    ),
             );
         }
         self.forget(&id);

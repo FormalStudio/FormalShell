@@ -4,7 +4,7 @@
 //!   fwm-drag source > "$SHOJI_RUN_DIR/drag.log"
 //!
 //! `fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed]`. It prints what
-//! becomes of each drag: `sent` when the target asks for the text,
+//! becomes of each drag, which carries an orange square for its icon: `sent` when the target asks for the text,
 //! `dropped`, `finished`, `cancelled`, `enter` when the pointer comes over
 //! it, and `configure WxH` for each size the compositor asks of it. An empty APP_ID or TITLE sets none,
 //! and `--fixed` allows no other size, which is how a dialog looks to the
@@ -37,6 +37,9 @@ struct Source {
     closed: bool,
     failed: Option<String>,
 }
+
+/// The side of the drag's icon, in pixels.
+const ICON: u32 = 32;
 
 impl Dispatch<wl_registry::WlRegistry, ()> for Source {
     fn event(
@@ -172,9 +175,13 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Source {
             } => serial,
             _ => return,
         };
-        let (Some(data), Some(device), Some(surface)) =
-            (&source.data, &source.device, &source.surface)
-        else {
+        let (Some(data), Some(device), Some(surface), Some(compositor), Some(shm)) = (
+            &source.data,
+            &source.device,
+            &source.surface,
+            &source.compositor,
+            &source.shm,
+        ) else {
             return;
         };
         let offer = data.create_data_source(queue, ());
@@ -183,7 +190,16 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Source {
         offer.set_actions(
             wl_data_device_manager::DndAction::Copy | wl_data_device_manager::DndAction::Move,
         );
-        device.start_drag(Some(&offer), surface, None, serial);
+        let icon = compositor.create_surface(queue, ());
+        device.start_drag(Some(&offer), surface, Some(&icon), serial);
+        match fwm_hand::solid(shm, queue, (ICON, ICON), 0xffe0_a020) {
+            Ok(buffer) => {
+                icon.attach(Some(&buffer), 0, 0);
+                icon.damage_buffer(0, 0, ICON as i32, ICON as i32);
+                icon.commit();
+            }
+            Err(error) => source.failed = Some(error.to_string()),
+        }
     }
 }
 

@@ -111,6 +111,9 @@ impl Engine {
         let open = open.unwrap_or(!self.overview.open);
         self.overview.held = false;
         self.overview.progress.target = if open { 1.0 } else { 0.0 };
+        if !self.theme.chrome.motion.enabled {
+            self.overview.progress.jump(self.overview.progress.target);
+        }
         if open != self.overview.open {
             self.overview.open = open;
             self.overview.press = None;
@@ -145,14 +148,14 @@ impl Engine {
                 if event.state != InputGrabState::Pressed {
                     return;
                 }
-                let key = event.key.clone();
+                let (key, code) = (event.key.clone(), event.keycode);
                 let mods = Mods {
                     logo: event.modifiers.logo,
                     shift: event.modifiers.shift,
                     ctrl: event.modifiers.ctrl,
                     alt: event.modifiers.alt,
                 };
-                enter(move |engine| engine.overview_key(&key, mods));
+                enter(move |engine| engine.overview_key(&key, code, mods));
             })
             .on_pointer_motion(|event| {
                 let at = (event.position.x, event.position.y);
@@ -186,25 +189,23 @@ impl Engine {
     }
 
     /// Takes the input an open overview should have and has not: after a
-    /// drag that kept it, or a reload that ended the grab. On a timer: a
-    /// grab asked for inside the core's event for the end of a window move
-    /// stops the compositor for good.
+    /// drag that kept it, or a reload that ended the grab.
     pub fn regrab_overview(&mut self) {
-        set_timeout(1.0, || {
-            enter(|engine| {
-                let active = |grab: &InputGrab| grab.is_active();
-                if engine.overview.grab.as_ref().is_some_and(active) {
-                    return;
-                }
-                engine.overview.grab = None;
-                if engine.overview.open {
-                    engine.grab_overview();
-                }
-            })
-        });
+        if self
+            .overview
+            .grab
+            .as_ref()
+            .is_some_and(InputGrab::is_active)
+        {
+            return;
+        }
+        self.overview.grab = None;
+        if self.overview.open {
+            self.grab_overview();
+        }
     }
 
-    fn overview_key(&mut self, key: &str, mods: Mods) {
+    fn overview_key(&mut self, key: &str, code: u32, mods: Mods) {
         let plain = mods == Mods::default();
         let moved = match key {
             "Escape" | "Return" if plain => return self.set_overview(Some(false)),
@@ -212,7 +213,7 @@ impl Engine {
             "Down" if plain => self.model.focus_workspace_relative(1),
             "Left" if plain => self.model.focus_column(Side::Prev),
             "Right" if plain => self.model.focus_column(Side::Next),
-            _ => return self.run_chord(key, mods),
+            _ => return self.run_chord(key, code, mods),
         };
         if moved {
             self.commit();

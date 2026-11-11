@@ -208,10 +208,13 @@ impl Engine {
         self.publish_workspaces();
     }
 
-    /// Gives the keyboard to the window the model has focused.
-    fn focus(&mut self) {
+    /// Gives the keyboard to the window the model has focused. Not while
+    /// data is dragged: a client that gains the keyboard is sent the
+    /// selection, and foot drops the drag's offer for it, so the keyboard
+    /// follows once the drag has ended.
+    pub fn focus(&mut self) {
         let want = self.model.focused_window().cloned();
-        if want == self.asked_focus {
+        if want == self.asked_focus || self.hold.data_drag {
             return;
         }
         self.asked_focus = want.clone();

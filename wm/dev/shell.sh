@@ -10,6 +10,7 @@ ipc state.get | jq -c '{cursorHidden, chrome}'
 step "two terminals under the bar"
 for app in one two; do foot -a "$app" >/dev/null 2>&1 & sleep 1.5; done
 ipc state.get | jq -c '[.windows[] | {app: .appId, rect: (.rect | [.x, .y, .width, .height])}]'; shot 40-shell
+ipc state.get | jq -r '.windows[] | "\(.appId) \(.pid)"' | while read -r app pid; do echo "$app: pid $pid is $(cat "/proc/$pid/comm")"; done
 step "the overview, and Super+1 to 3 by keycode"
 key Super+o 1.5; shot 41-shell-overview; key Escape 1.2
 key Super+code:11 1; ipc state.get | jq -c '.focusedWorkspaceId'

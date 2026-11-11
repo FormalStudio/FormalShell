@@ -17,11 +17,9 @@ use crate::{
 };
 
 /// Hyprland's `popin`: an unstyled `windows` leaf opens a window from a
-/// point five pixels across at its centre, `popin 90%` closes it to that
-/// share of its size.
+/// point five pixels across at its centre.
 const OPEN_FROM: f64 = 0.0;
 const OPEN_SIDE: f64 = 5.0;
-const CLOSE_TO: f64 = 0.9;
 
 /// A pixel in the units of a stack position or a scale, near enough: both
 /// are fractions of something about a thousand pixels across.
@@ -40,7 +38,6 @@ struct Actor {
     dh: Spring,
     pop: Spring,
     presence: Tween,
-    closing: bool,
 }
 
 /// One window as drawn this frame.
@@ -62,7 +59,6 @@ pub struct Visual {
     /// How many workspaces below the one its output shows its own sits, as
     /// drawn: 0.5 halfway through a switch. 0 for what rides no stack.
     pub lane: f64,
-    pub closing: bool,
     /// At its place with nothing left to play.
     pub settled: bool,
 }
@@ -183,7 +179,7 @@ impl Scene {
                 .map(|o| o.geo.rect)
                 .unwrap_or_default();
             match self.actors.get(&place.id) {
-                Some(actor) if !actor.closing => {
+                Some(actor) => {
                     let before = self.drawn(actor);
                     let mut next = actor.clone();
                     next.place = place.clone();
@@ -204,7 +200,7 @@ impl Scene {
                     }
                     self.actors.insert(place.id.clone(), next);
                 }
-                _ => {
+                None => {
                     let mut pop = Spring::at(OPEN_FROM);
                     pop.target = 1.0;
                     let mut presence = Tween::at(0.0);
@@ -221,34 +217,20 @@ impl Scene {
                             dh: Spring::at(0.0),
                             pop,
                             presence,
-                            closing: false,
                         },
                     );
                 }
             }
         }
-        // A window the model dropped without `close` was never shown again.
         self.actors
-            .retain(|id, actor| actor.closing || layout.iter().any(|place| &place.id == id));
+            .retain(|id, _| layout.iter().any(|place| &place.id == id));
         if !self.enabled {
             self.finish();
         }
     }
 
-    /// Starts a window's way out; it stays in the scene until it has faded.
-    pub fn close(&mut self, id: &str) {
-        let families = self.families;
-        if let Some(actor) = self.actors.get_mut(id) {
-            actor.closing = true;
-            actor.pop.target = CLOSE_TO;
-            actor.presence.retarget(0.0, &families.effects_fast);
-        }
-        if !self.enabled {
-            self.actors.remove(id);
-        }
-    }
-
-    /// How long a closing window stays drawn, in milliseconds.
+    /// How long the compositor keeps a closed window's last picture, in
+    /// milliseconds: Hyprland drops it when `fadeOut` has run.
     pub fn close_ms(&self) -> f64 {
         if self.enabled {
             self.families.effects_fast.ms
@@ -262,7 +244,6 @@ impl Scene {
         for spring in self.scroll.values_mut().chain(self.stack.values_mut()) {
             spring.jump(spring.target);
         }
-        self.actors.retain(|_, actor| !actor.closing);
         for actor in self.actors.values_mut() {
             for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
                 spring.jump(0.0);
@@ -279,9 +260,7 @@ impl Scene {
             return;
         }
         let effects = self.families.effects;
-        if let Some(actor) = self.actors.get_mut(id)
-            && !actor.closing
-        {
+        if let Some(actor) = self.actors.get_mut(id) {
             actor.pop = Spring::at(OPEN_FROM);
             actor.pop.target = 1.0;
             actor.presence = Tween::at(0.0);
@@ -358,37 +337,26 @@ impl Scene {
 
     pub fn step(&mut self, dt: f64) {
         let spatial = self.spatial();
-        let fast = SpringParams::from_family(&self.families.spatial_fast);
         for spring in self.scroll.values_mut() {
             spring.step(spatial, dt);
         }
         for spring in self.stack.values_mut() {
             spring.step_in(spatial, dt, UNIT);
         }
-        let out = self.families.effects_fast;
         for actor in self.actors.values_mut() {
             for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
                 spring.step(spatial, dt);
             }
-            let params = if actor.closing { fast } else { spatial };
-            actor.pop.step_in(params, dt, UNIT);
+            actor.pop.step_in(spatial, dt, UNIT);
             actor.presence.step(dt);
         }
-        self.actors
-            .retain(|_, actor| !(actor.closing && actor.presence.resting(&out)));
     }
 
     fn settled(&self, actor: &Actor) -> bool {
-        let family = if actor.closing {
-            &self.families.effects_fast
-        } else {
-            &self.families.effects
-        };
-        !actor.closing
-            && [actor.dx, actor.dy, actor.dw, actor.dh, actor.pop]
-                .iter()
-                .all(Spring::resting)
-            && actor.presence.resting(family)
+        [actor.dx, actor.dy, actor.dw, actor.dh, actor.pop]
+            .iter()
+            .all(Spring::resting)
+            && actor.presence.resting(&self.families.effects)
     }
 
     /// Whether another frame would differ from this one.
@@ -412,12 +380,7 @@ impl Scene {
         let side = |full: f64| (full * pop).max(OPEN_SIDE.min(full));
         let (w, h) = (side(drawn.w), side(drawn.h));
         let rect = Rect::new(cx - w / 2.0, cy - h / 2.0, w, h);
-        let family = if actor.closing {
-            &self.families.effects_fast
-        } else {
-            &self.families.effects
-        };
-        let opacity = actor.presence.value(family).clamp(0.0, 1.0);
+        let opacity = actor.presence.value(&self.families.effects).clamp(0.0, 1.0);
         let springs_rest = self
             .scroll
             .values()
@@ -437,7 +400,6 @@ impl Scene {
                 Layer::Pinned | Layer::Overlay => 0.0,
                 _ => actor.stack_index - self.stack_of(&actor.place.output),
             },
-            closing: actor.closing,
             settled: springs_rest && self.settled(actor),
         }
     }

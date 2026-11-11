@@ -3,12 +3,6 @@
 # stacks, zen, the nine workspaces and the wheel.
 set -u
 . "$(dirname "$0")/lib.sh"
-tape() {
-  ipc state.get | jq -c --arg ws "${1:-1}" '[.windows[] | select(.workspaceId == $ws)
-    | {app: .appId, c: .column, r: .row, fl: .floating, x: .rect.x, y: .rect.y, w: .rect.width, h: .rect.height}] | sort_by(.c, .r) | .[]
-    | "\(.app) c\(.c) r\(.r)\(if .fl then " float" else "" end) [\(.x),\(.y) \(.w)x\(.h)]"' | tr '\n' ' '; echo
-}
-open() { for app in "$@"; do foot -a "$app" >/dev/null 2>&1 & sleep 1.2; done; }
 ws() { ipc state.get | jq -r '.focusedWorkspaceId'; }
 zen() { ipc state.get | jq -c '[.workspaces[] | select(.zen != null) | {id, zen: .zen[0:6]}]'; }
 
