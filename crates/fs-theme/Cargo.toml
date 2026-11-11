@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 fs-js = { path = "../fs-js" }
 fs-types = { path = "../fs-types" }
+fs-wm-proto = { path = "../fs-wm-proto" }
 chrono = "0.4"
 regex = "1"
 serde = { version = "1", features = ["derive"] }

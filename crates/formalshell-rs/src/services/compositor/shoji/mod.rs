@@ -1,6 +1,6 @@
 //! The ShojiWM backend: FormalShell's engine answers on one
-//! newline-delimited JSON socket, the wire in [`proto`] (the 2026-11-11
-//! shoji spec, section 3). One connection is held for the shell's life:
+//! newline-delimited JSON socket, the wire in [`fs_wm_proto`] (the
+//! 2026-11-11 shoji spec, section 3). One connection is held for the shell's life:
 //! `state.get` once it is up, then every `state.changed` broadcast, and
 //! every write down it in order. The socket going away (the compositor
 //! restarting, a broken engine) is the compositor unavailable until it
@@ -8,7 +8,6 @@
 //! their own, so any thread can await them.
 
 mod model;
-mod proto;
 #[cfg(test)]
 mod tests;
 
@@ -24,12 +23,16 @@ use async_io::{Async, Timer};
 use futures_lite::{AsyncBufReadExt, AsyncWriteExt, StreamExt, io::BufReader};
 use fs_system::display::outputs::{Color, Output};
 use fs_system::keyboard::Layout;
+use fs_info::notifications::Urgency;
 use fs_types::{Backoff, Bind};
+use fs_wm_proto::{self as proto, event, method};
+use serde::Deserialize;
 use serde_json::Value;
 
-use self::proto::Method;
+use self::model::Call;
 use super::{Command, Diff, Gaps, OutputsState, Snapshot};
 use crate::runtime::Ctx;
+use crate::services::notifications::{self, Op};
 use crate::store;
 
 /// The wait before the next attempt at a socket that is gone or that
@@ -45,11 +48,12 @@ pub fn session() -> bool {
     std::env::var_os(CONTROL_ENV).is_some_and(|v| !v.is_empty())
 }
 
-/// `shojiwm_rs::ipc::default_socket_path()`. `$SHOJIWM_SOCKET` names the
-/// core's own one-line socket beside it, not this one.
+/// The JSON socket, under the runtime directory the shell trusts.
+/// `$SHOJIWM_SOCKET` names the core's own one-line socket beside it.
 fn socket_path() -> Option<PathBuf> {
-    let display = std::env::var("WAYLAND_DISPLAY").ok().filter(|d| !d.is_empty()).unwrap_or_else(|| "wayland-0".into());
-    Some(crate::paths::session_runtime()?.join(format!("shojiwm-{display}.sock")))
+    let runtime = crate::paths::session_runtime()?;
+    let display = std::env::var("WAYLAND_DISPLAY").ok().filter(|d| !d.is_empty());
+    Some(proto::socket_path(Some(&runtime.to_string_lossy()), display.as_deref()).into())
 }
 
 pub fn instance() -> Option<String> {
@@ -58,33 +62,42 @@ pub fn instance() -> Option<String> {
 
 pub async fn binds() -> Result<Vec<Bind>, ()> {
     let path = socket_path().ok_or(())?;
-    let answer = ask(&path, Method::BindsList).await.map_err(|err| eprintln!("shoji: binds.list: {err}"))?;
+    let answer = ask(&path, Call::bare(method::BINDS_LIST)).await.map_err(|err| eprintln!("shoji: binds.list: {err}"))?;
     serde_json::from_value::<Vec<proto::Bind>>(answer).map(model::binds).map_err(|err| eprintln!("shoji: binds.list: {err}"))
 }
 
 pub async fn cursor_pos() -> Option<(f64, f64)> {
-    let point: proto::Point = serde_json::from_value(ask(&socket_path()?, Method::CursorPos).await.ok()?).ok()?;
+    let point: proto::Point = serde_json::from_value(ask(&socket_path()?, Call::bare(method::CURSOR_POS)).await.ok()?).ok()?;
     Some((point.x, point.y))
 }
 
 /// What [`Command::SetOutputColor`] sends: the request itself.
 pub fn color_request(row: &Output, color: &Color) -> Value {
-    let set = proto::OutputsSet { name: row.name.clone(), color: Some(model::color(color)), ..proto::OutputsSet::default() };
-    serde_json::to_value(proto::Request { id: None, method: Method::OutputsSet(set) }).unwrap_or_default()
+    let set = proto::OutputSet { name: row.name.clone(), color: Some(model::color(color)), ..proto::OutputSet::default() };
+    serde_json::to_value(Call::with(method::OUTPUTS_SET, set).request(None)).unwrap_or_default()
+}
+
+/// One line from the engine.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Incoming {
+    Answer(proto::Answer<Value>),
+    Broadcast(proto::Broadcast<Value>),
 }
 
 /// One request on a connection of its own, its answer or its error.
-async fn ask(path: &Path, method: Method) -> io::Result<Value> {
+async fn ask(path: &Path, call: Call) -> io::Result<Value> {
     let stream = Async::<UnixStream>::connect(path).await?;
-    (&stream).write_all(proto::line(Some(1), method).as_bytes()).await?;
+    (&stream).write_all(call.line(Some(1)).as_bytes()).await?;
     let answer = async {
         let mut lines = BufReader::new(&stream).lines();
         while let Some(line) = lines.next().await {
-            let msg: proto::Message = serde_json::from_str(&line?).unwrap_or_default();
-            if msg.id == Some(1) {
-                return match msg.error {
-                    Some(err) => Err(io::Error::other(err)),
-                    None => Ok(msg.result.unwrap_or(Value::Null)),
+            if let Ok(Incoming::Answer(answer)) = serde_json::from_str(&line?)
+                && answer.id == 1
+            {
+                return match answer.outcome {
+                    proto::Outcome::Result(result) => Ok(result),
+                    proto::Outcome::Error(err) => Err(io::Error::other(err)),
                 };
             }
         }
@@ -119,7 +132,7 @@ struct Backend {
     gaps: Option<Gaps>,
     border: Option<Option<[f32; 3]>>,
     blur: Option<bool>,
-    outputs_key: Vec<(String, bool, i64, i64, i64, i64)>,
+    outputs_key: Vec<(String, bool, i32, i32, i32, i32)>,
 }
 
 impl Backend {
@@ -129,13 +142,13 @@ impl Backend {
         }
     }
 
-    fn ask(&mut self, ask: Ask, method: Method) {
+    fn ask(&mut self, ask: Ask, call: &Call) {
         if self.out.is_none() {
             return;
         }
         self.next_id += 1;
         self.pending.insert(self.next_id, ask);
-        self.send(proto::line(Some(self.next_id), method));
+        self.send(call.line(Some(self.next_id)));
     }
 
     fn forget(&mut self) {
@@ -164,20 +177,20 @@ async fn serve(ctx: Ctx, rx: async_channel::Receiver<Command>, path: PathBuf) {
 
 async fn commands(shared: Shared, rx: async_channel::Receiver<Command>) {
     while let Ok(command) = rx.recv().await {
-        let Some(method) = model::method(&command) else { continue };
+        let Some(call) = model::method(&command) else { continue };
         let mut b = shared.borrow_mut();
-        match method {
-            Method::ThemeSet(_) => {
-                let line = proto::line(None, method);
+        match call.method {
+            method::THEME_SET => {
+                let line = call.line(None);
                 b.send(line.clone());
                 b.theme = Some(line);
             }
-            Method::OutputsGet => b.ask(Ask::Outputs, method),
-            Method::OutputsSet(_) => {
-                b.send(proto::line(None, method));
-                b.ask(Ask::Outputs, Method::OutputsGet);
+            method::OUTPUTS_GET => b.ask(Ask::Outputs, &call),
+            method::OUTPUTS_SET => {
+                b.send(call.line(None));
+                b.ask(Ask::Outputs, &Call::bare(method::OUTPUTS_GET));
             }
-            method => b.send(proto::line(None, method)),
+            _ => b.send(call.line(None)),
         }
     }
 }
@@ -207,7 +220,7 @@ async fn connection(ctx: Ctx, shared: Shared, path: PathBuf) {
         {
             let mut b = shared.borrow_mut();
             b.out = Some(out);
-            b.ask(Ask::State, Method::StateGet);
+            b.ask(Ask::State, &Call::bare(method::STATE_GET));
             if let Some(theme) = b.theme.clone() {
                 b.send(theme);
             }
@@ -246,35 +259,46 @@ async fn writer(stream: Rc<Async<UnixStream>>, lines: async_channel::Receiver<St
 
 /// One line off the socket. Returns which ask it answered.
 fn receive(ctx: &Ctx, shared: &Shared, line: &str) -> Option<Ask> {
-    let msg: proto::Message = match serde_json::from_str(line) {
-        Ok(msg) => msg,
+    let broadcast = match serde_json::from_str(line) {
+        Ok(Incoming::Broadcast(broadcast)) => broadcast,
+        Ok(Incoming::Answer(answer)) => {
+            let ask = shared.borrow_mut().pending.remove(&answer.id)?;
+            match answer.outcome {
+                proto::Outcome::Result(result) => match ask {
+                    Ask::State => apply_state(ctx, shared, result),
+                    Ask::Outputs => apply_outputs(ctx, result),
+                },
+                proto::Outcome::Error(err) => {
+                    eprintln!("shoji: {ask:?}: {err}");
+                    if ask == Ask::Outputs {
+                        ctx.publish(store::Diff::Compositor(Diff::Outputs(Vec::new(), OutputsState::Failed)));
+                    }
+                    return None;
+                }
+            }
+            return Some(ask);
+        }
         Err(err) => {
             eprintln!("shoji: unreadable line: {err}");
             return None;
         }
     };
-    if let Some(id) = msg.id {
-        let ask = shared.borrow_mut().pending.remove(&id)?;
-        if let Some(err) = msg.error {
-            eprintln!("shoji: {ask:?}: {err}");
-            if ask == Ask::Outputs {
-                ctx.publish(store::Diff::Compositor(Diff::Outputs(Vec::new(), OutputsState::Failed)));
-            }
-            return None;
-        }
-        let result = msg.result.unwrap_or(Value::Null);
-        match ask {
-            Ask::State => apply_state(ctx, shared, result),
-            Ask::Outputs => apply_outputs(ctx, result),
-        }
-        return Some(ask);
-    }
-    match msg.event.as_deref() {
-        Some("state.changed") => apply_state(ctx, shared, msg.payload.unwrap_or(Value::Null)),
-        Some("config.reloaded") => ctx.publish(store::Diff::Compositor(Diff::ConfigReloaded)),
+    match broadcast.event.as_str() {
+        event::STATE_CHANGED => apply_state(ctx, shared, broadcast.payload),
+        event::CONFIG_RELOADED => ctx.publish(store::Diff::Compositor(Diff::ConfigReloaded)),
+        event::CONFIG_FAILED => config_failed(ctx, broadcast.payload),
         _ => {}
     }
     None
+}
+
+/// A refused settings file, toasted like any failed operation: the
+/// running settings stand, so nothing else changes.
+fn config_failed(ctx: &Ctx, payload: Value) {
+    let error = serde_json::from_value::<proto::ConfigFailed>(payload).map_or_else(|err| format!("unreadable report: {err}"), |f| f.error);
+    eprintln!("shoji: settings refused: {error}");
+    let op = Op::Notify("Window manager settings refused".into(), error, Urgency::Critical);
+    ctx.publish(store::Diff::Notifications(notifications::Diff::Op(op)));
 }
 
 /// Publishes `next` when it differs from the last one published.
@@ -294,8 +318,8 @@ fn apply_state(ctx: &Ctx, shared: &Shared, value: Value) {
             return;
         }
     };
-    if state.version != model::VERSION {
-        eprintln!("shoji: state version {} is not {}", state.version, model::VERSION);
+    if state.version != proto::VERSION {
+        eprintln!("shoji: state version {} is not {}", state.version, proto::VERSION);
     }
     let snapshot = model::snapshot(&state);
     let keyboard = model::keyboard(&state.keyboard);
@@ -322,7 +346,7 @@ fn apply_state(ctx: &Ctx, shared: &Shared, value: Value) {
     // says when the set of outputs moved.
     if b.outputs_key != outputs_key {
         b.outputs_key = outputs_key;
-        b.ask(Ask::Outputs, Method::OutputsGet);
+        b.ask(Ask::Outputs, &Call::bare(method::OUTPUTS_GET));
     }
 }
 

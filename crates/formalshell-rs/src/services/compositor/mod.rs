@@ -8,7 +8,7 @@ pub mod shoji;
 
 use std::sync::{LazyLock, OnceLock};
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use fs_system::display::outputs::{Color, Output};
 use fs_system::keyboard::{self, Layout};
@@ -255,7 +255,7 @@ pub enum Command {
     /// seven roles off theme.json, `chrome` [`fs_theme::chrome::chrome_json`].
     /// Hyprland reads them again from the files the theme engine wrote, one
     /// reload at a time; Shoji takes them over its socket.
-    Theme { colors: Map<String, Value>, chrome: Value },
+    Theme(Box<fs_wm_proto::Theme>),
     Exit,
 }
 

@@ -710,8 +710,8 @@ impl Engine {
         let Ok((palette, _)) = blocking(&self.ctx, move || Ok(read_palette(&path))).await else {
             return;
         };
-        let chrome = chrome::chrome_json(&window_chrome(&inputs.settings));
-        compositor::send(Command::Theme { colors: matugen::compositor_colors(&palette), chrome });
+        let chrome = chrome::wm_chrome(&window_chrome(&inputs.settings));
+        compositor::send(Command::Theme(Box::new(fs_wm_proto::Theme { colors: matugen::compositor_colors(&palette), chrome })));
     }
 
     /// Ordinary apps learn light and dark and the GTK theme name from

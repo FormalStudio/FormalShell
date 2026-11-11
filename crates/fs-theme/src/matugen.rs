@@ -119,8 +119,11 @@ pub fn hyprland_colors(palette: &Map<String, Value>) -> String {
 
 /// The seven roles [`hyprland_colors`] renders, as `#rrggbb` the way
 /// theme.json holds them, for a compositor that takes them over its socket.
-pub fn compositor_colors(palette: &Map<String, Value>) -> Map<String, Value> {
-    HYPRLAND_VARS.iter().filter_map(|name| Some(((*name).to_owned(), palette.get(*name)?.clone()))).collect()
+/// A role the palette lacks keeps the proto's default.
+pub fn compositor_colors(palette: &Map<String, Value>) -> fs_wm_proto::Colors {
+    let roles: Map<String, Value> =
+        HYPRLAND_VARS.iter().filter_map(|name| Some(((*name).to_owned(), palette.get(*name).filter(|v| v.is_string())?.clone()))).collect();
+    serde_json::from_value(Value::Object(roles)).expect("seven string roles always read")
 }
 
 #[derive(Debug, Clone, Default)]

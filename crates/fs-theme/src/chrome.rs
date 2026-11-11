@@ -1,5 +1,5 @@
 //! `~/.config/hypr/formalshell-chrome.lua`, or the same values as data for a
-//! compositor that takes them over its socket ([`chrome_json`]): the
+//! compositor that takes them over its socket ([`wm_chrome`]): the
 //! window rounding, whether the compositor blurs
 //! behind the shell, the gaps, frame and cast the table's `window` role
 //! asks for, and the shell's two clock families as the
@@ -179,36 +179,39 @@ pub fn hyprland_motion(enabled: bool) -> String {
 
 const FAMILIES: [&str; 6] = ["spatialFast", "spatial", "spatialSlow", "effectsFast", "effects", "effectsSlow"];
 
-/// Every value [`hyprland_chrome`] writes, as the `chrome` of ShojiWM's
+/// Every value [`hyprland_chrome`] writes, as the `chrome` of formalwm's
 /// `theme.set`: the same clamps, a colour as [`hex_color`], and each motion
 /// family its bezier's control points and its duration in milliseconds.
-pub fn chrome_json(chrome: &Chrome) -> Value {
+pub fn wm_chrome(chrome: &Chrome) -> fs_wm_proto::Chrome {
     let w = window(chrome);
     let hex = |(name, alpha): &(Option<Value>, Option<Value>)| hex_color(name.as_ref(), alpha.as_ref());
     let m = tokens::motion_tokens(true);
-    let families: Map<String, Value> = FAMILIES
-        .iter()
-        .map(|name| {
-            let c = tokens::curve(name).expect("every family is in MOTION_CURVES");
-            let ms = m.family(name).expect("every family has a duration");
-            ((*name).to_owned(), serde_json::json!({ "curve": [c[0], c[1], c[2], c[3]], "ms": ms }))
-        })
-        .collect();
-    serde_json::json!({
-        "rounding": w.rounding,
-        "blur": w.blur,
-        "gapsIn": w.gaps_in,
-        "gapsOut": w.gaps_out,
-        "borderSize": w.border_size,
-        "borderColor": hex(&w.border),
-        "shadow": w.shadow,
-        "shadowRange": w.range,
-        "shadowPower": w.power,
-        "shadowOffset": [w.offset.0, w.offset.1],
-        "shadowColor": hex(&w.shadow_color),
-        "shadowInactiveColor": hex(&w.backdrop_color),
-        "motion": { "enabled": chrome.motion, "families": families },
-    })
+    let family = |name: &str| {
+        let c = tokens::curve(name).expect("every family is in MOTION_CURVES");
+        let ms = m.family(name).expect("every family has a duration");
+        fs_wm_proto::Family { curve: [c[0], c[1], c[2], c[3]], ms }
+    };
+    let [spatial_fast, spatial, spatial_slow, effects_fast, effects, effects_slow] = FAMILIES.map(family);
+    // Each is clamped to Hyprland's range above, well inside an i32.
+    let int = |v: i64| v as i32;
+    fs_wm_proto::Chrome {
+        rounding: int(w.rounding),
+        blur: w.blur,
+        gaps_in: int(w.gaps_in),
+        gaps_out: int(w.gaps_out),
+        border_size: int(w.border_size),
+        border_color: hex(&w.border),
+        shadow: w.shadow,
+        shadow_range: int(w.range),
+        shadow_power: int(w.power),
+        shadow_offset: [int(w.offset.0), int(w.offset.1)],
+        shadow_color: hex(&w.shadow_color),
+        shadow_inactive_color: hex(&w.backdrop_color),
+        motion: fs_wm_proto::Motion {
+            enabled: chrome.motion,
+            families: fs_wm_proto::Families { spatial_fast, spatial, spatial_slow, effects_fast, effects, effects_slow },
+        },
+    }
 }
 
 pub fn hyprland_chrome(chrome: &Chrome) -> String {
@@ -366,7 +369,7 @@ mod tests {
     fn the_json_chrome_carries_what_the_lua_one_does() {
         let chrome = chrome_for(crate::table(), json!(6), json!(true));
         let lua = hyprland_chrome(&chrome);
-        let v = chrome_json(&chrome);
+        let v = serde_json::to_value(wm_chrome(&chrome)).unwrap();
         for key in ["rounding", "gapsIn", "gapsOut", "borderSize", "shadowRange", "shadowPower"] {
             assert!(lua.contains(&format!("{key} = {},", v[key])), "{key}: {} not in {lua}", v[key]);
         }

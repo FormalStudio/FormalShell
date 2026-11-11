@@ -5,20 +5,46 @@
 use fs_system::display::outputs::{self, Color, Output};
 use fs_system::keyboard::{self, Layout};
 use fs_types::{Bind, IRect, Window, WindowId, Workspace, WorkspaceId};
+use fs_wm_proto::{self as proto, OutputSet, method};
+use serde::Serialize;
+use serde_json::Value;
 
-use super::proto::{self, Method, OutputsSet};
 use crate::services::compositor::{Command, Gaps, Snapshot};
 
 /// The console's overlay, the one the engine's rule for
 /// `dev.formalshell.console` maps it to.
 pub const CONSOLE_OVERLAY: &str = "formalshell-console";
 
-/// The state version this shell reads.
-pub const VERSION: u32 = 1;
+/// A request without its id: the method's name and its params.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Call {
+    pub method: &'static str,
+    pub params: Option<Value>,
+}
+
+impl Call {
+    pub fn bare(method: &'static str) -> Self {
+        Call { method, params: None }
+    }
+
+    pub fn with(method: &'static str, params: impl Serialize) -> Self {
+        Call { method, params: Some(serde_json::to_value(params).expect("a proto type always serializes")) }
+    }
+
+    pub fn request(&self, id: Option<u64>) -> proto::Request<Value> {
+        proto::Request { id, method: self.method.to_owned(), params: self.params.clone() }
+    }
+
+    /// The request as its line, newline included.
+    pub fn line(&self, id: Option<u64>) -> String {
+        let mut text = serde_json::to_string(&self.request(id)).expect("a request always serializes");
+        text.push('\n');
+        text
+    }
+}
 
 fn rect(r: &proto::Rect) -> Option<IRect> {
-    let (w, h) = (r.width.round() as i32, r.height.round() as i32);
-    (w > 0 && h > 0).then(|| IRect::new(r.x.round() as i32, r.y.round() as i32, w, h))
+    (r.width > 0 && r.height > 0).then(|| IRect::new(r.x, r.y, r.width, r.height))
 }
 
 /// Within a pixel either way, since a fractional scale rounds the output's
@@ -30,7 +56,7 @@ fn fills(window: &IRect, output: &IRect) -> bool {
 }
 
 pub fn snapshot(state: &proto::State) -> Snapshot {
-    if state.version != VERSION {
+    if state.version != proto::VERSION {
         return Snapshot::default();
     }
     let output_rect = |name: &str| {
@@ -117,15 +143,15 @@ pub fn snapshot(state: &proto::State) -> Snapshot {
 }
 
 pub fn keyboard(k: &proto::Keyboard) -> Layout {
-    let Some(current) = usize::try_from(k.active).ok().and_then(|i| k.layouts.get(i)) else {
+    let Some(current) = k.layouts.get(k.active) else {
         return keyboard::unavailable();
     };
-    Layout { available: true, names: k.layouts.clone(), current_idx: k.active, current: current.clone() }
+    Layout { available: true, names: k.layouts.clone(), current_idx: k.active as i64, current: current.clone() }
 }
 
-pub fn gaps(c: &proto::Chrome) -> Gaps {
-    let px = |v: f64| v.round() as i32;
-    Gaps { top: px(c.gaps_out.top), right: px(c.gaps_out.right), bottom: px(c.gaps_out.bottom), left: px(c.gaps_out.left) }
+pub fn gaps(c: &proto::ChromeState) -> Gaps {
+    let g = c.gaps_out;
+    Gaps { top: g.top, right: g.right, bottom: g.bottom, left: g.left }
 }
 
 /// `#rrggbb` or `#rrggbbaa` as sRGB 0..1, the alpha dropped.
@@ -140,13 +166,11 @@ pub fn active_border(text: &str) -> Option<[f32; 3]> {
 
 /// The outputs a state lists, by name and box, so a change among them
 /// (a hotplug, an output switched on or off) asks for `outputs.get` again.
-pub fn output_key(state: &proto::State) -> Vec<(String, bool, i64, i64, i64, i64)> {
-    let px = |v: f64| v.round() as i64;
-    state.outputs.iter().map(|o| (o.name.clone(), o.enabled, px(o.x), px(o.y), px(o.width), px(o.height))).collect()
+pub fn output_key(state: &proto::State) -> Vec<(String, bool, i32, i32, i32, i32)> {
+    state.outputs.iter().map(|o| (o.name.clone(), o.enabled, o.x, o.y, o.width, o.height)).collect()
 }
 
 pub fn outputs(rows: &[proto::Output]) -> Vec<Output> {
-    let px = |v: f64| if v.is_finite() { v.round() as i64 } else { 0 };
     let positive = |v: f64, fallback: f64| if v.is_finite() && v > 0.0 { v } else { fallback };
     let mapped: Vec<Output> = rows
         .iter()
@@ -155,15 +179,15 @@ pub fn outputs(rows: &[proto::Output]) -> Vec<Output> {
             name: o.name.clone(),
             make: o.make.clone(),
             model: o.model.clone(),
-            x: px(o.x),
-            y: px(o.y),
-            width: px(o.width),
-            height: px(o.height),
+            x: o.x.into(),
+            y: o.y.into(),
+            width: o.width.into(),
+            height: o.height.into(),
             refresh: positive(o.refresh, 0.0),
             scale: positive(o.scale, 1.0),
             enabled: o.enabled,
             mirror_of: o.mirror_of.clone(),
-            transform: o.transform,
+            transform: o.transform.into(),
             vrr: o.vrr,
             cm: o.color.cm.clone(),
             ten_bit: o.color.bitdepth == 10,
@@ -197,39 +221,45 @@ pub fn binds(rows: Vec<proto::Bind>) -> Vec<Bind> {
         .collect()
 }
 
-/// The method a command is sent as, `None` for one the engine has no
+/// The call a command is sent as, `None` for one the engine has no
 /// method for: the shell's own zen (the engine owns zen), and the
 /// re-reads, since every move reaches the shell through `state.changed`.
-pub fn method(command: &Command) -> Option<Method> {
+pub fn method(command: &Command) -> Option<Call> {
     let s = |id: &WindowId| id.as_str().to_owned();
+    let window = |m, id: &WindowId| Call::with(m, proto::WindowRef { id: s(id) });
+    let output = |set: OutputSet| Call::with(method::OUTPUTS_SET, set);
     Some(match command {
-        Command::FocusWorkspace(id) => Method::WorkspaceFocus { id: id.as_str().to_owned() },
-        Command::FocusWorkspaceAt(idx) => Method::WorkspaceFocusAt { idx: *idx, output: None },
-        Command::FocusWindow(id) => Method::WindowFocus { id: s(id) },
-        Command::CloseWindow(id) => Method::WindowClose { id: s(id) },
-        Command::Spawn(argv) => Method::Spawn { argv: argv.clone(), cwd: None },
-        Command::EscapeBind { name, argv } => Method::BindEscape { name: (*name).to_owned(), argv: argv.clone() },
-        Command::FloatWindow(id) => Method::WindowFloat { id: s(id), floating: Some(true) },
-        Command::ToggleFloating(id) => Method::WindowFloat { id: s(id), floating: None },
-        Command::ToggleFullscreen(id) => Method::WindowFullscreen { id: s(id) },
-        Command::MoveWindowTo { id, idx, output } => Method::WindowMoveTo { id: s(id), idx: *idx, output: output.clone() },
-        Command::SwapWindows { a, b } => Method::WindowSwap { a: s(a), b: s(b) },
-        Command::MoveColumn { id, before } => Method::WindowMoveColumn { id: s(id), before: before.as_ref().map(s) },
-        Command::PlaceFloatingWindow { id, x, y, width, height } => {
-            Method::WindowPlace { id: s(id), x: *x, y: *y, width: *width, height: *height }
+        Command::FocusWorkspace(id) => Call::with(method::WORKSPACE_FOCUS, proto::WorkspaceFocus { id: id.as_str().to_owned() }),
+        Command::FocusWorkspaceAt(idx) => Call::with(method::WORKSPACE_FOCUS_AT, proto::WorkspaceFocusAt { idx: *idx, output: None }),
+        Command::FocusWindow(id) => window(method::WINDOW_FOCUS, id),
+        Command::CloseWindow(id) => window(method::WINDOW_CLOSE, id),
+        Command::Spawn(argv) => Call::with(method::SPAWN, proto::Spawn { argv: argv.clone(), cwd: None }),
+        Command::EscapeBind { name, argv } => Call::with(method::BIND_ESCAPE, proto::BindEscape { name: (*name).to_owned(), argv: argv.clone() }),
+        Command::FloatWindow(id) => Call::with(method::WINDOW_FLOAT, proto::WindowFloat { id: s(id), floating: Some(true) }),
+        Command::ToggleFloating(id) => Call::with(method::WINDOW_FLOAT, proto::WindowFloat { id: s(id), floating: None }),
+        Command::ToggleFullscreen(id) => window(method::WINDOW_FULLSCREEN, id),
+        Command::MoveWindowTo { id, idx, output } => {
+            Call::with(method::WINDOW_MOVE_TO, proto::WindowMoveTo { id: s(id), idx: *idx, output: output.clone() })
         }
-        Command::ParkWindow(id) => Method::OverlayPark { id: s(id), overlay: CONSOLE_OVERLAY.to_owned() },
-        Command::UnparkWindow(id) => Method::OverlayShow { id: s(id) },
-        Command::ZenMode { on } => Method::ZenSet { id: None, on: *on },
-        Command::Overview { open } => Method::OverviewSet { open: *open },
-        Command::RefreshOutputs => Method::OutputsGet,
-        Command::SetOutputEnabled(name, enabled) => Method::OutputsSet(OutputsSet { name: name.clone(), enabled: Some(*enabled), ..OutputsSet::default() }),
-        Command::SetOutputScale(name, scale) => Method::OutputsSet(OutputsSet { name: name.clone(), scale: Some(*scale), ..OutputsSet::default() }),
-        Command::SetOutputMirror(name, source) => Method::OutputsSet(OutputsSet { name: name.clone(), mirror: Some(source.clone()), ..OutputsSet::default() }),
-        Command::SetOutputColor(name, c) => Method::OutputsSet(OutputsSet { name: name.clone(), color: Some(color(c)), ..OutputsSet::default() }),
-        Command::Cursor { hidden } => Method::CursorHide { hidden: *hidden },
-        Command::Theme { colors, chrome } => Method::ThemeSet(proto::Theme { colors: colors.clone(), chrome: chrome.clone() }),
-        Command::Exit => Method::SessionExit,
+        Command::SwapWindows { a, b } => Call::with(method::WINDOW_SWAP, proto::WindowSwap { a: s(a), b: s(b) }),
+        Command::MoveColumn { id, before } => {
+            Call::with(method::WINDOW_MOVE_COLUMN, proto::WindowMoveColumn { id: s(id), before: before.as_ref().map(s) })
+        }
+        Command::PlaceFloatingWindow { id, x, y, width, height } => {
+            Call::with(method::WINDOW_PLACE, proto::WindowPlace { id: s(id), x: *x, y: *y, width: *width, height: *height })
+        }
+        Command::ParkWindow(id) => Call::with(method::OVERLAY_PARK, proto::OverlayPark { id: s(id), overlay: CONSOLE_OVERLAY.to_owned() }),
+        Command::UnparkWindow(id) => window(method::OVERLAY_SHOW, id),
+        Command::ZenMode { on } => Call::with(method::ZEN_SET, proto::ZenSet { id: None, on: *on }),
+        Command::Overview { open } => Call::with(method::OVERVIEW_SET, proto::OverviewSet { open: *open }),
+        Command::RefreshOutputs => Call::bare(method::OUTPUTS_GET),
+        Command::SetOutputEnabled(name, enabled) => output(OutputSet { name: name.clone(), enabled: Some(*enabled), ..OutputSet::default() }),
+        Command::SetOutputScale(name, scale) => output(OutputSet { name: name.clone(), scale: Some(*scale), ..OutputSet::default() }),
+        Command::SetOutputMirror(name, source) => output(OutputSet { name: name.clone(), mirror: Some(source.clone()), ..OutputSet::default() }),
+        Command::SetOutputColor(name, c) => output(OutputSet { name: name.clone(), color: Some(color(c)), ..OutputSet::default() }),
+        Command::Cursor { hidden } => Call::with(method::CURSOR_HIDE, proto::CursorHide { hidden: *hidden }),
+        Command::Theme(theme) => Call::with(method::THEME_SET, theme),
+        Command::Exit => Call::bare(method::SESSION_EXIT),
         Command::Zen { .. } | Command::Unzen { .. } | Command::ZenRelease | Command::RefreshWindows | Command::InputSettled => return None,
     })
 }
@@ -285,7 +315,7 @@ mod tests {
         let mut state = fixture();
         state.windows[3].fullscreen = false;
         state.windows[3].floating = true;
-        state.windows[3].rect = Some(proto::Rect { x: 1920.0, y: 0.0, width: 1280.0, height: 720.0 });
+        state.windows[3].rect = Some(proto::Rect { x: 1920, y: 0, width: 1280, height: 720 });
         let s = snapshot(&state);
         assert_eq!(s.floating_outputs, ["HDMI-A-1"]);
         assert_eq!(s.fullscreen_outputs, ["HDMI-A-1"]);
@@ -347,7 +377,7 @@ mod tests {
     }
 
     fn wire(command: Command) -> serde_json::Value {
-        let line = proto::line(None, method(&command).expect("has a method"));
+        let line = method(&command).expect("has a method").line(None);
         serde_json::from_str(&line).unwrap()
     }
 
@@ -387,7 +417,7 @@ mod tests {
         assert_eq!(wire(Command::Cursor { hidden: true }), json!({"method": "cursor.hide", "params": {"hidden": true}}));
         assert_eq!(wire(Command::Exit), json!({"method": "session.exit"}));
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&proto::line(Some(7), Method::StateGet)).unwrap(),
+            serde_json::from_str::<serde_json::Value>(&Call::bare(method::STATE_GET).line(Some(7))).unwrap(),
             json!({"id": 7, "method": "state.get"})
         );
         assert!(method(&Command::ZenRelease).is_none());

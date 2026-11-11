@@ -118,7 +118,8 @@ fn answer(stream: UnixStream, inner: Arc<Mutex<Inner>>) {
         let request: Value = serde_json::from_str(&line).unwrap();
         let result = match request["method"].as_str().unwrap_or_default() {
             "state.get" => inner.lock().unwrap().state.clone(),
-            "outputs.get" => json!([{"name": "Virtual-1", "enabled": true, "width": 2400, "height": 1350, "scale": 1.25, "refresh": 60,
+            "outputs.get" => json!([{"name": "Virtual-1", "make": "", "model": "", "enabled": true, "x": 0, "y": 0, "width": 2400, "height": 1350,
+                "refresh": 60, "scale": 1.25, "transform": 0, "mirrorOf": "", "vrr": false, "modes": [],
                 "color": {"cm": "srgb", "bitdepth": 8, "sdrBrightness": 1, "sdrSaturation": 1}}]),
             "binds.list" => json!([{"chord": "SUPER+Return", "mods": ["SUPER"], "key": "Return", "action": "spawn", "args": ["foot"], "title": "Terminal"}]),
             "cursor.pos" => json!({"x": 12.5, "y": 40}),
@@ -140,6 +141,7 @@ struct Seen {
     keyboards: Vec<Layout>,
     reloads: usize,
     blur: Vec<bool>,
+    toasts: Vec<(String, String)>,
 }
 
 struct Rig {
@@ -164,6 +166,9 @@ impl Rig {
                     _ => {}
                 },
                 Event::Msg(Msg::Diff(store::Diff::Theme(crate::services::theme::Diff::Blur(b)))) => seen.blur.push(b),
+                Event::Msg(Msg::Diff(store::Diff::Notifications(notifications::Diff::Op(Op::Notify(summary, body, _))))) => {
+                    seen.toasts.push((summary, body))
+                }
                 _ => {}
             })
             .unwrap();
@@ -219,7 +224,8 @@ fn follows_the_state_sends_commands_in_order_and_recovers_from_a_restart() {
     assert_eq!(rig.seen.keyboards.last().unwrap().current, "Spanish");
     assert_eq!(rig.seen.blur, [true]);
 
-    rig.send(Command::Theme { colors: serde_json::Map::from_iter([("primary".into(), json!("#648db8"))]), chrome: json!({"rounding": 6}) });
+    let sent = proto::Theme { colors: proto::Colors { primary: "#648db8".into(), ..Default::default() }, chrome: proto::Chrome { rounding: 6, ..Default::default() } };
+    rig.send(Command::Theme(Box::new(sent.clone())));
     rig.send(Command::Zen { id: WindowId::new("tl-a"), rect: fs_types::IRect::new(0, 0, 10, 10) });
     rig.send(Command::FocusWindow(WindowId::new("tl-a")));
     rig.send(Command::SetOutputScale("Virtual-1".into(), 1.5));
@@ -229,7 +235,7 @@ fn follows_the_state_sends_commands_in_order_and_recovers_from_a_restart() {
     assert_eq!(tail, ["theme.set", "window.focus", "outputs.set", "outputs.get"], "the shell's own zen sends nothing");
     let received = fake.received();
     let theme = received.iter().find(|v| v["method"] == "theme.set").unwrap();
-    assert_eq!(theme["params"], json!({"colors": {"primary": "#648db8"}, "chrome": {"rounding": 6}}));
+    assert_eq!(theme["params"], serde_json::to_value(&sent).unwrap());
     assert!(theme.get("id").is_none(), "a command carries no id");
     assert_eq!(received.iter().find(|v| v["method"] == "outputs.set").unwrap()["params"], json!({"name": "Virtual-1", "scale": 1.5}));
 
@@ -239,9 +245,13 @@ fn follows_the_state_sends_commands_in_order_and_recovers_from_a_restart() {
     rig.until("the broadcast state", |s| s.snapshots.last().is_some_and(|s| s.focused_window_id == "tl-a"));
     let published = rig.seen.snapshots.len();
     fake.broadcast("state.changed", moved);
-    fake.broadcast("config.reloaded", Value::Null);
+    fake.broadcast("config.reloaded", json!({}));
     rig.until("the reload", |s| s.reloads == 1);
     assert_eq!(rig.seen.snapshots.len(), published, "an unchanged state is not published again");
+    fake.broadcast("config.failed", json!({"error": "settings.json:4: unknown key `gap`"}));
+    rig.until("the refusal toasted", |s| !s.toasts.is_empty());
+    assert_eq!(rig.seen.toasts, [("Window manager settings refused".to_owned(), "settings.json:4: unknown key `gap`".to_owned())]);
+    assert_eq!(rig.seen.reloads, 1, "a refused file is no reload");
 
     fake.stop();
     rig.until("the compositor unavailable", |s| s.snapshots.last().is_some_and(|s| !s.available));
@@ -271,11 +281,11 @@ fn asks_on_a_connection_of_their_own() {
     let dir = tempfile::tempdir().unwrap();
     let path = socket(&dir);
     let _fake = Fake::start(&path, false);
-    let answer = async_io::block_on(ask(&path, Method::BindsList)).unwrap();
+    let answer = async_io::block_on(ask(&path, Call::bare(method::BINDS_LIST))).unwrap();
     let binds = model::binds(serde_json::from_value(answer).unwrap());
     assert_eq!((binds[0].chord.as_str(), binds[0].mods.as_slice(), binds[0].args.as_slice()), ("SUPER+Return", ["SUPER"].as_slice(), ["foot".to_owned()].as_slice()));
-    let point: proto::Point = serde_json::from_value(async_io::block_on(ask(&path, Method::CursorPos)).unwrap()).unwrap();
+    let point: proto::Point = serde_json::from_value(async_io::block_on(ask(&path, Call::bare(method::CURSOR_POS))).unwrap()).unwrap();
     assert_eq!((point.x, point.y), (12.5, 40.0));
     let missing = dir.path().join("none.sock");
-    assert!(async_io::block_on(ask(&missing, Method::CursorPos)).is_err());
+    assert!(async_io::block_on(ask(&missing, Call::bare(method::CURSOR_POS))).is_err());
 }

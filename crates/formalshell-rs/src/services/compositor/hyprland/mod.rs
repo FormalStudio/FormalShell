@@ -351,7 +351,7 @@ async fn commands(
             }
             Command::Cursor { hidden } => eval(&lua::cursor(hidden)).await,
             // theme.rs wrote both files before sending this.
-            Command::Theme { .. } => reload(&ctx, &shared),
+            Command::Theme(_) => reload(&ctx, &shared),
             // The shell draws its own overview and zen under Hyprland, so
             // these are never sent here.
             Command::ZenMode { .. } | Command::Overview { .. } => {}
