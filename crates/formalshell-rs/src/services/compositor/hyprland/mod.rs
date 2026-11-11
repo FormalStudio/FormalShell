@@ -350,7 +350,11 @@ async fn commands(
                 eval(&lua).await;
             }
             Command::Cursor { hidden } => eval(&lua::cursor(hidden)).await,
-            Command::Reload => reload(&ctx, &shared),
+            // theme.rs wrote both files before sending this.
+            Command::Theme { .. } => reload(&ctx, &shared),
+            // The shell draws its own overview and zen under Hyprland, so
+            // these are never sent here.
+            Command::ZenMode { .. } | Command::Overview { .. } => {}
             Command::Exit => dispatch(&lua::exit()).await,
             Command::FloatWindow(id) => {
                 let floating = shared.borrow().snapshot.windows.iter().any(|w| w.id == id && w.is_floating);

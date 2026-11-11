@@ -1,10 +1,14 @@
-//! The compositor: Hyprland, the shell's one door to it. `hyprland/` holds
-//! the sockets, the wire codecs and the `hl.*` Lua; this module the snapshot
-//! it publishes and the typed writes in [`Command`].
+//! The compositor, the shell's one door to it: one backend per session,
+//! picked once at start ([`kind`]). `hyprland/` holds Hyprland's sockets, its
+//! wire codecs and the `hl.*` Lua, `shoji/` ShojiWM's JSON socket; this
+//! module the snapshot they publish and the typed writes in [`Command`].
 
 pub mod hyprland;
+pub mod shoji;
 
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
+
+use serde_json::{Map, Value};
 
 use fs_system::display::outputs::{Color, Output};
 use fs_system::keyboard::{self, Layout};
@@ -13,8 +17,24 @@ use fs_types::{Bind, IRect, Window, WindowId, Workspace, WorkspaceId};
 
 use crate::runtime::Ctx;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Hyprland,
+    /// ShojiWM running FormalShell's engine, which owns the overview and
+    /// zen that the shell draws itself under Hyprland.
+    Shoji,
+}
+
+/// Read once: ShojiWM's control socket marks its session, else Hyprland's.
+/// Each session's start line unsets the other's variable in the user
+/// manager, so a unit started there never carries both.
+pub fn kind() -> Kind {
+    static KIND: LazyLock<Kind> = LazyLock::new(|| if shoji::session() { Kind::Shoji } else { Kind::Hyprland });
+    *KIND
+}
+
 /// The compositor's outer gap on each side of an output, in logical
-/// pixels: Hyprland's `general.gaps_out`, zero where it cannot be read.
+/// pixels, zero where it cannot be read.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Gaps {
     pub top: i32,
@@ -37,11 +57,11 @@ pub struct Snapshot {
     pub focused_window_id: WindowId,
     pub focused_workspace_id: WorkspaceId,
     pub focused_output_name: String,
-    /// Windows put away off every workspace (the console's special
-    /// workspace while it is hidden).
+    /// Windows put away off every workspace (the console's overlay while it
+    /// is hidden).
     pub parked: Vec<WindowId>,
     /// Windows on screen over the focused workspace though they belong to
-    /// another (a shown special workspace).
+    /// another (the console's overlay while it shows).
     pub overlaid: Vec<WindowId>,
 }
 
@@ -62,11 +82,11 @@ pub struct State {
     /// False until the first answer (or failure) of the layout query, so a
     /// cell can tell "not asked yet" from "cannot be asked".
     pub keyboard_answered: bool,
-    /// Counts config reloads, the contract's `configReloaded` signal.
+    /// Counts the compositor's config reloads, the contract's
+    /// `configReloaded` signal.
     pub config_reloads: u64,
     pub gaps_out: Gaps,
-    /// The focused window's border colour (Hyprland's
-    /// `general:col.active_border`, its first stop), sRGB 0..1.
+    /// The focused window's border colour, sRGB 0..1.
     pub active_border: Option<[f32; 3]>,
 }
 
@@ -202,7 +222,9 @@ pub enum Command {
     ParkWindow(WindowId),
     UnparkWindow(WindowId),
     /// `id` floated at `rect` (logical, absolute) and focused, the rest of
-    /// a scrolling workspace's tape slid off the output and held there.
+    /// a scrolling workspace's tape slid off the output and held there. The
+    /// three zen writes are the shell's own zen; a compositor that owns zen
+    /// takes [`Command::ZenMode`] instead.
     Zen { id: WindowId, rect: IRect },
     /// The tape let go, `id` put back at `floating` where it was floating
     /// before, tiled otherwise with its column moved before `before`'s. It
@@ -210,6 +232,12 @@ pub enum Command {
     Unzen { id: WindowId, floating: Option<IRect>, before: Option<WindowId> },
     /// The focused workspace's tape let go, its zen window having closed.
     ZenRelease,
+    /// Zen on the focused window, for a compositor that owns it: on, off,
+    /// or none to toggle.
+    ZenMode { on: Option<bool> },
+    /// The compositor's own overview, for one that draws it: open, closed,
+    /// or none to toggle.
+    Overview { open: Option<bool> },
     RefreshWindows,
     /// Input went quiet after a burst of keys or pointer motion
     /// (`wayland/settle.rs`): a backend whose events miss some window moves
@@ -223,9 +251,11 @@ pub enum Command {
     /// The pointer hidden or shown on every output, the session's arrival
     /// and departure.
     Cursor { hidden: bool },
-    /// The config read again, for the files it pulls the colours and chrome
-    /// from, which Hyprland does not watch. Dropped while one is running.
-    Reload,
+    /// The colours and chrome windows are drawn with changed: `colors` the
+    /// seven roles off theme.json, `chrome` [`fs_theme::chrome::chrome_json`].
+    /// Hyprland reads them again from the files the theme engine wrote, one
+    /// reload at a time; Shoji takes them over its socket.
+    Theme { colors: Map<String, Value>, chrome: Value },
     Exit,
 }
 
@@ -266,7 +296,7 @@ pub fn spawn(argv: &[String]) {
 }
 
 /// `argv` started from `dir`: Hyprland's exec takes no working directory,
-/// so a shell changes into it first.
+/// so a shell changes into it first, which serves any compositor.
 pub fn spawn_in(dir: &str, argv: &[String]) {
     let mut wrapped: Vec<String> = ["sh", "-c", r#"cd "$1" && shift && exec "$@""#, "sh", dir].map(String::from).to_vec();
     wrapped.extend_from_slice(argv);
@@ -277,21 +307,39 @@ pub fn escape_bind(name: &'static str, argv: Option<&[String]>) {
     send(Command::EscapeBind { name, argv: argv.map(<[String]>::to_vec) });
 }
 
-/// The running Hyprland's instance signature, `None` outside a Hyprland
-/// session. A monitor rule set over IPC lives as long as that instance.
+/// One run of the session's compositor, `None` outside one. An output
+/// setting sent over IPC lives as long as that run.
 pub fn instance() -> Option<String> {
-    hyprland::instance()
+    match kind() {
+        Kind::Hyprland => hyprland::instance(),
+        Kind::Shoji => shoji::instance(),
+    }
 }
 
 /// The compositor's binds for the launcher's keybinds route.
 pub async fn binds() -> Result<Vec<Bind>, ()> {
-    hyprland::binds().await
+    match kind() {
+        Kind::Hyprland => hyprland::binds().await,
+        Kind::Shoji => shoji::binds().await,
+    }
 }
 
 /// The pointer in global logical coordinates, `None` when it cannot be
 /// asked.
 pub async fn cursor_pos() -> Option<(f64, f64)> {
-    hyprland::cursor_pos().await
+    match kind() {
+        Kind::Hyprland => hyprland::cursor_pos().await,
+        Kind::Shoji => shoji::cursor_pos().await,
+    }
+}
+
+/// What [`Command::SetOutputColor`] would send for `row`, unsent, for the
+/// `hdr rule` IPC.
+pub fn color_request(row: &Output, color: &Color) -> Value {
+    match kind() {
+        Kind::Hyprland => hyprland::outputs::color_request(row, color),
+        Kind::Shoji => shoji::color_request(row, color),
+    }
 }
 
 pub fn start(ctx: &Ctx) {
@@ -301,7 +349,10 @@ pub fn start(ctx: &Ctx) {
 async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = COMMANDS.set(tx);
-    hyprland::run(ctx, rx).await
+    match kind() {
+        Kind::Hyprland => hyprland::run(ctx, rx).await,
+        Kind::Shoji => shoji::run(ctx, rx).await,
+    }
 }
 
 #[cfg(test)]

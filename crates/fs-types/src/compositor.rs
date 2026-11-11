@@ -78,6 +78,10 @@ pub struct Workspace {
     /// Its windows sit in a scrolling layout's columns, which reorder by
     /// moving a column rather than swapping two windows.
     pub columns: bool,
+    /// The window the compositor holds in zen here, for a compositor that
+    /// owns zen; the shell's own zen never sets it.
+    #[serde(skip)]
+    pub zen: Option<WindowId>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -90,8 +94,8 @@ pub struct Window {
     pub initial_title: String,
     pub pid: i64,
     pub workspace_id: WorkspaceId,
-    /// On an overlay workspace (Hyprland's special ones) rather than a
-    /// place: never listed among the workspaces, never offered to switch to.
+    /// On an overlay workspace (a Hyprland special workspace, a Shoji
+    /// overlay) rather than a place: never listed among the workspaces, never offered to switch to.
     #[serde(skip)]
     pub special: bool,
     pub is_focused: bool,

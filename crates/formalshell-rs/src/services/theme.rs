@@ -221,6 +221,9 @@ pub struct Env {
     pub state_dir: PathBuf,
     pub config_dir: PathBuf,
     pub template_dir: PathBuf,
+    /// Hyprland's two Lua files are written, its config reading them back;
+    /// a compositor taking the theme over its socket gets no file.
+    pub hypr_files: bool,
     pub matugen: OsString,
     pub dconf: OsString,
 }
@@ -234,6 +237,7 @@ impl Env {
             template_dir: var("FS_TEMPLATE_DIR").map_or_else(|| PathBuf::from("crates/fs-theme/templates"), PathBuf::from),
             state_dir: crate::paths::shell_state(),
             config_dir: crate::paths::config(),
+            hypr_files: compositor::kind() == compositor::Kind::Hyprland,
             matugen: "matugen".into(),
             dconf: "dconf".into(),
             home: crate::paths::home(),
@@ -679,19 +683,35 @@ impl Engine {
         let Some(inputs) = self.snapshot() else {
             return;
         };
-        let wanted = chrome_text(&inputs.settings);
-        let path = self.env.hypr_chrome();
-        let result = blocking(&self.ctx, move || {
-            if std::fs::read_to_string(&path).is_ok_and(|current| current == wanted) {
-                return Ok(());
+        if self.env.hypr_files {
+            let wanted = chrome_text(&inputs.settings);
+            let path = self.env.hypr_chrome();
+            let result = blocking(&self.ctx, move || {
+                if std::fs::read_to_string(&path).is_ok_and(|current| current == wanted) {
+                    return Ok(());
+                }
+                crate::paths::write_atomic(&path, &wanted)
+            })
+            .await;
+            if let Err(err) = result {
+                warn(format!("failed to write formalshell-chrome.lua: {err}"));
             }
-            crate::paths::write_atomic(&path, &wanted)
-        })
-        .await;
-        if let Err(err) = result {
-            warn(format!("failed to write formalshell-chrome.lua: {err}"));
         }
-        compositor::send(Command::Reload);
+        self.send_theme().await;
+    }
+
+    /// The colours and chrome windows are drawn with, off theme.json and
+    /// the settings, to the compositor.
+    async fn send_theme(&self) {
+        let Some(inputs) = self.snapshot() else {
+            return;
+        };
+        let path = self.env.theme_json();
+        let Ok((palette, _)) = blocking(&self.ctx, move || Ok(read_palette(&path))).await else {
+            return;
+        };
+        let chrome = chrome::chrome_json(&window_chrome(&inputs.settings));
+        compositor::send(Command::Theme { colors: matugen::compositor_colors(&palette), chrome });
     }
 
     /// Ordinary apps learn light and dark and the GTK theme name from
@@ -743,10 +763,12 @@ impl Engine {
             }
             Err(err) => warn(format!("failed to write static theme.json: {err}")),
         }
-        if let Err(err) = blocking(&self.ctx, move || crate::paths::write_atomic(&hypr, &colors)).await {
+        if self.env.hypr_files
+            && let Err(err) = blocking(&self.ctx, move || crate::paths::write_atomic(&hypr, &colors)).await
+        {
             warn(format!("failed to write fallback formalshell-colors.lua: {err}"));
         }
-        compositor::send(Command::Reload);
+        self.send_theme().await;
     }
 
     /// The sky as a picture matugen can open, at a size its quantizer
@@ -857,6 +879,10 @@ impl Engine {
         let env = self.env.clone();
         blocking(&self.ctx, move || {
             std::fs::rename(env.theme_json_tmp(), env.theme_json())?;
+            if !env.hypr_files {
+                let _ = std::fs::remove_file(env.hypr_colors_tmp());
+                return Ok(());
+            }
             if let Some(dir) = env.hypr_colors().parent() {
                 std::fs::create_dir_all(dir)?;
             }
@@ -869,7 +895,7 @@ impl Engine {
             self.ctx.publish(store::Diff::Theme(Diff::Palette(palette)));
         }
         self.ctx.publish(store::Diff::Theme(Diff::JsonPresent(true)));
-        compositor::send(Command::Reload);
+        self.send_theme().await;
         Ok(())
     }
 
@@ -1036,6 +1062,7 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
             state_dir: state,
             config_dir: root.join("home/.config"),
             template_dir: Path::new(env!("CARGO_MANIFEST_DIR")).join("../fs-theme/templates"),
+            hypr_files: true,
             matugen: shim(&bin, "matugen", &matugen),
             dconf: shim(&bin, "dconf", &logger("dconf")),
         };

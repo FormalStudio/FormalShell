@@ -27,7 +27,7 @@ use fs_system::monitor::gpu;
 use serde_json::{Value, json};
 
 use crate::runtime::Ctx;
-use crate::services::compositor::{self, Command, hyprland};
+use crate::services::compositor::{self, Command};
 use crate::services::proc;
 use crate::services::state::{self, Field};
 use crate::store::{self, Store};
@@ -499,7 +499,7 @@ pub async fn run(ctx: Ctx) {
 
 // HDR, answered on the UI thread.
 
-/// Whether output config can be sent: a Hyprland to take monitor rules.
+/// Whether output config can be sent: a compositor session to take it.
 pub fn config_available() -> bool {
     compositor::instance().is_some()
 }
@@ -567,27 +567,12 @@ pub fn hdr_status(store: &Store) -> Value {
     json!({"active": active, "outputs": outputs})
 }
 
-/// The rule `hdr_set` would send for `name`, unsent: `{ rule, lua }`, the
-/// rule's numbers as numbers.
+/// What `hdr_set` would send for `name`, unsent.
 pub fn hdr_rule(store: &Store, name: &str) -> Result<Value, String> {
     let Some(row) = outputs::find_output(rows(store), name) else {
         return Err(format!("unknown output: {name}"));
     };
-    let r = hyprland::outputs::color_rule(row, &on_color(store));
-    let number = |s: &str| s.parse::<f64>().map_or_else(|_| Value::String(s.to_owned()), fs_js::json_number);
-    let rule = json!({
-        "output": r.output,
-        "mode": r.mode,
-        "position": r.position,
-        "scale": number(&r.scale),
-        "transform": r.transform,
-        "bitdepth": r.bitdepth,
-        "cm": r.cm,
-        "sdrbrightness": number(&r.sdrbrightness),
-        "sdrsaturation": number(&r.sdrsaturation),
-        "mirror": r.mirror,
-    });
-    Ok(json!({"rule": rule, "lua": hyprland::outputs::rule_lua(&r)}))
+    Ok(compositor::color_request(row, &on_color(store)))
 }
 
 /// HDR's bookkeeping on the UI thread, between one change and the next.

@@ -1,4 +1,5 @@
-//! `~/.config/hypr/formalshell-chrome.lua`: the
+//! `~/.config/hypr/formalshell-chrome.lua`, or the same values as data for a
+//! compositor that takes them over its socket ([`chrome_json`]): the
 //! window rounding, whether the compositor blurs
 //! behind the shell, the gaps, frame and cast the table's `window` role
 //! asks for, and the shell's two clock families as the
@@ -68,22 +69,44 @@ fn byte(alpha: Option<&Value>) -> String {
     format!("{:02x}", fs_js::round(a.clamp(0.0, 1.0) * 255.0) as u8)
 }
 
-/// A literal renders as Hyprland's `rgba(RRGGBBAA)`; anything else is a
-/// palette role and renders as its name, a key into
-/// formalshell-colors.lua's table, so the wallpaper keeps moving it. A role
-/// therefore arrives at whatever alpha the palette gave it.
-fn color(name: Option<&Value>, alpha: Option<&Value>) -> String {
+/// A colour as the table names it: a literal (`RRGGBBAA`), or a palette
+/// role, which the compositor resolves against the colours it was given so
+/// the wallpaper keeps moving it. A role therefore arrives at whatever alpha
+/// the palette gave it.
+enum Paint {
+    Literal(String),
+    Role(String),
+}
+
+fn paint(name: Option<&Value>, alpha: Option<&Value>) -> Paint {
     let name = match name {
-        None | Some(Value::Null) => return "rgba(00000000)".to_owned(),
+        None | Some(Value::Null) => return Paint::Literal("00000000".to_owned()),
         Some(Value::String(s)) => s.as_str(),
-        Some(other) => return other.to_string(),
+        Some(other) => return Paint::Role(other.to_string()),
     };
     if name == "transparent" {
-        return "rgba(00000000)".to_owned();
+        return Paint::Literal("00000000".to_owned());
     }
     match style::literal(name) {
-        Some(lit) => format!("rgba({}{})", lit.trim_start_matches('#'), byte(alpha)),
-        None => name.to_owned(),
+        Some(lit) => Paint::Literal(format!("{}{}", lit.trim_start_matches('#'), byte(alpha))),
+        None => Paint::Role(name.to_owned()),
+    }
+}
+
+/// Hyprland's `rgba(RRGGBBAA)`, or a role's name, a key into
+/// formalshell-colors.lua's table.
+fn color(name: Option<&Value>, alpha: Option<&Value>) -> String {
+    match paint(name, alpha) {
+        Paint::Literal(hex) => format!("rgba({hex})"),
+        Paint::Role(role) => role,
+    }
+}
+
+/// `#rrggbbaa`, or a role's name, a key into the colours sent beside it.
+fn hex_color(name: Option<&Value>, alpha: Option<&Value>) -> String {
+    match paint(name, alpha) {
+        Paint::Literal(hex) => format!("#{hex}"),
+        Paint::Role(role) => role,
     }
 }
 
@@ -140,7 +163,6 @@ fn window(chrome: &Chrome) -> Window {
 /// `motion.enabled`; the speeds stay the families' own with it off, since
 /// Hyprland refuses a zero speed.
 pub fn hyprland_motion(enabled: bool) -> String {
-    const FAMILIES: [&str; 6] = ["spatialFast", "spatial", "spatialSlow", "effectsFast", "effects", "effectsSlow"];
     let m = tokens::motion_tokens(true);
     let mut out = format!("  motion = {{\n    enabled = {enabled},\n");
     for name in FAMILIES {
@@ -153,6 +175,40 @@ pub fn hyprland_motion(enabled: bool) -> String {
     }
     out.push_str("  },\n");
     out
+}
+
+const FAMILIES: [&str; 6] = ["spatialFast", "spatial", "spatialSlow", "effectsFast", "effects", "effectsSlow"];
+
+/// Every value [`hyprland_chrome`] writes, as the `chrome` of ShojiWM's
+/// `theme.set`: the same clamps, a colour as [`hex_color`], and each motion
+/// family its bezier's control points and its duration in milliseconds.
+pub fn chrome_json(chrome: &Chrome) -> Value {
+    let w = window(chrome);
+    let hex = |(name, alpha): &(Option<Value>, Option<Value>)| hex_color(name.as_ref(), alpha.as_ref());
+    let m = tokens::motion_tokens(true);
+    let families: Map<String, Value> = FAMILIES
+        .iter()
+        .map(|name| {
+            let c = tokens::curve(name).expect("every family is in MOTION_CURVES");
+            let ms = m.family(name).expect("every family has a duration");
+            ((*name).to_owned(), serde_json::json!({ "curve": [c[0], c[1], c[2], c[3]], "ms": ms }))
+        })
+        .collect();
+    serde_json::json!({
+        "rounding": w.rounding,
+        "blur": w.blur,
+        "gapsIn": w.gaps_in,
+        "gapsOut": w.gaps_out,
+        "borderSize": w.border_size,
+        "borderColor": hex(&w.border),
+        "shadow": w.shadow,
+        "shadowRange": w.range,
+        "shadowPower": w.power,
+        "shadowOffset": [w.offset.0, w.offset.1],
+        "shadowColor": hex(&w.shadow_color),
+        "shadowInactiveColor": hex(&w.backdrop_color),
+        "motion": { "enabled": chrome.motion, "families": families },
+    })
 }
 
 pub fn hyprland_chrome(chrome: &Chrome) -> String {
@@ -304,6 +360,27 @@ mod tests {
         let wild = raw(json!({ "rounding": 0, "blur": false, "window": { "gapsIn": -5, "gapsOut": 4000 }, "windowInactive": {} }));
         assert!(hyprland_chrome(&wild).contains("gapsIn = 0,\n"));
         assert!(hyprland_chrome(&wild).contains("gapsOut = 100,\n"));
+    }
+
+    #[test]
+    fn the_json_chrome_carries_what_the_lua_one_does() {
+        let chrome = chrome_for(crate::table(), json!(6), json!(true));
+        let lua = hyprland_chrome(&chrome);
+        let v = chrome_json(&chrome);
+        for key in ["rounding", "gapsIn", "gapsOut", "borderSize", "shadowRange", "shadowPower"] {
+            assert!(lua.contains(&format!("{key} = {},", v[key])), "{key}: {} not in {lua}", v[key]);
+        }
+        assert_eq!(v["blur"], json!(true));
+        for key in ["borderColor", "shadowColor", "shadowInactiveColor"] {
+            let c = v[key].as_str().unwrap();
+            let lua_form = c.strip_prefix('#').map_or_else(|| c.to_owned(), |hex| format!("rgba({hex})"));
+            assert!(lua.contains(&format!("{key} = \"{lua_form}\"")), "{key}: {c} not in {lua}");
+            assert!(!c.starts_with('#') || c.len() == 9, "{key}: {c}");
+        }
+        assert_eq!(v["motion"]["families"]["spatial"], json!({ "curve": [0.38, 1.21, 0.22, 1.0], "ms": 500.0 }));
+        assert_eq!(v["motion"]["families"].as_object().unwrap().len(), 6);
+        assert_eq!(hex_color(None, None), "#00000000");
+        assert_eq!(hex_color(Some(&json!("primary")), None), "primary");
     }
 
     /// The curves are motion.rs's own, the speeds the families' durations

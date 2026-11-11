@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use fs_js as js;
 use fs_system::display::outputs::{self, Color, Output, trim_number};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn int(value: f64) -> i64 {
     if value.is_finite() { js::round(value) as i64 } else { 0 }
@@ -101,6 +101,26 @@ pub fn parse(text: &str) -> Vec<Output> {
         });
     }
     outputs::sort_outputs(&rows)
+}
+
+/// The colour rule for `row`, unsent: `{ rule, lua }`, the rule's numbers
+/// as numbers.
+pub fn color_request(row: &Output, color: &Color) -> Value {
+    let r = color_rule(row, color);
+    let number = |s: &str| s.parse::<f64>().map_or_else(|_| Value::String(s.to_owned()), js::json_number);
+    let rule = json!({
+        "output": r.output,
+        "mode": r.mode,
+        "position": r.position,
+        "scale": number(&r.scale),
+        "transform": r.transform,
+        "bitdepth": r.bitdepth,
+        "cm": r.cm,
+        "sdrbrightness": number(&r.sdrbrightness),
+        "sdrsaturation": number(&r.sdrsaturation),
+        "mirror": r.mirror,
+    });
+    json!({"rule": rule, "lua": rule_lua(&r)})
 }
 
 #[derive(Debug, Clone, PartialEq)]

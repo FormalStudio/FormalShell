@@ -99,14 +99,30 @@ pub fn display_key() -> String {
     std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "default".into()).replace('/', "_")
 }
 
+/// One ShojiWM run: its control socket's name (`$SHOJIWM_SOCKET`) and when
+/// that socket was made, since the name comes back with the next session
+/// on the same display.
+pub fn shoji_instance() -> Option<String> {
+    let path = PathBuf::from(std::env::var_os("SHOJIWM_SOCKET").filter(|v| !v.is_empty())?);
+    let made = std::fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    Some(format!("{}-{made}", path.file_name()?.to_string_lossy()))
+}
+
 /// `<runtime>/formalshell/<name>-<compositor instance>`: a file that
 /// outlives one shell and belongs to one compositor run. Keyed on the
-/// instance signature where there is one, since socket names like
-/// `wayland-1` come back with the next session.
+/// compositor's own instance where there is one (Hyprland's signature, a
+/// ShojiWM run), since socket names like `wayland-1` come back with the
+/// next session.
 pub fn compositor_file(name: &str) -> PathBuf {
-    let id = ["HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY"]
-        .into_iter()
-        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
+    let id = std::env::var("HYPRLAND_INSTANCE_SIGNATURE")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .or_else(shoji_instance)
+        .or_else(|| std::env::var("WAYLAND_DISPLAY").ok().filter(|v| !v.is_empty()))
         .unwrap_or_default();
     shell_runtime().join(format!("{name}-{}", id.replace('/', "_")))
 }

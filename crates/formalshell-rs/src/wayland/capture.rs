@@ -2,8 +2,9 @@
 //! ext-image-copy-capture-v1, each one a session on an
 //! ext-image-capture-source-v1 made from the window's
 //! ext-foreign-toplevel-list handle. Hyprland's toplevel-mapping protocol
-//! names the window a handle belongs to, so a thumbnail is asked for by the
-//! same opaque id every other surface carries.
+//! names the window a handle belongs to; a compositor without it (Shoji)
+//! uses the handle's own list identifier as the window id. Either way a
+//! thumbnail is asked for by the same opaque id every other surface carries.
 //!
 //! Only four owners ever hold one (the switcher and the Spaces preview, the
 //! capture exception in the 2026-10-06 spec, the launcher's preview pane,
@@ -150,7 +151,10 @@ impl Capture {
     }
 
     fn handle_for(&self, id: &WindowId) -> Option<&ExtForeignToplevelHandleV1> {
-        self.handles.iter().find(|(_, w)| w.as_ref() == Some(id)).map(|(h, _)| h)
+        let by_identifier = |h: &ExtForeignToplevelHandleV1| {
+            self.mapping.is_none() && self.toplevels.info(h).is_some_and(|info| info.identifier == id.as_str())
+        };
+        self.handles.iter().find(|(h, w)| w.as_ref() == Some(id) || by_identifier(h)).map(|(h, _)| h)
     }
 
     fn thumb_mut(&mut self, key: u64) -> Option<&mut Thumb> {
@@ -441,7 +445,17 @@ impl ForeignToplevelListHandler for App {
         self.thumbnails.handles.push((handle, None));
     }
 
-    fn update_toplevel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: ExtForeignToplevelHandleV1) {}
+    /// A handle's identifier lands with its first `done`, which is what a
+    /// thumbnail matched by identifier was waiting for.
+    fn update_toplevel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: ExtForeignToplevelHandleV1) {
+        if self.thumbnails.mapping.is_some() {
+            return;
+        }
+        let waiting: Vec<u64> = self.thumbnails.thumbs.iter().filter(|t| t.session.is_none()).map(|t| t.key).collect();
+        for key in waiting {
+            self.capture_start(key);
+        }
+    }
 
     fn toplevel_closed(&mut self, _: &Connection, _: &QueueHandle<Self>, handle: ExtForeignToplevelHandleV1) {
         self.thumbnails.handles.retain(|(h, _)| *h != handle);

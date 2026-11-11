@@ -7,6 +7,9 @@
 //! The surface maps clear and the zoom waits on the current workspace's
 //! frames (or `ov::WAIT`), so it starts on the live desktop; the close focuses
 //! the selection first and unmaps once it is back on it.
+//!
+//! A compositor that draws its own overview (Shoji) is asked for it
+//! instead, and this surface never opens.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -69,6 +72,15 @@ impl App {
     }
 
     pub fn overview_action(&mut self, action: Action) {
+        if compositor::kind() == compositor::Kind::Shoji {
+            let open = match action {
+                Action::Open => Some(true),
+                Action::Close => Some(false),
+                Action::Toggle => None,
+            };
+            compositor::send(compositor::Command::Overview { open });
+            return;
+        }
         let open = self.overview.model.holding();
         match action {
             Action::Open if !open => self.overview_open(),

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "outputs": [
+    {"name": "Virtual-1", "x": 0, "y": 0, "width": 1920, "height": 1080, "scale": 1.25, "enabled": true},
+    {"name": "HDMI-A-1", "x": 1920, "y": 0, "width": 1280, "height": 720, "scale": 1, "enabled": true}
+  ],
+  "workspaces": [
+    {"id": "ws-2", "idx": 2, "name": "web", "output": "Virtual-1", "active": true, "focused": true, "urgent": false, "columns": true, "zen": "tl-b"},
+    {"id": "ws-1", "idx": 1, "name": "term", "output": "Virtual-1", "active": false, "focused": false, "urgent": true, "columns": true, "zen": null},
+    {"id": "ws-3", "idx": 3, "name": "games", "output": "HDMI-A-1", "active": true, "focused": false, "urgent": false, "columns": false, "zen": null}
+  ],
+  "windows": [
+    {"id": "tl-a", "title": "one", "appId": "foot", "initialAppId": "foot", "initialTitle": "foot", "pid": 42,
+     "workspaceId": "ws-1", "overlay": null, "shown": false, "focused": false, "floating": false, "fullscreen": false, "urgent": true,
+     "column": 0, "row": 0, "rect": {"x": 8, "y": 8, "width": 952, "height": 1064}},
+    {"id": "tl-b", "title": "two", "appId": "mpv", "initialAppId": "mpv", "initialTitle": "mpv", "pid": 43,
+     "workspaceId": "ws-2", "overlay": null, "shown": false, "focused": true, "floating": true, "fullscreen": false, "urgent": false,
+     "column": -1, "row": -1, "rect": {"x": 400, "y": 65, "width": 1120, "height": 950}},
+    {"id": "tl-console", "title": "console", "appId": "dev.formalshell.console", "initialAppId": "dev.formalshell.console", "initialTitle": "console", "pid": 44,
+     "workspaceId": "", "overlay": "formalshell-console", "shown": false, "focused": false, "floating": true, "fullscreen": false, "urgent": false,
+     "column": -1, "row": -1, "rect": null},
+    {"id": "tl-game", "title": "game", "appId": "game", "initialAppId": "game", "initialTitle": "game", "pid": 45,
+     "workspaceId": "ws-3", "overlay": null, "shown": false, "focused": false, "floating": false, "fullscreen": true, "urgent": false,
+     "column": 0, "row": 0, "rect": {"x": 1920, "y": 0, "width": 1280, "height": 720}}
+  ],
+  "focusedWindowId": "tl-b",
+  "focusedWorkspaceId": "ws-2",
+  "focusedOutput": "Virtual-1",
+  "overview": false,
+  "keyboard": {"layouts": ["English (US)", "Spanish"], "active": 1},
+  "cursorHidden": false,
+  "chrome": {"gapsOut": {"top": 8, "right": 8, "bottom": 8, "left": 8}, "activeBorder": "#ff8000", "blur": true}
+}

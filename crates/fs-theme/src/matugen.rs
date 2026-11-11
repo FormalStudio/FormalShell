@@ -117,6 +117,12 @@ pub fn hyprland_colors(palette: &Map<String, Value>) -> String {
     out
 }
 
+/// The seven roles [`hyprland_colors`] renders, as `#rrggbb` the way
+/// theme.json holds them, for a compositor that takes them over its socket.
+pub fn compositor_colors(palette: &Map<String, Value>) -> Map<String, Value> {
+    HYPRLAND_VARS.iter().filter_map(|name| Some(((*name).to_owned(), palette.get(*name)?.clone()))).collect()
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct BuildOpts {
     pub shell_template_dir: String,

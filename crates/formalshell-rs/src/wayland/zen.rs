@@ -3,6 +3,10 @@
 //! the workspace's tape slid off the output. Leaving puts the window back
 //! tiled in the column place it left (or at its old rect if it was
 //! floating already) and lets the tape go.
+//!
+//! Under a compositor that owns zen (Shoji) the shell only asks for it and
+//! reads each workspace's zen window back, folding the sidebar while the
+//! focused workspace holds one.
 
 use fs_types::{IRect, Window, WindowId, WorkspaceId};
 use serde_json::json;
@@ -14,6 +18,9 @@ use crate::surfaces::sidebar;
 #[derive(Default)]
 pub struct ZenState {
     on: Option<Zen>,
+    /// While the compositor's zen holds the focused workspace: whether the
+    /// sidebar was open, so leaving opens it again.
+    folded: Option<bool>,
     /// A workspace whose tape is still held after its zen window closed
     /// there; let go once it is focused, the only workspace a layout
     /// message reaches.
@@ -61,10 +68,30 @@ fn next_column(windows: &[Window], id: &WindowId, workspace: &WorkspaceId) -> Op
 
 impl App {
     pub fn zen_toggle(&mut self) -> Result<(), String> {
+        if compositor::kind() == compositor::Kind::Shoji {
+            compositor::send(Command::ZenMode { on: None });
+            return Ok(());
+        }
         if self.zen.on.is_some() { self.zen_exit() } else { self.zen_enter() }
     }
 
+    /// The compositor's zen window on the focused workspace.
+    fn compositor_zen(&self) -> Option<(&WindowId, &WorkspaceId)> {
+        let snap = &self.store.compositor.snapshot;
+        snap.workspaces.iter().find(|w| w.id == snap.focused_workspace_id).and_then(|w| Some((w.zen.as_ref()?, &w.id)))
+    }
+
     pub fn zen_enter(&mut self) -> Result<(), String> {
+        if compositor::kind() == compositor::Kind::Shoji {
+            if self.compositor_zen().is_some() {
+                return Err("zen is on".into());
+            }
+            if self.store.compositor.snapshot.focused_window_id.is_empty() {
+                return Err("no focused window".into());
+            }
+            compositor::send(Command::ZenMode { on: Some(true) });
+            return Ok(());
+        }
         if self.zen.on.is_some() {
             return Err("zen is on".into());
         }
@@ -94,6 +121,13 @@ impl App {
     }
 
     pub fn zen_exit(&mut self) -> Result<(), String> {
+        if compositor::kind() == compositor::Kind::Shoji {
+            if self.compositor_zen().is_none() {
+                return Err("zen is off".into());
+            }
+            compositor::send(Command::ZenMode { on: Some(false) });
+            return Ok(());
+        }
         let Some(zen) = self.zen.on.take() else {
             return Err("zen is off".into());
         };
@@ -111,6 +145,10 @@ impl App {
 
     /// The zen window closing ends zen, the sidebar opening again.
     pub fn zen_changed(&mut self) {
+        if compositor::kind() == compositor::Kind::Shoji {
+            self.zen_fold();
+            return;
+        }
         if self.zen.on.as_ref().is_some_and(|z| self.store.compositor.window(&z.id).is_none()) {
             let _ = self.zen_exit();
         }
@@ -124,7 +162,34 @@ impl App {
         }
     }
 
+    /// The sidebar on its rail while the compositor holds the focused
+    /// workspace in zen, back where it was once it lets go.
+    fn zen_fold(&mut self) {
+        match (self.compositor_zen().is_some(), self.zen.folded) {
+            (true, None) => {
+                let unfold = live!(self).bar.sidebar().is_some() && !self.store.state.data.sidebar_collapsed;
+                if unfold {
+                    sidebar::set_collapsed(true);
+                }
+                self.zen.folded = Some(unfold);
+            }
+            (false, Some(unfold)) => {
+                if unfold {
+                    sidebar::set_collapsed(false);
+                }
+                self.zen.folded = None;
+            }
+            _ => {}
+        }
+    }
+
     pub fn zen_status(&self) -> serde_json::Value {
+        if compositor::kind() == compositor::Kind::Shoji {
+            return match self.compositor_zen() {
+                Some((id, ws)) => json!({"on": true, "windowId": id, "workspace": ws}),
+                None => json!({"on": false}),
+            };
+        }
         match &self.zen.on {
             Some(z) => json!({"on": true, "windowId": z.id, "workspace": z.workspace, "before": z.before, "floating": z.floating.is_some()}),
             None => json!({"on": false}),

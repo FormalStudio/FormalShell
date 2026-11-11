@@ -76,6 +76,10 @@ impl Layout {
     fn hypr(&self, name: &str) -> PathBuf {
         self.config.join("hypr").join(name)
     }
+    /// What a ShojiWM session running FormalShell's engine runs at start.
+    fn shoji_start(&self) -> PathBuf {
+        self.config.join("formalwm/formalshell-start.sh")
+    }
 }
 
 pub fn main(cmd: &str, args: &[String]) -> i32 {
@@ -162,6 +166,7 @@ fn install(l: &Layout, opts: &Opts) -> Result<(), String> {
     let example = fs::read_to_string(l.share().join("examples/hyprland/formalshell.lua")).map_err(|e| format!("reading the Hyprland example: {e}"))?;
     write_owned(&l.hypr("formalshell.lua"), &hypr_include(&example, &l.bin("formalshell-ipc"))?)?;
     hypr_entry(l)?;
+    write_owned(&l.shoji_start(), &shoji_start())?;
 
     if opts.no_system {
         return Ok(());
@@ -232,6 +237,7 @@ fn uninstall(l: &Layout, opts: &Opts) -> Result<(), String> {
     systemctl(&["daemon-reload"]);
 
     remove_owned(&l.hypr("formalshell.lua"))?;
+    remove_owned(&l.shoji_start())?;
     let entry = l.hypr("hyprland.lua");
     if is_owned(&entry) {
         fs::remove_file(&entry).map_err(|e| format!("{}: {e}", entry.display()))?;
@@ -319,9 +325,19 @@ fn hypr_include(example: &str, ipc: &Path) -> Result<String, String> {
     Ok(format!("{MARKER}\n{}", example.replace(IPC_CALL, &format!("\"{} call \"", ipc.display()))))
 }
 
-/// How a session starts the shell: the include's `hyprland.start` hook, and
-/// a locked login's `--locked-cmd`, which runs before that hook would.
-const START: &str = "systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE && systemctl --user start formalshell.service formalshell-watchdog.timer";
+/// How a session starts the shell: the include's `hyprland.start` hook, a
+/// locked login's `--locked-cmd`, which runs before that hook would, and a
+/// ShojiWM session's start script. The user manager outlives a session, so
+/// each start drops both compositors' variables before importing its own:
+/// the shell picks its backend by which one it carries.
+const START: &str = "systemctl --user unset-environment HYPRLAND_INSTANCE_SIGNATURE SHOJIWM_SOCKET && systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE SHOJIWM_SOCKET XDG_CURRENT_DESKTOP XDG_SESSION_TYPE && systemctl --user start formalshell.service formalshell-watchdog.timer";
+
+/// Run with `sh` by the engine's startup once its socket is up.
+fn shoji_start() -> String {
+    format!("{}
+{START}
+", unit_marker())
+}
 
 /// hyprland.lua loads the shell's include, then the user's own file. A
 /// hyprland.lua the installer did not write becomes that user file, once.
@@ -729,6 +745,19 @@ mod tests {
         fs::write(l.hypr("hypr-user.lua"), "edited\n").unwrap();
         hypr_entry(&l).unwrap();
         assert_eq!(fs::read_to_string(l.hypr("hypr-user.lua")).unwrap(), "edited\n");
+    }
+
+    #[test]
+    fn the_shoji_start_script_imports_its_socket_and_stays_owned() {
+        let dir = tempfile::tempdir().unwrap();
+        let l = layout(dir.path());
+        write_owned(&l.shoji_start(), &shoji_start()).unwrap();
+        assert!(is_owned(&l.shoji_start()));
+        let body = fs::read_to_string(l.shoji_start()).unwrap();
+        assert!(body.contains("unset-environment HYPRLAND_INSTANCE_SIGNATURE SHOJIWM_SOCKET &&"));
+        assert!(body.contains("import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE SHOJIWM_SOCKET "));
+        remove_owned(&l.shoji_start()).unwrap();
+        assert!(!l.shoji_start().exists());
     }
 
     #[test]
