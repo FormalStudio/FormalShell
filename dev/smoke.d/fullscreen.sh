@@ -84,6 +84,7 @@ fullscreen_lock_osd_layers="$shot_dir/fullscreen-lock-osd-layers.json"
 fullscreen_lock_state="$shot_dir/fullscreen-lock-state.txt"
 fullscreen_lock_toast_path="$shot_dir/fullscreen-lock-toast.png"
 fullscreen_fs_phases="scrolling:tiled dwindle:tiled scrolling:floating scrolling:video scrolling:windowed"
+case " $wm_layouts " in *" dwindle "*) ;; *) fullscreen_fs_phases=${fullscreen_fs_phases/dwindle:tiled /} ;; esac
 fullscreen_track_path="$shot_dir/fullscreen-tone.flac"
 fullscreen_mpv_pid_path="$shot_dir/fullscreen-mpv.pid"
 fullscreen_work_path="$shot_dir/fullscreen-work.txt"

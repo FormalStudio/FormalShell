@@ -166,6 +166,10 @@ wm_exit_line() {
 # Hyprland ends the session on its exit dispatch; the config needs no tail.
 wm_config_tail() { :; }
 
+# How zen holds its window: the shell floats it, centred, and Hyprland's
+# scrolling layout centres the narrower tape left of it.
+wm_zen=float
+
 # The tiling layouts a leg can switch to with `hl.config({ general = { layout } })`.
 wm_layouts="scrolling dwindle"
 

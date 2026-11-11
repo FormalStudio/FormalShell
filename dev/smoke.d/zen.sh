@@ -6,7 +6,9 @@
 # on the output within 2px, the sidebar folded to its rail, and a and c
 # still on workspace 1 but wholly off the output (their tape of 0.8 is
 # narrower than the output, the case Hyprland centres on every
-# recalculate). Off: b tiled again between a and c (by x), at the width it
+# recalculate). Under formalwm (wm_zen=layout) b stays tiled instead, a goes
+# off the left edge and c off the right, and the columns keep the settings'
+# width, there being no socket call for one. Off: b tiled again between a and c (by x), at the width it
 # had within 2px, focused and on the output, the sidebar open. Then zen on
 # again and b closed under it: zen off, the sidebar open, and the window
 # that took focus back on the output. The on and off frames are pulled.
@@ -101,15 +103,25 @@ leg_zen_assert() {
   "$jq_bin" -e '.floating == false and .workspace.id == 1' <<< "$b0" > /dev/null || fail "zen: b did not start tiled on workspace 1: $b0"
 
   # On.
-  "$jq_bin" -e '.on == true and .before != null' "${zen_status[1]}" > /dev/null \
-    || fail "zen: not on, or no column to go back before: $(cat "${zen_status[1]}")"
+  if [ "$wm_zen" = float ]; then
+    "$jq_bin" -e '.on == true and .before != null' "${zen_status[1]}" > /dev/null \
+      || fail "zen: not on, or no column to go back before: $(cat "${zen_status[1]}")"
+  else
+    "$jq_bin" -e '.on == true' "${zen_status[1]}" > /dev/null || fail "zen: not on: $(cat "${zen_status[1]}")"
+  fi
   "$jq_bin" -e '.collapsed == true' "${zen_sidebar[1]}" > /dev/null || fail "zen: the sidebar did not fold to its rail"
   b=$(zen_client "${zen_clients[1]}" b)
   echo "zen on b: $("$jq_bin" -c '{at, size, floating, ws: .workspace.id}' <<< "$b")"
-  "$jq_bin" -e '.floating == true and .workspace.id == 1' <<< "$b" > /dev/null || fail "zen: b is not floating on workspace 1: $b"
+  "$jq_bin" -e --argjson fl "$([ "$wm_zen" = float ] && echo true || echo false)" '.floating == $fl and .workspace.id == 1' <<< "$b" > /dev/null \
+    || fail "zen: b is not $([ "$wm_zen" = float ] && echo floating || echo tiled) on workspace 1: $b"
   for n in a c; do
     f=$(zen_client "${zen_clients[1]}" "$n")
     echo "zen on $n: $("$jq_bin" -c '{at, size, ws: .workspace.id}' <<< "$f")"
+    if [ "$wm_zen" = layout ] && [ "$n" = c ]; then
+      "$jq_bin" -e --argjson m "$mon" '.workspace.id == 1 and .at[0] >= $m.x + $m.w' <<< "$f" > /dev/null \
+        || fail "zen: c is not off the output's right edge on workspace 1"
+      continue
+    fi
     "$jq_bin" -e --argjson m "$mon" '.workspace.id == 1 and .at[0] + .size[0] <= $m.x' <<< "$f" > /dev/null \
       || fail "zen: $n is not off the output's left edge on workspace 1"
   done

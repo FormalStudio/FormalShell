@@ -52,6 +52,9 @@ wm_base_config() {
   }' > "$shoji_host_path"
   echo '#!/usr/bin/env bash'
   echo "echo \"\$SHOJI_RUN_DIR\" > $(printf '%q' "$shot_dir/shoji-run-dir")"
+  # shoji-run.sh gives the session a runtime dir of its own, where no
+  # PipeWire listens; the run's null sink and every player are on the slot's.
+  printf 'export PIPEWIRE_RUNTIME_DIR=%q PULSE_RUNTIME_PATH=%q\n' "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/pulse"
 }
 
 wm_session_env() { :; }
@@ -129,6 +132,10 @@ wm_exit_line() {
 wm_config_tail() {
   printf 'until [ -e %q ]; do sleep 0.2; done\n' "$shot_dir/session-over"
 }
+
+# formalwm's zen is a layout mode of the workspace (spec section 5): the
+# window stays tiled, centred, and each other column slides off its own side.
+wm_zen=layout
 
 # formalwm's column tape, which shoji-ctl answers as Hyprland's scrolling.
 wm_layouts="scrolling"
