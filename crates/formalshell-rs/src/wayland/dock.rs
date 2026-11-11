@@ -248,7 +248,7 @@ impl App {
                 let progress = activity.live().iter().filter(running).find(|i| i.origin == Origin::LauncherEntry);
                 Mark {
                     app: e.item.app.clone(),
-                    name: name.unwrap_or_else(|| e.item.app.clone()),
+                    name: name.unwrap_or_else(|| model::unnamed(&e.item).to_owned()),
                     image: Pic(icon.and_then(|i| i.image)),
                     running: e.item.running(),
                     focused: e.item.focused,

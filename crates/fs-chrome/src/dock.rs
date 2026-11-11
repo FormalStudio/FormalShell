@@ -120,6 +120,13 @@ pub fn exists(show: Show, items: &[Item]) -> bool {
     }
 }
 
+/// What to call an app with no desktop entry to name it. A Mac app goes by
+/// its bundle id, whose last part is as near its name as the id gets.
+pub fn unnamed(item: &Item) -> &str {
+    let last = item.app.rsplit('.').next().unwrap_or_default();
+    if item.mac && !last.is_empty() { last } else { &item.app }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +151,8 @@ mod tests {
         assert_eq!(items[2].windows.len(), 2);
         assert!(items[3].mac && !items[2].mac);
         assert_eq!(rule(&items), Some(2));
+        assert_eq!(unnamed(&items[3]), "CotEditor");
+        assert_eq!(unnamed(&items[1]), "org.gnome.Nautilus");
     }
 
     #[test]
