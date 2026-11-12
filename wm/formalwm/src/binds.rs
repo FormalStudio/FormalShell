@@ -36,6 +36,7 @@ pub fn check_shortcuts(settings: &Settings) -> Result<(), String> {
             locked: options.locked,
             repeat: options.repeat,
             transparent: options.transparent,
+            non_consuming: false,
         }
         .compile()
         .map_err(|error| format!("binds[{}]: {error}", group.index))?;
