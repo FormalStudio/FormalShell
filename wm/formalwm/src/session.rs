@@ -6,7 +6,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
     os::unix::net::UnixStream,
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     time::Instant,
 };
@@ -58,6 +58,14 @@ thread_local! {
     /// The ext-workspace model as of the last turn; its factory runs inside
     /// turns and cannot read the engine.
     static WORKSPACES: RefCell<RuntimeWorkspaceConfigUpdate> = RefCell::new(RuntimeWorkspaceConfigUpdate::default());
+}
+
+/// The settings in `dir`, refused when the files or a shortcut in them
+/// cannot be read.
+pub fn load_settings(dir: &Path) -> Result<Settings, String> {
+    let settings = Settings::load(dir)?;
+    crate::binds::check_shortcuts(&settings)?;
+    Ok(settings)
 }
 
 pub fn settings_dir() -> PathBuf {
@@ -552,7 +560,7 @@ impl Engine {
 
     /// Reads the settings again. A file with a mistake changes nothing.
     fn reload(&mut self) -> Result<(), String> {
-        match Settings::load(&self.dir) {
+        match load_settings(&self.dir) {
             Err(error) => {
                 tracing::error!(%error, "the settings were refused");
                 self.broadcast(event::CONFIG_FAILED, json!({ "error": error }));

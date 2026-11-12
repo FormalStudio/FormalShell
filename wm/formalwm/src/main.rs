@@ -30,7 +30,7 @@ fn setup() {
     let dir = session::settings_dir();
     // A session has to start whatever the file says; the mistake is logged
     // and the next reload reports it to the shell.
-    let settings = Settings::load(&dir).unwrap_or_else(|error| {
+    let settings = session::load_settings(&dir).unwrap_or_else(|error| {
         tracing::error!(%error, "the settings were refused, starting on the defaults");
         Settings::default()
     });

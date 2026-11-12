@@ -4,9 +4,9 @@ use formalwm_core::{
     action::{Action, Width, WorkspaceRef},
     chord::{Key, Mods},
     model::Big,
-    settings::BindGroup,
+    settings::{BindGroup, Settings},
 };
-use shojiwm_rs::prelude::*;
+use shojiwm_rs::{prelude::*, runtime_key_binding::RuntimeKeyBindingEntry};
 
 use crate::engine::{Engine, enter};
 
@@ -19,6 +19,27 @@ fn options_of(group: &BindGroup) -> KeyBindOptions {
     options.locked = group.locked;
     options.repeat = group.repeat;
     options
+}
+
+/// Whether the core takes every shortcut of the settings. It drops one it
+/// cannot read without a word, so this is asked before the settings replace
+/// the ones running.
+pub fn check_shortcuts(settings: &Settings) -> Result<(), String> {
+    for group in settings.bind_groups() {
+        let options = options_of(&group);
+        RuntimeKeyBindingEntry {
+            id: String::new(),
+            shortcut: group.shortcut.clone(),
+            on: options.on,
+            within: None,
+            locked: options.locked,
+            repeat: options.repeat,
+            transparent: options.transparent,
+        }
+        .compile()
+        .map_err(|error| format!("binds[{}]: {error}", group.index))?;
+    }
+    Ok(())
 }
 
 impl Engine {
@@ -225,5 +246,35 @@ impl Engine {
             win.handle.state(&crate::windows::FORCE).set(true);
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_shortcut_the_core_cannot_read_is_refused() {
+        let with = |chord: &str, more: &str| {
+            let text = format!(
+                r#"{{ "binds": [
+                    {{ "chord": "SUPER+q", "action": "close" }},
+                    {{ "chord": "{chord}", "action": "close"{more} }}
+                ] }}"#
+            );
+            check_shortcuts(&Settings::parse(&text, None).unwrap())
+        };
+        assert_eq!(with("SUPER+Return", ""), Ok(()));
+        assert_eq!(
+            with("ALT+Alt_L", r#", "release": true, "passthrough": true"#),
+            Ok(())
+        );
+        let error = with("SUPER+Retrun", "").unwrap_err();
+        assert!(
+            error.starts_with("binds[1]:") && error.contains("Retrun"),
+            "{error}"
+        );
+        assert!(with("SUPER+code:3", "").unwrap_err().contains("code:3"));
+        assert!(with("SUPER+mouse_up", r#", "locked": true"#).is_err());
     }
 }
