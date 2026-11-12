@@ -34,9 +34,14 @@ pub enum Unlock {
     Failed(String),
 }
 
-/// `$XDG_RUNTIME_DIR/keyring/control`, where the daemon listens.
+/// Where the daemon listens, found as gkr-pam-module.c's `get_control_file`
+/// does: `$GNOME_KEYRING_CONTROL/control`, else
+/// `$XDG_RUNTIME_DIR/keyring/control`.
 pub fn control_path() -> Option<PathBuf> {
-    std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()).map(|d| Path::new(&d).join("keyring/control"))
+    let var = |name| std::env::var_os(name).filter(|d| !d.is_empty());
+    var("GNOME_KEYRING_CONTROL")
+        .map(|d| Path::new(&d).join("control"))
+        .or_else(|| var("XDG_RUNTIME_DIR").map(|d| Path::new(&d).join("keyring/control")))
 }
 
 pub fn unlock_login(password: &str, deadline: Duration) -> Unlock {
