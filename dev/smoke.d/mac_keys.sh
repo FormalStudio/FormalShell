@@ -1,20 +1,22 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154,SC2016  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --mac-keys: the Super chords handed to a focused Mac window
-# (docs/superpowers/specs/2026-11-11-mac-apps.md, section 5). The session
-# config takes the shipped include's MAC APPS block, which records every
-# bind made after it, and then five binds of its own: SUPER + H and
+# (docs/superpowers/specs/2026-11-11-mac-apps.md, section 5). Under
+# Hyprland the session config takes the shipped include's MAC APPS block,
+# which records every bind made after it; formalwm takes the shell's
+# binds.handOver instead. Then five binds of the leg's own: SUPER + H and
 # SUPER + L moving focus (reserved by default), SUPER + C and SUPER + Q
-# (handed to a Mac app by default, here a mark in a file and Hyprland's
-# close) and SUPER + CTRL + P (never handed: no Mac key equivalent sits on
+# (handed to a Mac app by default, here a mark in a file and the window
+# manager's close) and SUPER + CTRL + P (never handed: no Mac key equivalent sits on
 # that layer). dev/mac-stub.py is the Mac window, a foot window beside it
 # the native one; every key is wtype's, and the stub's --log and the marks
 # the binds leave are the evidence. wtype types through a keymap of its
 # own, so the session resolves binds by the symbol typed
 # (`input.resolve_binds_by_sym`), where a real keyboard's keycodes need no
 # such thing.
-# With the stub in front `appmenu status` reads `macKeys` and Hyprland's
-# own submap reads `mac`: SUPER + C reaches the stub as a key with Super
+# With the stub in front `appmenu status` reads `macKeys`, and Hyprland's
+# own submap reads `mac` (formalwm's state holds an active hand over to the
+# stub's window, which shoji-ctl's `submap` reads as `mac`): SUPER + C reaches the stub as a key with Super
 # held and leaves no mark, CTRL + C reaches it with Control held,
 # SUPER + CTRL + P still leaves its mark, and SUPER + L moves focus to the
 # foot window without the stub seeing an `l`. There the submap is the
@@ -22,10 +24,12 @@
 # `macApps.reservedBinds` rewritten to keep SUPER + C for the window
 # manager, it leaves its mark again and the stub sees no further `c`. Last,
 # SUPER + Q reaches the stub as its own key equivalent: it logs the key and
-# `quit`, where Hyprland's close would have closed it with no key at all.
+# `quit`, where the window manager's close would have closed it with no key
+# at all.
 leg_mac_keys_flag="--mac-keys"
 leg_mac_keys_order=173
 leg_mac_keys_needs="python3 jq foot wtype"
+leg_mac_keys_compositors="hyprland shoji"
 leg_mac_keys_claims="hyprland.binds"
 
 mac_keys_prefix="$shot_dir/mac-keys"
@@ -37,15 +41,17 @@ leg_mac_keys_timing() {
 }
 
 leg_mac_keys_drive() {
-  awk '/^-- MAC APPS/ { on = 1 } /^-- Window rounding/ { on = 0 } on { print }' docs/examples/hyprland/formalshell.lua
-  cat <<EOF
-hl.config({ input = { resolve_binds_by_sym = true } })
-hl.bind("SUPER + H", hl.dsp.focus({ direction = "l" }))
-hl.bind("SUPER + L", hl.dsp.focus({ direction = "r" }))
-hl.bind("SUPER + C", hl.dsp.exec_cmd("sh -c 'echo c >> $mac_keys_marks'"))
-hl.bind("SUPER + Q", hl.dsp.window.close())
-hl.bind("SUPER + CTRL + P", hl.dsp.exec_cmd("sh -c 'echo p >> $mac_keys_marks'"))
-EOF
+  wm_mac_apps
+  wm_binds_by_keysym
+  wm_bind SUPER+H focus-column left
+  wm_bind SUPER+L focus-column right
+  wm_bind SUPER+C sh "echo c >> $mac_keys_marks"
+  wm_bind SUPER+Q close
+  wm_bind SUPER+CTRL+P sh "echo p >> $mac_keys_marks"
+  # What holds the chords: Hyprland's bind table with its `mac` submap, or
+  # formalwm's state with its hand over.
+  local held="-j binds"
+  [ "$FS_COMPOSITOR" = shoji ] && held=state
   local script="$shot_dir/mac-keys-drive.sh"
   local stub="$PWD/dev/mac-stub.py"
   write_script "$script" <<EOF
@@ -73,7 +79,7 @@ front org.atoll.stub
 until_jq 15 "\$m-inside.json" '.macKeys and (.titles | length == 4)' call appmenu status
 submap > "\$m-submap-mac.txt"
 "$wmctl_bin" -j clients > "\$m-clients.json" 2>&1
-"$wmctl_bin" -j binds > "\$m-binds.json" 2>&1
+"$wmctl_bin" $held > "\$m-held.json" 2>&1
 
 "$wtype_bin" -M logo c -m logo
 seen '^key c down mods=64\$' "\$m-super-c.txt"
@@ -95,8 +101,8 @@ mark c "\$m-mark-c-native.txt"
 front org.atoll.stub; echo "\$?" > "\$m-back-on-stub.txt"
 until_jq 10 "\$m-inside-again.json" '.macKeys' call appmenu status
 settings_retarget '.macApps.reservedBinds = ["SUPER + H", "SUPER + L", "SUPER + C"]'
-# The submap is built again off the new list on the settings' own clock,
-# which nothing here can read: Hyprland holds it, not the shell's status.
+# The new list reaches the compositor on the settings' own clock, which
+# nothing here can read: the compositor holds it, not the shell's status.
 sleep 2
 "$wtype_bin" -M logo c -m logo
 mark c "\$m-mark-c-reserved.txt"
@@ -121,11 +127,17 @@ leg_mac_keys_assert() {
   cat "$mac_keys_log"
   echo "marks: $(tr '\n' ' ' < "$mac_keys_marks" 2>/dev/null)"
   expect_jq "$m-clients.json" 'any(.[]; .class == "org.atoll.stub" and .xdgTag == "atoll")' \
-    "--mac-keys: Hyprland does not list the stub's window with the atoll tag" '[.[] | {class, xdgTag}]'
+    "--mac-keys: the compositor does not list the stub's window with the atoll tag" '[.[] | {class, xdgTag}]'
   expect_jq "$m-inside.json" '.macKeys' "--mac-keys: the stub in front did not put the session in the mac submap"
-  expect_jq "$m-binds.json" '[.[] | select(.submap == "mac") | .key | ascii_downcase] | index("l") != null and index("h") != null and index("p") != null and index("c") == null and index("q") == null' \
-    "--mac-keys: the mac submap does not hold H, L and P without C and Q" '[.[] | {submap, modmask, key}]'
-  [ "$(cat "$m-submap-mac.txt" 2>/dev/null)" = "mac" ] || fail "--mac-keys: Hyprland's submap with the stub in front is '$(cat "$m-submap-mac.txt" 2>/dev/null)', not mac"
+  if [ "$FS_COMPOSITOR" = shoji ]; then
+    expect_jq "$m-held.json" '.handOver.active and .handOver.window == ([.windows[] | select(.appId == "org.atoll.stub") | .id] | first)
+        and (.handOver.reserved | index("SUPER + H") != null and index("SUPER + L") != null and index("SUPER + C") == null and index("SUPER + Q") == null)' \
+      "--mac-keys: formalwm's state holds no active hand over to the stub keeping H and L but not C and Q" '{handOver, windows: [.windows[] | {id, appId, tag}]}'
+  else
+    expect_jq "$m-held.json" '[.[] | select(.submap == "mac") | .key | ascii_downcase] | index("l") != null and index("h") != null and index("p") != null and index("c") == null and index("q") == null' \
+      "--mac-keys: the mac submap does not hold H, L and P without C and Q" '[.[] | {submap, modmask, key}]'
+  fi
+  [ "$(cat "$m-submap-mac.txt" 2>/dev/null)" = "mac" ] || fail "--mac-keys: the compositor's submap with the stub in front is '$(cat "$m-submap-mac.txt" 2>/dev/null)', not mac"
   [ "$(count "$m-super-c.txt")" = 1 ] || fail "--mac-keys: SUPER + C did not reach the stub once with Super held (got $(count "$m-super-c.txt"))"
   [ "$(count "$m-mark-c-mac.txt")" = 0 ] || fail "--mac-keys: the window manager's SUPER + C still fired over a Mac window"
   [ "$(count "$m-ctrl-c.txt")" = 1 ] || fail "--mac-keys: CTRL + C did not reach the stub once with Control held (got $(count "$m-ctrl-c.txt"))"
@@ -133,7 +145,7 @@ leg_mac_keys_assert() {
   [ "$(count "$m-left-stub.txt")" = 0 ] || fail "--mac-keys: SUPER + L did not move focus off the stub"
   [ "$(count "$m-super-l.txt")" = 0 ] || fail "--mac-keys: the reserved SUPER + L reached the stub as a key"
   expect_jq "$m-outside.json" '.macKeys | not' "--mac-keys: the foot window in front left the session in the mac submap"
-  [ "$(cat "$m-submap-default.txt" 2>/dev/null)" = "default" ] || fail "--mac-keys: Hyprland's submap with the foot window in front is '$(cat "$m-submap-default.txt")'"
+  [ "$(cat "$m-submap-default.txt" 2>/dev/null)" = "default" ] || fail "--mac-keys: the compositor's submap with the foot window in front is '$(cat "$m-submap-default.txt")'"
   [ "$(count "$m-mark-c-native.txt")" = 1 ] || fail "--mac-keys: SUPER + C did not fire over the foot window"
   [ "$(count "$m-back-on-stub.txt")" = 0 ] || fail "--mac-keys: SUPER + H did not move focus back onto the stub"
   [ "$(count "$m-mark-c-reserved.txt")" = 2 ] || fail "--mac-keys: SUPER + C reserved in macApps.reservedBinds did not fire over the stub (marks $(count "$m-mark-c-reserved.txt"))"

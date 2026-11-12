@@ -314,3 +314,49 @@ fn asks_on_a_connection_of_their_own() {
     let missing = dir.path().join("none.sock");
     assert!(async_io::block_on(ask(&missing, Call::bare(method::CURSOR_POS))).is_err());
 }
+
+#[test]
+fn the_mac_hand_over_carries_the_reserved_chords_and_outlives_a_reconnect() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = socket(&dir);
+    let mut fake = Fake::start(&path, Mode::Answer);
+    let mut rig = Rig::start(&path);
+    rig.until("the first state", |s| s.snapshots.last().is_some_and(|s| s.available));
+    let hand_overs = |fake: &Fake| -> Vec<Value> { fake.received().into_iter().filter(|v| v["method"] == "binds.handOver").map(|v| v["params"].clone()).collect() };
+    let on = |reserved: &[&str]| json!({"on": true, "reserved": reserved, "window": "tl-a"});
+    let off = json!({"on": false, "reserved": []});
+
+    rig.send(Command::MacKeys(vec!["SUPER + H".into()]));
+    rig.send(Command::MacFocus(true, WindowId::new("tl-a")));
+    wait_for("the hand over", || hand_overs(&fake).len() == 1);
+    assert_eq!(hand_overs(&fake), [on(&["SUPER + H"])], "the list given before the focus travels with it");
+
+    rig.send(Command::MacKeys(vec!["SUPER + H".into(), "SUPER + C".into()]));
+    wait_for("the changed list", || hand_overs(&fake).len() == 2);
+    assert_eq!(hand_overs(&fake)[1], on(&["SUPER + H", "SUPER + C"]));
+
+    fake.stop();
+    rig.until("the compositor unavailable", |s| s.snapshots.last().is_some_and(|s| !s.available));
+    fake.listen();
+    rig.until("the state after the restart", |s| s.snapshots.last().is_some_and(|s| s.available));
+    wait_for("the hand over asked again", || hand_overs(&fake).len() == 3);
+    assert_eq!(hand_overs(&fake)[2], on(&["SUPER + H", "SUPER + C"]));
+
+    rig.send(Command::MacFocus(false, WindowId::new("tl-b")));
+    wait_for("the end", || hand_overs(&fake).len() == 4);
+    assert_eq!(hand_overs(&fake)[3], off);
+
+    // With none held a changed list is only kept, and a reconnect asks for
+    // nothing.
+    rig.send(Command::MacKeys(vec!["SUPER + L".into()]));
+    fake.stop();
+    rig.until("the compositor unavailable again", |s| s.snapshots.last().is_some_and(|s| !s.available));
+    fake.listen();
+    rig.until("the state after the second restart", |s| s.snapshots.last().is_some_and(|s| s.available));
+    rig.send(Command::FocusWindow(WindowId::new("tl-b")));
+    wait_for("the focus after it", || fake.methods().iter().any(|m| m == "window.focus"));
+    assert_eq!(hand_overs(&fake).len(), 4);
+    rig.send(Command::MacFocus(true, WindowId::new("tl-a")));
+    wait_for("the next hand over", || hand_overs(&fake).len() == 5);
+    assert_eq!(hand_overs(&fake)[4], on(&["SUPER + L"]));
+}

@@ -50,6 +50,7 @@ wm_bind() {
   case $action in
     sh) dsp="hl.dsp.exec_cmd([==[$arg]==])" ;;
     close) dsp="hl.dsp.window.close()" ;;
+    focus-column) dsp="hl.dsp.focus({ direction = \"${arg:0:1}\" })" ;;
     workspace) dsp="hl.dsp.focus({ workspace = $arg })" ;;
     swap-column) dsp="hl.dsp.layout(\"swapcol ${arg:0:1}\")" ;;
     swap-window) dsp="hl.dsp.window.swap({ direction = \"$arg\" })" ;;
@@ -67,6 +68,12 @@ wm_bind() {
 # must not reach the bind table.
 wm_commented_bind() {
   printf -- '-- hl.bind("%s", hl.dsp.exit())\n' "${1//+/ + }"
+}
+
+# The shipped include's MAC APPS block, which records every bind made after
+# it to build the `mac` submap from.
+wm_mac_apps() {
+  awk '/^-- MAC APPS/ { on = 1 } /^-- Window rounding/ { on = 0 } on { print }' docs/examples/hyprland/formalshell.lua
 }
 
 # Binds resolve a keycode through the sending keyboard's own keymap, which

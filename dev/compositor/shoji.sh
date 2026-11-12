@@ -106,6 +106,10 @@ wm_bind() {
 # The rig's host.json is jq's output, which keeps no comments.
 wm_commented_bind() { :; }
 
+# formalwm hands the Super chords over on the shell's binds.handOver, with
+# nothing in its settings.
+wm_mac_apps() { :; }
+
 # formalwm resolves a bind through the sending keyboard's own keymap already.
 wm_binds_by_keysym() { :; }
 

@@ -87,6 +87,7 @@ def client(state, w):
         "title": w["title"],
         "initialClass": w["initialAppId"],
         "initialTitle": w["initialTitle"],
+        "xdgTag": w.get("tag", ""),
         "pid": pid(w["pid"]),
         "xwayland": False,
         "pinned": False,
@@ -199,6 +200,12 @@ def read(verb, args, as_json):
         p = call("cursor.pos")
         return p if as_json else f"{round(p['x'])}, {round(p['y'])}"
     state = call("state.get")
+    if verb == "state":
+        return state
+    # formalwm has no submaps: the Mac hand over is what Hyprland's `mac`
+    # submap does, and it holds only while that window has the keyboard.
+    if verb == "submap":
+        return "mac" if (state.get("handOver") or {}).get("active") else "default"
     if verb == "clients":
         return [client(state, w) for w in state["windows"]]
     if verb == "activewindow":

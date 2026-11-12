@@ -122,6 +122,12 @@ struct Backend {
     pending: HashMap<u64, (Ask, Instant)>,
     /// The last `theme.set`, sent again on every connect.
     theme: Option<String>,
+    /// `macApps.reservedBinds` as last given, and the Mac window the Super
+    /// chords are handed to, none while they are not. The engine ends a
+    /// hand over with the connection that asked for it, so it is asked
+    /// again on every connect.
+    reserved: Vec<String>,
+    hand_over: Option<fs_types::WindowId>,
     /// The last of each published value, so an unchanged one is not sent
     /// to the UI thread again with every state.
     snapshot: Option<Snapshot>,
@@ -146,6 +152,10 @@ impl Backend {
         self.next_id += 1;
         self.pending.insert(self.next_id, (ask, Instant::now()));
         self.send(call.line(Some(self.next_id)));
+    }
+
+    fn send_hand_over(&self) {
+        self.send(model::hand_over(self.hand_over.as_ref(), &self.reserved).line(None));
     }
 
     fn oldest(&self) -> Option<Instant> {
@@ -180,8 +190,23 @@ async fn serve(ctx: Ctx, rx: async_channel::Receiver<Command>, path: PathBuf, an
 
 async fn commands(shared: Shared, rx: async_channel::Receiver<Command>) {
     while let Ok(command) = rx.recv().await {
-        let Some(call) = model::method(&command) else { continue };
         let mut b = shared.borrow_mut();
+        match command {
+            Command::MacKeys(reserved) => {
+                b.reserved = reserved;
+                if b.hand_over.is_some() {
+                    b.send_hand_over();
+                }
+                continue;
+            }
+            Command::MacFocus(on, window) => {
+                b.hand_over = on.then_some(window);
+                b.send_hand_over();
+                continue;
+            }
+            _ => {}
+        }
+        let Some(call) = model::method(&command) else { continue };
         match call.method {
             method::THEME_SET => {
                 let line = call.line(None);
@@ -226,6 +251,9 @@ async fn connection(ctx: Ctx, shared: Shared, path: PathBuf, answer_within: Dura
             b.ask(Ask::State, &Call::bare(method::STATE_GET));
             if let Some(theme) = b.theme.clone() {
                 b.send(theme);
+            }
+            if b.hand_over.is_some() {
+                b.send_hand_over();
             }
         }
 

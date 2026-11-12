@@ -28,6 +28,7 @@
 //! | `spawn` | [`Spawn`] | |
 //! | `bind.escape` | [`BindEscape`] | |
 //! | `binds.list` | | `Vec<`[`Bind`]`>` |
+//! | `binds.handOver` | [`BindsHandOver`] | |
 //! | `cursor.pos` | | [`Point`] |
 //! | `cursor.hide` | [`CursorHide`] | |
 //! | `outputs.get` | | `Vec<`[`Output`]`>` |
@@ -71,6 +72,7 @@ pub mod method {
     pub const SPAWN: &str = "spawn";
     pub const BIND_ESCAPE: &str = "bind.escape";
     pub const BINDS_LIST: &str = "binds.list";
+    pub const BINDS_HAND_OVER: &str = "binds.handOver";
     pub const CURSOR_POS: &str = "cursor.pos";
     pub const CURSOR_HIDE: &str = "cursor.hide";
     pub const LAYERS_LIST: &str = "layers.list";
@@ -144,6 +146,21 @@ pub struct State {
     pub keyboard: Keyboard,
     pub cursor_hidden: bool,
     pub chrome: ChromeState,
+    /// What `binds.handOver` last asked for, none when nothing holds.
+    #[serde(default)]
+    pub hand_over: Option<HandOver>,
+}
+
+/// The window the Super chords are handed to while it has the keyboard.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandOver {
+    pub window: String,
+    /// The chords that stay bound, as they were given.
+    pub reserved: Vec<String>,
+    /// The window has the keyboard and its chords are unbound now. False
+    /// while another window, a layer surface or the lock screen has the
+    /// keyboard, and while the overview is open.
+    pub active: bool,
 }
 
 /// An enabled or disabled output, in global logical pixels.
@@ -189,6 +206,9 @@ pub struct Window {
     pub app_id: String,
     pub initial_app_id: String,
     pub initial_title: String,
+    /// The client's xdg-toplevel-tag, empty where it set none.
+    #[serde(default)]
+    pub tag: String,
     /// 0 where the client's is unknown.
     pub pid: i64,
     /// Empty on an overlay.
@@ -365,6 +385,23 @@ pub struct Bind {
     pub args: Vec<String>,
     /// What the settings file calls it, empty without a title.
     pub title: String,
+}
+
+/// `binds.handOver`: while `window` has the keyboard, the binds on Super
+/// alone and on Super with Shift are unbound and their chords reach it,
+/// save the `reserved` ones; a pointer button, the wheel and every chord
+/// with Ctrl or Alt stay bound. `reserved` is written as the binds are, case
+/// and spacing counting for nothing, a digit naming its key of the number
+/// row. Absent `window` is the focused one. It holds over that window until
+/// `on` false, another `on`, the window closing, or the connection that
+/// asked closing; `on` false ends it whatever `window` says.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BindsHandOver {
+    pub on: bool,
+    #[serde(default)]
+    pub reserved: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
 }
 
 /// `cursor.pos`'s answer, global logical.
@@ -662,7 +699,7 @@ mod tests {
             }],
             "windows": [{
                 "id": "a1", "title": "t", "appId": "helium", "initialAppId": "helium", "initialTitle": "t",
-                "pid": 42, "workspaceId": "DP-1:1", "overlay": null, "shown": true,
+                "tag": "atoll-mac", "pid": 42, "workspaceId": "DP-1:1", "overlay": null, "shown": true,
                 "focused": true, "floating": false, "fullscreen": false, "urgent": false,
                 "column": 0, "row": 0, "rect": { "x": 8, "y": 8, "width": 1272, "height": 1424 }
             }],
@@ -670,14 +707,33 @@ mod tests {
             "overview": false,
             "keyboard": { "layouts": ["es"], "active": 0 },
             "cursorHidden": false,
-            "chrome": { "gapsOut": { "top": 8, "right": 8, "bottom": 8, "left": 8 }, "borderSize": 2, "activeBorder": "#4385be", "blur": true }
+            "chrome": { "gapsOut": { "top": 8, "right": 8, "bottom": 8, "left": 8 }, "borderSize": 2, "activeBorder": "#4385be", "blur": true },
+            "handOver": { "window": "a1", "reserved": ["SUPER + H", "SUPER + 1"], "active": true }
         });
         let state: State = from_value(wire.clone()).unwrap();
         assert_eq!(state.version, VERSION);
         assert_eq!(state.windows[0].rect, Some(Rect { x: 8, y: 8, width: 1272, height: 1424 }));
         assert_eq!(state.workspaces[0].zen, None);
         assert_eq!(state.outputs[0].reserved.top, 36);
+        assert_eq!(state.windows[0].tag, "atoll-mac");
         assert_eq!(to_value(&state).unwrap(), wire);
+
+        // A state written before the tag and the hand-over reads without them.
+        let mut older = wire;
+        older.as_object_mut().unwrap().remove("handOver");
+        older["windows"][0].as_object_mut().unwrap().remove("tag");
+        let state: State = from_value(older).unwrap();
+        assert_eq!((state.hand_over, state.windows[0].tag.as_str()), (None, ""));
+        assert_eq!(to_value(State::default()).unwrap()["handOver"], json!(null));
+    }
+
+    #[test]
+    fn a_hand_over_names_its_window_or_leaves_it_to_the_focus() {
+        let on: BindsHandOver = from_str(r#"{"on":true,"reserved":["SUPER + H"],"window":"a1"}"#).unwrap();
+        assert_eq!(on, BindsHandOver { on: true, reserved: vec!["SUPER + H".into()], window: Some("a1".into()) });
+        let off: BindsHandOver = from_str(r#"{"on":false}"#).unwrap();
+        assert_eq!(off, BindsHandOver::default());
+        assert_eq!(to_value(&off).unwrap(), json!({ "on": false, "reserved": [] }));
     }
 
     #[test]

@@ -114,9 +114,7 @@ pub fn snapshot(state: &proto::State) -> Snapshot {
             pid: w.pid,
             workspace_id: WorkspaceId::new(w.workspace_id.as_str()),
             special: w.overlay.is_some(),
-            // The state carries no xdg-toplevel-tag, so no window here is a
-            // Mac app's.
-            xdg_tag: String::new(),
+            xdg_tag: w.tag.clone(),
             is_focused: w.focused,
             is_floating: w.floating,
             is_urgent: w.urgent,
@@ -224,10 +222,16 @@ pub fn binds(rows: Vec<proto::Bind>) -> Vec<Bind> {
         .collect()
 }
 
+/// `binds.handOver` over `window` with the chords kept bound, or ended.
+pub fn hand_over(window: Option<&WindowId>, reserved: &[String]) -> Call {
+    let on = window.map(|w| proto::BindsHandOver { on: true, reserved: reserved.to_vec(), window: Some(w.as_str().to_owned()) });
+    Call::with(method::BINDS_HAND_OVER, on.unwrap_or_default())
+}
+
 /// The call a command is sent as, `None` for one the engine has no
-/// method for: the shell's own zen (the engine owns zen), the `mac`
-/// submap (Hyprland's), and the re-reads, since every move reaches the
-/// shell through `state.changed`.
+/// method for: the shell's own zen (the engine owns zen) and the re-reads,
+/// since every move reaches the shell through `state.changed`. The Mac
+/// hand over is the backend's, which holds it across connections.
 pub fn method(command: &Command) -> Option<Call> {
     let s = |id: &WindowId| id.as_str().to_owned();
     let window = |m, id: &WindowId| Call::with(m, proto::WindowRef { id: s(id) });
@@ -324,6 +328,15 @@ mod tests {
         let s = snapshot(&state);
         assert_eq!(s.floating_outputs, ["HDMI-A-1"]);
         assert_eq!(s.fullscreen_outputs, ["HDMI-A-1"]);
+    }
+
+    #[test]
+    fn the_tag_marks_a_mac_window() {
+        let mut state = fixture();
+        state.windows[0].tag = "atoll".into();
+        let s = snapshot(&state);
+        assert_eq!(s.windows[0].xdg_tag, "atoll");
+        assert!(s.windows[0].is_mac() && !s.windows[1].is_mac());
     }
 
     #[test]
@@ -424,6 +437,14 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&Call::bare(method::STATE_GET).line(Some(7))).unwrap(),
             json!({"id": 7, "method": "state.get"})
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&hand_over(Some(&id()), &["SUPER + H".into()]).line(None)).unwrap(),
+            json!({"method": "binds.handOver", "params": {"on": true, "reserved": ["SUPER + H"], "window": "tl-a"}})
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&hand_over(None, &["SUPER + H".into()]).line(None)).unwrap(),
+            json!({"method": "binds.handOver", "params": {"on": false, "reserved": []}})
         );
         assert!(method(&Command::ZenRelease).is_none());
         assert!(method(&Command::RefreshWindows).is_none());
