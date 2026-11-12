@@ -12,10 +12,12 @@
 # the only way to prove the unlock path is to actually type into it.
 #
 # The real password goes in over a gnome-keyring control socket that
-# listens and never accepts, the state a daemon is in while its unlock
-# prompt waits under the lock (fs_auth::keyring's header): the unlock has to
-# land as fast as without it, and the shell has to log the keyring left
-# locked rather than wait on it.
+# listens and never accepts, in the run's own dir and handed to the shell as
+# GNOME_KEYRING_CONTROL so a daemon the slot runs is never asked. It is the
+# state a daemon is in while its unlock prompt waits under the lock
+# (fs_auth::keyring's header): the unlock has to land as fast as without
+# it, and the shell has to log the keyring left locked rather than wait on
+# it.
 leg_lock_flag="--lock"
 leg_lock_order=110
 leg_lock_compositors="hyprland shoji"
@@ -32,11 +34,14 @@ lock_status_path="$shot_dir/lock-status.json"
 lock_call_rc_path="$shot_dir/lock-call-rc.txt"
 lock_keyring_path="$shot_dir/lock-keyring.txt"
 lock_unlock_ms_path="$shot_dir/lock-unlock-ms.txt"
+lock_keyring_dir="$shot_dir/lock-keyring"
 
 leg_lock_fixture() {
   # A profile picture at the default `avatar.path`, one flat colour nothing
   # else on the lock screen paints, so the locked frame can be searched for it.
   $convert_bin -size 256x256 xc:'#1FB86A' "png:$iso_home/.face"
+  mkdir -m 700 "$lock_keyring_dir"
+  shell_env="${shell_env:+$shell_env }GNOME_KEYRING_CONTROL=$lock_keyring_dir"
 }
 
 leg_lock_timing() {
@@ -68,23 +73,18 @@ sleep 1
 sleep 5
 "$grim_bin" "$lock_error_path" > /dev/null 2>&1
 sleep 2
-control="\$XDG_RUNTIME_DIR/keyring/control"
-if [ -e "\$control" ]; then
-  echo "taken: a keyring daemon already listens at \$control" > "$lock_keyring_path"
-else
-  mkdir -p "\$(dirname "\$control")"
-  python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(8); time.sleep(60)' "\$control" &
-  stuck=\$!
-  for _ in \$(seq 50); do [ -S "\$control" ] && break; sleep 0.1; done
-  echo "stuck" > "$lock_keyring_path"
-fi
+control="$lock_keyring_dir/control"
+python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(8); time.sleep(60)' "\$control" &
+stuck=\$!
+for _ in \$(seq 50); do [ -S "\$control" ] && break; sleep 0.1; done
+if [ -S "\$control" ]; then echo stuck; else echo "no stand-in at \$control"; fi > "$lock_keyring_path"
 "$wtype_bin" -s 300 "$rig_password"
 t0=\$(date +%s%N)
 "$wtype_bin" -s 300 -k Return
 until [ "\$($ipc call lock isLocked 2>/dev/null)" = false ] || [ \$(( (\$(date +%s%N) - t0) / 1000000 )) -gt 20000 ]; do sleep 0.05; done
 echo \$(( (\$(date +%s%N) - t0) / 1000000 )) > "$lock_unlock_ms_path"
 sleep 3
-[ -n "\${stuck:-}" ] && { kill "\$stuck"; rm -f "\$control"; }
+kill "\$stuck"; rm -f "\$control"
 "$grim_bin" "$lock_unlocked_path" > /dev/null 2>&1
 sleep 1
 $ipc call lock isLocked > "$lock_islocked2_path" 2>&1
@@ -119,11 +119,10 @@ leg_lock_assert() {
   local ms
   ms=$(cat "$lock_unlock_ms_path" 2>/dev/null)
   echo "lock unlock over a stuck keyring: ${ms:-none} ms ($(cat "$lock_keyring_path" 2>/dev/null))"
-  if grep -q '^stuck$' "$lock_keyring_path" 2>/dev/null; then
-    [ "${ms:-99999}" -lt 6000 ] || fail "the unlock waited on a keyring daemon that never accepts: ${ms:-none} ms"
-    grep -q "lock: login keyring left locked: failed, " "$shell_log_path" \
-      || fail "no 'login keyring left locked: failed' in the shell log: $(grep -E 'lock:' "$shell_log_path" | tail -8)"
-  fi
+  grep -q '^stuck$' "$lock_keyring_path" 2>/dev/null || fail "the keyring stand-in never listened: $(cat "$lock_keyring_path" 2>/dev/null)"
+  [ "${ms:-99999}" -lt 6000 ] || fail "the unlock waited on a keyring daemon that never accepts: ${ms:-none} ms"
+  grep -q "lock: login keyring left locked: failed, " "$shell_log_path" \
+    || fail "no 'login keyring left locked: failed' in the shell log: $(grep -E 'lock:' "$shell_log_path" | tail -8)"
   # The swappable-locker half: this run writes no `lock.command`, so
   # the built-in surface is the one that came up and `external` has to say so.
   expect_jq "$lock_status_path" '.external == false' "lock status did not report external:false with no lock.command set" '{external}'
