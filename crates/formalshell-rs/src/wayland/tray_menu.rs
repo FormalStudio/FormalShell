@@ -29,13 +29,15 @@ pub enum Source {
 }
 
 /// The line a menu card hangs off: its edge, how far in it lies, how long
-/// it runs and the room past it.
+/// it runs, the room past it for the card and the output's extent away
+/// from it.
 #[derive(Clone, Copy)]
 pub(super) struct Hang {
     pub edge: Edge,
     pub line_at: f64,
     pub length: i32,
     pub cap: f64,
+    pub room: i32,
 }
 
 /// The menu card.
@@ -185,11 +187,12 @@ impl App {
         let theme = &self.store.theme.theme;
         let edge = chrome.edge;
         let line_at = owner_edge.unwrap_or(chrome.line());
-        let (_, output_height) = self.output_size();
+        let (output_width, output_height) = self.output_size();
         let pad = theme.space.screen_padding;
         let cap = if edge.is_vertical() { output_height - pad * 2.0 } else { output_height - line_at - theme.space.bar_margin - pad };
         let length = live!(self).bar.length();
-        let hang = Hang { edge, line_at, length, cap };
+        let room = (if edge.is_vertical() { output_width } else { output_height }) as i32;
+        let hang = Hang { edge, line_at, length, cap, room };
         self.open_menu_card_on(source, key, title, anchor.unwrap_or(length as f64), hang, owner_edge.is_none());
     }
 
@@ -203,7 +206,7 @@ impl App {
             self.close_panels();
         }
         let theme = &self.store.theme.theme;
-        let Hang { edge, line_at, length, cap } = hang;
+        let Hang { edge, line_at, length, cap, room } = hang;
         let vertical = edge.is_vertical();
         let pad = theme.space.screen_padding;
         let mut menu = Menu::new(theme, key, title);
@@ -211,7 +214,7 @@ impl App {
         let width = menu.width();
         let oriented = |h: f64| if vertical { (h, width) } else { (width, h) };
         menu.anchor = anchor;
-        let size = Sizing::Card { size: oriented(menu.cap), anchor, length };
+        let size = Sizing::Card { size: oriented(menu.cap), anchor, length, room };
         let mut card = Card::new(theme, CardSpec { role: fs_theme::style::Role::Menu, ..CardSpec::new(edge, line_at, size) }, self.cast);
         card.resize(now, anchor, length, pad, oriented(menu.height().min(menu.cap)));
         menu.morph.jump(menu.height().min(menu.cap));

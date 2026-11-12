@@ -118,9 +118,9 @@ impl App {
         let (_, _, width, height) = self.profiles_size();
         // A popover always: the right edge carries no line to bud off.
         let theme = crate::surfaces::card::popover_theme(&self.store.theme.theme);
-        let (_, oh) = self.output_size();
+        let (ow, oh) = self.output_size();
         let s = &theme.space;
-        let spec = CardSpec { nub: Some((s.xl, s.sm, s.xxs)), ..CardSpec::new(Edge::Right, 0.0, Sizing::Card { size: (height, width), anchor: oh / 2.0, length: oh as i32 }) };
+        let spec = CardSpec { nub: Some((s.xl, s.sm, s.xxs)), ..CardSpec::new(Edge::Right, 0.0, Sizing::Card { size: (height, width), anchor: oh / 2.0, length: oh as i32, room: ow as i32 }) };
         let card = Card::new(&theme, spec, self.cast);
         let surface = self.popout_surface(&card, Layer::Overlay);
         let mut popup = Popup::new(surface, card);
