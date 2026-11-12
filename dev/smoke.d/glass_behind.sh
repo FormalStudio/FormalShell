@@ -55,6 +55,35 @@ leg_glass_behind_drive() {
   local script="$shot_dir/glass-behind-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
+# shown <frame> <empty>: the frame holds a card, 1000 pixels at least that
+# stand apart from <empty>, the phase's frame with nothing open. The bar's
+# clock can tick between the two, so a plain difference is no proof.
+shown() {
+  "$python3_bin" -c 'import sys
+from PIL import Image, ImageChops
+a, b = (Image.open(p).convert("L") for p in sys.argv[1:3])
+sys.exit(0 if ImageChops.difference(a, b).point(lambda v: 255 if v > 80 else 0).histogram()[255] >= 1000 else 1)' "\$1" "\$2"
+}
+# steady <path> <empty> [hold...]: the frame once three in a row match and it
+# is shown: the surface is in it and done moving. Two can match while a
+# card is still emerging, its next commit not yet on screen, or before its
+# first one is. The OSD has no settled state to wait on (its clock runs
+# until it hides), so <hold> runs before each frame to keep it up.
+steady() {
+  local out=\$1 empty=\$2 same=0 prev="\$1.prev" next="\$1.next"
+  shift 2
+  rm -f "\$prev"
+  for _ in \$(seq 1 30); do
+    "\$@" > /dev/null 2>&1
+    "$grim_bin" "\$next" > /dev/null 2>&1
+    if [ -e "\$prev" ] && cmp -s "\$prev" "\$next"; then same=\$((same + 1)); else same=0; fi
+    mv "\$next" "\$prev"
+    if [ "\$same" -ge 2 ] && shown "\$prev" "\$empty"; then
+      break
+    fi
+  done
+  mv "\$prev" "\$out"
+}
 # One frame per surface, \$1 naming the phase (text or bare).
 shoot() {
   local p=\$1
@@ -62,32 +91,28 @@ shoot() {
   $ipc call menu toggle > /dev/null 2>&1
   until_settled
   $ipc call debug dump > "$shot_dir/glass-behind-\$p-menu.json" 2>&1
-  "$grim_bin" "$shot_dir/glass-behind-\$p-menu.png" > /dev/null 2>&1
+  steady "$shot_dir/glass-behind-\$p-menu.png" "$shot_dir/glass-behind-\$p-none.png"
   $ipc call menu toggle > /dev/null 2>&1
   until_settled
   $ipc call panel open audio > /dev/null 2>&1
   until_settled
-  "$grim_bin" "$shot_dir/glass-behind-\$p-panel.png" > /dev/null 2>&1
+  steady "$shot_dir/glass-behind-\$p-panel.png" "$shot_dir/glass-behind-\$p-none.png"
   $ipc call panel close > /dev/null 2>&1
   sleep 1
   $ipc call notifications showHistory > /dev/null 2>&1
-  sleep 1.5
-  "$grim_bin" "$shot_dir/glass-behind-\$p-centre.png" > /dev/null 2>&1
+  steady "$shot_dir/glass-behind-\$p-centre.png" "$shot_dir/glass-behind-\$p-none.png"
   $ipc call notifications showHistory > /dev/null 2>&1
   sleep 1
-  $ipc call osd volume > /dev/null 2>&1
-  sleep 0.7
-  "$grim_bin" "$shot_dir/glass-behind-\$p-osd.png" > /dev/null 2>&1
+  steady "$shot_dir/glass-behind-\$p-osd.png" "$shot_dir/glass-behind-\$p-none.png" $ipc call osd volume
   $ipc call osd close > /dev/null 2>&1
   sleep 1
   $ipc call switcher next > /dev/null 2>&1
-  sleep 1
-  "$grim_bin" "$shot_dir/glass-behind-\$p-switcher.png" > /dev/null 2>&1
+  steady "$shot_dir/glass-behind-\$p-switcher.png" "$shot_dir/glass-behind-\$p-none.png"
   $ipc call switcher cancel > /dev/null 2>&1
   sleep 1
   "$notify_send_bin" -t 0 "Glass" "A card over the text"
-  sleep 1.5
-  "$grim_bin" "$shot_dir/glass-behind-\$p-toast.png" > /dev/null 2>&1
+  until_jq 10 "$shot_dir/glass-behind-\$p-toast.json" '.toastCards | length > 0' call debug dump
+  steady "$shot_dir/glass-behind-\$p-toast.png" "$shot_dir/glass-behind-\$p-none.png"
   $ipc call notifications clear > /dev/null 2>&1
   sleep 1.5
 }
