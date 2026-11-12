@@ -213,22 +213,7 @@ pub fn serve() -> Option<IpcServer> {
         })
     });
     server.handle(method::BINDS_LIST, |_| {
-        ask(|engine| {
-            let binds: Vec<proto::Bind> = engine
-                .settings
-                .binds
-                .iter()
-                .map(|bind| proto::Bind {
-                    chord: bind.chord.canonical(),
-                    mods: bind.chord.mod_names(),
-                    key: bind.chord.key_name(),
-                    action: bind.action_name.clone(),
-                    args: bind.args.clone(),
-                    title: bind.title.clone(),
-                })
-                .collect();
-            serde_json::to_value(binds).map_err(|error| error.to_string())
-        })
+        ask(|engine| serde_json::to_value(engine.binds_list()).map_err(|error| error.to_string()))
     });
     server.handle(method::CURSOR_POS, |_| {
         let position = COMPOSITOR.cursor.get_position().ok_or("no pointer")?;

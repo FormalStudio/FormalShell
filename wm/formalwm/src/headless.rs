@@ -510,6 +510,38 @@ fn two_outputs_and_the_touchpad() {
     session.roundtrip();
     assert!(keyboard(&session), "back in view, it has the keyboard");
 
+    // `binds.list`: the shell's Escape is a row while it is bound.
+    let escapes = || {
+        ask(|engine| {
+            let binds = engine.binds_list().into_iter();
+            Ok(binds
+                .filter(|bind| bind.key == "Escape" && bind.mods.is_empty())
+                .collect::<Vec<_>>())
+        })
+        .unwrap()
+    };
+    let escape = |argv: Option<&'static str>| {
+        ask(move |engine| {
+            match argv {
+                Some(argv) => engine.escapes.insert("card".into(), vec![argv.into()]),
+                None => engine.escapes.remove("card"),
+            };
+            engine.bind_escapes();
+            Ok(())
+        })
+        .unwrap();
+    };
+    assert_eq!(escapes(), []);
+    escape(Some("true"));
+    let listed = escapes();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        (listed[0].action.as_str(), &listed[0].args[..]),
+        ("spawn", &["true".to_string()][..])
+    );
+    escape(None);
+    assert_eq!(escapes(), []);
+
     assert_eq!(session.state.clear_color, [0.0, 0.0, 0.0, 1.0]);
 
     // `vrr` 2: asked of the core only while a window is fullscreen there.

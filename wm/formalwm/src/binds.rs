@@ -6,6 +6,7 @@ use formalwm_core::{
     model::Big,
     settings::{BindGroup, Settings},
 };
+use fs_wm_proto as proto;
 use shojiwm_rs::{prelude::*, runtime_key_binding::RuntimeKeyBindingEntry};
 
 use crate::engine::{Engine, enter};
@@ -151,6 +152,27 @@ impl Engine {
                 }
             })
         });
+    }
+
+    /// `binds.list`: the settings' binds, then the shell's Escape while it
+    /// is bound.
+    pub fn binds_list(&self) -> Vec<proto::Bind> {
+        let binds = self.settings.binds.iter().map(|bind| proto::Bind {
+            chord: bind.chord.canonical(),
+            mods: bind.chord.mod_names(),
+            key: bind.chord.key_name(),
+            action: bind.action_name.clone(),
+            args: bind.args.clone(),
+            title: bind.title.clone(),
+        });
+        let escape = (!self.escapes.is_empty()).then(|| proto::Bind {
+            chord: "Escape".into(),
+            key: "Escape".into(),
+            action: "spawn".into(),
+            args: self.escapes.values().flatten().cloned().collect(),
+            ..Default::default()
+        });
+        binds.chain(escape).collect()
     }
 
     pub fn run(&mut self, action: &Action) {
