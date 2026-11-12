@@ -9,7 +9,7 @@ use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
-use fs_tray::{AppMenuEvent, AppMenus, MenuEventKind, REGISTRAR_NAME};
+use fs_tray::{AppMenuEvent, AppMenus, BarState, MenuEventKind, REGISTRAR_NAME};
 use fs_types::{Window, WindowId};
 
 use super::compositor;
@@ -193,6 +193,11 @@ const ANSWER: Duration = Duration::from_secs(3);
 static FOLLOW: LazyLock<(Sender<u32>, Receiver<u32>)> = LazyLock::new(async_channel::unbounded);
 static FOLLOWED: AtomicI64 = AtomicI64::new(-1);
 
+/// The menu bar as `org.atoll.MenuBar` reports it, as the UI thread last
+/// said.
+static BAR: LazyLock<(Sender<BarState>, Receiver<BarState>)> = LazyLock::new(async_channel::unbounded);
+static BAR_SENT: Mutex<Option<BarState>> = Mutex::new(None);
+
 /// The Mac app whose window last held focus, 0 after any other window held
 /// it. Set on the UI thread by [`follow`].
 static FRONT: AtomicU32 = AtomicU32::new(0);
@@ -263,6 +268,14 @@ pub fn follow(store: &Store) {
     }
 }
 
+/// The bar's thickness when it sits on the top edge (0 on any other), and
+/// whether it is revealed over a fullscreen window.
+pub fn bar(state: BarState) {
+    if BAR_SENT.lock().unwrap().replace(state) != Some(state) {
+        let _ = BAR.0.try_send(state);
+    }
+}
+
 pub fn start(ctx: &Ctx) {
     ctx.spawn(run(ctx.clone()));
 }
@@ -283,6 +296,14 @@ async fn run(ctx: Ctx) {
     ctx.spawn(async move {
         while let Ok(pid) = FOLLOW.1.recv().await {
             follower.follow((pid != 0).then_some(pid));
+        }
+    });
+    let bar = menus.clone();
+    ctx.spawn(async move {
+        while let Ok(state) = BAR.1.recv().await {
+            if let Err(err) = bar.set_bar(state).await {
+                eprintln!("appmenu: menu bar: {err}");
+            }
         }
     });
     while let Some(event) = events.next().await {

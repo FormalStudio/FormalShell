@@ -14,9 +14,13 @@ use std::{
 
 use async_io::{Timer, block_on};
 use fs_tray::{
-    CheckState, Event, IconSource, Item, MenuItem, Status, Toggle, Tray, TrayEvents,
+    AppMenus, BarState, CheckState, Event, IconSource, Item, MenuItem, REGISTRAR_NAME, REGISTRAR_PATH,
+    Status, Toggle, Tray, TrayEvents,
 };
-use futures_util::future::{Either, select};
+use futures_util::{
+    StreamExt,
+    future::{Either, select},
+};
 use zbus::{
     Connection, connection, interface,
     object_server::SignalEmitter,
@@ -816,5 +820,46 @@ fn a_signal_burst_ahead_of_a_reply_does_not_wedge_the_connection() {
         .unwrap();
         let version: zbus::zvariant::OwnedValue = version.body().deserialize().unwrap();
         assert_eq!(i32::try_from(version).unwrap(), 0);
+    });
+}
+
+#[test]
+fn the_menu_bar_is_read_and_announced() {
+    let bus = Bus::start();
+    block_on(async {
+        let (menus, _events) = AppMenus::start(bus.connect().await).await.unwrap();
+        let reader = bus.connect().await;
+        let props = zbus::fdo::PropertiesProxy::builder(&reader)
+            .destination(REGISTRAR_NAME)
+            .unwrap()
+            .path(REGISTRAR_PATH)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let iface = zbus::names::InterfaceName::from_static_str("org.atoll.MenuBar").unwrap();
+        let height = props.get(iface.clone(), "Height").await.unwrap();
+        assert_eq!(u32::try_from(height).unwrap(), 0);
+
+        let revealed = props.get(iface.clone(), "Revealed").await.unwrap();
+        assert!(!bool::try_from(revealed).unwrap());
+
+        let mut changes = props.receive_properties_changed().await.unwrap();
+        menus.set_bar(BarState { height: 37, revealed: false }).await.unwrap();
+        let change = within("PropertiesChanged", changes.next()).await.unwrap();
+        let args = change.args().unwrap();
+        assert_eq!(args.interface_name().as_str(), "org.atoll.MenuBar");
+        assert_eq!(args.changed_properties().get("Height"), Some(&Value::U32(37)));
+        assert_eq!(args.changed_properties().get("Revealed"), None);
+        let height = props.get(iface.clone(), "Height").await.unwrap();
+        assert_eq!(u32::try_from(height).unwrap(), 37);
+
+        menus.set_bar(BarState { height: 37, revealed: true }).await.unwrap();
+        let change = within("PropertiesChanged", changes.next()).await.unwrap();
+        let args = change.args().unwrap();
+        assert_eq!(args.changed_properties().get("Revealed"), Some(&Value::Bool(true)));
+        assert_eq!(args.changed_properties().get("Height"), None);
+        let revealed = props.get(iface, "Revealed").await.unwrap();
+        assert!(bool::try_from(revealed).unwrap());
     });
 }

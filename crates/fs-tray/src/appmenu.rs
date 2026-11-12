@@ -24,7 +24,7 @@ use zbus::{
 
 use crate::{
     dbusmenu::{Address, MenuEventKind},
-    registrar::{REGISTRAR_NAME, REGISTRAR_PATH, Registrar, Registry},
+    registrar::{BarState, MenuBar, REGISTRAR_NAME, REGISTRAR_PATH, Registrar, Registry},
     types::MenuItem,
 };
 
@@ -115,6 +115,7 @@ impl AppMenus {
             let _ = registered_tx.try_send(());
         });
         conn.object_server().at(REGISTRAR_PATH, registrar).await?;
+        conn.object_server().at(REGISTRAR_PATH, MenuBar::default()).await?;
         let (asks, asks_rx) = async_channel::unbounded();
         let shared = Arc::new(Shared { conn: conn.clone(), registry, asks, held: Mutex::new(None) });
         let inputs: Inputs = Arc::new(Mutex::new(SelectAll::new()));
@@ -170,6 +171,11 @@ impl AppMenus {
     pub fn sibling(&self, pid: u32, path: &str) -> Option<Address> {
         let main = self.shared.registry.for_pid(pid)?;
         Some(Address { service: main.service, path: path.to_owned() })
+    }
+
+    /// The menu bar as `org.atoll.MenuBar` reports it.
+    pub async fn set_bar(&self, state: BarState) -> zbus::Result<()> {
+        MenuBar::set(&self.shared.conn, state).await
     }
 
     pub fn connection(&self) -> &Connection {

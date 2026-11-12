@@ -33,6 +33,7 @@ mod plugin_overlay;
 mod polkit;
 mod region;
 mod preview;
+mod reveal;
 mod rims;
 mod screensaver;
 mod settle;
@@ -77,7 +78,7 @@ use crate::ipc;
 use crate::paint::Kit;
 use crate::runtime::{Msg, Runtime};
 use crate::scene::NodeId;
-use crate::services::{barpaint, devices, compositor, notifications, overnight, tray, visualizer};
+use crate::services::{appmenu, barpaint, devices, compositor, notifications, overnight, tray, visualizer};
 use crate::settings;
 use crate::store::{Diff, Moved, Store, Topic};
 use crate::surface::{Backend, PixelSurface, Pixels, Surface};
@@ -207,6 +208,9 @@ enum Target {
     Veil,
     Caffeinate,
     HotCorner,
+    /// The line along the bar's edge that brings the bar up over a
+    /// fullscreen Mac window.
+    RevealEdge,
 }
 
 pub struct App {
@@ -238,6 +242,7 @@ pub struct App {
     saver: screensaver::Saver,
     pub lock: lock::Lock,
     hot: hotcorners::HotCorners,
+    reveal: reveal::Reveal,
     polkit: Option<polkit::Dialog>,
     plugin_overlay: Option<plugin_overlay::Window>,
     osd: osd::Osd,
@@ -356,6 +361,7 @@ impl App {
             saver: screensaver::Saver::default(),
             lock: lock::Lock::bind(globals, qh, prompter),
             hot: Default::default(),
+            reveal: Default::default(),
             polkit: None,
             plugin_overlay: None,
             osd: osd::Osd::default(),
@@ -482,7 +488,7 @@ impl App {
     /// fullscreen state want them: re-created rather than re-anchored, so a
     /// framed window and a strip never share a configure.
     fn place_chrome(&mut self) {
-        let hidden = self.chrome().bar_covered();
+        let hidden = self.bar_hides();
         live!(self).bar.set_hidden(hidden);
         self.sync_agents();
         if hidden {
@@ -505,8 +511,12 @@ impl App {
         let framed = bar.framed();
         let edge = bar.edge();
         let t = bar.thickness();
+        // Over a fullscreen window it sits above it and reserves nothing,
+        // so the window keeps its size.
+        let over = self.reveal.shown;
         let surface = self.compositor.create_surface(&self.qh);
-        let layer = self.layer_shell.create_layer_surface(&self.qh, surface, Layer::Top, Some("formalshell:bar"), Some(output));
+        let level = if over { Layer::Overlay } else { Layer::Top };
+        let layer = self.layer_shell.create_layer_surface(&self.qh, surface, level, Some("formalshell:bar"), Some(output));
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         if framed {
             layer.set_anchor(Anchor::all());
@@ -519,13 +529,13 @@ impl App {
             let (w, h) = if edge.is_vertical() { (across, 0) } else { (0, across) };
             layer.set_anchor(edge_anchor(edge));
             layer.set_size(w as u32, h as u32);
-            layer.set_exclusive_zone(bar.zone());
+            layer.set_exclusive_zone(if over { -1 } else { bar.zone() });
         }
         layer.commit();
         let mut surface = Surface::new("bar", Backend::Gpu, layer, &self.shm, self.store.display.scales.on(output));
         surface.presize(bar.scene.size.w, bar.scene.size.h);
         let mut zones = Vec::new();
-        if framed {
+        if framed && !over {
             let ft = bar.frame_thickness() as i32;
             for e in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
                 let zone = if e == edge { t } else { ft };
@@ -690,15 +700,21 @@ impl App {
         if matches!(topic, None | Some(Topic::State)) {
             self.sync_collapsed();
         }
-        if matches!(topic, None | Some(Topic::Compositor) | Some(Topic::Config)) {
-            if self.chrome().bar_covered() != live!(self).bar.hidden() {
+        if matches!(topic, None | Some(Topic::Compositor | Topic::Config | Topic::AppMenu)) {
+            self.sync_reveal();
+            if self.bar_hides() != live!(self).bar.hidden() {
                 self.place_chrome();
             }
             self.sync_hot_corners();
         }
+        let edge = live!(self).bar.edge();
+        let height = if edge == Edge::Top { live!(self).bar.thickness() as u32 } else { 0 };
+        appmenu::bar(fs_tray::BarState { height, revealed: self.reveal.shown });
         live!(self).bar.update_paint(&mut self.kit, &self.store);
         let win = &mut live!(self);
-        sync_zone(&mut win.bar, win.surface.as_mut());
+        if !self.reveal.shown {
+            sync_zone(&mut win.bar, win.surface.as_mut());
+        }
         self.request_paint();
         live!(self).bar.read(&mut self.kit, &self.store, topic, now);
         // The card hanging off the strip lays out again with it; a topic
@@ -1210,6 +1226,7 @@ impl App {
                 self.press = Some((serial, e.surface.clone()));
             }
             let (e, mut target) = self.over_strip(e, owner::target(self, &e.surface));
+            self.reveal_pointer(&e, target);
             for o in owner::INPUT {
                 match o.pointer(self, &e, target) {
                     owner::Pointer::Pass => {}

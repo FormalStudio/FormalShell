@@ -84,6 +84,53 @@ fn sender(header: &Header<'_>) -> fdo::Result<String> {
         .ok_or_else(|| fdo::Error::Failed("a registration needs a sender".into()))
 }
 
+/// What `org.atoll.MenuBar` tells a Mac app about the shell's menu bar.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BarState {
+    /// How far down from the top edge the bar reaches, so a fullscreen
+    /// window's title bar can sit clear of it; 0 while the bar sits on
+    /// another edge.
+    pub height: u32,
+    /// The bar is up over a fullscreen window, brought there by the pointer
+    /// at the top edge, which the window itself never sees.
+    pub revealed: bool,
+}
+
+/// `org.atoll.MenuBar`, served beside the registrar.
+#[derive(Default)]
+pub struct MenuBar {
+    state: BarState,
+}
+
+#[interface(name = "org.atoll.MenuBar")]
+impl MenuBar {
+    #[zbus(property)]
+    fn height(&self) -> u32 {
+        self.state.height
+    }
+
+    #[zbus(property)]
+    fn revealed(&self) -> bool {
+        self.state.revealed
+    }
+}
+
+impl MenuBar {
+    /// Sets the bar `conn` serves, announcing each property that moved.
+    pub(crate) async fn set(conn: &Connection, state: BarState) -> zbus::Result<()> {
+        let iface = conn.object_server().interface::<_, MenuBar>(REGISTRAR_PATH).await?;
+        let mut bar = iface.get_mut().await;
+        let before = std::mem::replace(&mut bar.state, state);
+        if before.height != state.height {
+            bar.height_changed(iface.signal_emitter()).await?;
+        }
+        if before.revealed != state.revealed {
+            bar.revealed_changed(iface.signal_emitter()).await?;
+        }
+        Ok(())
+    }
+}
+
 #[interface(name = "com.canonical.AppMenu.Registrar")]
 impl Registrar {
     async fn register_window(
