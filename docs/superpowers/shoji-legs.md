@@ -1,38 +1,37 @@
 # dev/smoke-all.list under ShojiWM
 
-Every line of `dev/smoke-all.list` run with `FS_COMPOSITOR=shoji` on the mac rig's slot 3 at scale 1.25 (the rig's default), on the shell at a6697e69 and the engine binary `formalwm` sha256 a5a825cc (`shoji` e7c0b375 on `formal-rs` e6493f8, the build `wm/VERIFIED.md` names). The Binary column is the `formalwm` each row ran. The first 112 rows of the run ran the slot's `~/fwm-target` build; a promote from another worktree replaced it at 13:51:26 UTC on 2026-11-12, so the rest ran a copy of the same a5a825cc build through `FS_SHOJI_BIN`. A line that failed was run once more on its own; the row holds that second result. A leg whose lines all pass carries `leg_<n>_compositors="hyprland shoji"`. Logs are under `artifacts/shoji-sweep/` in the worktree that ran them.
+Every line of `dev/smoke-all.list` run with `FS_COMPOSITOR=shoji` on the mac rig's slot 3 at scale 1.25 (the rig's default), on the shell at a6697e69 and the engine binary `formalwm` sha256 a5a825cc (`shoji` e7c0b375 on `formal-rs` e6493f8, the build `wm/VERIFIED.md` names). The Binary column is the `formalwm` each row ran. The first 112 rows of the run ran the slot's `~/fwm-target` build; a promote from another worktree replaced it at 13:51:26 UTC on 2026-11-12, so the rest ran a copy of the same a5a825cc build through `FS_SHOJI_BIN`. A line that failed was run once more on its own; the row holds that second result. A leg whose lines all pass carries `leg_<n>_compositors="hyprland shoji"`. Logs are under `artifacts/shoji-sweep/` in the worktree that ran them. The rows with the binary adac80ac ran again on `fix/shoji-legs` at 190cebaa through `FS_SHOJI_BIN`, the engine on the core at `formal` 50208b5; adac80ac is the build promoted to `~/fwm-target` after them. Their logs are under `FormalShell-wt/shoji-legs-runs/` on the macbook.
 
-Counts: fails twice: 4, Hyprland only: 3, engine cause fixed: 7, shell cause fixed: 32, needs g815: 18, pass: 145.
+Counts: fails twice: 0, Hyprland only: 0, engine cause fixed: 9, shell cause fixed: 37, needs g815: 18, pass: 147.
 
 | Row | Scale | Binary | Sort | Detail |
 |---|---|---|---|---|
-| `--dock` | 1.25 | a5a825cc | fails twice | SMOKE_FAIL: --dock: the drive stopped at a step that never came true: until_jq 10 (dock.ship.log, dock.again.log) |
-| `--hotcorner-relock` | 1.25 | a5a825cc | fails twice | SMOKE_FAIL: a pointer move dropped the screensaver to the card (hotcorner-relock.full.log, hotcorner-relock.again.log) |
-| `--mac-keys` | 1.25 | a5a825cc | fails twice | SMOKE_FAIL: --mac-keys: SUPER + H did not move focus back onto the stub (mac-keys.ship.log, mac-keys.again.log) |
-| `--switcher-keys` | 1.25 | a5a825cc | fails twice | SMOKE_FAIL: under the scrolling layout the cells with no frame (switcher-keys.full.log, switcher-keys.again.log) |
-| `--hypr-motion` | 1.25 | a5a825cc | Hyprland only | Hyprland's animation config |
-| `--mac-faults` | 1.25 | a5a825cc | Hyprland only | the include's mac submap under reloads, a shell gone and late asks, formalwm's hand over ends with the shell's connection instead |
-| `--overview` | 1.25 | a5a825cc | Hyprland only | the shell's overview, formalwm draws its own (spec section 4) |
-| `--dock-density` | 1.25 | a5a825cc | engine cause fixed | passes on a5a825cc |
-| `--headset-card` | 1.25 | a5a825cc | engine cause fixed | passes on a5a825cc |
-| `--mac-menu` | 1.25 | a5a825cc | engine cause fixed | passes on a5a825cc |
-| `--mac-menu --sidebar` | 1.25 | a5a825cc | engine cause fixed | passes on a5a825cc |
+| `--dock-density` | 1.25 | adac80ac | engine cause fixed | passes on a5a825cc and adac80ac |
+| `--headset-card` | 1.25 | adac80ac | engine cause fixed | passes on a5a825cc and adac80ac |
+| `--hotcorner-relock` | 1.25 | adac80ac | engine cause fixed | core 61e4447 in f68656d5 (a lock surface mapped under a still pointer got no pointer) |
+| `--mac-menu` | 1.25 | adac80ac | engine cause fixed | passes on a5a825cc and adac80ac |
+| `--mac-menu --sidebar` | 1.25 | adac80ac | engine cause fixed | passes on a5a825cc and adac80ac |
 | `--multi-output` | 1.25 | a5a825cc | engine cause fixed | passes on a5a825cc |
+| `--overview` | 1.25 | adac80ac | engine cause fixed | core 50208b5 in f68656d5 (the overview's grab kept the pointer off the shell's corner and bar), 190cebaa (the leg checks the engine's overview) |
 | `--sidebar` | 1.25 | a5a825cc | engine cause fixed | passes on a5a825cc |
 | `--sidebar --light` | 1.25 | a5a825cc | engine cause fixed | passes on a5a825cc |
 | `--backdrop` | 1.25 | a5a825cc | shell cause fixed | 988e4bde |
 | `--bar-style solid --join --menu-emerge` | 1.25 | a5a825cc | shell cause fixed | 716a66be (theme.blur off in the Shoji base) |
 | `--card-corner` | 1.25 | a5a825cc | shell cause fixed | 988e4bde |
 | `--display` | 1.25 | a5a825cc | shell cause fixed | f40742f0, 988e4bde |
+| `--dock` | 1.25 | adac80ac | shell cause fixed | 0a78da95 (the menu card was deeper than the output, so the layer map placed it off where the scene drew it), 257f9f69 (the leg read the bar's icon, which formalwm leaves focused) |
 | `--glass` | 1.25 | a5a825cc | shell cause fixed | 716a66be |
 | `--glass-behind` | 1.25 | a5a825cc | shell cause fixed | 61b538ed (the cover float read as a game over the output, so the shell held the OSD back) |
 | `--glass-behind --no-morph` | 1.25 | a5a825cc | shell cause fixed | 61b538ed (the cover float read as a game over the output, so the shell held the OSD back) |
 | `--hdr` | 1.25 | a5a825cc | shell cause fixed | f40742f0 |
+| `--hypr-motion` | 1.25 | adac80ac | shell cause fixed | 69fe0189, 190cebaa (the leg through the seam); its strip check is rig timing: it passed two of six runs here and fails under Hyprland on origin/main too |
 | `--launcher-density` | 1.25 | a5a825cc | shell cause fixed | 988e4bde |
 | `--launcher-overflow` | 1.25 | a5a825cc | shell cause fixed | f40742f0 |
 | `--lock-media` | 1.25 | a5a825cc | shell cause fixed | f40742f0 |
+| `--mac-faults` | 1.25 | adac80ac | shell cause fixed | 190cebaa (formalwm's hand over, ended with its connection, and the stub tiled) |
+| `--mac-keys` | 1.25 | adac80ac | shell cause fixed | b151d26b (the leg tiles the stub) |
 | `--media-progress` | 1.25 | a5a825cc | shell cause fixed | 716a66be |
-| `--menu-emerge` | 1.25 | a5a825cc | shell cause fixed | 716a66be (theme.blur off in the Shoji base) |
+| `--menu-emerge` | 1.25 | adac80ac | shell cause fixed | 716a66be (theme.blur off in the Shoji base) |
 | `--minimap` | 1.25 | a5a825cc | shell cause fixed | f40742f0, 988e4bde |
 | `--panel activity` | 1.25 | a5a825cc | shell cause fixed | 716a66be (theme.blur off in the Shoji base) |
 | `--panel appmenu` | 1.25 | a5a825cc | shell cause fixed | 716a66be (theme.blur off in the Shoji base) |
@@ -49,6 +48,7 @@ Counts: fails twice: 4, Hyprland only: 3, engine cause fixed: 7, shell cause fix
 | `--render` | 1.25 | a5a825cc | shell cause fixed | 58a3f1a3 (settled before the first wallpaper picture) |
 | `--settings-ui --light` | 1.25 | a5a825cc | shell cause fixed | b26f732e (header check past the card border, failed on Hyprland too) |
 | `--spaces` | 1.25 | a5a825cc | shell cause fixed | 9a5b626d (shoji-ctl moves the window its own spawn mapped) |
+| `--switcher-keys` | 1.25 | adac80ac | shell cause fixed | 190cebaa (formalwm copies a window off every monitor, `wm_offscreen_frames`) |
 | `--wallpaper` | 1.25 | a5a825cc | shell cause fixed | f40742f0 |
 | `--wheel` | 1.25 | a5a825cc | shell cause fixed | 716a66be (sourceless wheel axis, core traced wlrctl's finger source) |
 | `--zen` | 1.25 | a5a825cc | shell cause fixed | 88f4c2f7 |
@@ -74,7 +74,7 @@ Counts: fails twice: 4, Hyprland only: 3, engine cause fixed: 7, shell cause fix
 | `--airplay` | 1.25 | a5a825cc | pass |  |
 | `--app-grid` | 1.25 | a5a825cc | pass |  |
 | `--app-install` | 1.25 | a5a825cc | pass |  |
-| `--appmenu` | 1.25 | a5a825cc | pass |  |
+| `--appmenu` | 1.25 | adac80ac | pass |  |
 | `--backend gpu --dump` | 1.25 | a5a825cc | pass |  |
 | `--bar-adaptive` | 1.25 | a5a825cc | pass |  |
 | `--bar-ink` | 1.25 | a5a825cc | pass |  |
@@ -131,15 +131,17 @@ Counts: fails twice: 4, Hyprland only: 3, engine cause fixed: 7, shell cause fix
 | `--launcher-preview` | 1.25 | a5a825cc | pass |  |
 | `--light --gallery` | 1.25 | a5a825cc | pass |  |
 | `--lights` | 1.25 | a5a825cc | pass |  |
-| `--lock` | 1.25 | a5a825cc | pass |  |
+| `--lock` | 1.25 | adac80ac | pass |  |
 | `--lock --depth` | 1.25 | a5a825cc | pass |  |
 | `--lock-restore` | 1.25 | a5a825cc | pass |  |
-| `--login-lock` | 1.25 | a5a825cc | pass |  |
+| `--login-lock` | 1.25 | adac80ac | pass |  |
+| `--login-stuck` | 1.25 | adac80ac | pass |  |
+| `--login-switch` | 1.25 | adac80ac | pass |  |
 | `--lyrics` | 1.25 | a5a825cc | pass |  |
 | `--lyrics-blur` | 1.25 | a5a825cc | pass |  |
 | `--mac-launcher` | 1.25 | a5a825cc | pass |  |
 | `--media` | 1.25 | a5a825cc | pass |  |
-| `--menu` | 1.25 | a5a825cc | pass |  |
+| `--menu` | 1.25 | adac80ac | pass |  |
 | `--menu-actions` | 1.25 | a5a825cc | pass |  |
 | `--menu-hover` | 1.25 | a5a825cc | pass |  |
 | `--menu-morph` | 1.25 | a5a825cc | pass |  |
@@ -204,11 +206,11 @@ Counts: fails twice: 4, Hyprland only: 3, engine cause fixed: 7, shell cause fix
 | `--theme-toggle` | 1.25 | a5a825cc | pass |  |
 | `--toast-swipe` | 1.25 | a5a825cc | pass |  |
 | `--toggles` | 1.25 | a5a825cc | pass |  |
-| `--tray` | 1.25 | a5a825cc | pass |  |
+| `--tray` | 1.25 | adac80ac | pass |  |
 | `--tray --sidebar` | 1.25 | a5a825cc | pass |  |
-| `--tray-overflow` | 1.25 | a5a825cc | pass |  |
+| `--tray-overflow` | 1.25 | adac80ac | pass |  |
 | `--tray-overflow --sidebar` | 1.25 | a5a825cc | pass |  |
-| `--unlock` | 1.25 | a5a825cc | pass |  |
+| `--unlock` | 1.25 | adac80ac | pass |  |
 | `--use` | 1.25 | a5a825cc | pass |  |
 | `--visualizer` | 1.25 | a5a825cc | pass |  |
 | `--visualizer-styles` | 1.25 | a5a825cc | pass |  |
@@ -218,16 +220,28 @@ Counts: fails twice: 4, Hyprland only: 3, engine cause fixed: 7, shell cause fix
 
 ## Hyprland
 
-The Hyprland legs the Shoji work touches, on the mac rig's slot 0 at scale 1.25 with the shell at a6697e69.
+The Hyprland legs the Shoji work touches, on the mac rig's slot 0 at scale 1.25 with the shell at 190cebaa.
 
 | Row | Scale | Result |
 |---|---|---|
+| `--appmenu` | 1.25 | pass |
 | `--dock` | 1.25 | pass |
 | `--dock-density` | 1.25 | pass |
+| `--glass-behind` | 1.25 | pass (a6697e69) |
+| `--glass-behind --no-morph` | 1.25 | pass (a6697e69) |
+| `--headset-card` | 1.25 | pass |
+| `--hotcorner-relock` | 1.25 | pass |
+| `--hypr-motion` | 1.25 | fails: no strip carried the window's middle over a bare edge, as on origin/main |
+| `--lock` | 1.25 | pass |
+| `--mac-faults` | 1.25 | pass |
 | `--mac-keys` | 1.25 | pass |
+| `--mac-launcher` | 1.25 | pass (a6697e69) |
 | `--mac-menu` | 1.25 | pass |
 | `--mac-menu --sidebar` | 1.25 | pass |
-| `--mac-launcher` | 1.25 | pass |
-| `--mac-faults` | 1.25 | pass |
-| `--glass-behind` | 1.25 | pass |
-| `--glass-behind --no-morph` | 1.25 | pass |
+| `--menu` | 1.25 | pass |
+| `--menu-emerge` | 1.25 | pass |
+| `--overview` | 1.25 | passes and fails on its budget of 12 commits through a 400ms zoom: 11 or 12 from run to run, origin/main's leg the same (11 and 12) |
+| `--switcher-keys` | 1.25 | pass |
+| `--tray` | 1.25 | pass |
+| `--tray-overflow` | 1.25 | pass |
+| `--unlock` | 1.25 | pass |
