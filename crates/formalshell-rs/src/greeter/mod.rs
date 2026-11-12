@@ -738,7 +738,7 @@ fn shots(dir: &Path, doc: &Value, env: &theme::Env) {
             avatar: crate::scene::nearest(&pic, 1.0),
             media,
             buttons: lock::Buttons { shown: vec![lock::Button::SHUTDOWN, lock::Button::REBOOT], armed: None },
-            ..lock::Shared::new("Kyan De Sutter", lock::prompt("", (0, 0), false))
+            ..lock::Shared::new("Kyan De Sutter", lock::prompt("", (0, 0)))
         };
         lock::draw(&mut view, &shared, &theme, &mut kit, Instant::now());
         save(dir, name, &view.scene);

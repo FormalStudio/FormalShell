@@ -83,7 +83,7 @@ pub fn login_session_marker() -> Option<PathBuf> {
 }
 
 /// A directory, not a link to one, owned by this user with no group or
-/// world access.
+/// world access. Its ancestors are trusted, as logind's `/run/user/<uid>` is.
 pub fn private_dir(path: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
     std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir() && m.uid() == unsafe { libc::geteuid() } && m.mode() & 0o077 == 0)

@@ -191,9 +191,12 @@ left as they are.
   its menu, Up and Down pick. With another session picked, the password is
   still checked on the lock, and the lock then stays up: it writes
   `$XDG_RUNTIME_DIR/formalshell/login-session` (the session's environment
-  as the greeter hands it to greetd, a line each, then its command), waits
-  for the login keyring's unlock to answer as a plain unlock gives it, and
-  ends the compositor through the seam's Exit. The login script, which no
+  as the greeter hands it to greetd, a line each, then its command), says
+  "Starting <session>…" in the field, waits for the login keyring's unlock
+  to answer as a plain unlock gives it and for that label to be on every
+  output (5 s at most for both, then it goes on as a plain unlock would),
+  and ends the compositor through the seam's Exit. An unlock while it
+  waits (logind's) calls the handover off and removes the marker. The login script, which no
   longer execs uwsm, starts that session in the same login once uwsm
   returns, so the password is typed once. The script runs what the marker
   says, so both sides take it only from a private runtime directory: set

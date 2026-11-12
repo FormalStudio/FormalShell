@@ -109,6 +109,9 @@ struct Out {
     /// The departure's black was committed as this commit, and has been shown.
     dark: Option<u64>,
     dark_landed: bool,
+    /// A handover's "Starting" frame was committed, and has been shown.
+    starting: bool,
+    starting_landed: bool,
 }
 
 #[derive(Default)]
@@ -248,7 +251,62 @@ pub struct Lock {
     sessions: Option<Sessions>,
     /// The session the login script was asked to start, while this
     /// compositor ends.
-    leaving: Option<Session>,
+    leaving: Option<Leaving>,
+}
+
+/// A handover from the password's check to this compositor's end, named by
+/// the check's attempt: an unlock in between moves the attempt on, so a
+/// keyring answer or a timer meant for it finds nothing to do.
+struct Leaving {
+    session: Session,
+    attempt: u64,
+    /// The login keyring has answered, or stopped being waited for.
+    keyring: bool,
+    /// The compositor has been asked to end.
+    exiting: bool,
+}
+
+impl Leaving {
+    /// The keyring's answer for this handover: true the first time.
+    fn answered(&mut self, attempt: u64) -> bool {
+        let first = attempt == self.attempt && !self.keyring;
+        self.keyring |= first;
+        first
+    }
+
+    /// The deadline, for this handover while it still waits: the keyring
+    /// stops being waited for. Some(true) when it had not answered.
+    fn deadline(&mut self, attempt: u64) -> Option<bool> {
+        if attempt != self.attempt || self.exiting {
+            return None;
+        }
+        Some(!std::mem::replace(&mut self.keyring, true))
+    }
+
+    /// Whether to ask the compositor to end now, `shown` being the card's
+    /// "Starting" on every output: once, and only after both.
+    fn end(&mut self, shown: bool) -> bool {
+        let go = self.keyring && shown && !self.exiting;
+        self.exiting |= go;
+        go
+    }
+
+    /// Still here `LEAVE_WAIT` after the compositor was asked to end.
+    fn stayed(&self, attempt: u64) -> bool {
+        attempt == self.attempt && self.exiting
+    }
+}
+
+/// Drops a pending handover and the marker the login script would start it
+/// from. True when there was one.
+fn cancel_leave(leaving: &mut Option<Leaving>, marker: Option<PathBuf>) -> bool {
+    if leaving.take().is_none() {
+        return false;
+    }
+    if let Some(marker) = marker {
+        let _ = std::fs::remove_file(marker);
+    }
+    true
 }
 
 struct Sessions {
@@ -357,8 +415,10 @@ fn login_marker() -> PathBuf {
 /// waiting on something that is not coming.
 const CHECK_DEADLINE: Duration = Duration::from_secs(15);
 /// The keyring is unlocked after the lock has lifted, so this only bounds a
-/// thread nobody waits on, but for a handover's, which the compositor's end
-/// waits for: the shell goes with the compositor, the thread with it.
+/// thread nobody waits on. A handover waits this long at most for its answer
+/// and for the card's "Starting" to be on screen before ending the
+/// compositor (the shell goes with it, the thread too): a socket connect
+/// can block past the thread's own bound, and a blanked output draws nothing.
 const KEYRING_DEADLINE: Duration = Duration::from_secs(5);
 /// How long the lock holds after asking the compositor to end before it
 /// takes the session pick back.
@@ -681,7 +741,9 @@ impl App {
     /// login script starts it once this compositor has gone, and the lock
     /// stays up until then. The compositor is asked to end once the login
     /// keyring has its unlock ([`LockMsg::Keyring`]), as a plain unlock
-    /// gives it.
+    /// gives it, and the card's "Starting" has been on every output, or
+    /// `KEYRING_DEADLINE` on without them: a keyring that never answers is
+    /// left as a plain unlock would leave it.
     fn leave_for(&mut self, s: &Session) {
         let written = match crate::paths::login_session_marker() {
             Some(marker) => crate::paths::write_private(&marker, sessions::handover(s)).map_err(|err| format!("{}: {err}", marker.display())),
@@ -693,25 +755,72 @@ impl App {
             return;
         }
         eprintln!("lock: leaving for {}", s.id);
-        self.lock.leaving = Some(s.clone());
+        let attempt = self.lock.attempt;
+        self.lock.leaving = Some(Leaving { session: s.clone(), attempt, keyring: false, exiting: false });
+        for o in &mut self.lock.outs {
+            (o.starting, o.starting_landed) = (false, false);
+        }
         self.lock.dirty = true;
+        let _ = self.handle.insert_source(Timer::from_duration(KEYRING_DEADLINE), move |_, _, app: &mut App| {
+            let shown = app.lock_starting_shown();
+            if let Some(unanswered) = app.lock.leaving.as_mut().and_then(|l| l.deadline(attempt)) {
+                if unanswered {
+                    eprintln!("lock: the login keyring did not answer in {}s", KEYRING_DEADLINE.as_secs());
+                }
+                if !shown {
+                    eprintln!("lock: \"Starting\" was not shown in {}s", KEYRING_DEADLINE.as_secs());
+                }
+                app.leave_go(true);
+            }
+            TimeoutAction::Drop
+        });
+    }
+
+    /// Every output has shown the handover's "Starting".
+    fn lock_starting_shown(&self) -> bool {
+        self.lock.outs.iter().filter(|o| o.surface.configured).all(|o| o.starting_landed)
+    }
+
+    /// Ends the compositor once the handover has what it waits for, or,
+    /// `forced`, at its deadline.
+    fn leave_go(&mut self, forced: bool) {
+        let shown = forced || self.lock_starting_shown();
+        let Some(l) = self.lock.leaving.as_mut() else { return };
+        if l.end(shown) {
+            let attempt = l.attempt;
+            self.end_session(attempt);
+        }
+    }
+
+    /// The field's label while it is closed.
+    fn lock_busy(&self) -> Option<String> {
+        match &self.lock.leaving {
+            Some(l) => Some(format!("Starting {}\u{2026}", l.session.name)),
+            None => self.lock.checking.then(|| "Unlocking\u{2026}".into()),
+        }
     }
 
     /// A compositor still here after `LEAVE_WAIT` leaves the pick undone and
     /// the lock as it was.
-    fn end_session(&mut self) {
-        let _ = self.handle.insert_source(Timer::from_duration(LEAVE_WAIT), |_, _, app: &mut App| {
-            if app.lock.leaving.take().is_some() {
+    fn end_session(&mut self, attempt: u64) {
+        let _ = self.handle.insert_source(Timer::from_duration(LEAVE_WAIT), move |_, _, app: &mut App| {
+            if app.lock.leaving.as_ref().is_some_and(|l| l.stayed(attempt)) {
                 eprintln!("lock: the compositor did not end in {}s", LEAVE_WAIT.as_secs());
-                if let Some(marker) = crate::paths::login_session_marker() {
-                    let _ = std::fs::remove_file(marker);
-                }
+                app.cancel_leave();
                 app.lock.error = "Could not end the session".into();
-                app.lock.dirty = true;
             }
             TimeoutAction::Drop
         });
         compositor::send(compositor::Command::Exit);
+    }
+
+    /// A pending handover undone, its marker removed, so the lock takes keys
+    /// again.
+    fn cancel_leave(&mut self) {
+        if cancel_leave(&mut self.lock.leaving, crate::paths::login_session_marker()) {
+            eprintln!("lock: the handover is off");
+            self.lock.dirty = true;
+        }
     }
 
     /// A lock surface for every output that has none yet.
@@ -732,7 +841,7 @@ impl App {
             if self.lock.login && self.lock.outs.is_empty() {
                 crate::trace::phase("login lock surface");
             }
-            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, splash_scale: 0.0, dissolve: None, dissolved: false, dark: None, dark_landed: false });
+            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, splash_scale: 0.0, dissolve: None, dissolved: false, dark: None, dark_landed: false, starting: false, starting_landed: false });
         }
     }
 
@@ -801,8 +910,8 @@ impl App {
             LockMsg::Pam(attempt, outcome) if attempt == self.lock.attempt => self.lock_result(outcome),
             LockMsg::Pam(..) => {}
             LockMsg::Keyring(attempt) => {
-                if attempt == self.lock.attempt && self.lock.leaving.is_some() {
-                    self.end_session();
+                if self.lock.leaving.as_mut().is_some_and(|l| l.answered(attempt)) {
+                    self.leave_go(false);
                 }
             }
             LockMsg::Avatar(a) => {
@@ -1007,6 +1116,8 @@ impl App {
     /// PAM's success and logind's Unlock. Each output's last picture goes to
     /// a veil first (wayland/veil.rs), so the desktop comes in under it.
     fn begin_unlock(&mut self) {
+        // logind's Unlock can come while a handover waits: the session stays.
+        self.cancel_leave();
         if self.lock.unlocking {
             return;
         }
@@ -1031,6 +1142,7 @@ impl App {
     /// them is over.
     pub(super) fn finish_unlock(&mut self) {
         self.lock.unlocking = false;
+        self.cancel_leave();
         if let Some(session) = self.lock.session.take() {
             session.unlock();
             // The unlock reaches the compositor before the markers below go:
@@ -1293,7 +1405,11 @@ impl App {
             if o.dark.is_some() {
                 o.dark_landed = true;
             }
+            o.starting_landed |= o.starting;
             self.lock.dirty = true;
+        }
+        if self.lock.leaving.is_some() {
+            self.leave_go(false);
         }
     }
 
@@ -1432,9 +1548,10 @@ impl App {
         let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now) || departing;
         let dark = self.lock.departing && !self.lock.depart.running(now);
         let has_wallpaper = !self.store.desktop().is_empty();
-        let starting = self.lock.leaving.as_ref().map(|s| format!("Starting {}\u{2026}", s.name));
-        let prompt = view::prompt(self.lock.password.text(), self.lock.password.caret_chars(), self.lock.checking);
-        let prompt = match &starting {
+        let leaving = self.lock.leaving.is_some();
+        let busy = self.lock_busy();
+        let prompt = view::prompt(self.lock.password.text(), self.lock.password.caret_chars());
+        let prompt = match &busy {
             Some(busy) => prompt.checking(busy),
             None => prompt,
         };
@@ -1548,10 +1665,11 @@ impl App {
                 self.lock.reports.insert(o.name.clone(), report);
             }
             let commits = o.surface.commits();
-            o.surface.present(&mut o.view.scene, moving || (self.lock.departing && !o.dark_landed), &qh);
+            o.surface.present(&mut o.view.scene, moving || (self.lock.departing && !o.dark_landed) || (leaving && !o.starting_landed), &qh);
             if dark && o.dark.is_none() && o.surface.commits() > commits {
                 o.dark = Some(o.surface.commits());
             }
+            o.starting |= leaving && o.surface.commits() > commits;
         }
     }
 
@@ -1582,7 +1700,9 @@ impl App {
                     "picked": s.list[s.picked].id,
                     "menu": s.menu,
                 })),
-                "leavingFor": self.lock.leaving.as_ref().map(|s| s.id.as_str()),
+                "leavingFor": self.lock.leaving.as_ref().map(|l| l.session.id.as_str()),
+                "busy": self.lock_busy(),
+                "startingShown": self.lock.leaving.is_some() && self.lock_starting_shown(),
                 "armed": self.lock.armed.get().copied().map(Button::id),
             })
         };
@@ -1700,6 +1820,11 @@ impl SessionLockHandler for App {
     fn finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
         eprintln!("lock: finished by the compositor");
         self.lock.unlocking = false;
+        // A compositor already asked to end may drop the lock on its way out;
+        // the login script still wants the marker then.
+        if !self.lock.leaving.as_ref().is_some_and(|l| l.exiting) {
+            self.cancel_leave();
+        }
         self.lift_handover();
         self.lock.session = None;
         self.lock.outs.clear();
@@ -1733,5 +1858,53 @@ impl SessionLockHandler for App {
         let output = o.output.clone();
         self.saver_lock_configure(&output, w, h);
         self.lock.dirty = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leaving(attempt: u64) -> Leaving {
+        let session = Session { id: "hyprland-uwsm".into(), name: "Hyprland".into(), exec: "uwsm start hyprland.desktop".into(), desktops: "Hyprland".into() };
+        Leaving { session, attempt, keyring: false, exiting: false }
+    }
+
+    #[test]
+    fn a_handover_ends_the_compositor_once_its_keyring_and_label_are_in() {
+        let mut l = leaving(3);
+        assert!(!l.end(true), "no keyring answer yet");
+        assert!(l.answered(3) && !l.answered(3), "one answer counts");
+        assert!(!l.end(false), "the card's label not on screen yet");
+        assert!(l.end(true) && !l.end(true), "then once");
+        assert!(l.stayed(3));
+        assert_eq!(l.deadline(3), None, "the deadline after the end does nothing");
+
+        let mut l = leaving(3);
+        assert_eq!(l.deadline(3), Some(true), "a keyring that never answers");
+        assert!(l.end(true), "holds the handover up no longer than the deadline");
+        let mut l = leaving(3);
+        l.answered(3);
+        assert_eq!(l.deadline(3), Some(false));
+    }
+
+    #[test]
+    fn an_answer_or_timer_from_another_attempt_does_nothing() {
+        let mut l = leaving(4);
+        assert!(!l.answered(3) && l.deadline(3).is_none() && !l.end(true) && !l.stayed(3));
+        l.answered(4);
+        l.end(true);
+        assert!(!l.stayed(5));
+    }
+
+    #[test]
+    fn a_cancelled_handover_removes_its_marker_and_frees_the_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join(crate::paths::LOGIN_SESSION_MARKER);
+        std::fs::write(&marker, "XDG_SESSION_TYPE=wayland\nuwsm start hyprland.desktop\n").unwrap();
+        let mut pending = Some(leaving(2));
+        assert!(cancel_leave(&mut pending, Some(marker.clone())));
+        assert!(pending.is_none() && !marker.exists());
+        assert!(!cancel_leave(&mut pending, Some(marker)), "nothing left to cancel");
     }
 }

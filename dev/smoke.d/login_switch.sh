@@ -12,17 +12,20 @@
 # off the running compositor's entry (to Hyprland under formalwm, to
 # formalwm under Hyprland), photographs the open menu and closes it. A
 # wrong password keeps the lock up and writes no session marker. The real
-# one leaves the picked session's environment and command for the script
-# and ends the compositor. The script then starts that entry, whose Exec
-# here is a stand-in recording what it was handed (the environment, the
-# marker spent, the first compositor gone, the card's CRTC between the two)
-# before running the rig's session again, in which the drive finds the
-# shell unlocked and photographs it.
+# one leaves the picked session's environment and command for the script,
+# the card says "Starting <name>…" (`lock status`'s busy label, shown on
+# every output) and the compositor ends after it. The script then starts
+# that entry, whose Exec here is a stand-in recording what it was handed
+# (the environment, the marker spent, the first compositor gone, the card's
+# CRTC between the two) before running the rig's session again, in which the
+# drive finds the shell unlocked and photographs it.
 #
 # A stand-in for gnome-keyring-daemon's control socket
 # (`$XDG_RUNTIME_DIR/keyring/control`, fs_auth::keyring) answers the
 # shell's unlock 2s late: the compositor is only asked to end once it has,
 # so the first session's shell logs the keyring unlocked before it goes.
+# --login-stuck's never takes the connection, its backlog full, so the
+# shell's connect blocks for good.
 #
 # Under formalwm the shell runs with the slot's own runtime dir (the
 # script's) in place of shoji-run.sh's, which reaches it through a link the
@@ -55,6 +58,7 @@ login_switch_menu_json="$shot_dir/login-switch-menu.json"
 login_switch_wrong_json="$shot_dir/login-switch-wrong.json"
 login_switch_wrong_marker="$shot_dir/login-switch-wrong-marker.txt"
 login_switch_stuck_json="$shot_dir/login-switch-stuck.json"
+login_switch_starting_json="$shot_dir/login-switch-starting.json"
 login_switch_stuck_txt="$shot_dir/login-switch-stuck.txt"
 login_switch_keyring_dir="$login_switch_host_runtime/keyring"
 login_switch_keyring_txt="$shot_dir/login-switch-keyring.txt"
@@ -65,6 +69,10 @@ login_switch_links="wayland-1 shojiwm-wayland-1.sock"
 # name order (formalwm, Hyprland, Plasma).
 login_switch_target() {
   case $FS_COMPOSITOR in shoji) echo hyprland-uwsm ;; *) echo formalwm-uwsm ;; esac
+}
+# The picked entry's name, as the fixture writes it.
+login_switch_target_name() {
+  case $FS_COMPOSITOR in shoji) echo "Hyprland (uwsm-managed)" ;; *) echo "formalwm (uwsm-managed)" ;; esac
 }
 login_switch_key() {
   case $FS_COMPOSITOR in shoji) echo Down ;; *) echo Up ;; esac
@@ -78,6 +86,7 @@ login_switch_wm_pattern() {
   esac
 }
 
+# [hang]: the keyring stand-in's backlog full rather than answering.
 login_switch_fixture() {
   mkdir -p "$login_switch_runtime"
   rm -f "$login_switch_marker" "$login_switch_dest_txt"
@@ -97,11 +106,24 @@ login_switch_fixture() {
     exit 1
   fi
   mkdir -m 700 "$login_switch_keyring_dir"
-  python3 -I - "$login_switch_keyring_dir/control" "$rig_password" "$login_switch_keyring_txt" > "$shot_dir/login-switch-keyring.log" 2>&1 <<'PY' &
+  python3 -I - "$login_switch_keyring_dir/control" "$rig_password" "$login_switch_keyring_txt" "${1:-answer}" > "$shot_dir/login-switch-keyring.log" 2>&1 <<'PY' &
 import socket, struct, sys, time
-path, password, out = sys.argv[1], sys.argv[2].encode(), sys.argv[3]
+path, password, out, mode = sys.argv[1], sys.argv[2].encode(), sys.argv[3], sys.argv[4]
 server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 server.bind(path)
+if mode == "hang":
+    server.listen(0)
+    fillers = []
+    for _ in range(4):
+        c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        c.setblocking(False)
+        try:
+            c.connect(path)
+        except OSError:
+            pass
+        fillers.append(c)
+    while True:
+        time.sleep(3600)
 server.listen(4)
 while True:
     conn, _ = server.accept()
@@ -222,7 +244,7 @@ login_switch_drive() {
     enter=$(cat <<EOF
 "$wtype_bin" -s 300 "$rig_password" -k Return
 kill -STOP "\$origin"
-until_jq 20 "$login_switch_stuck_json" '.authError == "Could not end the session"' call lock status
+until_jq 30 "$login_switch_stuck_json" '.authError == "Could not end the session"' call lock status
 {
   if [ -e "$login_switch_marker" ]; then echo marker=left; else echo marker=gone; fi
   echo "origin=\$(ps -o stat= -p "\$origin")"
@@ -240,7 +262,7 @@ EOF
 )
     enter=$(cat <<EOF
 "$wtype_bin" -s 300 "$rig_password" -k Return
-sleep 1
+until_jq 2 "$login_switch_starting_json" '.leavingFor != null and .startingShown == true' call lock status
 shoot "$login_switch_leaving_png"
 EOF
 )
@@ -313,6 +335,7 @@ leg_login_switch_assert() {
   [ "$(cat "$login_switch_wrong_marker")" = none ] || fail "a wrong password left a session marker"
   [ -f "$login_switch_wrong_png" ] && echo "SMOKE_LOGIN_SWITCH_WRONG $login_switch_wrong_png"
   [ -f "$login_switch_leaving_png" ] && echo "SMOKE_LOGIN_SWITCH_LEAVING $login_switch_leaving_png"
+  expect_jq "$login_switch_starting_json" ".leavingFor == \"$target\" and .busy == \"Starting $(login_switch_target_name)\u2026\" and .startingShown == true" "the card did not show Starting $(login_switch_target_name) while the handover waited" '{leavingFor, busy, startingShown}'
 
   log=$(login_switch_origin_shell_log)
   login_switch_keyring_assert "$log"

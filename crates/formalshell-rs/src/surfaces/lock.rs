@@ -168,11 +168,10 @@ pub fn stop(b: Button) -> String {
     format!("lock:{}", b.id())
 }
 
-/// The lock's field: a masked password and nothing over it, or, while PAM
-/// has the password, closed and saying so.
-pub fn prompt(typed: &str, caret: (usize, usize), checking: bool) -> Prompt<'static> {
-    let p = Prompt::new(typed, true, caret, "Password");
-    if checking { p.checking("Unlocking\u{2026}") } else { p }
+/// The lock's field: a masked password and nothing over it. Closed while
+/// busy, the label its owner's (`Prompt::checking`).
+pub fn prompt(typed: &str, caret: (usize, usize)) -> Prompt<'static> {
+    Prompt::new(typed, true, caret, "Password")
 }
 
 /// The now-playing block, shown while a player that is not a stream
@@ -549,7 +548,7 @@ mod tests {
     fn blanked_corner(theme: &Theme, kit: &mut Kit, backdrop: Option<&Bitmap>, has_wallpaper: bool, wake: f32) -> i32 {
         use crate::render::Renderer;
         let (w, h) = SCREEN;
-        let shared = Shared { has_wallpaper, backdrop, blanked: true, wake, ..Shared::new("", prompt("", (0, 0), false)) };
+        let shared = Shared { has_wallpaper, backdrop, blanked: true, wake, ..Shared::new("", prompt("", (0, 0))) };
         let mut view = View::new(w, h);
         draw(&mut view, &shared, theme, kit, Instant::now());
         let mut r = Renderer::new(w as u16, h as u16);
@@ -597,7 +596,8 @@ mod tests {
         assert!(theme.motion_enabled);
         let mut kit = Kit::new(&theme);
         let mut animating = |checking: bool| {
-            let shared = Shared::new("", prompt("", (0, 0), checking));
+            let field = prompt("", (0, 0));
+            let shared = Shared::new("", if checking { field.checking("Unlocking\u{2026}") } else { field });
             let mut view = View::new(SCREEN.0, SCREEN.1);
             let now = Instant::now();
             draw(&mut view, &shared, &theme, &mut kit, now);
