@@ -453,6 +453,19 @@ impl Model {
         self.outputs.iter().any(|o| o.active == id)
     }
 
+    /// Whether an output shows the window: its workspace is the active one
+    /// there, or its overlay is up.
+    pub fn in_view(&self, id: &str) -> bool {
+        match self.window(id).map(|window| &window.home) {
+            Some(Home::Workspace(workspace)) => self.is_active(workspace),
+            Some(Home::Overlay(name)) => self
+                .overlays
+                .iter()
+                .any(|overlay| overlay.name == *name && overlay.shown_on.is_some()),
+            None => false,
+        }
+    }
+
     pub fn shown_overlay(&self, output: &str) -> Option<&Overlay> {
         self.overlays.iter().find(|overlay| {
             overlay.shown_on.as_deref() == Some(output) && !overlay.windows.is_empty()

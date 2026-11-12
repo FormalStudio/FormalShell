@@ -824,6 +824,7 @@ dependencies = [
  "tracing",
  "wayland-client",
  "wayland-protocols",
+ "wayland-protocols-wlr",
 ]
 
 [[package]]

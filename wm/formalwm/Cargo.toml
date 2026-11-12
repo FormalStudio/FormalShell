@@ -19,3 +19,4 @@ shojiwm_lib = { git = "https://github.com/FormalSnake/ShojiWM.git", rev = "bab2b
 smithay = { git = "https://github.com/bea4dev/smithay.git", rev = "c1253794ee2a7c466e88bb20dfdaabb4ccbfb2aa", default-features = false }
 wayland-client = "0.31.14"
 wayland-protocols = { version = "0.32.12", features = ["client"] }
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }

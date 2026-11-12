@@ -600,3 +600,26 @@ fn an_overlay_shown_on_an_output_that_goes_is_parked() {
     assert!(model.show_overlay("console"));
     assert_eq!(focused(&model), "console");
 }
+
+#[test]
+fn a_window_is_in_view_on_a_shown_workspace_or_a_shown_overlay() {
+    let mut model = two_outputs();
+    open(&mut model, "a");
+    let rule = Placement {
+        overlay: Some("formalshell-console".into()),
+        floating: true,
+        ..Placement::default()
+    };
+    open_with(&mut model, "console", rule);
+    assert!(model.in_view("a"));
+    assert!(!model.in_view("console"), "parked");
+    assert!(!model.in_view("nope"));
+
+    assert!(model.move_to_workspace("a", "5", false));
+    assert!(!model.in_view("a"), "its workspace is not the one shown");
+    assert_eq!(model.focused_window(), None);
+    assert!(model.show_overlay("console"));
+    assert!(model.in_view("console"));
+    model.focus_workspace("5");
+    assert!(model.in_view("a"));
+}

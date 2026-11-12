@@ -377,10 +377,17 @@ impl Engine {
     }
 
     /// A click, or a client the compositor let take the keyboard.
-    fn focused(&mut self, window: Window) {
+    pub(crate) fn focused(&mut self, window: Window) {
         let id = window.id();
         self.asked_focus = Some(id.clone());
         if self.model.focused_window() == Some(&id) {
+            return;
+        }
+        // The compositor hands the keyboard back to the window that last had
+        // it when a layer lets go of it. One out of view is not shown for
+        // that: the keyboard goes back to where the model has it.
+        if !self.model.in_view(&id) {
+            self.focus();
             return;
         }
         if self.model.focus_window(&id) {

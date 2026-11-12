@@ -23,6 +23,7 @@ use wayland_client::{
     protocol::{wl_compositor, wl_registry, wl_surface},
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
 use crate::engine::ask;
 
@@ -163,6 +164,37 @@ impl Session {
         surface
     }
 
+    /// A layer across the top of the first output that takes the keyboard.
+    fn layer(
+        &mut self,
+    ) -> (
+        zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+        wl_surface::WlSurface,
+    ) {
+        let qh = self.queue.handle();
+        let compositor: wl_compositor::WlCompositor = self.bind("wl_compositor");
+        let shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = self.bind("zwlr_layer_shell_v1");
+        let surface = compositor.create_surface(&qh, ());
+        let layer = shell.get_layer_surface(
+            &surface,
+            None,
+            zwlr_layer_shell_v1::Layer::Top,
+            "launcher".into(),
+            &qh,
+            (),
+        );
+        layer.set_anchor(
+            zwlr_layer_surface_v1::Anchor::Top
+                | zwlr_layer_surface_v1::Anchor::Left
+                | zwlr_layer_surface_v1::Anchor::Right,
+        );
+        layer.set_size(0, 40);
+        layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive);
+        surface.commit();
+        self.roundtrip();
+        (layer, surface)
+    }
+
     /// One touchpad event on the first output, through the compositor's
     /// door to its config.
     fn swipe(&mut self, phase: Phase, fingers: u32, total: (f64, f64), velocity: (f64, f64)) {
@@ -262,7 +294,9 @@ ignore_events!(
     wl_compositor::WlCompositor,
     wl_surface::WlSurface,
     xdg_surface::XdgSurface,
-    xdg_toplevel::XdgToplevel
+    xdg_toplevel::XdgToplevel,
+    zwlr_layer_shell_v1::ZwlrLayerShellV1,
+    zwlr_layer_surface_v1::ZwlrLayerSurfaceV1
 );
 
 fn state() -> proto::State {
@@ -415,6 +449,66 @@ fn two_outputs_and_the_touchpad() {
         keyboard(&session),
         "back on Slack's workspace, Slack has it"
     );
+
+    // A window sent away without the view following gives the keyboard up,
+    // and a layer that had it in between hands it to nobody: the workspace
+    // the window went to stays out of view.
+    let slack = ask(|engine| Ok(engine.model.focused_window().cloned())).unwrap();
+    let slack = slack.expect("Slack is focused");
+    let send = |workspace: &'static str, follow: bool| {
+        let id = slack.clone();
+        ask(move |engine| {
+            let moved = engine.model.move_to_workspace(&id, workspace, follow);
+            engine.commit();
+            moved.then_some(()).ok_or("not moved".into())
+        })
+        .unwrap();
+    };
+    let typing = |session: &Session| {
+        let keyboard = session.state.seat.get_keyboard();
+        keyboard
+            .and_then(|keyboard| keyboard.current_focus())
+            .is_some()
+    };
+    let shown = || active(&state(), "TEST-2");
+    send("8", false);
+    session.roundtrip();
+    assert_eq!(shown().as_deref(), Some("4"));
+    assert!(!keyboard(&session), "sent away, it gives the keyboard up");
+    let (layer, surface) = session.layer();
+    assert!(typing(&session), "the layer takes the keyboard");
+    layer.destroy();
+    surface.destroy();
+    session.roundtrip();
+    assert!(!typing(&session), "the layer gone, nobody has it");
+    assert_eq!(
+        shown().as_deref(),
+        Some("4"),
+        "and no workspace is shown for it"
+    );
+    // The compositor giving it the keyboard all the same shows nothing:
+    // the engine hears of it and takes the keyboard back.
+    let id = slack.clone();
+    ask(move |engine| {
+        engine.windows[&id].handle.focus();
+        Ok(())
+    })
+    .unwrap();
+    session.roundtrip();
+    assert!(keyboard(&session));
+    let id = slack.clone();
+    ask(move |engine| {
+        let window = engine.windows[&id].handle;
+        engine.focused(window);
+        Ok(())
+    })
+    .unwrap();
+    session.roundtrip();
+    assert_eq!(shown().as_deref(), Some("4"));
+    assert!(!keyboard(&session), "out of view, it keeps no keyboard");
+    send("4", true);
+    session.roundtrip();
+    assert!(keyboard(&session), "back in view, it has the keyboard");
 
     assert_eq!(session.state.clear_color, [0.0, 0.0, 0.0, 1.0]);
 
