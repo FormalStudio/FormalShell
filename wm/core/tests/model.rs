@@ -761,3 +761,50 @@ fn the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard() {
     model.set_outputs(vec![output("A", 0.0, 1920.0, 1080.0)]);
     assert_eq!(model.focused_output, "A");
 }
+
+#[test]
+fn a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for() {
+    let mut model = two_outputs();
+    open(&mut model, "a");
+    model.focus_workspace("4");
+    open(&mut model, "chat");
+
+    // The keyboard on a, the pointer on B, which shows 4. Asked for, 4
+    // changes nothing that is shown and has the keyboard all the same,
+    // which the caller has to hear of.
+    let leave = |model: &mut formalwm_core::model::Model| {
+        assert!(model.focus_window("a"));
+        assert!(model.focus_output("B"));
+        assert_eq!((model.focused_output.as_str(), focused(model)), ("B", "a"));
+    };
+    leave(&mut model);
+    assert!(model.focus_workspace("4"));
+    assert_eq!(focused(&model), "chat");
+    assert!(!model.focus_workspace("4"));
+    // By its place in the stack, and as the one before.
+    leave(&mut model);
+    assert!(model.focus_workspace_at(1, None));
+    assert_eq!(focused(&model), "chat");
+    model.focus_workspace("8");
+    model.focus_workspace("4");
+    model.focus_workspace("8");
+    leave(&mut model);
+    assert!(model.focus_previous_workspace());
+    assert_eq!(model.focused_window(), None);
+
+    // With nothing on it the keyboard is nobody's.
+    leave(&mut model);
+    assert_eq!(model.focused_workspace().unwrap().id, "8");
+    assert!(model.focus_workspace("8"));
+    assert_eq!(model.focused_window(), None);
+
+    // A bind on the tape that moves nothing still takes the keyboard to
+    // the pointer's output when no window was typed into.
+    model.focus_workspace("4");
+    model.focus_workspace("2");
+    model.focus_output("B");
+    assert_eq!(model.focused_window(), None);
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!(focused(&model), "chat");
+    assert!(!model.focus_column(Side::Prev));
+}

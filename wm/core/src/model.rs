@@ -1095,7 +1095,9 @@ impl Model {
         if self.workspace(id).is_none() {
             return false;
         }
-        let changed = self.focused_workspace().is_none_or(|ws| ws.id != id);
+        // In view already, it still takes the keyboard from another output.
+        let changed =
+            self.typing.is_some() || self.focused_workspace().is_none_or(|ws| ws.id != id);
         self.show_workspace(id);
         changed
     }
@@ -1191,18 +1193,16 @@ impl Model {
     fn tape_op(&mut self, op: impl FnOnce(&mut Tape, &Options) -> bool) -> bool {
         let options = self.options.clone();
         // With no window typed into, a bind on the tape is for the output
-        // the pointer is on.
-        if self.focused_window().is_none() {
-            self.typing = None;
-        }
+        // the pointer is on, and the keyboard goes there with it.
+        let taken = self.focused_window().is_none() && self.typing.take().is_some();
         let output = self.typing_output().to_owned();
         let strip_w = self.strip_of(&output).w;
         let active = self.output(&output).map(|o| o.active.clone());
         let Some(ws) = active.and_then(|id| self.workspace_mut(&id)) else {
-            return false;
+            return taken;
         };
         if ws.zen.is_some() {
-            return false;
+            return taken;
         }
         let was_floating = std::mem::take(&mut ws.float_focused);
         let changed = op(&mut ws.tape, &options);
@@ -1213,7 +1213,7 @@ impl Model {
             }
         }
         ws.tape.fit(strip_w);
-        changed || (was_floating && !ws.tape.is_empty())
+        changed || taken || (was_floating && !ws.tape.is_empty())
     }
 
     pub fn focus_column(&mut self, side: Side) -> bool {

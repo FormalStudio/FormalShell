@@ -1264,6 +1264,44 @@ fn two_outputs_and_the_touchpad() {
     session.pointer_by(1.0, 0.0);
     assert_eq!(state().focused_output, "TEST-2");
 
+    // A workspace asked for while it is in view under the pointer shows
+    // nothing new and takes the keyboard all the same: to its window, and
+    // to nobody when it has none.
+    let mut shell = session.socket();
+    let mut ask_for = |session: &mut Session, workspace: &'static str| {
+        go(workspace);
+        let rect = row("newer").rect.unwrap();
+        session.pointer_to(f64::from(rect.x + 20), f64::from(rect.y + 20));
+        session.click();
+        assert_eq!((keyed(), said()), (Some(newer.clone()), newer.clone()));
+        session.pointer_to(WIDTH / 2.0, HEIGHT / 2.0);
+        let seen = state();
+        assert_eq!(
+            (seen.focused_workspace_id.as_str(), seen.focused_window_id),
+            (workspace, newer.clone())
+        );
+        session.call(
+            &mut shell,
+            proto::method::WORKSPACE_FOCUS,
+            json!({ "id": workspace }),
+        );
+        session.roundtrip();
+    };
+    ask_for(&mut session, "1");
+    let on_one: Vec<String> = state()
+        .windows
+        .into_iter()
+        .filter(|window| window.workspace_id == "1")
+        .map(|window| window.id)
+        .collect();
+    assert!(
+        on_one.contains(&said()),
+        "a window of workspace 1 is focused"
+    );
+    assert_eq!(keyed(), Some(said()), "and it has the keyboard");
+    ask_for(&mut session, "2");
+    assert_eq!((keyed(), said()), (None, String::new()));
+
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {
         session
