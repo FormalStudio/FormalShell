@@ -319,6 +319,35 @@ pub struct Bind {
     pub passthrough: bool,
 }
 
+/// The key and wheel binds of one shortcut. Hyprland runs every bind a
+/// chord has; ShojiWM fires one shortcut once, so they share a registration.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BindGroup {
+    /// ShojiWM's shortcut: the chord, or the modifier alone for one let go.
+    pub shortcut: String,
+    /// The first of its binds, by its place in the settings.
+    pub index: usize,
+    pub release: bool,
+    /// Hyprland's `transparent`, on a modifier let go.
+    pub transparent: bool,
+    /// Some bind of the group fires while the session is locked.
+    pub locked: bool,
+    pub repeat: bool,
+    /// Each action and whether its bind fires while the session is locked.
+    actions: Vec<(Action, bool)>,
+}
+
+impl BindGroup {
+    /// What the shortcut runs: on the lock screen only the actions of the
+    /// binds marked `locked`.
+    pub fn actions(&self, locked: bool) -> impl Iterator<Item = &Action> {
+        self.actions
+            .iter()
+            .filter(move |(_, on_lock)| *on_lock || !locked)
+            .map(|(action, _)| action)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 struct SettingsFile {
@@ -563,6 +592,45 @@ impl Settings {
             layers,
             binds,
         })
+    }
+
+    /// The binds by shortcut, in the shortcuts' order. A pointer button has
+    /// no shortcut and is in none.
+    pub fn bind_groups(&self) -> Vec<BindGroup> {
+        let mut groups: BTreeMap<(String, bool), BindGroup> = BTreeMap::new();
+        for (index, bind) in self.binds.iter().enumerate() {
+            let shortcut = match (bind.release, bind.chord.modifier_key()) {
+                (true, Some(modifier)) => Some(modifier.to_owned()),
+                _ => bind.chord.shortcut(),
+            };
+            let Some(shortcut) = shortcut else {
+                continue;
+            };
+            // Both Alt keys let go are one shortcut here.
+            let group = groups
+                .entry((shortcut.clone(), bind.release))
+                .or_insert_with(|| BindGroup {
+                    shortcut,
+                    index,
+                    release: bind.release,
+                    transparent: false,
+                    locked: false,
+                    repeat: false,
+                    actions: Vec::new(),
+                });
+            group.transparent |= bind.release && bind.passthrough;
+            group.locked |= bind.locked;
+            group.repeat |= bind.repeat && !bind.release;
+            match group
+                .actions
+                .iter_mut()
+                .find(|(action, _)| *action == bind.action)
+            {
+                Some((_, locked)) => *locked |= bind.locked,
+                None => group.actions.push((bind.action.clone(), bind.locked)),
+            }
+        }
+        groups.into_values().collect()
     }
 
     /// The entry for a connected output: the first that names it, else the
@@ -843,6 +911,33 @@ mod tests {
                 "{text} gave {error:?}, wanted {needle:?}"
             );
         }
+    }
+
+    #[test]
+    fn on_the_lock_screen_a_chord_runs_only_its_binds_marked_locked() {
+        let text = r#"{ "binds": [
+            { "chord": "XF86AudioRaiseVolume", "action": "spawn", "args": ["louder"], "locked": true, "repeat": true },
+            { "chord": "XF86AudioRaiseVolume", "action": "spawn", "args": ["osd"] },
+            { "chord": "ALT+Alt_L", "action": "spawn", "args": ["commit"], "release": true, "passthrough": true },
+            { "chord": "ALT+Alt_R", "action": "spawn", "args": ["commit"], "release": true, "passthrough": true },
+            { "chord": "SUPER+mouse:272", "action": "move-window" }
+        ] }"#;
+        let groups = Settings::parse(text, None).unwrap().bind_groups();
+        let spawn = |command: &str| Action::Spawn(vec![command.to_owned()]);
+        let run = |group: &BindGroup, locked| group.actions(locked).cloned().collect::<Vec<_>>();
+        assert_eq!(groups.len(), 2, "a pointer button has no shortcut");
+
+        let alt = &groups[0];
+        assert_eq!((alt.shortcut.as_str(), alt.index), ("Alt", 2));
+        assert!(alt.release && alt.transparent && !alt.locked);
+        assert_eq!(run(alt, false), [spawn("commit")]);
+        assert_eq!(run(alt, true), []);
+
+        let volume = &groups[1];
+        assert_eq!(volume.shortcut, "XF86AudioRaiseVolume");
+        assert!(volume.locked && volume.repeat && !volume.release);
+        assert_eq!(run(volume, false), [spawn("louder"), spawn("osd")]);
+        assert_eq!(run(volume, true), [spawn("louder")]);
     }
 
     #[test]
