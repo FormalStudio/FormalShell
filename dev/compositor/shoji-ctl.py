@@ -14,8 +14,10 @@ so.
 import json
 import os
 import re
+import shlex
 import socket
 import sys
+import tempfile
 import time
 
 HYPR_SPECIAL_ID = -99
@@ -257,25 +259,48 @@ def select(state, selector):
     return w
 
 
+def descends(pid, root):
+    while pid > 1:
+        if pid == root:
+            return True
+        try:
+            pid = int(open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return False
+    return False
+
+
 def spawn(command, rules):
-    before = {w["id"] for w in call("state.get")["windows"]}
-    call("spawn", {"argv": ["sh", "-c", command]}, answer=False)
     target = rules.get("workspace")
     if target is None:
+        call("spawn", {"argv": ["sh", "-c", command]}, answer=False)
         return
-    # hyprctl's `{ workspace = 'N silent' }`: the window that maps next goes
-    # to slot N of the focused output, focus staying where it is.
+    # hyprctl's `{ workspace = 'N silent' }`: the window this command maps
+    # goes to slot N of the focused output, focus staying where it is. The
+    # engine's spawn names no pid, so the shell it runs writes its own, and
+    # the window moved is one whose process descends from it: another
+    # command's window can map in the meantime.
     m = re.fullmatch(r"(\d+)( silent)?", str(target))
     if not m or not m.group(2):
         raise Unsupported(f"exec_cmd workspace rule {target}")
+    fd, mark = tempfile.mkstemp(prefix="shoji-ctl-spawn-")
+    os.close(fd)
+    call("spawn", {"argv": ["sh", "-c", f"echo $$ > {shlex.quote(mark)}; exec sh -c {shlex.quote(command)}"]}, answer=False)
     end = time.monotonic() + 10
+    root = None
     while time.monotonic() < end:
-        state = call("state.get")
-        new = [w for w in state["windows"] if w["id"] not in before and not w["overlay"]]
-        if new:
-            call("window.moveTo", {"id": new[0]["id"], "idx": int(m.group(1)), "output": state["focusedOutput"]}, answer=False)
-            return
+        if root is None:
+            text = open(mark).read().strip()
+            root = int(text) if text else None
+        if root is not None:
+            state = call("state.get")
+            mine = [w for w in state["windows"] if not w["overlay"] and descends(pid(w["pid"]) or 0, root)]
+            if mine:
+                os.unlink(mark)
+                call("window.moveTo", {"id": mine[0]["id"], "idx": int(m.group(1)), "output": state["focusedOutput"]}, answer=False)
+                return
         time.sleep(0.05)
+    os.unlink(mark)
     sys.exit(f"shoji-ctl: nothing mapped for {command!r} within 10s")
 
 
