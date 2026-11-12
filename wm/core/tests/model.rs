@@ -187,6 +187,23 @@ fn floating_and_back() {
 }
 
 #[test]
+fn a_column_bind_leaves_a_float_for_the_tiles_and_never_steps_onto_one() {
+    let mut model = desk();
+    open(&mut model, "tile");
+    open(&mut model, "mac");
+    assert!(model.set_floating("mac", Some(true)));
+    assert_eq!(focused(&model), "mac");
+    assert!(model.focus_column(Side::Next));
+    assert_eq!(focused(&model), "tile");
+    assert!(!model.focus_column(Side::Prev), "one tile and a float");
+    assert_eq!(focused(&model), "tile");
+    assert!(model.set_floating("mac", Some(false)));
+    model.focus_window("tile");
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!(focused(&model), "mac", "tiled, it is a column like any");
+}
+
+#[test]
 fn fullscreen_covers_the_output_and_maximize_what_the_layers_leave() {
     let mut model = desk();
     let mut geo = output("A", 0.0, 1920.0, 1080.0);

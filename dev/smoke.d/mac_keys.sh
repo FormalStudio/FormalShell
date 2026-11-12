@@ -9,11 +9,12 @@
 # (handed to a Mac app by default, here a mark in a file and the window
 # manager's close) and SUPER + CTRL + P (never handed: no Mac key equivalent sits on
 # that layer). dev/mac-stub.py is the Mac window, a foot window beside it
-# the native one; every key is wtype's, and the stub's --log and the marks
-# the binds leave are the evidence. wtype types through a keymap of its
-# own, so the session resolves binds by the symbol typed
-# (`input.resolve_binds_by_sym`), where a real keyboard's keycodes need no
-# such thing.
+# the native one, both tiled: formalwm's settings float an `atoll` window,
+# and its column binds step through the tiles only. Every key is wtype's,
+# and the stub's --log and the marks the binds leave are the evidence.
+# wtype types through a keymap of its own, so the session resolves binds by
+# the symbol typed (`input.resolve_binds_by_sym`), where a real keyboard's
+# keycodes need no such thing.
 # With the stub in front `appmenu status` reads `macKeys`, and Hyprland's
 # own submap reads `mac` (formalwm's state holds an active hand over to the
 # stub's window, which shoji-ctl's `submap` reads as `mac`): SUPER + C reaches the stub as a key with Super
@@ -73,6 +74,7 @@ mark() { sleep 0.6; grep -c "^\$1\\\$" "\$marks" > "\$2" 2>/dev/null || true; }
 
 "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
 until_window org.atoll.stub 15
+"$wmctl_bin" dispatch "hl.dsp.window.float({ window = 'class:org.atoll.stub', action = 'disable' })" > /dev/null 2>&1
 spawn_foot formalshell-mac-keys
 until_window formalshell-mac-keys
 "$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.stub' })" > /dev/null 2>&1
@@ -129,8 +131,8 @@ leg_mac_keys_assert() {
   [ -s "$mac_keys_log" ] || fail "--mac-keys: the stub logged nothing"
   cat "$mac_keys_log"
   echo "marks: $(tr '\n' ' ' < "$mac_keys_marks" 2>/dev/null)"
-  expect_jq "$m-clients.json" 'any(.[]; .class == "org.atoll.stub" and .xdgTag == "atoll")' \
-    "--mac-keys: the compositor does not list the stub's window with the atoll tag" '[.[] | {class, xdgTag}]'
+  expect_jq "$m-clients.json" 'any(.[]; .class == "org.atoll.stub" and .xdgTag == "atoll" and (.floating | not))' \
+    "--mac-keys: the compositor does not list the stub's window tiled with the atoll tag" '[.[] | {class, xdgTag, floating}]'
   expect_jq "$m-inside.json" '.macKeys' "--mac-keys: the stub in front did not put the session in the mac submap"
   if [ "$FS_COMPOSITOR" = shoji ]; then
     expect_jq "$m-held.json" '.handOver.active and .handOver.window == ([.windows[] | select(.appId == "org.atoll.stub") | .id] | first)
