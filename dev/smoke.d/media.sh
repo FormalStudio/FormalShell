@@ -16,6 +16,7 @@
 # slot out of its row rather than reserve a blank square.
 leg_media_flag="--media"
 leg_media_order=170
+leg_media_compositors="hyprland shoji"
 leg_media_needs="mpv ffmpeg convert"
 leg_media_claims="media.player=shared"
 

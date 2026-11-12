@@ -17,6 +17,7 @@
 # leg refuses one.
 leg_bar_ink_flag="--bar-ink"
 leg_bar_ink_order=102
+leg_bar_ink_compositors="hyprland shoji"
 leg_bar_ink_needs="convert jq"
 leg_bar_ink_claims="bar.style=transparent"
 

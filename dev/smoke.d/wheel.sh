@@ -53,6 +53,7 @@
 # so it coasts nothing either.
 leg_wheel_flag="--wheel"
 leg_wheel_order=125
+leg_wheel_compositors="hyprland shoji"
 leg_wheel_needs="wlrctl convert wpctl python3 jq"
 leg_wheel_claims="picker.directory pointer launcher=shared"
 

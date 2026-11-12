@@ -84,6 +84,7 @@
 #     and no device is listed.
 leg_earbuds_flag="--earbuds"
 leg_earbuds_order=176
+leg_earbuds_compositors="hyprland shoji"
 leg_earbuds_needs="jq python3 pw-loopback pw-record"
 leg_earbuds_claims="bus.system"
 

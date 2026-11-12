@@ -22,6 +22,7 @@
 # under it would decide neither claim.
 leg_tooltip_travel_flag="--tooltip-travel"
 leg_tooltip_travel_order=81
+leg_tooltip_travel_compositors="hyprland shoji"
 leg_tooltip_travel_needs="wlrctl jq"
 # The panel it rides on has already dropped the base fixture window.
 leg_tooltip_travel_fixture_window=keep

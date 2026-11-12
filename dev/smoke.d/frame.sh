@@ -24,6 +24,7 @@
 # curves into the cut-out, is the solid band's black.
 leg_frame_flag="--frame"
 leg_frame_order=190
+leg_frame_compositors="hyprland shoji"
 leg_frame_needs="jq convert"
 leg_frame_claims="frame=10/20"
 leg_frame_wayland_debug=1

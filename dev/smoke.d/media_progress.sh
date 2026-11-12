@@ -19,6 +19,7 @@
 # the spectrum.
 leg_media_progress_flag="--media-progress"
 leg_media_progress_order=171
+leg_media_progress_compositors="hyprland shoji"
 leg_media_progress_claims="media.visualizer=false media.player=shared panel=shared"
 leg_media_progress_needs="mpv ffmpeg convert"
 

@@ -14,6 +14,7 @@
 # proof.
 leg_bar_layout_flag="--bar-layout"
 leg_bar_layout_order=190
+leg_bar_layout_compositors="hyprland shoji"
 leg_bar_layout_needs="jq"
 leg_bar_layout_claims="bar.layout bar.modules bar.launcherIcon"
 

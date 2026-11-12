@@ -39,6 +39,7 @@
 # pulled for reading.
 leg_minimap_flag="--minimap"
 leg_minimap_order=238
+leg_minimap_compositors="hyprland shoji"
 leg_minimap_needs="jq foot wtype wlrctl python3"
 leg_minimap_claims="layout=sidebar frame=none sidebar.minimap"
 minimap_vpointer="$PWD/dev/vpointer.py"

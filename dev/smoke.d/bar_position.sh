@@ -27,6 +27,7 @@
 # the edge it was asked for.
 leg_bar_position_flag="--bar-position <edge>"
 leg_bar_position_order=185
+leg_bar_position_compositors="hyprland shoji"
 leg_bar_position_needs="jq"
 
 bar_position_layers_path="$shot_dir/bar-position-layers.json"

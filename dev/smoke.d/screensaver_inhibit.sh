@@ -13,6 +13,7 @@
 # bus.
 leg_screensaver_inhibit_flag="--screensaver-inhibit"
 leg_screensaver_inhibit_order=233
+leg_screensaver_inhibit_compositors="hyprland shoji"
 leg_screensaver_inhibit_needs="jq python3"
 
 si_client="$shot_dir/si-client.py"

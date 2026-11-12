@@ -10,6 +10,7 @@
 # frames would not show.
 leg_backend_flag="--backend <backend>"
 leg_backend_order=8
+leg_backend_compositors="hyprland shoji"
 leg_backend_needs="jq"
 leg_backend_fixture_window=keep
 # A run that owns its whole session still reads either path.

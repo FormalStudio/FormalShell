@@ -63,6 +63,7 @@
 # case it handles.
 leg_iphone_flag="--iphone"
 leg_iphone_order=174
+leg_iphone_compositors="hyprland shoji"
 leg_iphone_claims="iphone toasts=shared panel=shared media.player=shared"
 leg_iphone_needs="notify-send jq"
 

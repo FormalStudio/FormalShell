@@ -22,6 +22,7 @@
 #   e1504g's power saver).
 leg_desktop_clock_flag="--desktop-clock"
 leg_desktop_clock_order=112
+leg_desktop_clock_compositors="hyprland shoji"
 leg_desktop_clock_needs="convert jq foot"
 leg_desktop_clock_claims="wallpaper"
 

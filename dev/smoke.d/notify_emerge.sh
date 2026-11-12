@@ -33,6 +33,7 @@
 # colour and nothing about the geometry this leg reads.
 leg_notify_emerge_flag="--notify-emerge"
 leg_notify_emerge_order=31
+leg_notify_emerge_compositors="hyprland shoji"
 leg_notify_emerge_needs="notify-send convert"
 leg_notify_emerge_claims="toasts screen panel"
 

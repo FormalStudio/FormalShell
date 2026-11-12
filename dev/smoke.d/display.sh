@@ -13,6 +13,7 @@
 leg_display_flag="--display"
 leg_display_scale1="sets the output's scale itself"
 leg_display_order=216
+leg_display_compositors="hyprland shoji"
 leg_display_needs="jq"
 leg_display_claims="outputs=shared"
 

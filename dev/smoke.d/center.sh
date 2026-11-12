@@ -35,6 +35,7 @@
 # --bar-position, so no one claim here would hold whatever the run carries.
 leg_center_flag="--center"
 leg_center_order=40
+leg_center_compositors="hyprland shoji"
 leg_center_needs="notify-send jq wlrctl convert"
 leg_center_claims="screen=shared toasts=shared"
 

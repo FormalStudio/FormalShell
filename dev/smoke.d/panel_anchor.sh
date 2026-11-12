@@ -19,6 +19,7 @@
 # being in it exactly once.
 leg_panel_anchor_flag="--panel-anchor"
 leg_panel_anchor_order=75
+leg_panel_anchor_compositors="hyprland shoji"
 leg_panel_anchor_claims="bar.layout.left bar.position=top panel=shared"
 
 panel_anchor_toggle_reply_path="$shot_dir/panel-anchor-toggle.txt"

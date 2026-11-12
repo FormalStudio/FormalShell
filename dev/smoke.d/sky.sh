@@ -19,6 +19,7 @@
 # did not move.
 leg_sky_flag="--sky"
 leg_sky_order=236
+leg_sky_compositors="hyprland shoji"
 leg_sky_needs="convert jq"
 leg_sky_claims="wallpaper"
 

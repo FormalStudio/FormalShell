@@ -12,6 +12,7 @@
 # --hdr proves), and so is the lock row (--lock owns a locked session).
 leg_menu_actions_flag="--menu-actions"
 leg_menu_actions_order=223
+leg_menu_actions_compositors="hyprland shoji"
 leg_menu_actions_needs="jq wtype"
 leg_menu_actions_claims="launcher=shared"
 

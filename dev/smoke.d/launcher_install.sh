@@ -34,6 +34,7 @@
 # toast, a dim state and the armed Uninstall are photographed.
 leg_launcher_install_flag="--launcher-install"
 leg_launcher_install_order=34
+leg_launcher_install_compositors="hyprland shoji"
 leg_launcher_install_claims="fspec launcher=shared toasts=shared"
 leg_launcher_install_needs="jq python3 wtype convert"
 

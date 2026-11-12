@@ -15,6 +15,7 @@
 # name and the placeholder icon.
 leg_grid_relaunch_flag="--grid-relaunch"
 leg_grid_relaunch_order=27
+leg_grid_relaunch_compositors="hyprland shoji"
 leg_grid_relaunch_claims="menu.appGrid=true launcher=shared"
 leg_grid_relaunch_needs="jq"
 

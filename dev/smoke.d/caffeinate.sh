@@ -8,6 +8,7 @@
 # inhibitor's surface is read off `hyprctl -j layers` both ways.
 leg_caffeinate_flag="--caffeinate"
 leg_caffeinate_order=232
+leg_caffeinate_compositors="hyprland shoji"
 leg_caffeinate_needs="jq"
 leg_caffeinate_claims="caffeinate screensaver.timeoutSeconds=3"
 

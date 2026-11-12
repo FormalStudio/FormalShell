@@ -31,6 +31,7 @@
 # tall enough for its words: "No results" read whole off menu-empty.png.
 leg_menu_flag="--menu"
 leg_menu_order=20
+leg_menu_compositors="hyprland shoji"
 leg_menu_needs="jq wtype convert tesseract"
 leg_menu_claims="launcher=shared"
 

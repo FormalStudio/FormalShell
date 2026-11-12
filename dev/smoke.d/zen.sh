@@ -14,6 +14,7 @@
 # that took focus back on the output. The on and off frames are pulled.
 leg_zen_flag="--zen"
 leg_zen_order=239
+leg_zen_compositors="hyprland shoji"
 leg_zen_needs="jq foot"
 leg_zen_claims="layout=sidebar frame=none"
 

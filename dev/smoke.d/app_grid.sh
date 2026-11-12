@@ -46,6 +46,7 @@
 # to `app-grid-crisp.png` for reading.
 leg_app_grid_flag="--app-grid"
 leg_app_grid_order=26
+leg_app_grid_compositors="hyprland shoji"
 leg_app_grid_needs="convert wtype jq"
 leg_app_grid_claims="launcher=shared"
 

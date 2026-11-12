@@ -20,6 +20,7 @@
 # client sends the surface a pointer enter.
 leg_notify_close_flag="--notify-close"
 leg_notify_close_order=32
+leg_notify_close_compositors="hyprland shoji"
 leg_notify_close_needs="notify-send wlrctl jq"
 leg_notify_close_claims="toasts pointer screen"
 

@@ -21,6 +21,7 @@
 # one cell right. Everything is sampled at a tenth speed.
 leg_menu_hover_flag="--menu-hover"
 leg_menu_hover_order=128
+leg_menu_hover_compositors="hyprland shoji"
 leg_menu_hover_needs="wlrctl wtype convert jq"
 leg_menu_hover_claims="launcher pointer"
 

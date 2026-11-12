@@ -17,6 +17,7 @@
 # after it.
 leg_radio_flag="--radio"
 leg_radio_order=175
+leg_radio_compositors="hyprland shoji"
 leg_radio_needs="ffmpeg wtype pactl mpv"
 leg_radio_claims="radio.favourites"
 

@@ -56,6 +56,7 @@
 # layout motion that is not there.
 leg_chevron_quiet_flag="--chevron-quiet"
 leg_chevron_quiet_order=181
+leg_chevron_quiet_compositors="hyprland shoji"
 leg_chevron_quiet_needs="convert jq"
 leg_chevron_quiet_claims="bar.layout.right bar.position=top panel=shared"
 

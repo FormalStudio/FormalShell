@@ -19,6 +19,7 @@
 # border off that wallpaper: the line read is the table's own black.
 leg_card_corner_flag="--card-corner"
 leg_card_corner_order=177
+leg_card_corner_compositors="hyprland shoji"
 leg_card_corner_needs="jq convert python3 pil"
 leg_card_corner_claims="outputs=shared layout=sidebar"
 

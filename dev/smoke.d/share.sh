@@ -19,6 +19,7 @@
 # CLI process LocalsendService actually spawns.
 leg_share_flag="--share"
 leg_share_order=230
+leg_share_compositors="hyprland shoji"
 leg_share_claims="launcher=shared"
 
 share_status_path="$shot_dir/share-status.json"

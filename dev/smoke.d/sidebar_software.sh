@@ -27,6 +27,7 @@
 # behind, retry, up-to-date, installed and undone cards are photographed.
 leg_sidebar_software_flag="--sidebar-software"
 leg_sidebar_software_order=242
+leg_sidebar_software_compositors="hyprland shoji"
 leg_sidebar_software_needs="jq wlrctl git"
 leg_sidebar_software_claims="layout=sidebar frame=none"
 

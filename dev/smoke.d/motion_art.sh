@@ -28,6 +28,7 @@
 #            some frames and blue in others.
 leg_motion_art_flag="--motion-art"
 leg_motion_art_order=36
+leg_motion_art_compositors="hyprland shoji"
 leg_motion_art_needs="mpv ffmpeg convert jq"
 leg_motion_art_claims="layout"
 

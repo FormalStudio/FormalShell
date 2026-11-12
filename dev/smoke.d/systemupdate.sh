@@ -13,6 +13,7 @@
 # be asserting the state of github, not the state of this panel.
 leg_systemupdate_flag="--systemupdate"
 leg_systemupdate_order=270
+leg_systemupdate_compositors="hyprland shoji"
 leg_systemupdate_needs="jq"
 leg_systemupdate_claims="bar.layout.right"
 

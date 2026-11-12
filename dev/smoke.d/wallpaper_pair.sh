@@ -20,6 +20,7 @@
 # `theme.mode: "auto"`, and `desktop` has to be the half `effective` names.
 leg_wallpaper_pair_flag="--wallpaper-pair"
 leg_wallpaper_pair_order=102
+leg_wallpaper_pair_compositors="hyprland shoji"
 leg_wallpaper_pair_needs="convert jq wtype"
 leg_wallpaper_pair_claims="wallpaper theme.mode lock"
 

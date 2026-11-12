@@ -12,6 +12,7 @@
 # reading, its icon a 128px picture of two flat halves.
 leg_launcher_density_flag="--launcher-density"
 leg_launcher_density_order=176
+leg_launcher_density_compositors="hyprland shoji"
 leg_launcher_density_needs="jq convert"
 
 launcher_density_second="HEADLESS-DENSITY"

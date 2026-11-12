@@ -38,6 +38,7 @@
 # the join.
 leg_shoulders_flag="--shoulders"
 leg_shoulders_order=74
+leg_shoulders_compositors="hyprland shoji"
 leg_shoulders_needs="convert jq"
 leg_shoulders_claims="screen bar.layout=default bar.position=top frame=none"
 

@@ -46,6 +46,7 @@
 # round trip instead.
 leg_panel_emerge_flag="--panel-emerge"
 leg_panel_emerge_order=79
+leg_panel_emerge_compositors="hyprland shoji"
 leg_panel_emerge_needs="convert"
 leg_panel_emerge_claims="screen panel launcher bar.layout=default bar.position=top frame=none"
 

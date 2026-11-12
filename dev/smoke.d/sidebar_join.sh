@@ -18,6 +18,7 @@
 # in one to read.
 leg_sidebar_join_flag="--sidebar-join"
 leg_sidebar_join_order=238
+leg_sidebar_join_compositors="hyprland shoji"
 leg_sidebar_join_needs="jq convert python3"
 leg_sidebar_join_claims="layout=sidebar frame=none launcher panel"
 

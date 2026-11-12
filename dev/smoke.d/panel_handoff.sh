@@ -43,6 +43,7 @@
 # first third: that is where a card is between the two rests.
 leg_panel_handoff_flag="--panel-handoff"
 leg_panel_handoff_order=78
+leg_panel_handoff_compositors="hyprland shoji"
 leg_panel_handoff_needs="convert"
 leg_panel_handoff_claims="bar.layout.left bar.layout.right bar.position=top panel=shared"
 

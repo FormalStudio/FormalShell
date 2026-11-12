@@ -34,6 +34,7 @@
 # read against the same resting pose.
 leg_osd_flag="--osd"
 leg_osd_order=50
+leg_osd_compositors="hyprland shoji"
 leg_osd_needs="wpctl convert jq"
 leg_osd_claims="screen=shared"
 

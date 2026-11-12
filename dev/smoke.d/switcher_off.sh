@@ -10,6 +10,7 @@
 # so with the switcher off it is the verb that would fire most often of all.
 leg_switcher_off_flag="--switcher-off"
 leg_switcher_off_order=103
+leg_switcher_off_compositors="hyprland shoji"
 leg_switcher_off_needs="jq"
 leg_switcher_off_claims="switcher.enabled=false"
 

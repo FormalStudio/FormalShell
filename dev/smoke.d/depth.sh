@@ -31,6 +31,7 @@
 leg_depth_flag="--depth"
 leg_depth_env="FS_DEPTH_PICTURE FS_DEPTH_GENERATE"
 leg_depth_order=111
+leg_depth_compositors="hyprland shoji"
 leg_depth_needs="convert jq wtype"
 leg_depth_claims="wallpaper"
 

@@ -27,6 +27,7 @@
 # so the blur-on frame has to read measurably lower.
 leg_lyrics_blur_flag="--lyrics-blur"
 leg_lyrics_blur_order=176
+leg_lyrics_blur_compositors="hyprland shoji"
 leg_lyrics_blur_needs="mpv ffmpeg convert jq"
 leg_lyrics_blur_claims="media.player=shared"
 

@@ -19,6 +19,7 @@
 # real right click on fixture 2's opening its menu.
 leg_tray_flag="--tray"
 leg_tray_order=170
+leg_tray_compositors="hyprland shoji"
 leg_tray_needs="python3"
 leg_tray_claims="screen=shared"
 

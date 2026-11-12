@@ -18,6 +18,7 @@
 # locked rather than wait on it.
 leg_lock_flag="--lock"
 leg_lock_order=110
+leg_lock_compositors="hyprland shoji"
 leg_lock_needs="wtype convert"
 leg_lock_claims="lock screen=shared"
 

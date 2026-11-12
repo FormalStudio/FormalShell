@@ -15,6 +15,7 @@
 # fallback's too, the card not flat.
 leg_render_flag="--render"
 leg_render_order=113
+leg_render_compositors="hyprland shoji"
 leg_render_needs="jq convert notify-send wtype"
 leg_render_claims="session render.backend"
 

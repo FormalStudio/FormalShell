@@ -11,6 +11,7 @@
 # back afterwards is what caught that.
 leg_gallery_flag="--gallery"
 leg_gallery_order=220
+leg_gallery_compositors="hyprland shoji"
 leg_gallery_claims="screen=shared"
 
 gallery_log_path="$shot_dir/gallery.log"

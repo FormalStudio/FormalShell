@@ -21,6 +21,7 @@
 # Forget on `fo` empties the pin, and `fx` leads with the `fx` app again.
 leg_launcher_abbrev_flag="--launcher-abbrev"
 leg_launcher_abbrev_order=28
+leg_launcher_abbrev_compositors="hyprland shoji"
 leg_launcher_abbrev_needs="jq wtype"
 leg_launcher_abbrev_claims="launcher=shared"
 

@@ -11,6 +11,7 @@
 # torn down.
 leg_host_binds_flag="--host-binds"
 leg_host_binds_order=215
+leg_host_binds_compositors="hyprland shoji"
 leg_host_binds_claims="theme.mode=shared lock launcher=shared"
 leg_host_binds_fixture_window=keep
 

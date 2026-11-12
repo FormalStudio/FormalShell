@@ -23,6 +23,7 @@
 # column with a frame caught between the two heights.
 leg_menu_morph_flag="--menu-morph"
 leg_menu_morph_order=126
+leg_menu_morph_compositors="hyprland shoji"
 leg_menu_morph_needs="convert wtype wl-copy"
 leg_menu_morph_claims="launcher"
 

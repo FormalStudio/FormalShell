@@ -30,6 +30,7 @@
 # that the Exec's %U field code did not.
 leg_gpu_flag="--gpu"
 leg_gpu_order=145
+leg_gpu_compositors="hyprland shoji"
 leg_gpu_needs="jq"
 leg_gpu_claims="launcher=shared"
 

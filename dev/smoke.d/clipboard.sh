@@ -49,6 +49,7 @@
 # preview draw the glyph at display size, the inline one stays body text.
 leg_clipboard_flag="--clipboard"
 leg_clipboard_order=130
+leg_clipboard_compositors="hyprland shoji"
 leg_clipboard_needs="wl-copy wl-paste convert"
 leg_clipboard_claims="launcher=shared"
 

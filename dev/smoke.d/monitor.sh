@@ -13,6 +13,7 @@
 # strip.
 leg_monitor_flag="--monitor"
 leg_monitor_order=140
+leg_monitor_compositors="hyprland shoji"
 leg_monitor_needs="jq"
 leg_monitor_claims="launcher=shared bar.layout.right"
 

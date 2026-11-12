@@ -24,6 +24,7 @@
 #   running shell: `rims.enabled` false and the panel's rim gone.
 leg_reactive_rims_flag="--reactive-rims"
 leg_reactive_rims_order=79
+leg_reactive_rims_compositors="hyprland shoji"
 leg_reactive_rims_needs="convert jq foot"
 leg_reactive_rims_claims="bar.layout.left bar.layout.right bar.position=top"
 

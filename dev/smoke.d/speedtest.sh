@@ -11,6 +11,7 @@
 # poll ceiling reached with neither fails the run.
 leg_speedtest_flag="--speedtest"
 leg_speedtest_order=200
+leg_speedtest_compositors="hyprland shoji"
 leg_speedtest_needs="jq"
 leg_speedtest_claims="panel=shared"
 

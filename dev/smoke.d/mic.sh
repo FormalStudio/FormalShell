@@ -13,6 +13,7 @@
 # bar.layout asked for it.
 leg_mic_flag="--mic"
 leg_mic_order=180
+leg_mic_compositors="hyprland shoji"
 leg_mic_claims="bar.layout.right"
 
 mic_bar_png="$shot_dir/mic-bar.png"

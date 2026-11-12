@@ -46,6 +46,7 @@
 # `frame.thickness`, the panel's `rest` rect taken at rest).
 leg_join_flag="--join"
 leg_join_order=182
+leg_join_compositors="hyprland shoji"
 leg_join_needs="wlrctl convert jq"
 leg_join_claims="bar.layout.left bar.layout.right panel=shared"
 

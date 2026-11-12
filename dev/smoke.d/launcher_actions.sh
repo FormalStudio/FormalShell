@@ -28,6 +28,7 @@
 # in dark, the column again in light.
 leg_launcher_actions_flag="--launcher-actions"
 leg_launcher_actions_order=30
+leg_launcher_actions_compositors="hyprland shoji"
 leg_launcher_actions_needs="jq wtype foot"
 leg_launcher_actions_claims="launcher=shared"
 

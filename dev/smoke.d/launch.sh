@@ -15,6 +15,7 @@
 # 16s on. An id with no entry answers the error string.
 leg_launch_flag="--launch"
 leg_launch_order=36
+leg_launch_compositors="hyprland shoji"
 leg_launch_claims="bar.layout=default launcher=shared toasts=shared"
 leg_launch_needs="jq foot"
 

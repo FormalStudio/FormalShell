@@ -11,6 +11,7 @@
 # off state.json itself, not through the service that wrote it.
 leg_reminder_flag="--reminder"
 leg_reminder_order=260
+leg_reminder_compositors="hyprland shoji"
 leg_reminder_claims="toasts=shared"
 
 reminder_dnd_path="$shot_dir/reminder-dnd.txt"

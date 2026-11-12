@@ -25,6 +25,7 @@
 # of the image, and the image row is the only one whose label matches.
 leg_clipssh_image_flag="--clipssh-image"
 leg_clipssh_image_order=136
+leg_clipssh_image_compositors="hyprland shoji"
 leg_clipssh_image_needs="wl-copy wl-paste convert jq"
 leg_clipssh_image_claims="launcher=shared"
 

@@ -12,6 +12,7 @@
 # leave cava with no signal and the widget stuck on its baseline row all run.
 leg_visualizer_flag="--visualizer"
 leg_visualizer_order=220
+leg_visualizer_compositors="hyprland shoji"
 leg_visualizer_needs="mpv ffmpeg convert"
 leg_visualizer_claims="media.player=shared bar.layout.center"
 

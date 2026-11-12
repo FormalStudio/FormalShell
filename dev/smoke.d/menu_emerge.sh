@@ -63,6 +63,7 @@
 # where there is no band to stay lit and that half of the claim is not read.
 leg_menu_emerge_flag="--menu-emerge"
 leg_menu_emerge_order=21
+leg_menu_emerge_compositors="hyprland shoji"
 leg_menu_emerge_needs="convert jq"
 leg_menu_emerge_claims="screen launcher"
 

@@ -17,6 +17,7 @@
 leg_weather_locate_flag="--weather-locate"
 leg_weather_locate_needs="jq grim convert tesseract"
 leg_weather_locate_order=217
+leg_weather_locate_compositors="hyprland shoji"
 leg_weather_locate_claims="location env.TZ panel=shared"
 
 weather_locate_shim_dir="$shot_dir/weather-locate-shim"

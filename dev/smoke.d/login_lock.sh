@@ -25,6 +25,7 @@
 # unlocked, the marker spent as the lock went up.
 leg_login_lock_flag="--login-lock"
 leg_login_lock_order=113
+leg_login_lock_compositors="hyprland shoji"
 leg_login_lock_needs="wtype convert python3 pil"
 
 login_lock_marker="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/formalshell/login-lock"

@@ -19,6 +19,7 @@
 # and arms End as before.
 leg_processes_flag="--processes"
 leg_processes_order=150
+leg_processes_compositors="hyprland shoji"
 leg_processes_needs="jq"
 leg_processes_claims="launcher=shared"
 

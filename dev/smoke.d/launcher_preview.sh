@@ -22,6 +22,7 @@
 # text file and the folder are photographed in dark, then in light.
 leg_launcher_preview_flag="--launcher-preview"
 leg_launcher_preview_order=32
+leg_launcher_preview_compositors="hyprland shoji"
 leg_launcher_preview_claims="launcher=shared theme.mode=shared"
 leg_launcher_preview_needs="jq wtype foot convert wl-copy"
 

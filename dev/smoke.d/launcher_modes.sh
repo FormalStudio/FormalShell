@@ -22,6 +22,7 @@
 # truncated path, Emoji's token over its grid and Fixture's scoped list.
 leg_launcher_modes_flag="--launcher-modes"
 leg_launcher_modes_order=29
+leg_launcher_modes_compositors="hyprland shoji"
 leg_launcher_modes_needs="jq wtype wlrctl"
 leg_launcher_modes_claims="launcher=shared"
 

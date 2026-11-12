@@ -25,6 +25,7 @@
 # shell's own motion.
 leg_notify_flag="--notify"
 leg_notify_order=30
+leg_notify_compositors="hyprland shoji"
 leg_notify_needs="notify-send convert jq"
 leg_notify_claims="screen=shared toasts=shared"
 

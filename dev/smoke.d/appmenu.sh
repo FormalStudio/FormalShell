@@ -8,6 +8,7 @@
 # name and picture, and the window list holds the fixture window.
 leg_appmenu_flag="--appmenu"
 leg_appmenu_order=62
+leg_appmenu_compositors="hyprland shoji"
 leg_appmenu_claims="panel=shared"
 leg_appmenu_fixture_window=keep
 

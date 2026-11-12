@@ -48,6 +48,7 @@
 # the other two. Its leave-and-cooldown rule is --overview's.
 leg_hotcorner_relock_flag="--hotcorner-relock"
 leg_hotcorner_relock_order=161
+leg_hotcorner_relock_compositors="hyprland shoji"
 leg_hotcorner_relock_needs="wlrctl wtype jq"
 # The frames here are the ordinary desktop and the lock plate over it, so
 # the base run's fixture window stays where it is.

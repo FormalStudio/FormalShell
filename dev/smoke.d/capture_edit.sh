@@ -25,6 +25,7 @@
 # desktop that would look identical to the card's own background.
 leg_capture_edit_flag="--capture-edit"
 leg_capture_edit_order=225
+leg_capture_edit_compositors="hyprland shoji"
 leg_capture_edit_needs="foot file jq"
 leg_capture_edit_claims="toasts=shared"
 

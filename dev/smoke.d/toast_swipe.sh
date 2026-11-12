@@ -26,6 +26,7 @@
 # still pointer, so the pointer is nudged off and back to send it an enter.
 leg_toast_swipe_flag="--toast-swipe"
 leg_toast_swipe_order=32
+leg_toast_swipe_compositors="hyprland shoji"
 leg_toast_swipe_needs="notify-send convert wlrctl python3 jq"
 leg_toast_swipe_claims="toasts pointer screen"
 

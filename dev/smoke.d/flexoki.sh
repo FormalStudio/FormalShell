@@ -15,6 +15,7 @@
 # config carries would otherwise fire with a blue argument.
 leg_flexoki_flag="--flexoki"
 leg_flexoki_order=105
+leg_flexoki_compositors="hyprland shoji"
 leg_flexoki_needs="convert"
 leg_flexoki_claims="wallpaper theme.mode"
 

@@ -13,6 +13,7 @@
 # read by hand for the band's fills under the now-playing block.
 leg_spectrum_flag="--spectrum"
 leg_spectrum_order=225
+leg_spectrum_compositors="hyprland shoji"
 leg_spectrum_needs="mpv ffmpeg convert jq"
 leg_spectrum_claims="media.player=shared bar.layout.center"
 

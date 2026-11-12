@@ -10,6 +10,7 @@
 # `misc.allow_session_lock_restore`, which the shipped config sets too.
 leg_lock_restore_flag="--lock-restore"
 leg_lock_restore_order=112
+leg_lock_restore_compositors="hyprland shoji"
 leg_lock_restore_needs="wtype convert"
 leg_lock_restore_claims="session"
 

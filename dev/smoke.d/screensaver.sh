@@ -16,6 +16,7 @@
 # the unit tests, since this session has one head.
 leg_screensaver_flag="--screensaver"
 leg_screensaver_order=230
+leg_screensaver_compositors="hyprland shoji"
 leg_screensaver_needs="mpv ffmpeg jq convert wtype"
 leg_screensaver_claims="screen=shared"
 

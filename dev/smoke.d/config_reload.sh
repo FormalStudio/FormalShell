@@ -25,6 +25,7 @@
 # which writes the same key.
 leg_config_reload_flag="--config-reload"
 leg_config_reload_order=186
+leg_config_reload_compositors="hyprland shoji"
 leg_config_reload_needs="jq"
 leg_config_reload_claims="bar.position screen=shared"
 

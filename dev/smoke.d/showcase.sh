@@ -12,6 +12,7 @@
 # not a test.
 leg_showcase_flag="--showcase"
 leg_showcase_order=5
+leg_showcase_compositors="hyprland shoji"
 leg_showcase_needs="convert"
 leg_showcase_fixture_window=keep
 leg_showcase_claims="wallpaper=shared"

@@ -15,6 +15,7 @@
 # actually flips inside an open hub.
 leg_toggles_flag="--toggles"
 leg_toggles_order=230
+leg_toggles_compositors="hyprland shoji"
 leg_toggles_needs="jq"
 leg_toggles_claims="launcher=shared"
 

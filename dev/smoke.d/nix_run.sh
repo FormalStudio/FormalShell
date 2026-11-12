@@ -13,6 +13,7 @@
 # must not have been spawned by it.
 leg_nix_run_flag="--nix-run"
 leg_nix_run_order=95
+leg_nix_run_compositors="hyprland shoji"
 leg_nix_run_claims="console launcher=shared"
 leg_nix_run_needs="foot jq"
 

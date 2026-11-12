@@ -10,6 +10,7 @@
 # to park on without a panel open.
 leg_tooltip_flag="--tooltip"
 leg_tooltip_order=80
+leg_tooltip_compositors="hyprland shoji"
 leg_tooltip_needs="wlrctl"
 # The panel it rides on has already dropped the base fixture window.
 leg_tooltip_fixture_window=keep

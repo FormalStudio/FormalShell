@@ -15,6 +15,7 @@
 # lastError is the one shape that never is: a silent no-op.
 leg_nightlight_flag="--nightlight"
 leg_nightlight_order=210
+leg_nightlight_compositors="hyprland shoji"
 leg_nightlight_needs="jq"
 leg_nightlight_claims="nightlight location"
 

@@ -30,6 +30,7 @@
 # pinned in the theme tokens.
 leg_workspaces_flag="--workspaces"
 leg_workspaces_order=195
+leg_workspaces_compositors="hyprland shoji"
 leg_workspaces_needs="foot convert"
 leg_workspaces_fixture_window=keep
 leg_workspaces_claims="workspaces=shared"

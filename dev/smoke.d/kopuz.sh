@@ -38,6 +38,7 @@
 # the stale audit.
 leg_kopuz_flag="--kopuz"
 leg_kopuz_order=178
+leg_kopuz_compositors="hyprland shoji"
 leg_kopuz_claims="kopuz media.player=shared panel=shared"
 leg_kopuz_needs="python3 jq grim convert"
 

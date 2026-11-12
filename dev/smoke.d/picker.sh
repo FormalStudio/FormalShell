@@ -37,6 +37,7 @@
 leg_picker_flag="--picker"
 leg_picker_env="PICKER_INCLUDED"
 leg_picker_order=120
+leg_picker_compositors="hyprland shoji"
 leg_picker_needs="convert jq wtype python3"
 leg_picker_claims="launcher=shared picker.directory"
 

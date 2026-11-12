@@ -28,6 +28,7 @@
 # then holds the path.
 leg_clipssh_flag="--clipssh"
 leg_clipssh_order=135
+leg_clipssh_compositors="hyprland shoji"
 leg_clipssh_needs="jq wl-copy wl-paste"
 leg_clipssh_claims="launcher=shared"
 

@@ -28,6 +28,7 @@
 # right-click column are photographed in dark and light.
 leg_launcher_mouse_flag="--launcher-mouse"
 leg_launcher_mouse_order=31
+leg_launcher_mouse_compositors="hyprland shoji"
 leg_launcher_mouse_needs="jq wtype wlrctl python3"
 leg_launcher_mouse_claims="launcher pointer caffeinate overnight"
 

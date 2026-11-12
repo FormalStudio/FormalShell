@@ -37,6 +37,7 @@
 # width).
 leg_menu_resize_flag="--menu-resize"
 leg_menu_resize_order=127
+leg_menu_resize_compositors="hyprland shoji"
 leg_menu_resize_needs="convert wtype jq"
 leg_menu_resize_claims="launcher"
 

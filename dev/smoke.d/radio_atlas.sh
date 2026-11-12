@@ -48,6 +48,7 @@
 # line), since nothing over IPC reports it.
 leg_radio_atlas_flag="--radio-atlas"
 leg_radio_atlas_order=176
+leg_radio_atlas_compositors="hyprland shoji"
 leg_radio_atlas_needs="ffmpeg wtype wlrctl convert jq python3"
 leg_radio_atlas_claims="radio.cache=staged"
 

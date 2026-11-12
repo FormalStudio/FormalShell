@@ -19,6 +19,7 @@
 # boundary rather than at some arbitrary time.
 leg_theme_auto_flag="--theme-auto"
 leg_theme_auto_order=221
+leg_theme_auto_compositors="hyprland shoji"
 leg_theme_auto_needs="jq"
 leg_theme_auto_claims="theme.mode=shared"
 

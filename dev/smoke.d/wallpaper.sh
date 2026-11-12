@@ -19,6 +19,7 @@
 leg_wallpaper_flag="--wallpaper"
 leg_wallpaper_env="SMOKE_WALLPAPER_DITHER"
 leg_wallpaper_order=100
+leg_wallpaper_compositors="hyprland shoji"
 leg_wallpaper_needs="convert"
 leg_wallpaper_claims="screen=shared wallpaper=shared"
 

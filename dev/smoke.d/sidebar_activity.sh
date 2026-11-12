@@ -16,6 +16,7 @@
 # cropped for reading.
 leg_sidebar_activity_flag="--sidebar-activity"
 leg_sidebar_activity_order=238
+leg_sidebar_activity_compositors="hyprland shoji"
 leg_sidebar_activity_needs="jq python3 convert tesseract"
 leg_sidebar_activity_claims="layout=sidebar frame=none"
 

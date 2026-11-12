@@ -15,6 +15,7 @@
 # (bar_title.sh's bar_cells_defects).
 leg_bar_room_flag="--bar-room"
 leg_bar_room_order=195
+leg_bar_room_compositors="hyprland shoji"
 leg_bar_room_needs="mpv ffmpeg jq"
 leg_bar_room_claims="bar.layout.right bar.modules"
 

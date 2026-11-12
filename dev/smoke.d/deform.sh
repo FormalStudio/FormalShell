@@ -30,6 +30,7 @@
 # call has returned lands past it (panel_emerge.sh's finding).
 leg_deform_flag="--deform"
 leg_deform_order=77
+leg_deform_compositors="hyprland shoji"
 leg_deform_needs="convert"
 leg_deform_claims="screen panel launcher bar.layout=default bar.position=top frame=none"
 

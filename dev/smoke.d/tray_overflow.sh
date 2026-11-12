@@ -46,6 +46,7 @@
 # assert does not survive that pair either.
 leg_tray_overflow_flag="--tray-overflow"
 leg_tray_overflow_order=172
+leg_tray_overflow_compositors="hyprland shoji"
 leg_tray_overflow_needs="python3 jq wlrctl notify-send"
 leg_tray_overflow_claims="bar.layout panel=shared"
 

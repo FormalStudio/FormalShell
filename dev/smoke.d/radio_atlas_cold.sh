@@ -12,6 +12,7 @@
 # state, so a blank card is the content not reaching the screen.
 leg_radio_atlas_cold_flag="--radio-atlas-cold"
 leg_radio_atlas_cold_order=176
+leg_radio_atlas_cold_compositors="hyprland shoji"
 leg_radio_atlas_cold_needs="convert jq"
 leg_radio_atlas_cold_claims="radio.cache=none"
 
