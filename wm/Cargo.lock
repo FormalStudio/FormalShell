@@ -671,7 +671,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1153,7 +1153,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2038,7 +2038,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2170,7 +2170,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "shojiwm_lib"
 version = "0.1.0"
-source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=57588f0842cbda7fca14f44eaeb668fc8d590058#57588f0842cbda7fca14f44eaeb668fc8d590058"
+source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=85f78ef7fc1930f5d41c0ec6aea0a2120ab6b061#85f78ef7fc1930f5d41c0ec6aea0a2120ab6b061"
 dependencies = [
  "bitflags 2.11.0",
  "bumpalo",
@@ -2209,7 +2209,7 @@ dependencies = [
 [[package]]
 name = "shojiwm_rs"
 version = "0.1.0"
-source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=57588f0842cbda7fca14f44eaeb668fc8d590058#57588f0842cbda7fca14f44eaeb668fc8d590058"
+source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=85f78ef7fc1930f5d41c0ec6aea0a2120ab6b061#85f78ef7fc1930f5d41c0ec6aea0a2120ab6b061"
 dependencies = [
  "serde_json",
  "shojiwm_lib",
@@ -2468,7 +2468,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3246,7 +3246,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3271,15 +3271,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "677d2418bec65e3338edb076e806bc1ec15693c5d0104683f2efe857f61056a9"
 dependencies = [
  "windows-targets 0.48.5",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets 0.52.6",
 ]
 
 [[package]]
