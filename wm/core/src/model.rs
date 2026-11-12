@@ -258,6 +258,11 @@ pub struct Model {
     pub windows: Vec<WindowRec>,
     pub overlays: Vec<Overlay>,
     pub focused_output: String,
+    /// The output of the window that has the keyboard, while the pointer
+    /// has taken the output's focus elsewhere: Hyprland's `follow_mouse = 2`
+    /// moves the focused monitor with the pointer and leaves the keyboard
+    /// with the window a click gave it to.
+    typing: Option<String>,
     /// Where `workspace previous` goes.
     pub previous_workspace: Option<WsId>,
     /// What an output that went was showing, for when it returns.
@@ -375,6 +380,13 @@ impl Model {
         {
             self.focused_output = first;
         }
+        if self
+            .typing
+            .as_ref()
+            .is_some_and(|name| self.output(name).is_none())
+        {
+            self.typing = None;
+        }
         for index in 0..self.workspaces.len() {
             let strip_w = self.strip_of(&self.workspaces[index].output).w;
             self.workspaces[index].tape.clamp_scroll(strip_w);
@@ -455,9 +467,17 @@ impl Model {
         self.active_workspace(&self.focused_output)
     }
 
-    fn focused_workspace_mut(&mut self) -> Option<&mut Workspace> {
-        let id = self.output(&self.focused_output)?.active.clone();
-        self.workspace_mut(&id)
+    /// The output whose focus has the keyboard: the focused one, unless
+    /// the pointer left it without the keyboard.
+    fn typing_output(&self) -> &str {
+        self.typing.as_deref().unwrap_or(&self.focused_output)
+    }
+
+    /// Gives an output the focus and the keyboard with it, as every focus
+    /// but the pointer's does.
+    fn take_output(&mut self, output: String) {
+        self.focused_output = output;
+        self.typing = None;
     }
 
     pub fn is_active(&self, id: &str) -> bool {
@@ -485,10 +505,11 @@ impl Model {
 
     /// The window the keyboard belongs to.
     pub fn focused_window(&self) -> Option<&WinId> {
-        if let Some(overlay) = self.shown_overlay(&self.focused_output) {
+        let output = self.typing_output();
+        if let Some(overlay) = self.shown_overlay(output) {
             return overlay.windows.last();
         }
-        self.focused_workspace()?.focused()
+        self.active_workspace(output)?.focused()
     }
 
     /// The tape's strip on an output: what the layers leave free, inset so a
@@ -674,7 +695,7 @@ impl Model {
         if let Some(output) = self.output_mut(&output) {
             output.active = id.to_owned();
         }
-        self.focused_output = output;
+        self.take_output(output);
         self.adopt_pinned(id);
         self.collect();
     }
@@ -719,7 +740,7 @@ impl Model {
                     return false;
                 };
                 raise(&mut overlay.windows, id);
-                self.focused_output = output;
+                self.take_output(output);
             }
             Home::Workspace(workspace) => {
                 let floating = window.floating;
@@ -1062,8 +1083,9 @@ impl Model {
         let output = self.focused_output.clone();
         self.hide_overlays_on(&output);
         let overlay = self.overlay_mut(&name);
-        overlay.shown_on = Some(output);
+        overlay.shown_on = Some(output.clone());
         raise(&mut overlay.windows, id);
+        self.take_output(output);
         true
     }
 
@@ -1151,12 +1173,16 @@ impl Model {
         id
     }
 
-    /// Gives the focus to an output, as a click on it does.
+    /// Gives the focus to the output the pointer is on. The keyboard stays
+    /// with the window that has it until a window is focused, a workspace
+    /// shown or an overlay brought up.
     pub fn focus_output(&mut self, output: &str) -> bool {
         if self.output(output).is_none() || self.focused_output == output {
             return false;
         }
-        self.focused_output = output.to_owned();
+        let from = std::mem::replace(&mut self.focused_output, output.to_owned());
+        let typing = self.typing.take().unwrap_or(from);
+        self.typing = (typing != output).then_some(typing);
         true
     }
 
@@ -1164,8 +1190,15 @@ impl Model {
 
     fn tape_op(&mut self, op: impl FnOnce(&mut Tape, &Options) -> bool) -> bool {
         let options = self.options.clone();
-        let strip_w = self.strip_of(&self.focused_output).w;
-        let Some(ws) = self.focused_workspace_mut() else {
+        // With no window typed into, a bind on the tape is for the output
+        // the pointer is on.
+        if self.focused_window().is_none() {
+            self.typing = None;
+        }
+        let output = self.typing_output().to_owned();
+        let strip_w = self.strip_of(&output).w;
+        let active = self.output(&output).map(|o| o.active.clone());
+        let Some(ws) = active.and_then(|id| self.workspace_mut(&id)) else {
             return false;
         };
         if ws.zen.is_some() {

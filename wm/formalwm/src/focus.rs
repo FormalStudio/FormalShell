@@ -1,6 +1,6 @@
-//! The focus the engine does not ask a window for: the window the
-//! compositor means the keyboard for when that is not the one the model
-//! has.
+//! The focus the engine does not ask a window for: the output under the
+//! pointer, and the window the compositor means the keyboard for when that
+//! is not the one the model has.
 
 use shojiwm_rs::prelude::*;
 
@@ -16,6 +16,9 @@ pub fn setup() {
         let options = KeyBindOptions::new().non_consuming();
         COMPOSITOR.key.bind_with(id, button, options, || {
             enter(|engine| {
+                if let Some(at) = COMPOSITOR.cursor.get_position() {
+                    engine.point_at((at.x, at.y));
+                }
                 engine.settle_focus();
             })
         });
@@ -23,6 +26,21 @@ pub fn setup() {
 }
 
 impl Engine {
+    /// The output under the pointer is the focused one: on the way across
+    /// and at a press, which is how one with no window to press on is
+    /// reached. The keyboard stays where it is. Not while something is
+    /// dragged, which belongs to the output it left until it is dropped.
+    pub fn point_at(&mut self, at: (f64, f64)) {
+        if self.hold.data_drag || self.hold.window_drag || self.drag.is_some() {
+            return;
+        }
+        if let Some(output) = self.output_at(at)
+            && self.model.focus_output(&output)
+        {
+            self.commit();
+        }
+    }
+
     /// Looks at which window has the keyboard once the compositor has
     /// answered what this turn asked of it. A tick of its scheduler reports
     /// the keyboard, then runs the timers, then does what was asked, so

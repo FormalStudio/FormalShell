@@ -1219,6 +1219,51 @@ fn two_outputs_and_the_touchpad() {
     session.chord(&[SHIFT]);
     assert!(!row("newer").floating);
 
+    // The output under the pointer is the focused one, and the keyboard
+    // stays with its window. The first output shows an empty workspace.
+    assert_eq!(state().focused_output, "TEST-2");
+    let mut listener = session.socket();
+    session.pointer_to(WIDTH / 2.0, HEIGHT / 2.0);
+    let told = session.message(&mut listener, |message| {
+        message["event"] == proto::event::STATE_CHANGED
+            && message["payload"]["focusedOutput"] == "TEST-1"
+    });
+    assert!(told.is_some(), "the pointer's output is broadcast");
+    drop(listener);
+    let seen = state();
+    assert_eq!(
+        (seen.focused_output.as_str(), seen.focused_window_id),
+        ("TEST-1", newer.clone())
+    );
+    assert_eq!(keyed(), Some(newer.clone()));
+    // A press on an output with nothing to press on reaches it too.
+    let focus_output = |output: &'static str| {
+        ask(move |engine| {
+            engine.model.focus_output(output);
+            engine.commit();
+            Ok(())
+        })
+        .unwrap();
+    };
+    focus_output("TEST-2");
+    assert_eq!(state().focused_output, "TEST-2");
+    session.click();
+    assert_eq!(state().focused_output, "TEST-1");
+    // Not while a window is dragged across.
+    let dragging = |on: bool| {
+        ask(move |engine| {
+            engine.hold.window_drag = on;
+            Ok(())
+        })
+        .unwrap();
+    };
+    dragging(true);
+    session.pointer_to(WIDTH * 1.5, HEIGHT / 2.0);
+    assert_eq!(state().focused_output, "TEST-1");
+    dragging(false);
+    session.pointer_by(1.0, 0.0);
+    assert_eq!(state().focused_output, "TEST-2");
+
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {
         session

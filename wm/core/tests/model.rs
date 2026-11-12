@@ -696,3 +696,68 @@ fn gaps_are_measured_to_the_outer_edge_of_a_window_s_border() {
         );
     }
 }
+
+#[test]
+fn the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard() {
+    let mut model = two_outputs();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_workspace("4");
+    open(&mut model, "chat");
+    assert!(model.focus_window("b"));
+    assert_eq!((model.focused_output.as_str(), focused(&model)), ("A", "b"));
+
+    // The pointer crosses to B: the output and its workspace are the
+    // focused ones, the keyboard is still b's, and the tape's binds are
+    // for the window typed into.
+    assert!(model.focus_output("B"));
+    assert!(!model.focus_output("B"));
+    assert_eq!(model.focused_output, "B");
+    assert_eq!(model.focused_workspace().unwrap().id, "4");
+    assert_eq!(focused(&model), "b");
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!((model.focused_output.as_str(), focused(&model)), ("B", "a"));
+
+    // Back where the keyboard is, the two are one again.
+    assert!(model.focus_output("A"));
+    assert_eq!((model.focused_output.as_str(), focused(&model)), ("A", "a"));
+
+    // A window opens where the pointer is and takes the keyboard there.
+    model.focus_output("B");
+    open(&mut model, "mail");
+    assert_eq!(
+        model.window("mail").unwrap().home,
+        Home::Workspace("4".into())
+    );
+    assert_eq!(
+        (model.focused_output.as_str(), focused(&model)),
+        ("B", "mail")
+    );
+
+    // So does a click on a window, and a workspace shown.
+    model.focus_output("A");
+    assert_eq!(focused(&model), "mail");
+    assert!(model.focus_window("a"));
+    assert_eq!((model.focused_output.as_str(), focused(&model)), ("A", "a"));
+    model.focus_output("B");
+    assert!(model.focus_workspace("8"));
+    assert_eq!(model.focused_window(), None);
+    assert_eq!(model.focused_output, "B");
+
+    // With no window typed into, the tape's binds are for the pointer's
+    // output.
+    model.focus_workspace("4");
+    model.focus_workspace("2");
+    assert_eq!(model.focused_window(), None);
+    model.focus_output("B");
+    assert_eq!(model.focused_window(), None);
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!(focused(&model), "chat");
+
+    // The output the keyboard was left on goes: it is the pointer's.
+    model.focus_window("mail");
+    model.focus_output("A");
+    assert_eq!(focused(&model), "mail");
+    model.set_outputs(vec![output("A", 0.0, 1920.0, 1080.0)]);
+    assert_eq!(model.focused_output, "A");
+}
