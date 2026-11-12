@@ -8,6 +8,7 @@ pub mod card;
 pub mod card_window;
 pub mod desktop_clock;
 pub mod dissolve;
+pub mod dock;
 pub mod headset;
 pub mod launcher;
 pub mod lock;

@@ -17,6 +17,7 @@ pub mod frecency;
 pub mod icons;
 pub mod intent;
 pub mod keybinds;
+pub mod mime;
 pub mod model;
 pub mod nav;
 pub mod node;

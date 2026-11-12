@@ -119,6 +119,7 @@ as the bind's action.
 | --- | --- |
 | `SUPER+SPACE` | `menu toggle`, the root launcher |
 | `SUPER+ALT+SPACE` | `menu summon apps` |
+| `SUPER+ALT+M` | `menu summon appmenu`, the focused Mac app's menu commands ([Mac apps](#mac-apps)) |
 | `SUPER+CTRL+E` | `menu summon emoji` |
 | `SUPER+CTRL+C` | `menu summon capture` |
 | `SUPER+CTRL+O` | `menu summon toggles` |
@@ -172,7 +173,7 @@ need no config at all to get the default arrangement.
     "position": "top",
     "launcherIcon": "distro",
     "layout": {
-      "left": ["launcher", "workspaces", "activeWindow"],
+      "left": ["launcher", "workspaces", "appMenu", "activeWindow"],
       "center": ["clock", "nowPlaying"],
       "right": ["battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators", "custom:cpu"]
     },
@@ -187,7 +188,7 @@ need no config at all to get the default arrangement.
 # home-manager
 programs.formalshell.settings.bar = {
   layout = {
-    left = [ "launcher" "workspaces" "activeWindow" ];
+    left = [ "launcher" "workspaces" "appMenu" "activeWindow" ];
     center = [ "clock" "nowPlaying" ];
     right = [ "battery" "audio" "network" "bluetooth" "weather" "tray" "bell" "indicators" "custom:cpu" ];
   };
@@ -630,6 +631,142 @@ fs zen toggle        # SUPER + Z in the shipped binds
 fs zen enter
 fs zen exit
 fs zen status        # {"on":true,"windowId":"…","workspace":"1","before":"…","floating":false}
+```
+
+## Mac apps
+
+A Mac app run by [atoll](https://github.com/FormalStudio/atoll) is a Wayland
+window like any other, but it expects a menu bar. While one has focus, and
+only then, the shell shows its menus. A GTK, Qt or terminal window in front
+shows none, and nothing about it changes.
+
+**On the strip** the `appMenu` cell draws the app's top-level titles, the
+app's own name first. A click on a title opens that menu in a card under
+it: key equivalents in keycaps at the trailing edge, a tick on a checked
+item, disabled items dimmed, submenus opening in place. A click on an item
+runs it in the app. With a menu open, moving the pointer onto another title
+switches to that menu; a click on the open title or off the card shuts it.
+The card takes no keyboard focus, so the app stays the active one while its
+menu is up. While `appMenu` holds a menu the `activeWindow` cell beside it
+is the window's title alone, the menu's first title already naming the
+app; take `appMenu` out of `bar.layout` and a Mac window reads by its
+title with no menus. On a `left` or `right` strip the cell is one menu icon
+that opens the whole menu.
+
+**In the sidebar** the titles stack in a card under the time card, and on
+the folded rail they are one menu button.
+
+**From the keyboard** nothing above is needed. `SUPER + ALT + M` (`menu
+summon appmenu`, or `:b ` and a query from anywhere) lists every command of
+the focused Mac app with its path (`File › Export`) and key equivalent;
+typing filters, Return runs one. The root launcher ranks the same commands
+after apps while a Mac app is in front. A disabled command is listed dim
+and does not run.
+
+**Command is Super.** A Mac app reads SUPER as Command, Ctrl as Control and
+Alt as Option, so SUPER + C copies and SUPER + Q quits, and Ctrl + C in a
+Mac terminal app is still an interrupt. Hyprland would take a bound SUPER
+chord before the app saw it, so while a Mac window has focus the shell
+switches Hyprland into a submap named `mac`: every bind of yours, minus
+the SUPER and SUPER + SHIFT chords on a key, which reach the app. The ones
+you keep for the window manager are `macApps.reservedBinds`:
+
+| Reserved by default | For |
+| --- | --- |
+| `SUPER + H` / `J` / `K` / `L`, and with `SHIFT` | focus and move |
+| `SUPER + 1..9`, and with `SHIFT` | workspaces |
+| `SUPER + Space` | the launcher |
+| `SUPER + Escape` | the system menu |
+
+```jsonc
+// ~/.config/formalshell/settings.json: a shorter list that keeps your own SUPER + Q
+{
+  "macApps": {
+    "reservedBinds": ["SUPER + H", "SUPER + L", "SUPER + Space", "SUPER + Q"]
+  }
+}
+```
+
+A list replaces the default whole, and an empty one hands every chord to
+the app. Chords are written as in `hl.bind`; case and spacing do not
+matter. SUPER with CTRL or ALT, ALT + Tab, Print, the media keys and mouse
+binds are never handed over. A bind the submap displaces (your SUPER + F,
+say) is still a launcher row, and `SUPER + K` still lists it.
+
+The submap is built from your own binds, which the shell's include records
+as your config makes them. So `formalshell.lua` has to load before the
+first `hl.bind` of your config, as the `dofile` under
+[Keybinds](#keybinds) does. A config that pastes the include's contents
+instead needs its `MAC APPS` block at the top. Without it Mac apps still
+run and still show their menus, but a SUPER chord you have bound goes to
+the window manager. A bind your config makes before the include is not
+recorded and does nothing over a Mac window: `fs appmenu status` gives
+`macBinds`, how many binds the include had recorded when the submap was
+last built, to hold against how many you have.
+
+The map follows the window, not the shell: with focus on any other window
+the default map is back, also when the shell has exited or is restarting.
+A config reload with no shell running puts the default map back over a Mac
+window too, until a shell is there to hand it its chords again.
+
+**The dock** is for the pointer and for what a Mac app shows on its dock
+tile, and it is only there while a Mac app has a window. It takes no room:
+rest the pointer on the bottom edge of the screen (the top edge under a
+bottom bar) and it comes out; it goes again shortly after the pointer
+leaves, or as soon as you focus another window. It holds every open app,
+with the ones you kept ahead of a rule. A dot marks an app with a window. A
+Mac app's badge sits on its icon's corner and its progress along the
+icon's foot, and an app asking for attention brings the dock out by itself
+and hops.
+
+A click goes to the app's next window, or starts an app you kept that is
+not running. A middle click starts another instance. A right click opens
+the app's menu: a Mac app's own dock menu, its windows, its desktop
+entry's actions, **Keep in Dock** or **Remove from Dock**, and **Quit**,
+which asks a Mac app through its own Quit command so it can ask about
+unsaved work.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{
+  "dock": {
+    "show": "mac",   // "always": while anything is kept or open; "never"
+    "dwell": 150     // ms the pointer rests on the edge before the dock comes out
+  }
+}
+```
+
+The kept apps are `dockPins` in state.json, ids as `fs dock status` lists
+them.
+
+```sh
+fs dock status              # {"exists":…,"shown":…,"apps":[{"app":…,"badge":…,"progress":…}],"menu":…}
+fs dock open                # out, and held until `fs dock close`
+fs dock close
+fs dock pin org.gnome.Nautilus
+fs dock unpin org.gnome.Nautilus
+fs dock activate com.coteditor.CotEditor   # what a click on its icon does
+fs dock menu com.coteditor.CotEditor       # what a right click opens
+fs dock choose com.coteditor.CotEditor 4   # an item of the app's own dock menu, by its id there
+fs dock quit com.coteditor.CotEditor       # what Quit in that menu does
+```
+
+**In the launcher** a Mac app is a row like any other, trailing `Mac`.
+Enter focuses it when it runs. Tab lists its actions, and among them
+everything the dock offers, so none of it needs the pointer: **Keep in
+Dock** or **Remove from Dock**, and for a running app **Quit**, which is
+the app's own Quit, and the items of its own dock menu. A Mac app you
+installed with `atoll install` carries **Uninstall** last: the first Enter
+arms it, the second runs `atoll uninstall`, and Activity shows how it
+ended. A file's **Open with** lists the apps that say they open its type
+first, Mac apps among them, then every other app under `Other apps`.
+
+```sh
+fs appmenu status                    # {"pid":…,"titles":[…],"open":null,"rows":[],"macKeys":true,"macBinds":41}
+fs appmenu items File/Export         # the items under a title or a submenu
+fs appmenu open File                 # the card, as a click on the title
+fs appmenu close
+fs appmenu activate File/Export/PDF  # run a command by its path, for a bind of your own
 ```
 
 ## Theming
@@ -1341,8 +1478,8 @@ A route you step into is a mode: a token naming it sits before the query
 inside it. A mode inside a mode carries its path (`Radio Stations ›
 Search`), past two levels `… ›` and the last two. You get in by Enter or a
 click on its row, by `menu summon <id>` or its chord, or by its
-prefix and a space (`:e `, `:k `, `:r `, `:f `, `:i `), from any level, a folder's
-listing or an app's windows included. You get out one level at a time by
+prefix and a space (`:e `, `:k `, `:r `, `:f `, `:i `, `:b `), from any
+level, a folder's listing or an app's windows included. You get out one level at a time by
 Backspace or `←` on an empty field, by Escape once the query is empty, or
 by a click on the token.
 
@@ -2128,10 +2265,9 @@ pretend success (see [`SWITCHOVER.md`](SWITCHOVER.md) for
 It is sourced from what the desktop already publishes: the desktop entry's
 own `Actions=` become action rows, the compositor's window list filtered by
 app id becomes window rows (the current one carries the selected fill, click
-another to focus it), plus a close-window row. It is not a global menu bar:
-reading an app's real File and Edit menus needs `org.gtk.Menus`, the DBusMenu
-registrar or KWin's appmenu protocol, and none of them covers a Wayland app
-under Hyprland.
+another to focus it), plus a close-window row. It is not a menu bar: a GTK
+or Qt app keeps its menus in its own window. Only a Mac app's real menus
+come to the bar, as the `appMenu` cell ([Mac apps](#mac-apps)).
 
 The bar cell keeps naming its app while any panel is open. Hyprland drops its
 focused window the moment a layer surface takes keyboard focus, so the last

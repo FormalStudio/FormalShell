@@ -501,6 +501,8 @@ pub enum Request {
     /// The launcher opened or closed, for the launcher plugins.
     Plugins(bool),
     PeerScan,
+    /// A running Mac app's own dock menu, by desktop id, for its column.
+    DockMenu(String),
     Clipboard(clipboard::Cmd),
     /// A select or input step's answer, for menu-selection.txt and the
     /// in-process token owners.
@@ -513,6 +515,10 @@ pub enum Request {
     Wallpaper(state::Choice, Option<fs_theme::theme::Mode>),
     /// A Style preview's mode, under `theme mode`'s rules.
     Mode(fs_theme::theme::Mode),
+    /// One pick of `node` under `query`, for the picks ledger.
+    Picked { node: Box<Node>, query: String, now: f64 },
+    /// `subject` pinned under `new` and forgotten from `old`.
+    MoveAbbreviation { old: String, new: String, subject: String },
 }
 
 /// One answer of a select, input or image select step. A secret value is
@@ -1338,7 +1344,7 @@ impl Model {
                     .iter()
                     .map(|r| {
                         let picture = !r.icon_source.is_empty() && store.menu.row_icons.get(&r.icon_source).is_some_and(Option::is_some);
-                        json!({"id": r.id, "label": r.label, "value": crate::surfaces::packages::row_value(store, r), "picture": picture})
+                        json!({"id": r.id, "label": r.label, "value": row_value(store, r), "picture": picture})
                     })
                     .collect()
             }
@@ -1701,6 +1707,17 @@ impl Model {
             }
             _ => None,
         };
+        let app = node.entry.as_ref().filter(|_| node.kind == NodeKind::App);
+        let mac = app.filter(|e| !e.bundle_id.is_empty());
+        let dock = match fs_chrome::dock::Show::parse(crate::settings::DOCK_SHOW.get(&store.config)).unwrap_or_default() {
+            fs_chrome::dock::Show::Mac => mac,
+            fs_chrome::dock::Show::Always => app,
+            fs_chrome::dock::Show::Never => None,
+        }
+        .map(|e| store.state.data.dock_pins.iter().any(|p| p.eq_ignore_ascii_case(&e.id)));
+        // fspec's own Uninstall stands first where its spec holds the app,
+        // so atoll's waits for fspec to say it does not.
+        let mac_removable = mac.is_some_and(|e| !store.activity.fspec.installed || store.packages.owners.get(&e.id).is_some_and(|o| o.id.is_none()));
         let id = fs_menu::actions::subject_id(node).to_string();
         let abbrev = self.abbrev_key.as_deref().zip(self.lookup.source_of(&id));
         fs_menu::actions::Subject {
@@ -1714,6 +1731,8 @@ impl Model {
             single: node.kind == NodeKind::Image
                 && self.on_picker()
                 && self.picker_tile_of(store, &node.id).is_some_and(|t| matches!(t.kind, fs_menu::providers::ItemKind::Single { .. })),
+            dock,
+            mac_removable,
         }
     }
 
@@ -1752,6 +1771,11 @@ impl Model {
         let asked_at = Instant::now();
         for id in &asked {
             self.ask(Request::Plugin(id.clone(), plugins::actions_event(&subject, kind, &node.path)));
+        }
+        match &node.entry {
+            Some(e) if node.kind == NodeKind::App && !e.bundle_id.is_empty() && !app_windows(store, e).is_empty() => self.ask(Request::DockMenu(e.id.clone())),
+            _ if node.kind == NodeKind::File => self.ask(Request::Index(Ask::Types(node.path.clone()))),
+            _ => {}
         }
         self.close_actions();
         self.select(index);
@@ -1819,6 +1843,38 @@ impl Model {
             self.dirty = true;
         }
         joined
+    }
+
+    /// The app whose column is open.
+    pub fn column_app(&self) -> Option<&str> {
+        let c = self.column.as_ref().filter(|c| c.node.kind == NodeKind::App)?;
+        c.node.entry.as_ref().map(|e| e.id.as_str())
+    }
+
+    /// A running Mac app's own dock menu joining its open column once the
+    /// app has answered: each choice by its id in that menu. The selected
+    /// action stays where it is.
+    pub fn dock_answer(&mut self, app: &str, choices: &[(i32, String)]) -> bool {
+        if self.column_app() != Some(app) {
+            return false;
+        }
+        let filter = self.query.text().to_owned();
+        let Some(c) = self.column.as_mut().filter(|c| c.target.is_none()) else { return false };
+        let base = c.actions.len();
+        for (item, label) in choices {
+            let id = format!("dock:{item}");
+            if !c.actions.iter().any(|have| have.id == id) {
+                c.actions.push(Action::new(&id, label.clone(), Run::Ipc(IpcCall::new("dock", "choose").arg(app).arg(item.to_string()))));
+            }
+        }
+        if c.actions.len() == base {
+            return false;
+        }
+        let labels: Vec<&str> = c.actions[base..].iter().map(|a| a.label.as_str()).collect();
+        c.shown.extend(fs_menu::actions::filter(&labels, &filter).into_iter().map(|i| i + base));
+        c.joined.get_or_insert((base, Instant::now()));
+        self.dirty = true;
+        true
     }
 
     /// Uninstall joining an app's open column when the owner query answers
@@ -1897,7 +1953,7 @@ impl Model {
                 if kind == TargetKind::Peer {
                     self.ask(Request::PeerScan);
                 }
-                let targets = targets_for(store, kind);
+                let targets = targets_for(store, kind, node);
                 if let Some(c) = &mut self.column {
                     c.target = Some((action.clone(), targets));
                     c.refilter("");
@@ -2010,17 +2066,17 @@ impl Model {
             }
             _ => return Out::None,
         };
-        self.picked(store, node);
+        self.picked(node);
         self.close();
         Out::Target(pick)
     }
 
     /// `Edit abbreviation`'s answer: the subject pinned under the new
     /// abbreviation, the one it edits forgotten.
-    pub fn edit_answer(&mut self, store: &Store, value: Option<String>, cancelled: bool) {
+    pub fn edit_answer(&mut self, value: Option<String>, cancelled: bool) {
         let Some((subject, old)) = self.editing.take() else { return };
         let Some(new) = value.filter(|_| !cancelled).as_deref().and_then(fs_menu::abbrev::key) else { return };
-        index::move_abbreviation(store, &old, &new, &subject);
+        self.ask(Request::MoveAbbreviation { old, new, subject });
     }
 
     /// Enter: the row's first action.
@@ -2055,9 +2111,9 @@ impl Model {
         }
     }
 
-    fn picked(&self, store: &Store, node: &Node) {
+    fn picked(&self, node: &Node) {
         if self.mode == Mode::Menu {
-            index::record_pick(store, node, self.list_text(), crate::runtime::now_ms() as f64);
+            self.ask(Request::Picked { node: Box::new(node.clone()), query: self.list_text().to_owned(), now: crate::runtime::now_ms() as f64 });
         }
     }
 
@@ -2077,7 +2133,7 @@ impl Model {
         self.confirm.clear();
         let out = match &action.run {
             Run::Into(id) => {
-                self.picked(store, node);
+                self.picked(node);
                 let into = if *id != fs_menu::actions::subject_id(node).to_string() {
                     None
                 } else if node.kind == NodeKind::App {
@@ -2123,7 +2179,7 @@ impl Model {
                     // The picker closes the card itself once a tile takes
                     // the picture.
                     Intent::WallpaperSet(_) => {
-                        self.picked(store, node);
+                        self.picked(node);
                         return Out::Intent(intent.clone(), subject, true);
                     }
                     Intent::WallpaperSetFor(..) => return Out::Intent(intent.clone(), subject, true),
@@ -2138,7 +2194,7 @@ impl Model {
                 if action.paste_after {
                     self.paste = true;
                 }
-                self.picked(store, node);
+                self.picked(node);
                 return Out::Intent(intent.clone(), subject, action.keep_open);
             }
             Run::Spawn(argv) => Out::Spawn(argv.clone()),
@@ -2148,7 +2204,7 @@ impl Model {
         if action.paste_after {
             self.paste = true;
         }
-        self.picked(store, node);
+        self.picked(node);
         if action.keep_open {
             return out;
         }

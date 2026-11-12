@@ -85,6 +85,11 @@ pub struct State {
     /// Counts the compositor's config reloads, the contract's
     /// `configReloaded` signal.
     pub config_reloads: u64,
+    /// How many binds the session's config had recorded for the `mac`
+    /// submap when it was last built (`services/mackeys.rs`); none until
+    /// one is, which a config without the include's MAC APPS block never
+    /// does.
+    pub mac_binds: Option<u32>,
     pub gaps_out: Gaps,
     /// The focused window's border colour, sRGB 0..1.
     pub active_border: Option<[f32; 3]>,
@@ -100,6 +105,7 @@ impl Default for State {
             keyboard: keyboard::unavailable(),
             keyboard_answered: false,
             config_reloads: 0,
+            mac_binds: None,
             gaps_out: Gaps::default(),
             active_border: None,
         }
@@ -111,6 +117,7 @@ pub enum Diff {
     Outputs(Vec<Output>, OutputsState),
     Keyboard(Layout),
     ConfigReloaded,
+    MacBinds(u32),
     GapsOut(Gaps),
     ActiveBorder(Option<[f32; 3]>),
 }
@@ -141,6 +148,12 @@ impl State {
                 self.keyboard = layout;
             }
             Diff::ConfigReloaded => self.config_reloads += 1,
+            Diff::MacBinds(recorded) => {
+                if self.mac_binds == Some(recorded) {
+                    return false;
+                }
+                self.mac_binds = Some(recorded);
+            }
             Diff::GapsOut(gaps) => {
                 if self.gaps_out == gaps {
                     return false;
@@ -248,6 +261,12 @@ pub enum Command {
     SetOutputScale(String, f64),
     SetOutputMirror(String, String),
     SetOutputColor(String, Color),
+    /// The `mac` submap built again for these reserved chords
+    /// (`services/mackeys.rs`).
+    MacKeys(Vec<String>),
+    /// Whether the window found in front, none for no window, is a Mac
+    /// window: into the `mac` submap over it or out of it.
+    MacFocus(bool, WindowId),
     /// The pointer hidden or shown on every output, the session's arrival
     /// and departure.
     Cursor { hidden: bool },

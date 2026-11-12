@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The mac rig: fstestmac, an openSUSE Tumbleweed aarch64 guest on the
 # macbook's Virtualization framework through lima. The owner's fspec spec
-# declares both halves: hosts/fstestmac/lima.yaml is the VM (8 vCPU, 16 GiB,
+# declares both halves: hosts/fstestmac/lima.yaml is the VM (4 vCPU, 16 GiB,
 # its own disk, nothing of the mac mounted) and hosts/fstestmac/host.star
 # what runs in it (the slot users, a vkms card each, Hyprland and the legs'
 # tools, the formalshell package built for aarch64). fspec's own vm() drives

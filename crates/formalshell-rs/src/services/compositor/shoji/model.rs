@@ -114,6 +114,9 @@ pub fn snapshot(state: &proto::State) -> Snapshot {
             pid: w.pid,
             workspace_id: WorkspaceId::new(w.workspace_id.as_str()),
             special: w.overlay.is_some(),
+            // The state carries no xdg-toplevel-tag, so no window here is a
+            // Mac app's.
+            xdg_tag: String::new(),
             is_focused: w.focused,
             is_floating: w.floating,
             is_urgent: w.urgent,
@@ -222,8 +225,9 @@ pub fn binds(rows: Vec<proto::Bind>) -> Vec<Bind> {
 }
 
 /// The call a command is sent as, `None` for one the engine has no
-/// method for: the shell's own zen (the engine owns zen), and the
-/// re-reads, since every move reaches the shell through `state.changed`.
+/// method for: the shell's own zen (the engine owns zen), the `mac`
+/// submap (Hyprland's), and the re-reads, since every move reaches the
+/// shell through `state.changed`.
 pub fn method(command: &Command) -> Option<Call> {
     let s = |id: &WindowId| id.as_str().to_owned();
     let window = |m, id: &WindowId| Call::with(m, proto::WindowRef { id: s(id) });
@@ -261,6 +265,7 @@ pub fn method(command: &Command) -> Option<Call> {
         Command::Theme(theme) => Call::with(method::THEME_SET, theme),
         Command::Exit => Call::bare(method::SESSION_EXIT),
         Command::Zen { .. } | Command::Unzen { .. } | Command::ZenRelease | Command::RefreshWindows | Command::InputSettled => return None,
+        Command::MacKeys(_) | Command::MacFocus(..) => return None,
     })
 }
 

@@ -69,16 +69,26 @@ impl Publisher {
 /// The UI thread's handle on the other two.
 pub struct Runtime {
     service: async_channel::Sender<service::Request>,
+    /// The service thread's end of `service`, until `start` hands it over.
+    queued: Option<async_channel::Receiver<service::Request>>,
     pool: Pool,
+}
+
+/// The pool, and a service queue with no thread behind it yet.
+impl Default for Runtime {
+    fn default() -> Self {
+        let (service, queued) = async_channel::unbounded();
+        Self { service, queued: Some(queued), pool: Pool::new(POOL_THREADS, POOL_IDLE) }
+    }
 }
 
 impl Runtime {
     /// Starts the service thread and runs `services` on it first, which
-    /// spawns every service's task.
-    pub fn start(publisher: Publisher, services: impl FnOnce(&Ctx) + Send + 'static) -> Self {
-        let pool = Pool::new(POOL_THREADS, POOL_IDLE);
-        let service = service::spawn(publisher, pool.clone(), services);
-        Self { service, pool }
+    /// spawns every service's task, then what `service` queued before.
+    pub fn start(&mut self, publisher: Publisher, services: impl FnOnce(&Ctx) + Send + 'static) {
+        if let Some(rx) = self.queued.take() {
+            service::spawn(rx, publisher, self.pool.clone(), services);
+        }
     }
 
     /// Runs `f` on the service thread, where it can spawn tasks.
@@ -163,7 +173,8 @@ mod tests {
         let (release_ui, hold_ui) = mpsc::channel();
         let (release_service, hold_service) = mpsc::channel();
         let publisher = Publisher::new(sender);
-        let runtime = Runtime::start(publisher.clone(), |_| {});
+        let mut runtime = Runtime::default();
+        runtime.start(publisher.clone(), |_| {});
         let started_ui = started.clone();
         runtime.pool().submit(move || publisher.publish(result(&format!("ui {}", held(&started_ui, &hold_ui)))));
         runtime.service(move |ctx| {

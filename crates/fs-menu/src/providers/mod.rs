@@ -9,6 +9,7 @@
 //! string, it has a desktop entry to execute, which respects `.desktop` field
 //! codes and `Exec` quoting that re-running it through `sh -c` would mangle.
 
+mod appmenu;
 mod apps;
 mod clipboard;
 mod clipssh;
@@ -20,6 +21,7 @@ mod share;
 mod system;
 mod wallpaper;
 
+pub use appmenu::*;
 pub use apps::*;
 pub use clipboard::*;
 pub use clipssh::*;

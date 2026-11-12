@@ -9,7 +9,9 @@
 #
 # A real Tab on the probe's row lists exactly the app's actions in the
 # launcher spec's order (Open on discrete GPU allowed where the machine has
-# two cards); `new` typed filters them to New window, and Enter on it maps
+# two cards), and with the column up and nothing typed the content
+# (`commit surface=menu-content`) commits nothing for 3s, nor more than 12
+# times in any 100ms of the run; `new` typed filters them to New window, and Enter on it maps
 # a second window. → on the row steps into its two windows; Tab on one of
 # them, `move` and Enter list the workspaces under a `Workspace` step, `2`
 # and Enter move that window to workspace 2. Shift+Enter on the list runs
@@ -84,6 +86,11 @@ key -k Tab
 sleep 0.6
 status menu "$shot_dir/launcher-actions-tab.json"
 shoot "$shot_dir/launcher-actions-column-dark.png"
+sleep 1
+content_commits() { grep -c '^commit surface=menu-content ' "$shell_log_path"; }
+before=\$(content_commits)
+sleep 3
+echo "\$(( \$(content_commits) - before ))" > "$shot_dir/launcher-actions-rest-commits.txt"
 key new
 status menu "$shot_dir/launcher-actions-filtered.json"
 key -k Return
@@ -236,6 +243,16 @@ leg_launcher_actions_assert() {
   launcher_actions_expect list ".ids[0] == \"$launcher_actions_app\"" "the probe does not lead its own name"
   launcher_actions_expect tab '.actionsOpen and ([.actions[] | select(. != "discrete-gpu")] == ["open", "new-window", "desktop:quiet", "windows", "move-to-workspace", "probe-note", "probe-confirm"])' "Tab did not list the app's actions in order, with copy-path hidden and probe-note and probe-confirm added"
   launcher_actions_expect tab '.query == "" and .cursorId == "'"$launcher_actions_app"'"' "the column did not take the field or the row lost the selection"
+  local rest busiest
+  rest=$(cat "$shot_dir/launcher-actions-rest-commits.txt" 2>/dev/null)
+  [ "$rest" = 0 ] || fail "launcher-actions: the launcher's content committed ${rest:-?} times in 3s with the column open at rest"
+  # The busiest 100ms of content commits over the run: paced by the card's
+  # frame callbacks it stays near the output's refresh, unpaced it ran to
+  # hundreds.
+  busiest=$(sed -n 's/^commit surface=menu-content n=[0-9]* t=\([0-9]*\)ms.*/\1/p' "$shell_log_path" \
+    | awk '{ t[NR] = $1 } END { j = 1; m = 0; for (i = 1; i <= NR; i++) { while (t[i] - t[j] >= 100) j++; if (i - j + 1 > m) m = i - j + 1 } print m }')
+  [ "${busiest:-0}" -le 12 ] || fail "launcher-actions: the launcher's content committed $busiest times inside 100ms"
+  echo "SMOKE_LAUNCHER_ACTIONS the content rests with the column open and commits at most $busiest times in 100ms"
   launcher_actions_expect filtered '.actions == ["new-window"]' "'new' did not filter the column to New window"
   launcher_actions_expect after-new '.isOpen == false' "New window did not close the launcher"
   [ "$(launcher_actions_windows new)" = 2 ] || fail "launcher-actions: New window did not map a second probe window"

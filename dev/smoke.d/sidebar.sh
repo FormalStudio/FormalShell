@@ -83,7 +83,7 @@ sidebar_pill_png="$shot_dir/sidebar-pill.png"
 sidebar_pill_closed="$shot_dir/sidebar-pill-closed.json"
 
 sidebar_rider() {
-  leg_on idle || leg_on menu_budget || leg_on tray || leg_on tray_overflow
+  leg_on idle || leg_on menu_budget || leg_on tray || leg_on tray_overflow || leg_on mac_menu
 }
 
 # The clock card case stages its own wallpaper and clock format.

@@ -158,6 +158,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             workspace_id,
             // Special workspaces carry a negative id.
             special: workspace.is_some_and(|n| n < 0),
+            xdg_tag: string(c.get("xdgTag")),
             id,
         });
     }

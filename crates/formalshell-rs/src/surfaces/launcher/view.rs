@@ -116,14 +116,6 @@ impl Shown {
             || self.wake.is_some_and(|w| w <= now)
     }
 
-    /// Whether the content itself moves, past the card carrying it: on a
-    /// layer, the card's own motion and its size morph need no new layout,
-    /// the compositor moves and cuts the layer.
-    pub fn content_animating(&self, now: Instant) -> bool {
-        let card = self.modal.layer.is_none() && (self.modal.win.animating(now) || self.morph.0.running(now) || self.morph.1.running(now));
-        card || self.scroll.running(now) || self.column_scroll.running(now) || self.wake.is_some_and(|w| w <= now)
-    }
-
     /// The field's line, the head band's height under the card's top and
     /// the foot band's, each band with its rule.
     fn metrics(theme: &Theme, m: &Model, store: &Store, output_h: f64, kit: &mut Kit) -> (f64, f64, f64, f64) {

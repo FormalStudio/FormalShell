@@ -681,14 +681,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<Leave>) -> Option<MenuView> {
                 .take(NETWORKS)
                 .map(|r| {
                     let status = match (&n.action, &n.failure) {
-                        (Some((kind, ssid)), _) if *ssid == r.ssid => Some(
-                            match kind {
-                                net::ActionKind::Connect => "Connecting",
-                                net::ActionKind::Disconnect => "Disconnecting",
-                                net::ActionKind::Forget => "Forgetting",
-                            }
-                            .to_owned(),
-                        ),
+                        (Some((kind, ssid)), _) if *ssid == r.ssid => Some(kind.busy().to_owned()),
                         (_, Some(f)) if f.ssid == r.ssid => Some(f.text.clone()),
                         _ => None,
                     };

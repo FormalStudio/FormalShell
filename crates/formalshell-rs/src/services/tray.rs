@@ -37,7 +37,21 @@ pub struct MenuNode {
     pub icon: Option<Raw>,
     pub checked: bool,
     pub has_children: bool,
+    /// The row's key equivalent: its modifiers, then the key, as the bus
+    /// names them (`Super`, `Shift`, `S`).
+    pub shortcut: Vec<String>,
+    /// A heading over the rows after it, not a choice.
+    pub section: bool,
     pub children: Vec<MenuNode>,
+}
+
+impl MenuNode {
+    pub fn find(&self, id: i32) -> Option<&MenuNode> {
+        if self.id == id {
+            return Some(self);
+        }
+        self.children.iter().find_map(|c| c.find(id))
+    }
 }
 
 /// The tree the shell holds open for one item.
@@ -146,7 +160,7 @@ fn menu_icon(node: &MenuItem, largest: f64) -> Option<Raw> {
     (!node.icon_name.is_empty()).then(|| icons::named(&node.icon_name, "", icons::pick(PICK, largest))).flatten()
 }
 
-fn node_of(node: &MenuItem, largest: f64) -> MenuNode {
+pub(super) fn node_of(node: &MenuItem, largest: f64) -> MenuNode {
     MenuNode {
         id: node.id,
         label: node.label.clone(),
@@ -155,6 +169,8 @@ fn node_of(node: &MenuItem, largest: f64) -> MenuNode {
         icon: menu_icon(node, largest),
         checked: node.toggle != Toggle::None && node.check == CheckState::Checked,
         has_children: node.has_children,
+        shortcut: node.shortcut.clone(),
+        section: node.section,
         children: node.visible_children().map(|c| node_of(c, largest)).collect(),
     }
 }

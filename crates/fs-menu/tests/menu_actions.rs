@@ -96,6 +96,39 @@ fn abbreviation() {
     assert_eq!(first_action(&Subject { abbrev: Some(("x", Source::Configured)), ..Subject::of(&bare) }), None);
 }
 
+fn coteditor() -> Node {
+    let entry = DesktopEntry {
+        id: "com.coteditor.CotEditor".into(),
+        name: "CotEditor".into(),
+        bundle_id: "com.coteditor.CotEditor".into(),
+        ..DesktopEntry::default()
+    };
+    apps_provider(&[entry], None, &[], 0.0).remove(0)
+}
+
+#[test]
+fn a_mac_app_takes_the_docks_actions_and_its_own_quit() {
+    let node = coteditor();
+    assert_eq!(ids(&of(&node)), ["open", "new-window"]);
+    let closed = actions_for(&Subject { dock: Some(false), mac_removable: true, ..Subject::of(&node) });
+    assert_eq!(ids(&closed), ["open", "new-window", "dock-pin", "uninstall"]);
+    assert_eq!(closed[2].run, Run::parse("@ipc:dock.pin:com.coteditor.CotEditor"));
+    assert_eq!(closed[3].run, Run::Intent(Intent::AppUninstall("com.coteditor.CotEditor".into())));
+    assert!(closed[3].confirm && closed[3].destructive);
+    let open = actions_for(&Subject { windows: 1, dock: Some(true), ..Subject::of(&node) });
+    assert_eq!(ids(&open), ["open", "new-window", "windows", "move-to-workspace", "dock-unpin", "quit"]);
+    assert_eq!(open[4].label, "Remove from Dock");
+    assert_eq!(open[5].label, "Quit CotEditor");
+    assert_eq!(open[5].run, Run::parse("@ipc:dock.quit:com.coteditor.CotEditor"));
+    // Any other app has the dock's two only where the dock takes it, and
+    // never a Quit.
+    let native = actions_for(&Subject { windows: 1, dock: Some(false), ..Subject::of(&firefox()) });
+    assert_eq!(ids(&native), ["open", "new-window", "desktop:new-private-window", "windows", "move-to-workspace", "dock-pin", "copy-path"]);
+    // fspec's own uninstall goes first where its spec holds the app.
+    let owned = actions_for(&Subject { removable: Some("atoll:x"), mac_removable: true, ..Subject::of(&node) });
+    assert_eq!(owned.last().unwrap().run, Run::Intent(Intent::PackageUninstall("atoll:x".into())));
+}
+
 #[test]
 fn uninstall_is_an_owned_apps_last_action() {
     let node = firefox();

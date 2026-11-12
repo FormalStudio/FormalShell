@@ -88,6 +88,12 @@
     // compositor binds (Compositor/keybinds.js). Rows are inert notes, never
     // activatable.
     "keybinds": { "iconName": "keyboard", "chord": "Super+K", "label": "Keybinds", "provider": "keybinds", "aliases": ["keys", "hotkeys", "shortcuts"], "prompt": "Search keybinds", "prefix": ":k" },
+    // "appmenu" is the focused Mac app's menu commands
+    // (providers/appmenu.rs): one row per leaf with its path and its key
+    // equivalent, Enter running it as a click on its menu row does. The
+    // rows rank in a root query too, under apps and commands, and are gone
+    // while no Mac app is in front.
+    "appmenu": { "iconName": "command", "chord": "Super+Alt+M", "label": "Menu Bar", "provider": "appMenu", "aliases": ["menu commands", "mac menu"], "prompt": "Search menu commands", "prefix": ":b" },
     // "files" is filled on the shell's service thread from GTK's
     // recently-used.xbel and the XDG user directories (providers/files.rs):
     // no index, so its rows rank in a root search as file and folder

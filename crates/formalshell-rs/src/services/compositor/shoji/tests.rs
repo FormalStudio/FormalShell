@@ -187,7 +187,8 @@ impl Rig {
             .unwrap();
         let (commands, rx) = async_channel::unbounded();
         let path = path.to_owned();
-        let runtime = Runtime::start(Publisher::new(sender), move |ctx| {
+        let mut runtime = Runtime::default();
+        runtime.start(Publisher::new(sender), move |ctx| {
             ctx.spawn(serve(ctx.clone(), rx, path, ANSWER_WITHIN));
         });
         Rig { event_loop, seen: Seen::default(), commands, _runtime: runtime }

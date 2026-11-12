@@ -88,18 +88,33 @@ pub(super) fn peer_targets(store: &Store) -> Vec<Node> {
     }
 }
 
-/// What a target action picks from. Workspaces: the focused output's, by
-/// slot, then the next free one as a new one. Apps: every installed one,
-/// by name. Peers: LocalSend's last scan.
-pub(super) fn targets_for(store: &Store, kind: TargetKind) -> Vec<Node> {
+/// What a target action picks from, for the subject `node`. Workspaces:
+/// the focused output's, by slot, then the next free one as a new one.
+/// Apps: the ones whose entry names the file's type or one above it, by
+/// name, then under a note every other installed one, by name; a Mac app
+/// trails `Mac`. Peers: LocalSend's last scan.
+pub(super) fn targets_for(store: &Store, kind: TargetKind, node: &Node) -> Vec<Node> {
     match kind {
         TargetKind::App => {
-            let mut apps: Vec<Node> = model::visible_children(store.menu.nodes(), Some("apps"), &store.menu.cond)
+            let types = store.menu.types.as_ref().filter(|(path, _)| *path == node.path).map_or(&[][..], |(_, types)| types.as_slice());
+            let mut apps: Vec<(bool, Node)> = model::visible_children(store.menu.nodes(), Some("apps"), &store.menu.cond)
                 .into_iter()
-                .filter_map(|n| n.entry.as_ref().map(|e| Node::new(format!("target-app:{}", e.id), n.label.clone(), NodeKind::Target)))
+                .filter_map(|n| {
+                    let e = n.entry.as_ref()?;
+                    let row = Node {
+                        meta: (!e.bundle_id.is_empty()).then(|| "Mac".to_owned()),
+                        ..Node::new(format!("target-app:{}", e.id), n.label.clone(), NodeKind::Target)
+                    };
+                    Some((e.mime_types.iter().any(|t| types.contains(t)), row))
+                })
                 .collect();
-            apps.sort_by_key(|n| n.label.to_lowercase());
-            apps
+            apps.sort_by_key(|(opens, n)| (!opens, n.label.to_lowercase()));
+            let opening = apps.iter().take_while(|(opens, _)| *opens).count();
+            let mut rows: Vec<Node> = apps.into_iter().map(|(_, n)| n).collect();
+            if opening > 0 && opening < rows.len() {
+                rows.insert(opening, Node::note("target-app:others", "Other apps"));
+            }
+            rows
         }
         TargetKind::Peer => peer_targets(store),
         TargetKind::Workspace => {
@@ -214,6 +229,23 @@ pub(super) fn slot_x_of(m: &Model, el: &El) -> f64 {
     m.rows.iter().position(|r| r.id == id).and_then(|i| m.layout.slots.get(i)).map_or(0.0, |s| s.x)
 }
 
+/// The trailing value a row reads: a package's as the shell changes it, an
+/// app's open windows, else the row's own. A Mac app's leads with `Mac`.
+pub(super) fn row_value(store: &Store, row: &Node) -> String {
+    let app = row.entry.as_ref().filter(|_| row.kind == NodeKind::App);
+    let windows = app.filter(|_| row.meta.as_deref().unwrap_or("").is_empty()).map_or(0, |entry| app_windows(store, entry).len());
+    let value = match windows {
+        0 => crate::surfaces::packages::row_value(store, row),
+        1 => "1 window".into(),
+        n => format!("{n} windows"),
+    };
+    match (app.is_some_and(|e| !e.bundle_id.is_empty()), value.is_empty()) {
+        (true, true) => "Mac".to_owned(),
+        (true, false) => format!("Mac \u{B7} {value}"),
+        (false, _) => value,
+    }
+}
+
 /// One row: a `row_icon` mark, the label at 400 (600 under the selection),
 /// a dim trailing value, `lg` either side.
 #[allow(clippy::too_many_arguments)]
@@ -268,19 +300,14 @@ pub(super) fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected:
     if let Some(desc) = row.desc.clone().filter(|d| !d.is_empty()) {
         lead.push(row_words(desc).ink(Ink::Dim));
     }
-    let windows = match &row.entry {
-        Some(entry) if row.kind == NodeKind::App && row.meta.as_deref().unwrap_or("").is_empty() => app_windows(store, entry).len(),
-        _ => 0,
-    };
-    let value = match windows {
-        _ if live.is_some() => live.map(|l| l.value).unwrap_or_default(),
-        0 => fs_menu::actions::accessory_for(Some(row)),
-        1 => "1 window".into(),
-        n => format!("{n} windows"),
-    };
+    let value = row_value(store, row);
     let mut trail = Vec::new();
     if !value.is_empty() {
         trail.push(row_words(value).ink(Ink::Dim).end());
+    }
+    if !row.keys.is_empty() {
+        let caps = crate::services::appmenu::keycaps(&row.keys);
+        trail.push(w::chord_keys(s, &caps.iter().map(String::as_str).collect::<Vec<_>>()).fade(0.6));
     }
     if checked && !confirming {
         trail.push(w::icon("check"));

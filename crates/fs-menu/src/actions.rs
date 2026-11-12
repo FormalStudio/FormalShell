@@ -263,11 +263,27 @@ pub struct Subject<'a> {
     /// A wallpaper tile holding one picture, which can fill one mode's
     /// slot alone.
     pub single: bool,
+    /// Whether the dock keeps this app, where the dock takes it at all: a
+    /// Mac app, or any app under `dock.show` `always`.
+    pub dock: Option<bool>,
+    /// A Mac app no fspec package holds, which `atoll uninstall` takes out.
+    pub mac_removable: bool,
 }
 
 impl<'a> Subject<'a> {
     pub fn of(node: &'a Node) -> Subject<'a> {
-        Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false, removable: None, single: false }
+        Subject {
+            node,
+            windows: 0,
+            discrete_gpu: false,
+            picker_select: false,
+            abbrev: None,
+            pinned: false,
+            removable: None,
+            single: false,
+            dock: None,
+            mac_removable: false,
+        }
     }
 
     /// A dim note, a keybind, an unavailable row: Enter, Shift+Enter and a
@@ -388,6 +404,15 @@ fn builtins(s: &Subject) -> Vec<Action> {
             }
             if s.windows > 0 {
                 out.push(Action::new("move-to-workspace", "Move to workspace\u{2026}", Run::Target(TargetKind::Workspace)));
+            }
+            if let Some(kept) = s.dock {
+                let (id, label, function) = if kept { ("dock-unpin", "Remove from Dock", "unpin") } else { ("dock-pin", "Keep in Dock", "pin") };
+                out.push(Action::new(id, label, Run::Ipc(IpcCall::new("dock", function).arg(e.id.clone()))));
+            }
+            // A Mac app asks about unsaved work on its own Quit, which
+            // closing its windows never reaches.
+            if !e.bundle_id.is_empty() && s.windows > 0 {
+                out.push(Action::new("quit", format!("Quit {}", n.label), Run::Ipc(IpcCall::new("dock", "quit").arg(e.id.clone()))));
             }
             if !e.path.is_empty() {
                 out.push(copy("copy-path", "Copy desktop file path", &e.path));
@@ -536,10 +561,18 @@ pub fn actions_for(s: &Subject) -> Vec<Action> {
     out
 }
 
-/// An app's last action, once fspec said this host's spec holds it.
+/// An app's last action: once fspec said this host's spec holds it, or
+/// for a Mac app atoll installed.
 pub fn uninstall_action(s: &Subject) -> Option<Action> {
-    let id = s.removable.filter(|_| s.node.kind == Kind::App)?;
-    let mut uninstall = Action::new("uninstall", format!("Uninstall {}", s.node.label), Intent::PackageUninstall(id.to_owned()).into());
+    if s.node.kind != Kind::App {
+        return None;
+    }
+    let intent = match (s.removable, &s.node.entry) {
+        (Some(id), _) => Intent::PackageUninstall(id.to_owned()),
+        (None, Some(e)) if s.mac_removable => Intent::AppUninstall(e.id.clone()),
+        _ => return None,
+    };
+    let mut uninstall = Action::new("uninstall", format!("Uninstall {}", s.node.label), intent.into());
     uninstall.confirm = true;
     uninstall.destructive = true;
     Some(uninstall)

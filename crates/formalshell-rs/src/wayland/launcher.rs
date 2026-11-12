@@ -501,7 +501,14 @@ impl App {
                 Request::Plugin(id, line) => plugins::send(&id, line),
                 Request::Plugins(open) => plugins::launcher(open),
                 Request::PeerScan => localsend::command(localsend::Cmd::Scan { force: false }),
+                Request::DockMenu(app) => {
+                    if let Ok(pid) = self.dock_mac_pid(&app) {
+                        self.runtime.service(move |ctx| crate::services::appmenu::dock_menu(ctx, pid));
+                    }
+                }
                 Request::Clipboard(cmd) => clipboard::command(cmd),
+                Request::Picked { node, query, now } => index::record_pick(&self.store, &node, &query, now),
+                Request::MoveAbbreviation { old, new, subject } => index::move_abbreviation(&self.store, &old, &new, &subject),
                 Request::Selected(answer) => {
                     write_selection(&crate::surfaces::launcher::selection_path(), &answer);
                     self.selection_answer(answer);
@@ -619,6 +626,12 @@ impl App {
             }
             Intent::PackageInstall(id) => packages::install(&self.store, id),
             Intent::PackageUninstall(id) => packages::send(packages::Cmd::Uninstall(id.clone())),
+            Intent::AppUninstall(id) => {
+                if let Some((argv, name)) = crate::services::atoll::uninstall_of(&self.store, id) {
+                    let id = id.clone();
+                    self.runtime.service(move |ctx| crate::services::atoll::uninstall(ctx, id, name, argv));
+                }
+            }
             Intent::PowerSuspend => power::request(power::Action::Suspend),
             Intent::PowerReboot => power::request(power::Action::Reboot),
             Intent::PowerOff => power::request(power::Action::PowerOff),
@@ -716,7 +729,7 @@ impl App {
         } else if token == LIGHTS_COLOR {
             self.lights_answer(value, cancelled);
         } else if token == ABBREV_EDIT {
-            self.launcher.edit_answer(&self.store, value, cancelled);
+            self.launcher.edit_answer(value, cancelled);
         }
     }
 
@@ -1086,6 +1099,7 @@ impl App {
                     | Topic::Theme
                     | Topic::Media
                     | Topic::Tray
+                    | Topic::AppMenu
                     | Topic::Notifications
                     | Topic::Clipboard
                     | Topic::Localsend
@@ -1121,6 +1135,10 @@ impl App {
             }
             Topic::PluginOutput => self.launcher_plugins(),
             Topic::Tray => self.launcher_tray(),
+            Topic::AppMenu => {
+                self.launcher_appmenu();
+                self.launcher_dock_answer();
+            }
             Topic::Notifications => self.launcher_store_changed(),
             Topic::Clipboard => {
                 self.launcher_clipboard();
@@ -1261,11 +1279,14 @@ impl App {
         let qh = self.qh.clone();
         let theme = &self.store.theme.theme;
         let Some(w) = &mut self.launch.win else { return };
-        let moving = w.shown.content_animating(now) || self.launcher.rows_moving(now);
         let t1 = Instant::now();
         // A frame still being drawn in slices keeps the scene it started on.
         let rastering = w.shown.modal.win.surface.rastering() || w.shown.modal.layer.as_ref().is_some_and(|l| l.surface.rastering());
-        let wants = (self.launcher.dirty || moving || !w.shown.modal.win.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now);
+        // Content that moves lays out again off the card's frame callback,
+        // which marks the model dirty (`launcher_frame`). Laid out every turn
+        // instead, the content layer commits each turn without a callback,
+        // and the compositor's release of the last buffer brings the next.
+        let wants = (self.launcher.dirty || !w.shown.modal.win.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now);
         // A layout held back by a sliced frame runs once it is out, even
         // when whatever moved has stopped by then.
         if rastering && wants {
@@ -1495,6 +1516,28 @@ impl App {
         self.apply(Diff::Menu(index::Diff::Source(Provider::Tray, rows)));
     }
 
+    /// The menu route's rows: the focused Mac app's commands.
+    pub(super) fn launcher_appmenu(&mut self) {
+        let commands: Option<Vec<fs_menu::providers::MenuCommand>> = self.store.appmenu.menu.as_ref().map(|m| {
+            m.commands()
+                .into_iter()
+                .map(|c| fs_menu::providers::MenuCommand { id: c.id, label: c.label, path: c.path, enabled: c.enabled, checked: c.checked, shortcut: c.shortcut })
+                .collect()
+        });
+        let rows = fs_menu::providers::app_menu_provider(commands.as_deref());
+        self.apply(Diff::Menu(index::Diff::Source(Provider::AppMenu, rows)));
+    }
+
+    /// The dock menu a Mac app answered with, into its open column.
+    fn launcher_dock_answer(&mut self) {
+        let Some(app) = self.launcher.column_app().map(str::to_owned) else { return };
+        let Ok(pid) = self.dock_mac_pid(&app) else { return };
+        let Some(choices) = self.store.appmenu.dock.as_ref().filter(|d| d.pid == pid).map(|d| d.choices()) else { return };
+        if self.launcher.dock_answer(&app, &choices) {
+            self.launcher_store_changed();
+        }
+    }
+
     /// What every store change the launcher's index reads asks of it.
     pub(super) fn launcher_inputs(&mut self) {
         let l = &self.store.lights;
@@ -1520,6 +1563,11 @@ impl App {
             },
             plugin_modes: index::plugin_modes(&self.store),
         };
+        // Nothing publishes the menu until a Mac app is focused, and its
+        // route wants its note before that.
+        if self.launch.buttons.is_none() {
+            self.launcher_appmenu();
+        }
         if self.launch.buttons.as_ref() != Some(&inputs) || !self.store.config.loaded {
             self.launch.buttons = Some(inputs.clone());
             index::ask(Ask::Base(inputs));

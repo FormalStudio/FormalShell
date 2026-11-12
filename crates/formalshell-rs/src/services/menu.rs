@@ -74,6 +74,10 @@ pub struct State {
     /// Picked files and folders by path: whether each is a folder, `None`
     /// once it is gone. Absent is not looked at yet.
     pub files: HashMap<String, Option<bool>>,
+    /// The file Open With last asked about, by path: its type by its name
+    /// and the types above it, nearest first; none where its name says
+    /// nothing.
+    pub types: Option<(String, Vec<String>)>,
 }
 
 /// A folder's sorted entries, or why it could not be read.
@@ -90,6 +94,7 @@ pub enum Diff {
     Folder(String, Listing),
     Peek(String, Peeked),
     Files(HashMap<String, Option<bool>>),
+    Types(String, Vec<String>),
 }
 
 impl State {
@@ -131,6 +136,7 @@ impl State {
             }
             Diff::Folder(path, listing) => self.folder = Some((path, listing)),
             Diff::Peek(path, peeked) => self.peek = Some((path, peeked)),
+            Diff::Types(path, types) => self.types = Some((path, types)),
             Diff::Files(files) => {
                 let before = self.files.len();
                 let changed = files.iter().any(|(p, k)| self.files.get(p) != Some(k));
@@ -205,6 +211,10 @@ pub enum Ask {
     Base(BaseInputs),
     /// The apps source again, rescanning only when a directory moved.
     Apps(Vec<Record>),
+    /// The apps source again under the launches the last `Apps` carried,
+    /// read when it runs: a copy taken when it was queued would land after
+    /// a newer `Apps` and put the older ranking back.
+    Again,
     /// Run these `when`/`checked` commands, `(id, command, is_when)`.
     Conds(Vec<(String, String, bool)>),
     Binds,
@@ -222,6 +232,8 @@ pub enum Ask {
     Peek(String),
     /// Whether each picked path is still there, and a folder.
     Stat(Vec<String>),
+    /// A file's type, for Open With.
+    Types(String),
     /// Icon files by absolute path, for rows that are no desktop entry (a
     /// catalog's package icon).
     Icons(Vec<String>),
@@ -282,16 +294,19 @@ async fn run(ctx: Ctx) {
             }
             Ask::Rescan => {
                 rescan.store(true, Ordering::Relaxed);
-                let _ = tx.try_send(Ask::Apps(launches_seen.clone()));
+                let _ = tx.try_send(Ask::Again);
             }
             Ask::Scale(k) => {
                 if k != scale {
                     scale = k;
-                    let _ = tx.try_send(Ask::Apps(launches_seen.clone()));
+                    let _ = tx.try_send(Ask::Again);
                 }
             }
-            Ask::Apps(launches) => {
-                launches_seen = launches.clone();
+            a @ (Ask::Apps(_) | Ask::Again) => {
+                if let Ask::Apps(launches) = a {
+                    launches_seen = launches;
+                }
+                let launches = launches_seen.clone();
                 let (scan, rescan) = (scan.clone(), rescan.clone());
                 let done = ctx.pool().run(move || scan.lock().unwrap().apps(&launches, rescan.swap(false, Ordering::Relaxed), scale)).await;
                 if let Some((rows, icons, exec)) = done {
@@ -364,6 +379,15 @@ async fn run(ctx: Ctx) {
                 if let Some(files) = ctx.pool().run(stat).await {
                     ctx.publish(store::Diff::Menu(Diff::Files(files)));
                 }
+            }
+            Ask::Types(path) => {
+                let c = ctx.clone();
+                ctx.spawn(async move {
+                    let p = path.clone();
+                    if let Some(types) = c.pool().run(move || file_types(&p)).await {
+                        c.publish(store::Diff::Menu(Diff::Types(path, types)));
+                    }
+                });
             }
             Ask::Peek(path) => {
                 let (c, latest) = (ctx.clone(), peek_latest.clone());
@@ -447,6 +471,18 @@ fn io_reason(e: &std::io::Error) -> String {
     }
 }
 
+/// The type of the file at `path` by its name, and the types above it,
+/// off every data directory's shared-mime-info database.
+fn file_types(path: &str) -> Vec<String> {
+    let read = |file: &str| -> String {
+        let found = crate::paths::data_dirs().into_iter().filter_map(|d| std::fs::read_to_string(d.join("mime").join(file)).ok());
+        found.collect::<Vec<_>>().join("\n")
+    };
+    let types = fs_menu::mime::Types::parse(&read("globs2"), &read("subclasses"));
+    let name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    types.of(&name).map(|mime| types.chain(mime)).unwrap_or_default()
+}
+
 /// What the preview pane shows of `path`: a folder's names, a text file's
 /// first lines out of its first [`PEEK_BYTES`](fs_menu::providers::PEEK_BYTES),
 /// or that it is a picture or neither.
@@ -514,6 +550,8 @@ impl Scan {
                 startup_class: l.entry.startup_class.clone(),
                 path: l.path.to_string_lossy().into_owned(),
                 actions: l.actions.iter().map(|a| (a.key.clone(), a.name.clone())).collect(),
+                bundle_id: l.bundle_id.clone(),
+                mime_types: l.mime_types.clone(),
             })
             .collect();
         if scale != self.scale {

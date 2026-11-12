@@ -12,10 +12,12 @@ pub struct Entry {
     pub progress: Option<Fraction>,
     pub progress_visible: bool,
     pub urgent: bool,
+    /// atoll's `x-atoll-badge`: a Mac app's badge that is not a count.
+    pub badge: String,
 }
 
 /// One property off the signal, already typed.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Prop {
     Count(i64),
     CountVisible(bool),
@@ -23,6 +25,7 @@ pub enum Prop {
     Progress(f64),
     ProgressVisible(bool),
     Urgent(bool),
+    Badge(String),
 }
 
 impl Prop {
@@ -39,6 +42,7 @@ impl Prop {
             "progress" => Prop::Progress(prop(props, name)?),
             "progress-visible" => Prop::ProgressVisible(prop(props, name)?),
             "urgent" => Prop::Urgent(prop(props, name)?),
+            "x-atoll-badge" => Prop::Badge(prop(props, name)?),
             _ => return None,
         })
     }
@@ -59,6 +63,7 @@ impl Entry {
             Prop::Progress(p) => self.progress = (!p.is_nan()).then(|| Fraction::from_fraction(p)),
             Prop::ProgressVisible(v) => self.progress_visible = v,
             Prop::Urgent(v) => self.urgent = v,
+            Prop::Badge(text) => self.badge = text,
         }
     }
 }
@@ -94,6 +99,8 @@ mod tests {
         assert!(e.urgent);
         assert_eq!(e.progress.unwrap().to_percent().rounded(), 50);
         assert!(Prop::read(&props(vec![("count", Value::from("x"))]), "count").is_none());
+        e.apply_update(&props(vec![("x-atoll-badge", Value::from("new"))]));
+        assert_eq!(e.badge, "new");
     }
 
     #[test]

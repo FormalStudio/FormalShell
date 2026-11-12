@@ -1114,7 +1114,8 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
             .unwrap();
         let (inputs_tx, inputs_rx) = async_channel::unbounded();
         let (requests_tx, requests_rx) = async_channel::unbounded();
-        let _runtime = Runtime::start(Publisher::new(sender), move |ctx| {
+        let mut runtime = Runtime::default();
+        runtime.start(Publisher::new(sender), move |ctx| {
             ctx.spawn(run(ctx.clone(), env, inputs_rx, requests_tx));
         });
         std::thread::spawn(move || {

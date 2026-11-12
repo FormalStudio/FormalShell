@@ -6,7 +6,7 @@
 use crate::services::devices::{self, earbuds, network};
 use crate::services::info::{calendar, github, monitor, powerflow, procs, tailscale, update, usage, weather};
 use crate::services::{
-    activity, agents, appicon, barpaint, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, display,
+    activity, agents, appicon, appmenu, barpaint, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, display,
     compositor, ipad, iphone, launch, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, radio, recording, screensaver, state, theme,
     tray, visualizer, wallpaper,
 };
@@ -101,6 +101,8 @@ slices! {
     bar_paint: barpaint::State => BarPaint(barpaint::Diff);
     wallpaper: wallpaper::State => Wallpaper(wallpaper::Diff);
     tray: tray::State => Tray(tray::Diff);
+    /// The focused Mac app's main menu.
+    appmenu: appmenu::State => AppMenu(appmenu::Diff);
     agents: agents::State => Agents(agents::Diff);
     appicon: appicon::State => AppIcon(appicon::Diff);
     weather: weather::State => Weather(weather::State) { set };
@@ -161,6 +163,8 @@ fn implied(store: &Store, topic: Topic) -> Option<Diff> {
     match topic {
         // The theme resolves its settings out of settings.json.
         Topic::Config => Some(Diff::Theme(theme::Diff::Settings(store.config.settings().clone()))),
+        // A Mac app's menu is its window's: focus on another drops it.
+        Topic::Compositor => appmenu::stale(store).then(|| Diff::AppMenu(appmenu::Diff::Menu(None))),
         _ => None,
     }
 }

@@ -41,6 +41,8 @@ pub enum Builtin {
     Launcher,
     Workspaces,
     ActiveWindow,
+    /// The focused Mac app's menu bar; off the strip for any other window.
+    AppMenu,
     Clock,
     NowPlaying,
     Battery,
@@ -67,10 +69,11 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [(Builtin, &'static str); 26] = [
+    pub const ALL: [(Builtin, &'static str); 27] = [
         (Builtin::Launcher, "launcher"),
         (Builtin::Workspaces, "workspaces"),
         (Builtin::ActiveWindow, "activeWindow"),
+        (Builtin::AppMenu, "appMenu"),
         (Builtin::Clock, "clock"),
         (Builtin::NowPlaying, "nowPlaying"),
         (Builtin::Battery, "battery"),
@@ -118,7 +121,7 @@ pub const CUSTOM_PREFIX: &str = "custom:";
 pub fn default_layout(region: Region) -> &'static [Builtin] {
     use Builtin::*;
     match region {
-        Region::Left => &[Launcher, Workspaces, ActiveWindow],
+        Region::Left => &[Launcher, Workspaces, AppMenu, ActiveWindow],
         Region::Center => &[Clock, NowPlaying],
         Region::Right => &[
             Battery, Audio, Network, Bluetooth, Weather, Tray, Bell, Indicators,
@@ -690,7 +693,7 @@ mod tests {
     #[test]
     fn default_fallback_when_bar_is_undefined() {
         let r = defaults();
-        assert_eq!(names(&r.regions.left), "launcher,workspaces,activeWindow");
+        assert_eq!(names(&r.regions.left), "launcher,workspaces,appMenu,activeWindow");
         assert_eq!(names(&r.regions.center), "clock,nowPlaying");
         assert_eq!(names(&r.regions.right), DEFAULT_RIGHT);
         assert_eq!(r.warnings.len(), 0);
@@ -699,7 +702,7 @@ mod tests {
     #[test]
     fn default_fallback_when_layout_key_missing() {
         let r = resolve_bar(json!({}));
-        assert_eq!(names(&r.regions.left), "launcher,workspaces,activeWindow");
+        assert_eq!(names(&r.regions.left), "launcher,workspaces,appMenu,activeWindow");
         assert_eq!(names(&r.regions.right), DEFAULT_RIGHT);
     }
 
@@ -916,9 +919,9 @@ mod tests {
     #[test]
     fn unnamed_bar_plugin_auto_appends_to_its_region() {
         let r = resolve(None, &[bar_plugin("diskwatch", Region::Left)]);
-        assert_eq!(r.regions.left.len(), 4);
+        assert_eq!(r.regions.left.len(), 5);
         assert!(
-            matches!(&r.regions.left[3].kind, EntryKind::Plugin { id, .. } if id == "diskwatch")
+            matches!(&r.regions.left[4].kind, EntryKind::Plugin { id, .. } if id == "diskwatch")
         );
         assert_eq!(r.warnings.len(), 0);
     }
@@ -929,7 +932,7 @@ mod tests {
             Some(&json!({ "layout": { "right": ["plugin:diskwatch"] } })),
             &[bar_plugin("diskwatch", Region::Left)],
         );
-        assert_eq!(r.regions.left.len(), 3);
+        assert_eq!(r.regions.left.len(), 4);
         assert_eq!(r.regions.right.len(), 1);
         assert!(
             matches!(&r.regions.right[0].kind, EntryKind::Plugin { id, .. } if id == "diskwatch")
@@ -957,7 +960,7 @@ mod tests {
     #[test]
     fn no_chevron_leaves_every_entry_uncollapsible() {
         let r = defaults();
-        assert_eq!(collapsible(&r.regions.left), "000");
+        assert_eq!(collapsible(&r.regions.left), "0000");
         assert_eq!(collapsible(&r.regions.center), "00");
         assert_eq!(collapsible(&r.regions.right), "00000000");
     }

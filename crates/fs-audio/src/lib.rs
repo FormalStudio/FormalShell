@@ -625,10 +625,12 @@ impl Graph {
                 Change::Latency
             }
             Event::Defaults(defaults) => {
-                let sink = defaults.sink != self.defaults.sink;
-                let source = defaults.source != self.defaults.source;
+                let resolved = |g: &Self| (g.default_sink().map(|n| n.id), g.default_source().map(|n| n.id));
+                let before = resolved(self);
                 let any = defaults != self.defaults;
                 self.defaults = defaults;
+                let after = resolved(self);
+                let (sink, source) = (before.0 != after.0, before.1 != after.1);
                 if any {
                     Change::Defaults { sink, source }
                 } else {
@@ -654,12 +656,21 @@ impl Graph {
         self.nodes.values().find(|n| n.name == name)
     }
 
+    /// The session manager's default, or the configured one while that
+    /// names no node. A client already bound to `default` can miss
+    /// WirePlumber's last write of `default.audio.sink` for good (a fresh
+    /// bind replays it, `pw-metadata -m` misses it too, PipeWire 1.6.9 with
+    /// WirePlumber 0.5.18), and WirePlumber picks the configured node
+    /// whenever it is there.
     pub fn default_sink(&self) -> Option<&Node> {
         self.node_by_name(&self.defaults.sink)
+            .or_else(|| self.node_by_name(&self.defaults.configured_sink))
     }
 
+    /// As [`Graph::default_sink`].
     pub fn default_source(&self) -> Option<&Node> {
         self.node_by_name(&self.defaults.source)
+            .or_else(|| self.node_by_name(&self.defaults.configured_source))
     }
 
     /// AudioService's `_find`: an audio device (never a stream) by name.
@@ -1020,6 +1031,34 @@ mod tests {
         assert!(g.default_source().is_none());
         assert_eq!(g.apply(Event::NodeRemoved(6)), Change::NodeRemoved(6));
         assert!(g.default_sink().is_none());
+    }
+
+    /// The rig's event order when WirePlumber's last `default.audio.sink`
+    /// never reaches a bound client: the old default goes, the key is
+    /// removed, and the configured name is all that names the new one.
+    #[test]
+    fn graph_falls_back_to_the_configured_default_while_the_resolved_one_is_missed() {
+        let mut g = Graph::default();
+        g.apply(Event::Node(sink(61, "auto_null")));
+        let mut d = Defaults::default();
+        d.apply(Some(KEY_CONFIGURED_SINK), Some(DEFAULT_TYPE), Some(r#"{"name":"qs_two"}"#));
+        d.apply(Some(KEY_DEFAULT_SINK), Some(DEFAULT_TYPE), Some(r#"{"name":"auto_null"}"#));
+        g.apply(Event::Defaults(d.clone()));
+        g.apply(Event::Node(sink(73, "qs_one")));
+        g.apply(Event::NodeRemoved(61));
+        d.apply(Some(KEY_DEFAULT_SINK), None, None);
+        g.apply(Event::Defaults(d.clone()));
+        g.apply(Event::Node(sink(57, "qs_two")));
+        assert_eq!(g.default_sink().map(|n| n.id), Some(57));
+        d.apply(Some(KEY_CONFIGURED_SINK), Some(DEFAULT_TYPE), Some(r#"{ "name": "qs_one" }"#));
+        assert_eq!(
+            g.apply(Event::Defaults(d.clone())),
+            Change::Defaults { sink: true, source: false }
+        );
+        assert_eq!(g.default_sink().map(|n| n.id), Some(73));
+        d.apply(Some(KEY_DEFAULT_SINK), Some(DEFAULT_TYPE), Some(r#"{"name":"qs_two"}"#));
+        g.apply(Event::Defaults(d));
+        assert_eq!(g.default_sink().map(|n| n.id), Some(57), "the session manager's own choice wins once it arrives");
     }
 
     #[test]
