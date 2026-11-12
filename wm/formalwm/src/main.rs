@@ -6,6 +6,7 @@ mod cursor;
 mod drag;
 mod engine;
 mod gestures;
+mod handover;
 #[cfg(test)]
 mod headless;
 mod ipc;
@@ -63,6 +64,7 @@ fn setup() {
         idle_timer: None,
         gesture: Default::default(),
         overview: Default::default(),
+        handover: Default::default(),
         drag: None,
         hold: Default::default(),
     });
@@ -71,6 +73,7 @@ fn setup() {
     stage::setup(signals);
     session::setup();
     gestures::setup();
+    handover::setup();
     drag::setup();
     let ipc = ipc::serve();
     enter(move |engine| {

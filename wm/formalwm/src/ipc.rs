@@ -215,6 +215,14 @@ pub fn serve() -> Option<IpcServer> {
     server.handle(method::BINDS_LIST, |_| {
         ask(|engine| serde_json::to_value(engine.binds_list()).map_err(|error| error.to_string()))
     });
+    server.handle_from(method::BINDS_HAND_OVER, |client, value| {
+        let request = params::<proto::BindsHandOver>(value)?;
+        ask(|engine| {
+            engine.hand_over(client, request)?;
+            Ok(Value::Null)
+        })
+    });
+    server.on_disconnect(|client| enter(move |engine| engine.client_gone(client)));
     server.handle(method::CURSOR_POS, |_| {
         let position = COMPOSITOR.cursor.get_position().ok_or("no pointer")?;
         Ok(json!({ "x": position.x, "y": position.y }))
@@ -386,8 +394,12 @@ impl Engine {
             },
         );
         for window in &mut state.windows {
+            if let Some(win) = self.windows.get(&window.id) {
+                window.tag = win.handle.tag().get_untracked().unwrap_or_default();
+            }
             window.id = self.public(&window.id);
         }
+        state.hand_over = self.hand_over_state();
         if !state.focused_window_id.is_empty() {
             state.focused_window_id = self.public(&state.focused_window_id);
         }

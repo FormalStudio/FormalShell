@@ -14,7 +14,7 @@ use formalwm_core::{
 use fs_wm_proto as proto;
 use shojiwm_rs::{ipc::IpcServer, prelude::*};
 
-use crate::{drag, gestures, overview, stage, windows};
+use crate::{drag, gestures, handover, overview, stage, windows};
 
 /// One window the compositor has: its handle and what the rules gave it.
 pub struct Win {
@@ -76,6 +76,7 @@ pub struct Engine {
     pub cursor: crate::cursor::Dynamic,
     pub gesture: gestures::Gesture,
     pub overview: overview::Overview,
+    pub handover: handover::HandOver,
     pub drag: Option<drag::Drag>,
     pub hold: drag::Hold,
 }

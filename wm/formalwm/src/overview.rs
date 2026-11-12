@@ -130,6 +130,7 @@ impl Engine {
                     self.drag = None;
                 }
             }
+            self.sync_handover();
         }
         self.present();
         self.kick();

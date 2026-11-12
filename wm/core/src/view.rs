@@ -95,6 +95,7 @@ pub fn state(model: &Model, extras: &Extras) -> proto::State {
                 app_id: window.app_id.clone(),
                 initial_app_id: window.initial_app_id.clone(),
                 initial_title: window.initial_title.clone(),
+                tag: String::new(),
                 pid: window.pid,
                 workspace_id,
                 shown: overlay.is_none() || place.is_some_and(|place| place.shown),
@@ -135,5 +136,6 @@ pub fn state(model: &Model, extras: &Extras) -> proto::State {
             active_border: extras.active_border.clone(),
             blur: extras.blur,
         },
+        hand_over: None,
     }
 }

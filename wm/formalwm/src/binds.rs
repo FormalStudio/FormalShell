@@ -44,12 +44,15 @@ pub fn check_shortcuts(settings: &Settings) -> Result<(), String> {
 }
 
 impl Engine {
-    /// Registers every bind of the settings in place of the ones before.
+    /// Registers every bind of the settings in place of the ones before,
+    /// less the chords a window is handed (`binds.handOver`).
     pub fn bind_keys(&mut self) {
         for id in self.bind_ids.drain(..) {
             COMPOSITOR.key.unbind(&id);
         }
         let settings = self.settings.clone();
+        let handed = self.handing().cloned();
+        self.handover.active = handed.is_some();
         let mut drags = (None, None);
         for bind in &settings.binds {
             let modifier = || {
@@ -72,6 +75,10 @@ impl Engine {
             }
         }
         for (index, group) in settings.bind_groups().into_iter().enumerate() {
+            let chord = &settings.binds[group.index].chord;
+            if handed.as_ref().is_some_and(|kept| kept.hands(chord)) {
+                continue;
+            }
             let id = format!("formalwm:{index}");
             let shortcut = group.shortcut.clone();
             let options = options_of(&group);

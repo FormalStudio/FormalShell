@@ -6,7 +6,7 @@
 //! `fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed] [--tag TAG] [--content photo|video|game]`. It prints what
 //! becomes of each drag, which carries an orange square for its icon: `sent` when the target asks for the text,
 //! `dropped`, `finished`, `cancelled`, `enter` when the pointer comes over
-//! it, and `configure WxH` for each size the compositor asks of it. An empty APP_ID or TITLE sets none,
+//! it, `key N` for each key pressed on it by its evdev code, and `configure WxH` for each size the compositor asks of it. An empty APP_ID or TITLE sets none,
 //! and `--fixed` allows no other size, which is how a dialog looks to the
 //! compositor, `--tag` gives it an xdg-toplevel-tag and `--content` a
 //! wp-content-type: enough to stand in for the windows the rules name.
@@ -17,7 +17,8 @@ use wayland_client::{
     Connection, Dispatch, QueueHandle, WEnum, delegate_noop, event_created_child,
     protocol::{
         wl_buffer, wl_compositor, wl_data_device, wl_data_device_manager, wl_data_offer,
-        wl_data_source, wl_pointer, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface,
+        wl_data_source, wl_keyboard, wl_pointer, wl_registry, wl_seat, wl_shm, wl_shm_pool,
+        wl_surface,
     },
 };
 use wayland_protocols::{
@@ -44,6 +45,7 @@ struct Source {
     data: Option<wl_data_device_manager::WlDataDeviceManager>,
     device: Option<wl_data_device::WlDataDevice>,
     pointer: Option<wl_pointer::WlPointer>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
     surface: Option<wl_surface::WlSurface>,
     size: (u32, u32),
     closed: bool,
@@ -162,13 +164,37 @@ impl Dispatch<wl_seat::WlSeat, ()> for Source {
         _: &Connection,
         queue: &QueueHandle<Self>,
     ) {
-        if let wl_seat::Event::Capabilities {
+        let wl_seat::Event::Capabilities {
             capabilities: WEnum::Value(capabilities),
         } = event
-            && capabilities.contains(wl_seat::Capability::Pointer)
-            && source.pointer.is_none()
-        {
+        else {
+            return;
+        };
+        if capabilities.contains(wl_seat::Capability::Pointer) && source.pointer.is_none() {
             source.pointer = Some(seat.get_pointer(queue, ()));
+        }
+        if capabilities.contains(wl_seat::Capability::Keyboard) && source.keyboard.is_none() {
+            source.keyboard = Some(seat.get_keyboard(queue, ()));
+        }
+    }
+}
+
+impl Dispatch<wl_keyboard::WlKeyboard, ()> for Source {
+    fn event(
+        _: &mut Self,
+        _: &wl_keyboard::WlKeyboard,
+        event: wl_keyboard::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_keyboard::Event::Key {
+            key,
+            state: WEnum::Value(wl_keyboard::KeyState::Pressed),
+            ..
+        } = event
+        {
+            println!("key {key}");
         }
     }
 }
