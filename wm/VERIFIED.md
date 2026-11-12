@@ -30,14 +30,22 @@ run bare.
 `FWM_SHELL`.
 
 Every rig, headless and unit line was run again on one build, the published
-one: `shoji` 3395202f on the fork's `formal-rs` 9757796, which is `formal`
-e8746bf and three commits on it, `formalwm` sha256
-`cf1e99a7abce4d8d7215ddde19b03bdd1d02d001f873035e3b43ed59d8712bb9`. The
-numbers quoted are that run's, with `session2.sh` and `motion.sh` from a
-second run on it: the host was under other builds during the first, in
-which the overview's corner took longer than the session waits for it and
-`motion.sh` rendered at 24 Hz. `outputs.sh` was run once more for its
-pointer step. The default border is 2 px and every rect
+one: `shoji` e7c0b375 on the fork's `formal-rs` e6493f8, which is `formal` at
+the same commit, 9757796 with upstream's main merged into it. `formalwm`
+sha256 `a5a825cc6ab7489b010d70e4bce65b7080fe09921d8cf85d4ffc3726417a6115`.
+All 19 sessions end with exit 0 on it. The numbers quoted are those of the
+run before it, on 3395202f and `formal-rs` 9757796 (sha256
+`cf1e99a7abce4d8d7215ddde19b03bdd1d02d001f873035e3b43ed59d8712bb9`), with
+`session2.sh` and `motion.sh` from a second run on that build: the host was
+under other builds during the first, in which the overview's corner took
+longer than the session waits for it and `motion.sh` rendered at 24 Hz.
+Compared line by line with that run, and with the S9 run on 279becde for the
+new step of `outputs.sh`, this one differs only in what a run times: frame
+counts and intervals, key repeat counts, the order the two commands of one
+chord are recorded in, how soon the shell is up. `drags.sh` was run twice on
+it: in the first the screenshot after a refused drop was taken before the
+card's first frame on its way back (`left the hand: 0.0`), in the second it
+reads 15.97, against 18.77 before. The default border is 2 px and every rect
 below is a window's content, so the first column starts at x 10: 8 of gap
 and 2 of border.
 
@@ -66,6 +74,7 @@ and 2 of border.
 | Focus changes on click only | rig | `rules.sh`: the pointer over another window leaves the focus; `session2.sh`: a click moves it |
 | The output under the pointer is the focused one, the keyboard staying | rig, headless, unit | `outputs.sh`: the pointer at 1700,400 on a made output right of the first, `focusedOutput` `HEADLESS-1` and its workspace `d1`, back at 500,400 `Virtual-4` and `1`; headless: one `state.changed` with `focusedOutput` `TEST-1`, `focusedWindowId` and the seat's keyboard still on the window of `TEST-2`; a press on the empty output reaches it too; nothing while a window is dragged across; `the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard` |
 | `focusedWindowId` is the window that has the keyboard | rig, headless | `focus.sh`: of two windows neither used, the older one picked through `window.focus` hears the A and the state names it, a press on the newer moves both, and back and forth; headless: a focus the core refuses leaves the model within two ticks, and the same pick and press |
+| A workspace in view under the pointer, asked for, takes the keyboard | rig, headless, unit | `outputs.sh`: the keyboard on a window of `HEADLESS-1` and the pointer on `Virtual-4`, `workspace.focus` of its empty workspace 1 and the window hears no more keys, the state naming none; a window on 1 and the pointer on `HEADLESS-1`, `workspace.focus` of `d1` and its window hears the A, the state naming it; headless: the same over the socket with a workspace that holds a window and one that holds none; `a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for`, which has `workspace.focusAt`, the last workspace and a focus bind too |
 | The hovered window still gets pointer events | rig | `rules.sh`: the unfocused client prints `hover` |
 | Every bind in `hyprland.lua`, same chords | rig | the bind table below |
 | A chord runs every bind it has, each by its own flags | rig, unit | `binds.sh`: a second bind on the volume key, not marked `locked` and not `repeat`, runs beside the first, once while the key is held for 23 runs of the first, and not on the lock screen; `on_the_lock_screen_a_chord_runs_only_its_binds_marked_locked`, `each_bind_of_a_shortcut_keeps_what_it_says_of_itself` |
@@ -89,7 +98,7 @@ and 2 of border.
 | Shaken, it grows, and stays grown two seconds | rig, unit | `cursor.sh`: 128x192 after fourteen strokes, 16x24 four and a half seconds on; `a_shaken_pointer_grows_and_goes_back_after_the_timeout`. The growth stops at 8 times, the core's bound, where the plugin has none |
 | A change of `cursor.dynamic` drops what was begun under the old settings | rig, unit | `cursor.sh`: shake turned off by a reload while the cursor is magnified leaves the image 16x24 and the core renders 0 frames in the two seconds after, where it rendered 64 in the second and a half before; the build before this one rendered 105 after. `other_settings_drop_what_was_begun_under_the_last`: shake off, the whole of it off, another mode mid-motion |
 | `cursor.dynamic`: `tilt`, `none`, shake off, what cannot be | rig, unit | `cursor.sh` after reloads: tilt turns the image up to 12 degrees right and -16 left with no stretch, `none` with shake off tells the core nothing, a limit of 0 is `config.failed`; `a_tilt_leans_into_sideways_travel`, `the_settings_default_to_the_owner_s_and_refuse_what_cannot_be`; the example file's values in `the_shared_file_loads_on_its_own` |
-| No shape while the cursor is hidden or the session locked, none at rest | rig, headless | `cursor.sh`: a hidden pointer's glide tells the core nothing, and every glide ends on no transform; `locked.sh` with the shell: a sweep across the lock screen tells nothing, the same sweep after the unlock 21 shapes |
+| No shape while the cursor is hidden or the session locked, none at rest | rig, headless | `cursor.sh`: a hidden pointer's glide tells the core nothing, and every glide ends on no transform; `locked.sh` with the shell: a sweep across the lock screen tells nothing, the same sweep after the unlock 15 to 29 shapes from run to run |
 | The same on a hardware cursor plane | no | the rig draws the cursor in software; needs the g815. The plugin pivots the stretch at the leading edge of the image, the core at the hotspot |
 | Blur and alpha threshold per layer namespace | rig | `layers.sh` |
 | No compositor animation on a `formalshell:*` layer | no | nothing to observe: the engine animates no layer and the core has no layer animation. `animate` is read (`a_layer_rule_by_namespace`) |
@@ -455,9 +464,11 @@ checkout beside it:
 | Command | Result |
 | --- | --- |
 | `cargo build --locked --profile release-fast -p formalwm` | exit 0 |
-| `cargo test --locked --profile release-fast --workspace` | exit 0: 71, 4, 34, 11 and 5 in `formalwm-core`, 3 in `formalwm`, the headless session among them |
+| `cargo test --locked --profile release-fast --workspace` | exit 0: 71, 4, 35, 11 and 5 in `formalwm-core`, 3 in `formalwm`, the headless session among them |
 | `cargo clippy --locked --profile release-fast --workspace --all-targets -- -D warnings` | exit 0 |
 | `cargo test --locked -p fs-wm-proto` in `crates/` | 9 passed |
+
+The clone was of e7c0b375.
 
 ## What the core does not offer
 
@@ -479,7 +490,8 @@ until the core does.
 
 Each with the commit that settles it. `core` commits are on the fork's
 `formal-rs`, each with a test there that failed before it (493 pass in
-`shojiwm_rs` and `shojiwm_lib` at 9757796, 65 in `shoji_wm`).
+`shojiwm_rs` and `shojiwm_lib` at 9757796, 65 in `shoji_wm`; the fork's own
+run of its workspace at e6493f8 has 581 passing).
 
 | Finding | Commit | Check |
 | --- | --- | --- |
@@ -509,6 +521,7 @@ Each with the commit that settles it. `core` commits are on the fork's
 | `bind.escape` took the Escape from the focused client | 9bf7fb45, core 8f0b97b | `focus.sh`; headless; core test `a_non_consuming_binding_runs_and_the_client_still_gets_the_event` |
 | A bare modifier's `passthrough` release bind ran after a chord | 46842223 | `binds.sh`; headless; `a_bare_modifier_let_go_fires_after_the_modifier_alone`. The core had both kinds of release bind already (`tests/transparent_release.rs`) |
 | The focused output did not follow the pointer | 3395202f, core 8f0b97b for the press | `outputs.sh`; headless; `the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard` |
+| S9: a workspace in view under the pointer, asked for, changed the focused window and left the keyboard on the other output | 279becde | `outputs.sh`; headless, which fails at the keyboard without it; `a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for`. `workspace.focusAt`, the relative, occupied and last workspace go through the same line; a bind on the tape had the same skipped commit and has the same fix; `window.focus` and an overlay always commit, and `window.moveTo` over the socket does not follow |
 
 Needs the g815: Minecraft's confinement as an X11 window, the dynamic cursor
 on a hardware cursor plane, the HDR switch on a fullscreen HDR window, what

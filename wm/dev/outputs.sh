@@ -39,6 +39,34 @@ span=$(ipc state.get | jq -r '[.outputs[] | select(.enabled)] | "\([.[] | .x + .
 pointed() { hand --size "$span" at "$1" "$2"; sleep 0.6; echo "the pointer at $(ipc cursor.pos | jq -c '[.x, .y | round]'): $(ipc state.get | jq -c '{focusedOutput, ws: .focusedWorkspaceId}')"; }
 echo "the outputs span $span"; pointed 500 400; pointed 1700 400; pointed 500 400
 
+step "a workspace in view under the pointer, asked for: the keyboard goes to it, to nobody while it is empty and to its window when it has one"
+declare -A seen=()
+# A key pressed now: which of the fwm-drag windows hear it (30 is A), and
+# what the state says is focused.
+press() {
+  key a 0.6; local app line=
+  for app in "$@"; do
+    keys=$(tail -n +$((${seen[$app]:-0} + 1)) "$run/$app.out" | grep '^key' | cut -d' ' -f2 | tr '\n' ' ')
+    seen[$app]=$(wc -l < "$run/$app.out"); line+="$app heard: ${keys:-nothing} "
+  done
+  echo "  $line the state says: $(ipc state.get | jq -c '. as $s | {focusedOutput, ws: .focusedWorkspaceId, window: [.windows[] | select(.id == $s.focusedWindowId) | .appId][0]}')"
+}
+made_ws=$(ipc state.get | jq -r --arg output "$first" '.workspaces[] | select(.output == $output and .active) | .id')
+win typist > "$run/typist.out"; typist=$!; sleep 1.2
+ipc window.moveTo "{\"id\":\"$(id_of typist)\",\"idx\":1,\"output\":\"$first\"}" >/dev/null; sleep 0.8
+ipc window.focus "{\"id\":\"$(id_of typist)\"}" >/dev/null; sleep 0.6
+hand --size "$span" at 520 420; sleep 0.6
+echo "the keyboard on $first, the pointer on Virtual-4 and its empty workspace 1:"; press typist
+ipc workspace.focus '{"id":"1"}' >/dev/null; sleep 0.6
+echo "workspace 1 asked for:"; press typist
+win other > "$run/other.out"; other=$!; sleep 1.2
+hand --size "$span" at 1700 400; sleep 0.6
+echo "a window opened on workspace 1, the pointer on $first and its workspace $made_ws:"; press typist other
+ipc workspace.focus "{\"id\":\"$made_ws\"}" >/dev/null; sleep 0.6
+echo "workspace $made_ws asked for:"; press typist other
+kill "$typist" "$other"; sleep 1
+hand --size "$span" at 500 400; sleep 0.6; ipc workspace.focus '{"id":"1"}' >/dev/null; sleep 0.6
+
 step "a settings reload keeps them"
 printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1.5; outs
 
