@@ -19,7 +19,7 @@ use formalwm_core::{
 use fs_wm_proto::{self as proto, event};
 use serde_json::json;
 use shojiwm_rs::{
-    compositor::{OutputHdr, OutputMode, OutputPosition, OutputResolution},
+    compositor::{OutputHdr, OutputHdrMode, OutputMode, OutputPosition, OutputResolution},
     prelude::*,
     runtime_input::{
         RuntimeInputAccelProfile, RuntimeInputClickMethod, RuntimeInputDeviceConfig,
@@ -305,9 +305,14 @@ pub fn setup() {
                     config.mode = Some(OutputMode::Mirror);
                     config.source = Some(source);
                 }
-                if let Some(color) = over.color {
-                    config.hdr = Some(OutputHdr::Enabled(color.cm != "srgb"));
-                }
+                // `cm_auto_hdr`: SDR until a fullscreen window shows HDR
+                // content, unless the shell asked for an HDR desktop.
+                let hdr = over.color.is_some_and(|color| color.cm != "srgb");
+                config.hdr = Some(OutputHdr::Mode(if hdr {
+                    OutputHdrMode::On
+                } else {
+                    OutputHdrMode::Auto
+                }));
                 config.vrr = Some(wants_vrr(output));
                 config.direct_scanout = Some(settings.direct_scanout);
                 (output.name.clone(), Some(config))

@@ -8,7 +8,10 @@
 use std::{os::unix::net::UnixStream, time::Duration};
 
 use fs_wm_proto as proto;
-use shojiwm_lib::{config::RuntimeOutputMode, state::ShojiWM};
+use shojiwm_lib::{
+    config::{RuntimeHdrConfig, RuntimeHdrMode, RuntimeOutputMode},
+    state::ShojiWM,
+};
 use shojiwm_rs::{
     COMPOSITOR, ConfigBuilder, RuntimeBoot,
     cli::CommonArgs,
@@ -562,6 +565,13 @@ fn two_outputs_and_the_touchpad() {
     assert_eq!(
         (scanout("TEST-1"), scanout("TEST-2")),
         (Some(false), Some(false))
+    );
+
+    // `cm_auto_hdr`: every output is SDR until fullscreen HDR content.
+    let auto = Some(RuntimeHdrConfig::Mode(RuntimeHdrMode::Auto));
+    assert_eq!(
+        configs.get("TEST-1").and_then(|config| config.hdr.clone()),
+        auto
     );
 
     // `vrr` 2: asked of the core only while a window is fullscreen there.
