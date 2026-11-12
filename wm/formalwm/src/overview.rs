@@ -34,6 +34,8 @@ pub struct Overview {
     pub held: bool,
     pub grab: Option<InputGrab>,
     press: Option<Press>,
+    /// The key pressed last under the grab, until one is let go.
+    key: Option<String>,
     scroll: f64,
 }
 
@@ -70,6 +72,7 @@ impl Default for Overview {
             held: false,
             grab: None,
             press: None,
+            key: None,
             scroll: 0.0,
         }
     }
@@ -148,7 +151,10 @@ impl Engine {
             .on_key(|event| {
                 let (key, code) = (event.key.clone(), event.keycode);
                 if event.state != InputGrabState::Pressed {
-                    return enter(move |engine| engine.run_release(&key));
+                    return enter(move |engine| {
+                        let alone = engine.overview.key.take().as_deref() == Some(&key);
+                        engine.run_release(&key, alone)
+                    });
                 }
                 let mods = Mods {
                     logo: event.modifiers.logo,
@@ -156,7 +162,10 @@ impl Engine {
                     ctrl: event.modifiers.ctrl,
                     alt: event.modifiers.alt,
                 };
-                enter(move |engine| engine.overview_key(&key, code, mods));
+                enter(move |engine| {
+                    engine.overview.key = Some(key.clone());
+                    engine.overview_key(&key, code, mods)
+                });
             })
             .on_pointer_motion(|event| {
                 let at = (event.position.x, event.position.y);

@@ -324,6 +324,17 @@ pub struct Bind {
     pub passthrough: bool,
 }
 
+impl Bind {
+    /// Whether a modifier let go runs the bind after a chord that used the
+    /// modifier, where every other release bind wants the modifier pressed
+    /// and let go alone. As in Hyprland the bind has to say so
+    /// (`passthrough`) and to hold the modifier it is on: a bare `Alt_L`
+    /// matches no modifier state a chord leaves behind.
+    pub fn after_chord(&self) -> bool {
+        self.release && self.passthrough && self.chord.names_its_modifier()
+    }
+}
+
 /// The key and wheel binds of one shortcut. Hyprland runs every bind a
 /// chord has; ShojiWM fires one shortcut once, so they share a registration.
 #[derive(Clone, Debug, PartialEq)]
@@ -333,9 +344,10 @@ pub struct BindGroup {
     /// The first of its binds, by its place in the settings.
     pub index: usize,
     pub release: bool,
-    /// Hyprland's `transparent`, on a modifier let go: it fires whatever
-    /// was pressed while the modifier was down. One without it is taken by
-    /// the chord that used the modifier, so the two are registered apart.
+    /// On a modifier let go: it fires whatever was pressed while the
+    /// modifier was down ([`Bind::after_chord`]). One that does not is
+    /// taken by the chord that used the modifier, so the two are registered
+    /// apart.
     pub transparent: bool,
     /// Some bind of the group fires while the session is locked.
     pub locked: bool,
@@ -623,7 +635,7 @@ impl Settings {
             let Some(shortcut) = shortcut else {
                 continue;
             };
-            let transparent = bind.release && bind.passthrough;
+            let transparent = bind.after_chord();
             let repeat = bind.repeat && !bind.release;
             // Both Alt keys let go are one shortcut here.
             let group = groups
@@ -996,6 +1008,34 @@ mod tests {
         assert!(up.repeat);
         assert_eq!(run(up, false), [spawn("louder"), spawn("osd")]);
         assert_eq!(run(up, true), [spawn("louder")]);
+    }
+
+    #[test]
+    fn a_bare_modifier_let_go_fires_after_the_modifier_alone() {
+        let text = r#"{ "binds": [
+            { "chord": "ALT+Alt_L", "action": "spawn", "args": ["commit"], "release": true, "passthrough": true },
+            { "chord": "Alt_L", "action": "spawn", "args": ["bare"], "release": true, "passthrough": true },
+            { "chord": "Alt_R", "action": "spawn", "args": ["plain"], "release": true },
+            { "chord": "SHIFT+Alt_L", "action": "spawn", "args": ["other"], "release": true, "passthrough": true }
+        ] }"#;
+        let settings = Settings::parse(text, None).unwrap();
+        let after_chord: Vec<bool> = settings.binds.iter().map(Bind::after_chord).collect();
+        assert_eq!(after_chord, [true, false, false, false]);
+        let groups = settings.bind_groups();
+        let spawn = |command: &str| Action::Spawn(vec![command.to_owned()]);
+        let run = |group: &BindGroup| group.actions(false, false).cloned().collect::<Vec<_>>();
+        // The binds a chord with Alt takes are one registration, the one
+        // it cannot take another.
+        let [alone, commit] = &groups[..] else {
+            panic!("{groups:?}");
+        };
+        assert_eq!((alone.shortcut.as_str(), alone.transparent), ("Alt", false));
+        assert_eq!(run(alone), [spawn("bare"), spawn("plain"), spawn("other")]);
+        assert_eq!(
+            (commit.shortcut.as_str(), commit.transparent),
+            ("Alt", true)
+        );
+        assert_eq!(run(commit), [spawn("commit")]);
     }
 
     #[test]

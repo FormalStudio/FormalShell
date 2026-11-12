@@ -9,9 +9,11 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
     os::{fd::AsFd, unix::net::UnixStream},
+    rc::Rc,
     time::Duration,
 };
 
+use formalwm_core::settings::Settings;
 use fs_wm_proto as proto;
 use serde_json::{Value, json};
 use shojiwm_lib::{
@@ -1186,6 +1188,36 @@ fn two_outputs_and_the_touchpad() {
     assert_eq!(session.typed(), [ESCAPE], "the key reaches the client");
     assert!(session.until(|| mark.exists()), "and the command ran");
     escape(None);
+
+    // A modifier let go runs its bind when it was pressed and let go
+    // alone. After a chord with it, only a bind that holds the modifier
+    // it is on runs.
+    const CTRL: u32 = 29;
+    const SHIFT: u32 = 42;
+    const A: u32 = 30;
+    let binds = r#"{ "binds": [
+        { "chord": "Control_L", "action": "zen", "release": true, "passthrough": true },
+        { "chord": "SHIFT+Shift_L", "action": "float", "release": true, "passthrough": true }
+    ] }"#;
+    let binds = Settings::parse(binds, None).unwrap().binds;
+    ask(move |engine| {
+        let mut settings = (*engine.settings).clone();
+        settings.binds.extend(binds);
+        engine.settings = Rc::new(settings);
+        engine.bind_keys();
+        Ok(())
+    })
+    .unwrap();
+    session.chord(&[CTRL]);
+    assert!(zen(), "let go alone, the bind runs");
+    session.chord(&[CTRL, A]);
+    assert!(zen(), "after a chord it does not");
+    session.chord(&[CTRL]);
+    assert!(!zen());
+    session.chord(&[SHIFT, A]);
+    assert!(row("newer").floating, "this one runs after a chord too");
+    session.chord(&[SHIFT]);
+    assert!(!row("newer").floating);
 
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {

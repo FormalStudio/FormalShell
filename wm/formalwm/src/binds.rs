@@ -130,14 +130,15 @@ impl Engine {
         }
     }
 
-    /// The same for a modifier let go under a grab.
-    pub fn run_release(&mut self, key: &str) {
+    /// The same for a modifier let go under a grab. `alone`: no other key
+    /// was pressed while it was down.
+    pub fn run_release(&mut self, key: &str, alone: bool) {
         let mut actions: Vec<Action> = Vec::new();
         let locked = COMPOSITOR.session.is_locked();
         let binds = self.settings.binds.iter();
         for bind in binds.filter(|bind| bind.release && (bind.locked || !locked)) {
-            let released =
-                matches!(&bind.chord.key, Key::Sym(name) if name.eq_ignore_ascii_case(key));
+            let released = (alone || bind.after_chord())
+                && matches!(&bind.chord.key, Key::Sym(name) if name.eq_ignore_ascii_case(key));
             if released && !actions.contains(&bind.action) {
                 actions.push(bind.action.clone());
             }
