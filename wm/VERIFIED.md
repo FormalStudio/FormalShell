@@ -37,7 +37,13 @@ numbers quoted are that run's, with `session2.sh` and `motion.sh` from a
 second run on it: the host was under other builds during the first, in
 which the overview's corner took longer than the session waits for it and
 `motion.sh` rendered at 24 Hz. `outputs.sh` was run once more for its
-pointer step. The default border is 2 px and every rect
+pointer step. The published build is one commit on from it, `shoji`
+279becde for S9, sha256
+`8a5fa0b16dc8f1d8587015f9a2716b3f4346fce397afa9026efd38615d833d5d`: the
+unit and headless tests, `outputs.sh`, `focus.sh`, `session.sh` and
+`tape.sh` were run on it, and but for the new step of `outputs.sh` they
+print what they printed before, `tape.sh` with 43 frames in each of its two
+scrolls. The default border is 2 px and every rect
 below is a window's content, so the first column starts at x 10: 8 of gap
 and 2 of border.
 
@@ -66,6 +72,7 @@ and 2 of border.
 | Focus changes on click only | rig | `rules.sh`: the pointer over another window leaves the focus; `session2.sh`: a click moves it |
 | The output under the pointer is the focused one, the keyboard staying | rig, headless, unit | `outputs.sh`: the pointer at 1700,400 on a made output right of the first, `focusedOutput` `HEADLESS-1` and its workspace `d1`, back at 500,400 `Virtual-4` and `1`; headless: one `state.changed` with `focusedOutput` `TEST-1`, `focusedWindowId` and the seat's keyboard still on the window of `TEST-2`; a press on the empty output reaches it too; nothing while a window is dragged across; `the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard` |
 | `focusedWindowId` is the window that has the keyboard | rig, headless | `focus.sh`: of two windows neither used, the older one picked through `window.focus` hears the A and the state names it, a press on the newer moves both, and back and forth; headless: a focus the core refuses leaves the model within two ticks, and the same pick and press |
+| A workspace in view under the pointer, asked for, takes the keyboard | rig, headless, unit | `outputs.sh`: the keyboard on a window of `HEADLESS-1` and the pointer on `Virtual-4`, `workspace.focus` of its empty workspace 1 and the window hears no more keys, the state naming none; a window on 1 and the pointer on `HEADLESS-1`, `workspace.focus` of `d1` and its window hears the A, the state naming it; headless: the same over the socket with a workspace that holds a window and one that holds none; `a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for`, which has `workspace.focusAt`, the last workspace and a focus bind too |
 | The hovered window still gets pointer events | rig | `rules.sh`: the unfocused client prints `hover` |
 | Every bind in `hyprland.lua`, same chords | rig | the bind table below |
 | A chord runs every bind it has, each by its own flags | rig, unit | `binds.sh`: a second bind on the volume key, not marked `locked` and not `repeat`, runs beside the first, once while the key is held for 23 runs of the first, and not on the lock screen; `on_the_lock_screen_a_chord_runs_only_its_binds_marked_locked`, `each_bind_of_a_shortcut_keeps_what_it_says_of_itself` |
@@ -459,6 +466,10 @@ checkout beside it:
 | `cargo clippy --locked --profile release-fast --workspace --all-targets -- -D warnings` | exit 0 |
 | `cargo test --locked -p fs-wm-proto` in `crates/` | 9 passed |
 
+That clone was of 3395202f. 279becde changes no manifest and not the lock;
+its test and clippy lines were run with `--workspace` in the rig's build
+directory, exit 0 both, with 35 where the table has 34.
+
 ## What the core does not offer
 
 Each is read from the settings where the owner's config has it, and unused
@@ -509,6 +520,7 @@ Each with the commit that settles it. `core` commits are on the fork's
 | `bind.escape` took the Escape from the focused client | 9bf7fb45, core 8f0b97b | `focus.sh`; headless; core test `a_non_consuming_binding_runs_and_the_client_still_gets_the_event` |
 | A bare modifier's `passthrough` release bind ran after a chord | 46842223 | `binds.sh`; headless; `a_bare_modifier_let_go_fires_after_the_modifier_alone`. The core had both kinds of release bind already (`tests/transparent_release.rs`) |
 | The focused output did not follow the pointer | 3395202f, core 8f0b97b for the press | `outputs.sh`; headless; `the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard` |
+| S9: a workspace in view under the pointer, asked for, changed the focused window and left the keyboard on the other output | 279becde | `outputs.sh`; headless, which fails at the keyboard without it; `a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for`. `workspace.focusAt`, the relative, occupied and last workspace go through the same line; a bind on the tape had the same skipped commit and has the same fix; `window.focus` and an overlay always commit, and `window.moveTo` over the socket does not follow |
 
 Needs the g815: Minecraft's confinement as an X11 window, the dynamic cursor
 on a hardware cursor plane, the HDR switch on a fullscreen HDR window, what
