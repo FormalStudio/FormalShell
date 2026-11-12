@@ -33,7 +33,8 @@ const HOST: &str = r#"{
     { "name": "TEST-1", "defaultWorkspace": 1 },
     { "name": "TEST-2", "workspaces": [4, 8], "defaultWorkspace": 4, "vrr": 2 }
   ],
-  "lidOutput": "TEST-2"
+  "lidOutput": "TEST-2",
+  "directScanout": false
 }"#;
 const WIDTH: f64 = 1024.0;
 const HEIGHT: f64 = 768.0;
@@ -543,6 +544,14 @@ fn two_outputs_and_the_touchpad() {
     assert_eq!(escapes(), []);
 
     assert_eq!(session.state.clear_color, [0.0, 0.0, 0.0, 1.0]);
+
+    // `directScanout` false: the core is told to composite every frame.
+    let configs = &session.state.runtime_output_configs;
+    let scanout = |name: &str| configs.get(name).and_then(|config| config.direct_scanout);
+    assert_eq!(
+        (scanout("TEST-1"), scanout("TEST-2")),
+        (Some(false), Some(false))
+    );
 
     // `vrr` 2: asked of the core only while a window is fullscreen there.
     let vrr = |session: &Session| {

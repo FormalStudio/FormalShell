@@ -303,6 +303,7 @@ pub fn setup() {
                     config.hdr = Some(OutputHdr::Enabled(color.cm != "srgb"));
                 }
                 config.vrr = Some(wants_vrr(output));
+                config.direct_scanout = Some(settings.direct_scanout);
                 (output.name.clone(), Some(config))
             })
             .collect()
