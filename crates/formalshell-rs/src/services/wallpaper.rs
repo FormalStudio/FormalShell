@@ -271,6 +271,7 @@ const KEPT: usize = 4;
 
 impl State {
     pub fn apply(&mut self, Diff { size, path, picture }: Diff) -> bool {
+        let news = !self.answered(&path, size.0, size.1);
         self.answered.retain(|(s, _)| *s != size);
         self.answered.push((size, path));
         let at = self.pictures.iter().position(|p| (p.width, p.height) == size);
@@ -287,7 +288,7 @@ impl State {
                 self.pictures.remove(0);
             }
         }
-        !same
+        news || !same
     }
 
     /// The picture made for an output `width` by `height`.
@@ -429,8 +430,9 @@ mod tests {
     fn a_failed_picture_is_answered_and_a_new_path_is_not() {
         let mut state = State::default();
         assert!(!state.answered("/w.png", 1920, 1080));
-        state.apply(Diff { size: (1920, 1080), path: "/w.png".into(), picture: None });
+        assert!(state.apply(Diff { size: (1920, 1080), path: "/w.png".into(), picture: None }));
         assert!(state.answered("/w.png", 1920, 1080));
+        assert!(!state.apply(Diff { size: (1920, 1080), path: "/w.png".into(), picture: None }));
         assert!(!state.answered("/w.png", 1536, 864));
         assert!(!state.answered("/v.png", 1920, 1080));
     }
