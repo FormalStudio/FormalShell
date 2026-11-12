@@ -20,26 +20,26 @@ no Xwayland. A second output is one `outputs.create` makes. What needs more
 than that is headless, unit or **no** below.
 
 Sessions and what they need: `session.sh`, `session2.sh`, `tape.sh`,
-`rules.sh`, `layers.sh`, `drags.sh`, `overview.sh`, `outputs.sh` run bare.
+`rules.sh`, `layers.sh`, `drags.sh`, `overview.sh`, `outputs.sh`, `focus.sh`
+run bare.
 `host.sh` with `FWM_HOST=host-default.json`, `misc.sh` with
 `FWM_HOST=host-misc.json`, `motion.sh` and `cursor.sh` with `FWM_TIMING=1`, `shell.sh` with
-`FWM_SHELL` naming FormalShell, `binds.sh` with `FWM_KEYS=wtype` and
+`FWM_SHELL` naming FormalShell, as `handover.sh`, `binds.sh` with
+`FWM_KEYS=wtype` and
 `FWM_SHELL`, `locked.sh` with `FWM_LOCKED=1`, once bare and once with
 `FWM_SHELL`.
 
-Every rig, headless and unit line was run again on one build: `shoji`
-96614b42 on the fork's `formal-rs` 85f78ef, which is `formal` 50100de and six
-commits on it, `formalwm` sha256
-`edd2b879d8a4963fe148e2355405bb4ac0d7689918856e656b150aa90c880134`. The
-numbers quoted are that run's. The default border is 2 px and every rect
+Every rig, headless and unit line was run again on one build, the published
+one: `shoji` 3395202f on the fork's `formal-rs` 9757796, which is `formal`
+e8746bf and three commits on it, `formalwm` sha256
+`cf1e99a7abce4d8d7215ddde19b03bdd1d02d001f873035e3b43ed59d8712bb9`. The
+numbers quoted are that run's, with `session2.sh` and `motion.sh` from a
+second run on it: the host was under other builds during the first, in
+which the overview's corner took longer than the session waits for it and
+`motion.sh` rendered at 24 Hz. `outputs.sh` was run once more for its
+pointer step. The default border is 2 px and every rect
 below is a window's content, so the first column starts at x 10: 8 of gap
 and 2 of border.
-
-The published build is one commit on, `shoji` 4cc164d2, sha256
-`e8b565b18032b3668ec5e4fa9726b5b64a7c2b75db37edb5bd0e5dddb9d91f62`. It differs
-in `wm/core/src/cursor.rs` alone. On it `cursor.sh`, the headless session and
-the unit tests were run again, and the fresh-clone build of the last section;
-the cursor rows quote that run. The other sessions were not run again on it.
 
 ## Spec 2: the engine
 
@@ -51,7 +51,7 @@ the cursor rows quote that run. The other sessions were not run again on it.
 | A bad file keeps the running settings and reports the error | rig, unit | `session.sh`: `config.failed` for an action the engine has not, a key no keymap has (`shortcut \`Super+Retrun\` contains unknown key \`Retrun\``), an env name and an env value that cannot be set (`env: \`A=B\` cannot be set`); windows unmoved, SUPER+Return still opens a terminal; `an_env_name_or_value_that_cannot_be_set_is_refused`, `a_shortcut_the_core_cannot_read_is_refused` |
 | The shell's settings format: comments, trailing commas | unit | `comments_and_trailing_commas_are_allowed`, `the_shared_file_loads_on_its_own` |
 | The host file lays over the shared one | rig, unit | `host.sh`; `the_host_file_lays_over_the_shared_one`, `g815_lays_its_outputs_over_the_shared_file` |
-| Wire types are `crates/fs-wm-proto` | unit | its eight tests read and write the spec's JSON |
+| Wire types are `crates/fs-wm-proto` | unit | its nine tests read and write the spec's JSON |
 | Columns of stacked windows | rig | `tape.sh`: `[10,10 496x368]` over `[10,390 496x368]`; `session.sh`: `05-stack` |
 | Default column width 0.5 | rig | `tape.sh`: 496 of 1024 less the gaps and the border |
 | Presets 0.333, 0.5, 0.667, 1.0 | rig, unit | `tape.sh`: SUPER+R to 666, SUPER+F to 1004; the wrap to 0.333 in `presets_cycle_upward_and_wrap` |
@@ -64,10 +64,13 @@ the cursor rows quote that run. The other sessions were not run again on it.
 | Stacked vertically, a switch slides vertically | rig | `motion.sh`: `one y` frame by frame from 10 to -758; `session.sh`: `08-switching` |
 | A workspace pinned to an output by the host settings | rig, headless, unit | `host.sh` on the one output (2, 3, 4 pinned, 3 in view at the start); `outputs.sh`: 4 and 8 move to a made output on a reload, and Slack opens there; headless: stacks `1 2 3 5 6 7 9` and `4 8`; `workspaces_pinned_by_the_host_live_on_their_output` |
 | Focus changes on click only | rig | `rules.sh`: the pointer over another window leaves the focus; `session2.sh`: a click moves it |
+| The output under the pointer is the focused one, the keyboard staying | rig, headless, unit | `outputs.sh`: the pointer at 1700,400 on a made output right of the first, `focusedOutput` `HEADLESS-1` and its workspace `d1`, back at 500,400 `Virtual-4` and `1`; headless: one `state.changed` with `focusedOutput` `TEST-1`, `focusedWindowId` and the seat's keyboard still on the window of `TEST-2`; a press on the empty output reaches it too; nothing while a window is dragged across; `the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard` |
+| `focusedWindowId` is the window that has the keyboard | rig, headless | `focus.sh`: of two windows neither used, the older one picked through `window.focus` hears the A and the state names it, a press on the newer moves both, and back and forth; headless: a focus the core refuses leaves the model within two ticks, and the same pick and press |
 | The hovered window still gets pointer events | rig | `rules.sh`: the unfocused client prints `hover` |
 | Every bind in `hyprland.lua`, same chords | rig | the bind table below |
 | A chord runs every bind it has, each by its own flags | rig, unit | `binds.sh`: a second bind on the volume key, not marked `locked` and not `repeat`, runs beside the first, once while the key is held for 23 runs of the first, and not on the lock screen; `on_the_lock_screen_a_chord_runs_only_its_binds_marked_locked`, `each_bind_of_a_shortcut_keeps_what_it_says_of_itself` |
-| A bind on a modifier let go is taken by the chord that used it, unless `passthrough` | rig, unit | `binds.sh`: a plain bind on Alt let go does not run after Alt+Tab, where the `passthrough` one commits the switcher, and both run when Alt is tapped alone; the same test |
+| A bind on a modifier let go runs after the modifier alone; after a chord only when it is `passthrough` and holds its modifier | rig, headless, unit | `binds.sh`: after Alt+Tab the `passthrough` bind on `ALT+Alt_L` commits the switcher and neither the plain one nor the `passthrough` one on a bare `Alt_L` runs; Alt tapped alone runs all three; headless: a bare `Control_L` bind runs after Ctrl alone and not after Ctrl+A, one on `SHIFT+Shift_L` after Shift+A too; `a_bare_modifier_let_go_fires_after_the_modifier_alone` |
+| The `mac` submap: a Mac window is handed the Super chords | rig, headless, unit | `handover.sh` with the shell: held over a tagged window with `SUPER + H` and `SUPER + L` reserved, Super+Z and Super+Shift+F reach it (`125 44`, `125 42 33`) and zen and fullscreen do not run; Super+H is still the bind's, and over the other window Super+Z is zen again; the keyboard back, the chords are the window's with nothing asked again; XF86Tools stays bound; every bind is back under a layer that takes the keyboard, under the overview and on the lock screen; it ends on `on` false, when the asking connection closes and when the window does; a reload keeps it; headless the same without the lock; `super_alone_and_with_shift_go_to_the_window`, `a_reserved_chord_stays_bound_with_the_modifiers_it_names` and the other four tests of `handover.rs` |
 | The es number row by keycode | rig | `tape.sh` through `--key` and again through wtype typing the es digits; SUPER+SHIFT+4 too |
 | Three fingers sideways drag the tape 1:1 | headless | scroll 716 for 300 px of fingers from 1016 |
 | A release flings and snaps to a column | headless, unit | rests on a column edge with the focus in view; `a_released_scroll_snaps_a_column_edge_to_a_view_edge` |
@@ -76,6 +79,7 @@ the cursor rows quote that run. The other sessions were not run again on it.
 | The same on a real touchpad | no | the rig has none |
 | Rule matchers: app id, title, floating | rig | `rules.sh` |
 | Rule matcher: toplevel tag | rig, unit | `rules.sh`: a window tagged `atoll` floats, the same app untagged tiles; `tag_and_xwayland_matchers` |
+| A window's toplevel tag in its row | rig, headless | `handover.sh`: `atoll-mac` on the tagged window, `""` on the other; headless: a tag the client changes is broadcast |
 | Rule matcher: xwayland | unit | `tag_and_xwayland_matchers`; no Xwayland on the rig |
 | Rule effects: workspace, float, pin, size, position | rig | `rules.sh`, the rule table below |
 | Rule effect: `confinePointer` | rig, headless, unit | `cursor.sh`: over a window of `[264,10 496x748]` whose rule sets it, a mouse pushed 3000 px stops at 760, at 758 and at 264, 10, and runs on to 1024 once another window has the keyboard; headless: held at the window's edge on the second output, free when another window opens; the matcher in `the_rules_place_the_apps_they_name` |
@@ -126,7 +130,7 @@ the cursor rows quote that run. The other sessions were not run again on it.
 | `chrome`, with `borderSize` | rig, unit | `session.sh`: `gapsOut` 16, `borderSize` 4, `activeBorder` `#ff0000`; `shell.sh`: the shell's own, `borderSize` 1; `the_chrome_says_the_border_the_gaps_are_measured_to` |
 | `workspace.focus` | rig | `session.sh` |
 | `workspace.focusAt` | rig, unit | `session2.sh` by idx; with `output` in `workspaces_by_stack_position_and_by_neighbour` |
-| `window.focus` | rig | `motion.sh`, `drags.sh` |
+| `window.focus` | rig, headless | `motion.sh`, `drags.sh`; `focus.sh` and headless: the keyboard goes to an older window over a newer one |
 | `window.close` | rig | `session2.sh` |
 | `window.float`, set and toggle | rig | `session2.sh` |
 | `window.fullscreen` | rig | `session2.sh`: `[0,0 1024x768]` and back |
@@ -138,8 +142,9 @@ the cursor rows quote that run. The other sessions were not run again on it.
 | `zen.set` | rig | `tape.sh` by id, on and off |
 | `overview.set` | rig | `motion.sh`, `overview.sh` |
 | `spawn` with `cwd` | rig | `session2.sh` |
-| `bind.escape` | rig | `session2.sh`: runs once while set, not after; `misc.sh` |
+| `bind.escape` | rig, headless | `session2.sh`: runs once while set, not after; `misc.sh`; `focus.sh` and headless: the command runs and the window still hears the Escape (key 1), unbound it hears it and nothing runs |
 | `binds.list` | rig, headless | `session.sh`: 73 rows, `mods` in the wire order, `code:10`; `session2.sh` and headless: a row for the shell's Escape while `bind.escape` is set, gone after |
+| `binds.handOver` | rig, headless | `handover.sh`; a `window` that is none answers `no such window: nobody`; `State.handOver` follows each step with `window`, `reserved` as given and `active` |
 | `cursor.pos` | rig | `session2.sh`, `misc.sh` |
 | `cursor.hide` | rig | `session2.sh` |
 | `layers.list` | rig | `session2.sh`: three layers bottom first with boxes and pids; `shell.sh`: the shell's own, and with a made output each one once under its output |
@@ -450,9 +455,9 @@ checkout beside it:
 | Command | Result |
 | --- | --- |
 | `cargo build --locked --profile release-fast -p formalwm` | exit 0 |
-| `cargo test --locked --profile release-fast --workspace` | exit 0: 64, 4, 33, 11 and 5 in `formalwm-core`, 3 in `formalwm`, the headless session among them |
+| `cargo test --locked --profile release-fast --workspace` | exit 0: 71, 4, 34, 11 and 5 in `formalwm-core`, 3 in `formalwm`, the headless session among them |
 | `cargo clippy --locked --profile release-fast --workspace --all-targets -- -D warnings` | exit 0 |
-| `cargo test --locked -p fs-wm-proto` in `crates/` | 8 passed |
+| `cargo test --locked -p fs-wm-proto` in `crates/` | 9 passed |
 
 ## What the core does not offer
 
@@ -473,8 +478,8 @@ until the core does.
 ## Review and sweep findings
 
 Each with the commit that settles it. `core` commits are on the fork's
-`formal-rs`, above `formal` 50100de, each with a test there that failed
-before it (489 pass in `shojiwm_rs` and `shojiwm_lib` at 85f78ef).
+`formal-rs`, each with a test there that failed before it (493 pass in
+`shojiwm_rs` and `shojiwm_lib` at 9757796, 65 in `shoji_wm`).
 
 | Finding | Commit | Check |
 | --- | --- | --- |
@@ -499,6 +504,11 @@ before it (489 pass in `shojiwm_rs` and `shojiwm_lib` at 85f78ef).
 | S8: shake turned off while magnified left the cursor's clock running | 4cc164d2 | `cursor.sh`; `other_settings_drop_what_was_begun_under_the_last` |
 | Black under everything, also after a reload | b103e542, 5c1ba125 | line 279 above |
 | `directScanout`, auto HDR | 186f3cae, 2d0e1edf | lines 294 and 299 above |
+| `binds.handOver` and the window's tag | 7513a855 | the hand-over and tag rows of spec 2 and 3 |
+| The model and the seat drifted apart when an older window was focused over a newer one | 4ceb6e4f, core b5f290b | `focus.sh`; headless, which fails at the pick without the request and at the refused focus without the reconciling; core test `a_pick_is_not_refused_for_a_window_that_opened_later` |
+| `bind.escape` took the Escape from the focused client | 9bf7fb45, core 8f0b97b | `focus.sh`; headless; core test `a_non_consuming_binding_runs_and_the_client_still_gets_the_event` |
+| A bare modifier's `passthrough` release bind ran after a chord | 46842223 | `binds.sh`; headless; `a_bare_modifier_let_go_fires_after_the_modifier_alone`. The core had both kinds of release bind already (`tests/transparent_release.rs`) |
+| The focused output did not follow the pointer | 3395202f, core 8f0b97b for the press | `outputs.sh`; headless; `the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard` |
 
 Needs the g815: Minecraft's confinement as an X11 window, the dynamic cursor
 on a hardware cursor plane, the HDR switch on a fullscreen HDR window, what
