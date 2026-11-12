@@ -369,7 +369,8 @@ done
 # that drives (`none` when it owns nothing; a validate may add to it):
 # `name` alone owns it, `name=value` shares it with every claim
 # of the same name and value. Names are dotted (a settings key, a surface:
-# `launcher`, `screen`, `pointer`), and a name covers every name under it,
+# `launcher`, `screen`, `pointer`, `focus` for the window holding the
+# keyboard), and a name covers every name under it,
 # so `bar.layout=default` and `bar.layout.right` meet. A `session` claim
 # owns the whole run, beside only a leg_<n>_rider that pins a setting and
 # drives nothing. A leg_<n>_vm_only leg needs the real system bus.

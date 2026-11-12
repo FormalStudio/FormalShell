@@ -17,7 +17,7 @@
 leg_mac_electron_flag="--mac-electron"
 leg_mac_electron_order=175
 leg_mac_electron_needs="jq wlrctl wtype python3"
-leg_mac_electron_claims="screen=shared"
+leg_mac_electron_claims="focus screen=shared"
 leg_mac_electron_env="FS_ATOLL FS_ELECTRON_APP"
 
 mac_electron_prefix="$shot_dir/mac-electron"
@@ -67,7 +67,7 @@ px = im.load()
 hit = [(x, y) for y in range(im.height) for x in range(im.width) if all(abs(a - b) < 6 for a, b in zip(px[x, y], want))]
 print(round(sum(p[0] for p in hit) / len(hit) / s), round(sum(p[1] for p in hit) / len(hit) / s)) if hit else print("0 0")' "\$@" "${FS_SMOKE_SCALE:-1}"; }
 
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'WAYLAND_DEBUG=1 exec \$bin --ozone-platform=wayland > \$log 2>&1']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'WAYLAND_DEBUG=1 exec \$bin --ozone-platform=wayland > \$log 2>&1']==])" > /dev/null 2>&1
 for _ in \$(seq 1 120); do [ "\$(logged ' ready')" -ge 1 ] && break; sleep 0.5; done
 until_jq 30 "\$m-tray.json" '.items | length > 0' call tray status
 # A keyboard for the whole walk, as a seat with a real one has: focus
@@ -91,7 +91,7 @@ echo "\$item" > "\$m-sni.txt"
 busctl --user call "\${item%%/*}" "/\${item#*/}" org.kde.StatusNotifierItem Activate ii 0 0 >> "\$m-sni.txt" 2>&1
 call panel close > /dev/null 2>&1
 sleep 3
-"$hyprctl_bin" -j activewindow > "\$m-raw-active.json" 2>&1
+"$wmctl_bin" -j activewindow > "\$m-raw-active.json" 2>&1
 shoot "\$m-raw.png"
 "$wtype_bin" 'raw'
 sleep 1.5
@@ -104,8 +104,8 @@ echo "\$ix \$iy" > "\$m-item.txt"
 park "\$ix" "\$iy"
 click
 sleep 3
-"$hyprctl_bin" -j activewindow > "\$m-active.json" 2>&1
-"$hyprctl_bin" -j clients > "\$m-clients.json" 2>&1
+"$wmctl_bin" -j activewindow > "\$m-active.json" 2>&1
+"$wmctl_bin" -j clients > "\$m-clients.json" 2>&1
 call tray status > "\$m-tray-after.json" 2>&1
 shoot "\$m-panel.png"
 "$wtype_bin" 'hello panel'
@@ -133,7 +133,7 @@ pkill -f "\$(cat "$mac_electron_binary")" 2>/dev/null || true
 kill "\$(cat "$mac_electron_prefix-keyboard.pid" 2>/dev/null)" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/mac-electron-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_mac_electron_assert() {

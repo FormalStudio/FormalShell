@@ -27,7 +27,7 @@
 leg_mac_menu_flag="--mac-menu"
 leg_mac_menu_order=172
 leg_mac_menu_needs="python3 jq foot wlrctl wtype"
-leg_mac_menu_claims="screen=shared launcher=shared"
+leg_mac_menu_claims="focus screen=shared launcher=shared"
 
 mac_menu_prefix="$shot_dir/mac-menu"
 mac_menu_log="$shot_dir/mac-menu-stub.log"

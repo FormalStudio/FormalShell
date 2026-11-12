@@ -25,7 +25,7 @@
 leg_mac_fullscreen_bar_flag="--mac-fullscreen-bar"
 leg_mac_fullscreen_bar_order=176
 leg_mac_fullscreen_bar_needs="jq foot wlrctl wtype"
-leg_mac_fullscreen_bar_claims="screen=shared bar.position"
+leg_mac_fullscreen_bar_claims="focus screen=shared bar.position"
 leg_mac_fullscreen_bar_env="FS_ATOLL FS_ELECTRON_APP"
 
 mac_fsbar_prefix="$shot_dir/mac-fsbar"
