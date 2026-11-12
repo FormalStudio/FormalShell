@@ -155,7 +155,9 @@ impl Engine {
         if self.escapes.is_empty() {
             return;
         }
-        COMPOSITOR.key.bind(ID, "Escape", || {
+        // The key is the focused client's too, as under Hyprland's `bindn`.
+        let options = KeyBindOptions::new().non_consuming();
+        COMPOSITOR.key.bind_with(ID, "Escape", options, || {
             enter(|engine| {
                 for argv in engine.escapes.values() {
                     COMPOSITOR.process.spawn(Command::exec(argv.clone()));

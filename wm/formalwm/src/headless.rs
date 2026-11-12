@@ -1169,6 +1169,24 @@ fn two_outputs_and_the_touchpad() {
     assert_eq!((keyed(), said()), (Some(newer.clone()), newer.clone()));
     drop(shell);
 
+    // `bind.escape`: the shell's command runs and the Escape is the
+    // focused client's all the same.
+    const ESCAPE: u32 = 1;
+    let mark =
+        std::env::temp_dir().join(format!("formalwm-headless-{}/escaped", std::process::id()));
+    let argv = vec!["touch".to_owned(), mark.display().to_string()];
+    ask(move |engine| {
+        engine.escapes.insert("card".into(), argv);
+        engine.bind_escapes();
+        Ok(())
+    })
+    .unwrap();
+    session.typed();
+    session.chord(&[ESCAPE]);
+    assert_eq!(session.typed(), [ESCAPE], "the key reaches the client");
+    assert!(session.until(|| mark.exists()), "and the command ran");
+    escape(None);
+
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {
         session

@@ -1,8 +1,9 @@
 #!/bin/bash
 # The keyboard and the state on the rig: a window picked through
-# `window.focus` has the keyboard whichever of the two opened first, and a
-# press on the other moves both. The windows are fwm-drag's, which print
-# the keys they are sent by their evdev codes: 30 is A.
+# `window.focus` has the keyboard whichever of the two opened first, a
+# press on the other moves both, and `bind.escape` runs its command with
+# the Escape still the focused client's. The windows are fwm-drag's, which
+# print the keys they are sent by their evdev codes: 30 A, 1 Escape.
 set -u
 . "$(dirname "$0")/lib.sh"
 run=$SHOJI_RUN_DIR
@@ -33,6 +34,14 @@ press a
 step "picked back and forth"
 pick older; press a
 pick newer; press a
+
+step "bind.escape: the command runs and the Escape reaches the window"
+ipc bind.escape "{\"name\": \"card\", \"argv\": [\"touch\", \"$run/escaped\"]}" >/dev/null; sleep 0.4
+press Escape
+[ -e "$run/escaped" ] && echo "the command ran" || echo "the command did not run"
+ipc bind.escape '{"name": "card", "argv": null}' >/dev/null; sleep 0.4; rm -f "$run/escaped"
+press Escape
+[ -e "$run/escaped" ] && echo "unbound, the command ran all the same" || echo "unbound, nothing ran"
 
 step "the log"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx\|cursor image\|cursor theme" | cut -c1-300 | tail -12
