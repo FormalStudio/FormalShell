@@ -270,6 +270,9 @@ pub struct Cursor {
     shaking: bool,
     /// When the magnification lets go, on the clock's milliseconds.
     until: f64,
+    /// The settings of the last turn. What was begun under others is not
+    /// theirs to finish: a shake nobody watches any more would never end.
+    under: Option<Dynamic>,
 }
 
 impl Default for Cursor {
@@ -280,6 +283,7 @@ impl Default for Cursor {
             zoom: Tween::at(1.0),
             shaking: false,
             until: 0.0,
+            under: None,
         }
     }
 }
@@ -293,6 +297,10 @@ impl Cursor {
     /// One turn of the clock with the pointer at `at`. None draws the image
     /// as it is.
     pub fn step(&mut self, settings: &Dynamic, now: f64, at: (f64, f64)) -> Option<Shape> {
+        if self.under.is_some_and(|last| last != *settings) {
+            self.reset();
+        }
+        self.under = Some(*settings);
         let dt = self
             .samples
             .back()
@@ -546,6 +554,59 @@ mod tests {
         // A lean under the threshold is no lean.
         let slow = travel(&mut cursor, &settings, &mut clock, &mut at, (0.5, 0.0), 30);
         assert_eq!(slow, None);
+    }
+
+    #[test]
+    fn other_settings_drop_what_was_begun_under_the_last() {
+        let shaken = |settings: &Dynamic| {
+            let (mut cursor, mut clock, mut at) = (Cursor::default(), 0.0, (500.0, 500.0));
+            let mut shape = None;
+            for _ in 0..40 {
+                travel(&mut cursor, settings, &mut clock, &mut at, (100.0, 0.0), 2);
+                shape = travel(&mut cursor, settings, &mut clock, &mut at, (-100.0, 0.0), 2);
+            }
+            assert!(shape.is_some_and(|shape| shape.along > 4.0), "{shape:?}");
+            assert!(!cursor.resting());
+            (cursor, clock, at)
+        };
+        let owner = Dynamic::default();
+
+        // Shake turned off while the cursor is magnified: the image as it
+        // is at once, and nothing left for the clock.
+        let (mut cursor, clock, at) = shaken(&owner);
+        let mut quiet = owner;
+        quiet.shake.enabled = false;
+        assert_eq!(cursor.step(&quiet, clock + 16.0, at), None);
+        assert!(cursor.resting());
+
+        // The whole of it turned off.
+        let (mut cursor, clock, at) = shaken(&owner);
+        let mut off = quiet;
+        off.mode = Mode::None;
+        assert!(!off.enabled());
+        assert_eq!(cursor.step(&off, clock + 16.0, at), None);
+        assert!(cursor.resting());
+
+        // Another mode mid-motion: the stretch is gone with the speed it
+        // came from, and the travel that follows leans.
+        let (mut cursor, mut clock, mut at) = (Cursor::default(), 0.0, (500.0, 500.0));
+        let stretched = travel(&mut cursor, &owner, &mut clock, &mut at, (15.0, 0.0), 20);
+        assert!(stretched.is_some_and(|shape| shape.along > 1.0 && shape.rotate == 0.0));
+        let tilt = Dynamic {
+            mode: Mode::Tilt,
+            ..owner
+        };
+        clock += 16.0;
+        assert_eq!(cursor.step(&tilt, clock, at), None);
+        assert!(cursor.resting());
+        let leaning = travel(&mut cursor, &tilt, &mut clock, &mut at, (15.0, 0.0), 20).unwrap();
+        assert!(leaning.rotate > 0.0);
+        assert_eq!((leaning.along, leaning.across), (1.0, 1.0));
+
+        // The same settings again change nothing.
+        let (mut cursor, clock, at) = shaken(&owner);
+        assert!(cursor.step(&owner, clock + 16.0, at).is_some());
+        assert!(!cursor.resting());
     }
 
     #[test]
