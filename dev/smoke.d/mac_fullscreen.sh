@@ -281,8 +281,14 @@ leg_mac_fullscreen_assert() {
       || fail "--mac-fullscreen: electron: wanted \"$line\", got: $(tr '\n' ';' < "$m-electron.txt" 2>/dev/null)"
   done
   [ "$mac_fs_native" = none ] && return 0
-  for line in "green in: 1 full=[12]" "green out: 1 full=0" "chord in: 2 full=[12]" "chord out: 2 full=0" "quit from: [0-9]+ full=[12]" "quit: gone"; do
+  for line in "green in: 1 full=[12]" "green out: 1 full=0" "chord in: 2 full=[12]" "chord out: 2 full=0" \
+    "menu in: 3 full=[12]" "menu out: 3 full=0" "quit from: 4 full=[12]" "quit: gone"; do
     grep -qE "^$line\$" "$m-native.txt" 2>/dev/null \
       || fail "--mac-fullscreen: native: wanted \"$line\", got: $(tr '\n' ';' < "$m-native.txt" 2>/dev/null)"
+  done
+  # The item is titled for the way it goes when its menu opens, as on a Mac.
+  for line in 'native-in: View items \["Enter Full Screen"\]' 'native-out: View items \["Exit Full Screen"\]'; do
+    grep -qE "^$line" "$m-trail.txt" 2>/dev/null \
+      || fail "--mac-fullscreen: native: wanted \"$line\", got: $(grep '^native-' "$m-trail.txt" 2>/dev/null | tr '\n' ';')"
   done
 }
