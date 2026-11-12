@@ -21,8 +21,17 @@
 # request (g815 only), the zoom commits frames all the way through, and at
 # rest it commits nothing in 3s. Frames pulled for the sheet: the desktop,
 # open, mid-zoom and mid-glide at a tenth speed, and the drop.
+#
+# Under formalwm the overview is the engine's (the shoji spec, section 4)
+# and the shell's surface never opens: the same ways in and out (Super+O,
+# IPC, the corner, the minimap's press and drag out, Escape) are read off
+# the engine's state, and the shell's `debug dump` has to read closed with
+# no open counted at every step. What happens inside the engine's overview
+# (keys, wheel, clicks, drags, the zoom's clock) is wm/dev/overview.sh's,
+# session.sh's and session2.sh's.
 leg_overview_flag="--overview"
 leg_overview_order=239
+leg_overview_compositors="hyprland shoji"
 leg_overview_needs="jq foot wtype wlrctl python3 grim"
 leg_overview_claims="layout=sidebar frame=none sidebar.minimap"
 overview_vpointer="$PWD/dev/vpointer.py"
@@ -47,17 +56,23 @@ leg_overview_drive() {
   local script="$shot_dir/overview-drive.sh"
   wm_binds_by_keysym
   wm_bind SUPER+O sh "$ipc call workspaces overview toggle"
+  local inside=false
+  [ "$FS_COMPOSITOR" = hyprland ] && inside=true
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 log() { printf '%s\n' "\$*" >> "$overview_notes"; }
 dump() { $ipc call debug dump 2>/dev/null; }
-# One line per step: the overview's phase, its selection and the sessions it holds.
+# The compositor's overview: the shell's under Hyprland, the engine's under formalwm.
+wm_phase() { $(wm_overview_phase); }
+# One line per step: the compositor's overview phase, the shell's own,
+# its selection and the sessions it holds. Under Hyprland the two are one,
+# read off the one dump: a second taken during the zoom costs it frames.
 step() {
-  dump | "$jq_bin" -c --arg s "\$1" '{step: \$s, phase: .overview.phase, open: .overview.open, zoom: .overview.zoom, ws: .overview.selected.workspace, win: .overview.selected.window, opens: .overview.opens, capturing: .overview.capturing, sessions: (.captures.overview | length), rows: [.overview.rows[] | {workspace, windows: [.windows[].id]}]}' >> "$overview_log" 2>&1
+  dump | "$jq_bin" -c --arg s "\$1" --arg wm "\$($inside || wm_phase)" '{step: \$s, wm: (if \$wm == "" then .overview.phase else \$wm end), phase: .overview.phase, open: .overview.open, zoom: .overview.zoom, ws: .overview.selected.workspace, win: .overview.selected.window, opens: .overview.opens, capturing: .overview.capturing, sessions: (.captures.overview | length), rows: [.overview.rows[] | {workspace, windows: [.windows[].id]}]}' >> "$overview_log" 2>&1
 }
 wait_phase() {
   for _ in \$(seq 1 40); do
-    [ "\$(dump | "$jq_bin" -r '.overview.phase')" = "\$1" ] && return 0
+    [ "\$(wm_phase)" = "\$1" ] && return 0
     sleep 0.1
   done
   return 1
@@ -91,12 +106,14 @@ wait_phase open; sleep 0.8
 step bind-open
 "$grim_bin" "$overview_open_png" > /dev/null 2>&1
 sleep 3
+if $inside; then
 "$wtype_bin" -k Down; sleep 0.6; step key-down
 "$wtype_bin" -k Up; sleep 0.6; step key-up
 "$wtype_bin" -k Right; sleep 0.6; step key-right
 "$wtype_bin" -k Left; sleep 0.6; step key-left
 "$wlrctl_bin" pointer scroll 15 0 > /dev/null 2>&1; sleep 0.6; step wheel-down
 "$wlrctl_bin" pointer scroll -15 0 > /dev/null 2>&1; sleep 0.6; step wheel-up
+fi
 "$wtype_bin" -k Escape
 wait_phase closed; sleep 0.3
 step escape-closed
@@ -105,6 +122,7 @@ step escape-closed
 $ipc call workspaces overview open > /dev/null 2>&1
 wait_phase open; sleep 0.8
 step ipc-open
+if $inside; then
 "$wtype_bin" -k Down; sleep 0.6; step ipc-down
 "$wtype_bin" -k Return
 wait_phase closed; sleep 0.5
@@ -152,6 +170,11 @@ log "a on \$(cat "$shot_dir/overview-dropped.json")"
 $ipc call workspaces overview close > /dev/null 2>&1
 wait_phase closed; sleep 0.3
 step drag-closed
+else
+$ipc call workspaces overview close > /dev/null 2>&1
+wait_phase closed; sleep 0.3
+step ipc-closed
+fi
 
 # The corner: parked opens it and it stays; a leave and a return close it.
 "$wlrctl_bin" pointer move 900 500 > /dev/null 2>&1
@@ -210,22 +233,32 @@ leg_overview_assert() {
   done
   [ -s "$overview_log" ] || fail "overview: no step log at $overview_log"
   cat "$overview_notes" "$overview_log"
-  grep -m4 -E 'overview (opening|mapped)|^commit surface=overview n=1 |configure surface=overview' "$shell_log_path"
+  grep -m4 -E 'overview (opening|mapped)|^commit surface=overview n=1 |configure surface=overview' "$shell_log_path" || true
   grep -E 'hot corner|overview' "$shell_log_path" | tail -60
   local a b c
   read -r a b c <<< "$(sed -n 's/^ids a=\([^ ]*\) b=\([^ ]*\) c=\([^ ]*\)$/\1 \2 \3/p' "$overview_notes")"
   [ -n "$a" ] && [ -n "$c" ] || fail "overview: the fixture windows never mapped"
-  [ "$(overview_field rest .phase)" = closed ] || fail "overview: open before anything asked"
+  [ "$(overview_field rest .wm)" = closed ] || fail "overview: open before anything asked"
 
   local step
   for step in bind-open ipc-open corner-open corner-parked press-open out-open; do
-    [ "$(overview_field "$step" .phase)" = open ] || fail "overview: $step: not open ($(overview_field "$step" .phase))"
+    [ "$(overview_field "$step" .wm)" = open ] || fail "overview: $step: not open ($(overview_field "$step" .wm))"
   done
-  for step in escape-closed return-closed ipc-closed drag-closed corner-closed press-closed out-closed; do
-    [ "$(overview_field "$step" .phase)" = closed ] || fail "overview: $step: not closed ($(overview_field "$step" .phase))"
+  local closes="escape-closed ipc-closed corner-closed press-closed out-closed"
+  [ "$FS_COMPOSITOR" = hyprland ] && closes="$closes return-closed drag-closed"
+  for step in $closes; do
+    [ "$(overview_field "$step" .wm)" = closed ] || fail "overview: $step: not closed ($(overview_field "$step" .wm))"
     [ "$(overview_field "$step" .sessions)" = 0 ] && [ "$(overview_field "$step" .capturing)" = 0 ] \
       || fail "overview: $step: captures left after the close ($(overview_field "$step" .sessions) sessions)"
   done
+  if [ "$FS_COMPOSITOR" = shoji ]; then
+    "$jq_bin" -e -s 'all(.phase == "closed" and .opens == 0)' "$overview_log" > /dev/null \
+      || fail "overview: the shell's own overview opened under formalwm: $("$jq_bin" -c -s '[.[] | select(.phase != "closed" or .opens != 0) | {step, phase, opens}]' "$overview_log")"
+    for png in "$overview_desktop_png" "$overview_open_png"; do
+      [ -s "$png" ] || fail "overview: no frame at $png"
+    done
+    return
+  fi
   [ "$(overview_field bind-open .sessions)" -ge 2 ] || fail "overview: open with $(overview_field bind-open .sessions) capture sessions, wanted one per window"
   [ "$(overview_field bind-open ".zoom == 1")" = true ] || fail "overview: at rest the zoom reads $(overview_field bind-open .zoom)"
 

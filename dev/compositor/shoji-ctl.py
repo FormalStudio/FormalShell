@@ -5,11 +5,14 @@ Answers the part of hyprctl's command line the smoke legs use from
 formalwm's socket (the 2026-11-11 shoji spec, section 3), in hyprctl's own
 shapes, so a leg reads and dispatches the same way under either compositor:
 `clients`, `activewindow`, `workspaces`, `activeworkspace`, `monitors`,
-`layers`, `binds` and `cursorpos` (each with -j), `dispatch` of the
-`hl.dsp.*` calls below, and `output create headless`, `output remove` and
-the `hl.monitor` eval that sizes a made output. Anything else exits 3
-naming what it was asked, so a leg leaning on Hyprland alone fails saying
-so.
+`layers`, `binds`, `animations` and `cursorpos` (each with -j), the
+`getoption`s below, `dispatch` of the
+`hl.dsp.*` calls below, `reload`, and `output create headless`, `output
+remove` and the `hl.monitor` eval that sizes a made output. Anything else
+exits 3 naming what it was asked, so a leg leaning on Hyprland alone fails
+saying so. One verb is formalwm's own: `hand-over <address> [reserved...]`
+asks `binds.handOver` for that window and holds the connection, which the
+hand over ends with, until the process is killed, as a shell's would.
 """
 import json
 import os
@@ -188,6 +191,16 @@ def read(verb, args, as_json):
         if size is None:
             raise Unsupported("getoption general:border_size: the engine's state carries no chrome.borderSize")
         return {"option": args[0], "int": size} if as_json else f"int: {size}"
+    if verb == "getoption" and args == ["animations:enabled"]:
+        on = int(call("state.get")["chrome"]["motion"]["enabled"])
+        return {"option": args[0], "int": on} if as_json else f"int: {on}"
+    if verb == "animations":
+        # formalwm has no leaves: the engine rides the families themselves,
+        # named as the shipped Lua names its beziers.
+        families = call("state.get")["chrome"]["motion"]["families"]
+        beziers = [{"name": f"formalshell_{name}", "X0": f["curve"][0], "Y0": f["curve"][1], "X1": f["curve"][2], "Y1": f["curve"][3]}
+                   for name, f in families.items()]
+        return [[], beziers]
     if verb == "getoption":
         if args != ["general:col.active_border"]:
             raise Unsupported(f"getoption {' '.join(args)}")
@@ -405,11 +418,43 @@ def evaluate(text):
     return "ok"
 
 
+def reload():
+    """The settings read again through the core's control socket, which
+    `$SHOJIWM_SOCKET` names (spec section 3)."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.settimeout(5)
+        s.connect(os.environ["SHOJIWM_SOCKET"])
+        s.sendall(b"reload\n")
+    return "ok"
+
+
+def hand_over(window, reserved):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(socket_path())
+        req = {"id": 1, "method": "binds.handOver", "params": {"on": True, "window": window, "reserved": reserved}}
+        s.sendall((json.dumps(req) + "\n").encode())
+        for line in s.makefile():
+            msg = json.loads(line)
+            if msg.get("id") == 1:
+                if "error" in msg:
+                    sys.exit(f"shoji-ctl: binds.handOver: {msg['error']}")
+                print("ok", flush=True)
+                break
+        while s.recv(65536):
+            pass
+
+
 def main(argv):
     as_json = "-j" in argv
     args = [a for a in argv if a != "-j"]
     if not args:
         raise Unsupported("no verb")
+    if args[0] == "reload":
+        print(reload())
+        return
+    if args[0] == "hand-over" and len(args) >= 2:
+        hand_over(args[1], args[2:])
+        return
     if args[0] == "dispatch":
         dispatch(" ".join(args[1:]))
         print("ok")

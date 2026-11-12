@@ -40,6 +40,7 @@
 # drive writes; the comment beside it says why.
 leg_switcher_keys_flag="--switcher-keys"
 leg_switcher_keys_order=104
+leg_switcher_keys_compositors="hyprland shoji"
 leg_switcher_keys_needs="foot jq wtype"
 # A fourth window sits on workspace 2 throughout and must not reach the card:
 # the owner's quick Alt+Tab was landing on a window elsewhere and
@@ -73,7 +74,8 @@ leg_switcher_keys_claims="switcher workspaces=shared"
 # Hyprland copies a window only while its box overlaps its monitor
 # (`CScreenshareManager::onOutputCommit`), so the cells with no frame have
 # to be exactly the windows hyprctl places off the monitor, drawn with their
-# icon.
+# icon. formalwm copies a window wherever the tape puts it, so there every
+# cell holds a frame, the windows off the monitor's included.
 
 switcher_keys_probe_dir="$shot_dir/switcher-keys-probes"
 switcher_keys_binds_path="$shot_dir/switcher-keys-binds.txt"
@@ -433,8 +435,13 @@ leg_switcher_keys_assert() {
   echo "scrolling: off-monitor windows [$offscreen], $("$jq_bin" -c '{count, captured, capturedCells}' "$switcher_keys_scroll_json")"
   [ -n "$offscreen" ] || fail "no window sits off the monitor under the scrolling layout, so the limit was never exercised"
   echo "scrolling: thumbnails without a frame [$uncaptured]"
-  [ "$uncaptured" = "$offscreen" ] \
-    || fail "under the scrolling layout the cells with no frame [$uncaptured] are not the windows off the monitor [$offscreen]"
+  if $wm_offscreen_frames; then
+    [ -z "$uncaptured" ] \
+      || fail "under the scrolling layout the cells with no frame [$uncaptured] are windows $FS_COMPOSITOR copies wherever they sit (off the monitor: [$offscreen])"
+  else
+    [ "$uncaptured" = "$offscreen" ] \
+      || fail "under the scrolling layout the cells with no frame [$uncaptured] are not the windows off the monitor [$offscreen]"
+  fi
 
   echo "SMOKE_SWITCHER_KEYS ok index=$index count=$count committed=$selected_id"
   echo "SMOKE_SWITCHER_KEYS_HELD $switcher_keys_held_png"

@@ -31,6 +31,7 @@
 # also when the chord moved focus onto the stub between the two.
 leg_mac_keys_flag="--mac-keys"
 leg_mac_keys_order=173
+leg_mac_keys_compositors="hyprland shoji"
 leg_mac_keys_needs="python3 jq foot wtype"
 leg_mac_keys_claims="hyprland.binds"
 
