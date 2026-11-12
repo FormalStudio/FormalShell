@@ -141,6 +141,7 @@ pub fn setup(signals: Signals) {
             let title = window.title().get();
             let app_id = window.app_id().get().unwrap_or_default();
             let _ = window.foreign_toplevel_id().get();
+            let _ = window.tag().get();
             enter(move |engine| engine.renamed(window, &title, &app_id));
         });
         // `vrr` 3 follows what a fullscreen client says it shows.
@@ -372,6 +373,7 @@ impl Engine {
         if self.drag.as_ref().is_some_and(|drag| drag.id == id) {
             self.drag = None;
         }
+        self.window_gone(id);
         if self.model.window(id).is_none() {
             return;
         }

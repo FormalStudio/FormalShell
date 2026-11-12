@@ -124,6 +124,18 @@ impl Chord {
         }
     }
 
+    /// Whether the chord holds the modifier its key is: `ALT+Alt_L` does,
+    /// a bare `Alt_L` does not.
+    pub fn names_its_modifier(&self) -> bool {
+        match self.modifier_key() {
+            Some("Alt") => self.mods.alt,
+            Some("Super") => self.mods.logo,
+            Some("Shift") => self.mods.shift,
+            Some("Ctrl") => self.mods.ctrl,
+            _ => false,
+        }
+    }
+
     /// ShojiWM's shortcut for the chord. A pointer button has none: the
     /// core binds drags by modifier, not through shortcuts. A keycode is
     /// xkb's on both sides.

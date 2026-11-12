@@ -36,6 +36,7 @@ pub fn check_shortcuts(settings: &Settings) -> Result<(), String> {
             locked: options.locked,
             repeat: options.repeat,
             transparent: options.transparent,
+            non_consuming: false,
         }
         .compile()
         .map_err(|error| format!("binds[{}]: {error}", group.index))?;
@@ -44,12 +45,15 @@ pub fn check_shortcuts(settings: &Settings) -> Result<(), String> {
 }
 
 impl Engine {
-    /// Registers every bind of the settings in place of the ones before.
+    /// Registers every bind of the settings in place of the ones before,
+    /// less the chords a window is handed (`binds.handOver`).
     pub fn bind_keys(&mut self) {
         for id in self.bind_ids.drain(..) {
             COMPOSITOR.key.unbind(&id);
         }
         let settings = self.settings.clone();
+        let handed = self.handing().cloned();
+        self.handover.active = handed.is_some();
         let mut drags = (None, None);
         for bind in &settings.binds {
             let modifier = || {
@@ -72,6 +76,10 @@ impl Engine {
             }
         }
         for (index, group) in settings.bind_groups().into_iter().enumerate() {
+            let chord = &settings.binds[group.index].chord;
+            if handed.as_ref().is_some_and(|kept| kept.hands(chord)) {
+                continue;
+            }
             let id = format!("formalwm:{index}");
             let shortcut = group.shortcut.clone();
             let options = options_of(&group);
@@ -122,14 +130,15 @@ impl Engine {
         }
     }
 
-    /// The same for a modifier let go under a grab.
-    pub fn run_release(&mut self, key: &str) {
+    /// The same for a modifier let go under a grab. `alone`: no other key
+    /// was pressed while it was down.
+    pub fn run_release(&mut self, key: &str, alone: bool) {
         let mut actions: Vec<Action> = Vec::new();
         let locked = COMPOSITOR.session.is_locked();
         let binds = self.settings.binds.iter();
         for bind in binds.filter(|bind| bind.release && (bind.locked || !locked)) {
-            let released =
-                matches!(&bind.chord.key, Key::Sym(name) if name.eq_ignore_ascii_case(key));
+            let released = (alone || bind.after_chord())
+                && matches!(&bind.chord.key, Key::Sym(name) if name.eq_ignore_ascii_case(key));
             if released && !actions.contains(&bind.action) {
                 actions.push(bind.action.clone());
             }
@@ -147,7 +156,9 @@ impl Engine {
         if self.escapes.is_empty() {
             return;
         }
-        COMPOSITOR.key.bind(ID, "Escape", || {
+        // The key is the focused client's too, as under Hyprland's `bindn`.
+        let options = KeyBindOptions::new().non_consuming();
+        COMPOSITOR.key.bind_with(ID, "Escape", options, || {
             enter(|engine| {
                 for argv in engine.escapes.values() {
                     COMPOSITOR.process.spawn(Command::exec(argv.clone()));

@@ -14,9 +14,11 @@ for name in formalshell wpctl helium ghostty systemctl; do ln -s spy "$run/$name
 sed -i -e "s#/opt/fspec/current/bin/formalshell#$run/formalshell#g" -e "s#/usr/bin/wpctl#$run/wpctl#g" \
   -e "s#/opt/fspec/current/bin/helium#$run/helium#g" -e "s#\"ghostty\"#\"$run/ghostty\"#g" \
   -e "s#&& systemctl suspend#\&\& $run/systemctl suspend#g" "$settings"
-# A second bind on Alt let go, without `passthrough`: a chord that used Alt
-# takes it, Alt on its own does not.
+# Two more binds on Alt let go, one without `passthrough` and one that has
+# it on a bare Alt_L: a chord that used Alt takes both, Alt on its own
+# neither.
 printf '    {"chord": "ALT+Alt_L", "action": "spawn", "args": ["%s/formalshell", "plain"], "release": true},\n' "$run" > "$run/binds"
+printf '    {"chord": "Alt_L", "action": "spawn", "args": ["%s/formalshell", "bare"], "release": true, "passthrough": true},\n' "$run" >> "$run/binds"
 sed -i "/\"binds\": \[/r $run/binds" "$settings"
 ( ipc state.get --listen 2 | jq -c 'select(.event != null and .event != "state.changed")' ) & listener=$!
 sleep 0.4; printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; wait "$listener"

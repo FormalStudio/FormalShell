@@ -14,7 +14,7 @@ use formalwm_core::{
 use fs_wm_proto as proto;
 use shojiwm_rs::{ipc::IpcServer, prelude::*};
 
-use crate::{drag, gestures, overview, stage, windows};
+use crate::{drag, gestures, handover, overview, stage, windows};
 
 /// One window the compositor has: its handle and what the rules gave it.
 pub struct Win {
@@ -65,6 +65,7 @@ pub struct Engine {
     pub state_pending: bool,
     pub last_state: String,
     pub asked_focus: Option<String>,
+    pub focus_pending: bool,
     pub bind_ids: Vec<String>,
     pub escapes: BTreeMap<String, Vec<String>>,
     /// The shell asked for no cursor, or it has not arrived yet.
@@ -76,6 +77,7 @@ pub struct Engine {
     pub cursor: crate::cursor::Dynamic,
     pub gesture: gestures::Gesture,
     pub overview: overview::Overview,
+    pub handover: handover::HandOver,
     pub drag: Option<drag::Drag>,
     pub hold: drag::Hold,
 }
@@ -244,11 +246,14 @@ impl Engine {
         }
         let had = std::mem::replace(&mut self.asked_focus, want.clone());
         match want {
+            // On request: the model has decided, and the compositor's
+            // order of windows nobody has used yet would refuse an older
+            // one over a newer.
             Some(id) => {
                 if let Some(win) = self.windows.get(&id)
-                    && !win.handle.is_focused().get_untracked()
+                    && self.meant_for().as_ref() != Some(&id)
                 {
-                    win.handle.focus();
+                    win.handle.focus_on_request();
                 }
             }
             // Nothing in view to type into. The compositor keeps the keyboard
@@ -261,6 +266,7 @@ impl Engine {
             }
         }
         self.arm_idle_pointer();
+        self.settle_focus();
     }
 
     pub fn opacity_of(&self, id: &str, full: bool) -> f64 {

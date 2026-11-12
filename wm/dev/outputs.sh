@@ -34,6 +34,11 @@ echo "the made output's picture: $(python3 -c "
 from PIL import Image
 im = Image.open('$run/50-made-output.png').convert('RGB'); print(im.size, 'the terminal at its middle:', im.getpixel((640, 360)), 'the desk at its edge:', im.getpixel((2, 360)))")"
 
+step "the pointer onto the made output: it is the focused one, and back"
+span=$(ipc state.get | jq -r '[.outputs[] | select(.enabled)] | "\([.[] | .x + .width] | max)x\([.[] | .y + .height] | max)"')
+pointed() { hand --size "$span" at "$1" "$2"; sleep 0.6; echo "the pointer at $(ipc cursor.pos | jq -c '[.x, .y | round]'): $(ipc state.get | jq -c '{focusedOutput, ws: .focusedWorkspaceId}')"; }
+echo "the outputs span $span"; pointed 500 400; pointed 1700 400; pointed 500 400
+
 step "a settings reload keeps them"
 printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1.5; outs
 

@@ -261,7 +261,7 @@ impl Engine {
         )
     }
 
-    fn output_at(&self, at: (f64, f64)) -> Option<String> {
+    pub fn output_at(&self, at: (f64, f64)) -> Option<String> {
         self.model
             .outputs
             .iter()
@@ -413,6 +413,7 @@ impl Engine {
     fn pointer_moved(&mut self, at: (f64, f64)) {
         self.arm_idle_pointer();
         self.cursor_moved(at);
+        self.point_at(at);
         if self.hold.data_drag {
             self.hold_at(at, true);
         }

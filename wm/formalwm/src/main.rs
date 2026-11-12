@@ -5,7 +5,9 @@ mod binds;
 mod cursor;
 mod drag;
 mod engine;
+mod focus;
 mod gestures;
+mod handover;
 #[cfg(test)]
 mod headless;
 mod ipc;
@@ -54,6 +56,7 @@ fn setup() {
         state_pending: false,
         last_state: String::new(),
         asked_focus: None,
+        focus_pending: false,
         bind_ids: Vec::new(),
         escapes: BTreeMap::new(),
         cursor_hidden: true,
@@ -63,6 +66,7 @@ fn setup() {
         idle_timer: None,
         gesture: Default::default(),
         overview: Default::default(),
+        handover: Default::default(),
         drag: None,
         hold: Default::default(),
     });
@@ -71,6 +75,8 @@ fn setup() {
     stage::setup(signals);
     session::setup();
     gestures::setup();
+    focus::setup();
+    handover::setup();
     drag::setup();
     let ipc = ipc::serve();
     enter(move |engine| {

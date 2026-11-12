@@ -7,15 +7,19 @@
 
 use std::{
     fs::File,
+    io::{BufRead, BufReader, Write},
     os::{fd::AsFd, unix::net::UnixStream},
+    rc::Rc,
     time::Duration,
 };
 
+use formalwm_core::settings::Settings;
 use fs_wm_proto as proto;
+use serde_json::{Value, json};
 use shojiwm_lib::{
     config::{RuntimeHdrConfig, RuntimeHdrMode, RuntimeOutputMode},
     state::ShojiWM,
-    virtual_input::{VirtualDevice, VirtualInput, VirtualMotion},
+    virtual_input::{VirtualButton, VirtualDevice, VirtualInput, VirtualKey, VirtualMotion},
 };
 use shojiwm_rs::{
     COMPOSITOR, ConfigBuilder, RuntimeBoot,
@@ -23,16 +27,23 @@ use shojiwm_rs::{
     ssd::{GestureSwipeEventSnapshot, GestureSwipePhaseSnapshot as Phase},
 };
 use smithay::{
-    backend::input::InputEvent,
+    backend::input::{ButtonState, InputEvent, KeyState},
+    input::keyboard::Keycode,
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{calloop::EventLoop, wayland_server::Display},
     utils::SERIAL_COUNTER,
 };
 use wayland_client::{
     Connection, Dispatch, EventQueue, Proxy, QueueHandle,
-    protocol::{wl_buffer, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_surface},
+    protocol::{
+        wl_buffer, wl_compositor, wl_keyboard, wl_registry, wl_seat, wl_shm, wl_shm_pool,
+        wl_surface,
+    },
 };
-use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols::xdg::{
+    shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base},
+    toplevel_tag::v1::client::xdg_toplevel_tag_manager_v1::XdgToplevelTagManagerV1,
+};
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
 use crate::engine::ask;
@@ -163,6 +174,15 @@ impl Session {
     }
 
     fn open(&mut self, app_id: &str) -> wl_surface::WlSurface {
+        self.open_tagged(app_id, None).0
+    }
+
+    /// A window that says what it is with xdg-toplevel-tag, as Atoll's do.
+    fn open_tagged(
+        &mut self,
+        app_id: &str,
+        tag: Option<&str>,
+    ) -> (wl_surface::WlSurface, xdg_toplevel::XdgToplevel) {
         let qh = self.queue.handle();
         let compositor: wl_compositor::WlCompositor = self.bind("wl_compositor");
         let shell: xdg_wm_base::XdgWmBase = self.bind("xdg_wm_base");
@@ -172,9 +192,95 @@ impl Session {
             .get_toplevel(&qh, ());
         toplevel.set_app_id(app_id.into());
         toplevel.set_title(app_id.into());
+        if let Some(tag) = tag {
+            self.tag(&toplevel, tag);
+        }
         surface.commit();
         self.roundtrip();
-        surface
+        (surface, toplevel)
+    }
+
+    fn tag(&mut self, toplevel: &xdg_toplevel::XdgToplevel, tag: &str) {
+        let tags: XdgToplevelTagManagerV1 = self.bind("xdg_toplevel_tag_manager_v1");
+        tags.set_toplevel_tag(toplevel, tag.into());
+    }
+
+    /// The keys of a chord by their evdev codes, pressed in order and let
+    /// go in reverse. The windows are read again after it, as a frame does.
+    fn chord(&mut self, keys: &[u32]) {
+        let pressed = keys.iter().map(|key| (*key, KeyState::Pressed));
+        let released = keys.iter().rev().map(|key| (*key, KeyState::Released));
+        for (key, state) in pressed.chain(released) {
+            self.now_ms += 10;
+            let event = VirtualKey {
+                device: VirtualDevice {
+                    id: "test-keyboard".into(),
+                    name: "test keyboard".into(),
+                    keyboard: true,
+                },
+                time: self.now_ms,
+                keycode: Keycode::new(key + 8),
+                state,
+                count: 1,
+            };
+            self.state
+                .process_input_event(InputEvent::<VirtualInput>::Keyboard { event });
+            self.roundtrip();
+        }
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+    }
+
+    /// The keys the client was sent since the last time it was asked.
+    fn typed(&mut self) -> Vec<u32> {
+        self.roundtrip();
+        std::mem::take(&mut self.client.keys)
+    }
+
+    /// A connection to the engine's JSON socket.
+    fn socket(&self) -> BufReader<UnixStream> {
+        let path = proto::socket_path(
+            std::env::var("XDG_RUNTIME_DIR").ok().as_deref(),
+            self.state.socket_name.to_str(),
+        );
+        let socket = BufReader::new(UnixStream::connect(path).unwrap());
+        socket
+            .get_ref()
+            .set_read_timeout(Some(Duration::from_millis(5)))
+            .unwrap();
+        socket
+    }
+
+    /// The first message on `socket` that `wanted` accepts.
+    fn message(
+        &mut self,
+        socket: &mut BufReader<UnixStream>,
+        wanted: impl Fn(&Value) -> bool,
+    ) -> Option<Value> {
+        let mut line = String::new();
+        for _ in 0..200 {
+            self.roundtrip();
+            // A read that timed out leaves what it had of the line.
+            while socket.read_line(&mut line).is_ok() && line.ends_with('\n') {
+                let message: Value = serde_json::from_str(&line).unwrap();
+                if wanted(&message) {
+                    return Some(message);
+                }
+                line.clear();
+            }
+        }
+        None
+    }
+
+    /// One request on `socket` and its result.
+    fn call(&mut self, socket: &mut BufReader<UnixStream>, method: &str, params: Value) -> Value {
+        let request = json!({ "id": 1, "method": method, "params": params });
+        writeln!(socket.get_mut(), "{request}").unwrap();
+        let answer = self
+            .message(socket, |message| message.get("id").is_some())
+            .unwrap_or_else(|| panic!("{method}: no answer"));
+        assert!(answer.get("error").is_none(), "{method}: {answer}");
+        answer["result"].clone()
     }
 
     /// Gives a window something under the pointer: without a buffer the
@@ -268,6 +374,45 @@ impl Session {
         (at.x, at.y)
     }
 
+    fn pointer_to(&mut self, x: f64, y: f64) {
+        let (from_x, from_y) = self.pointer();
+        self.pointer_by(x - from_x, y - from_y);
+    }
+
+    /// The left button pressed and let go where the pointer is.
+    fn click(&mut self) {
+        for state in [ButtonState::Pressed, ButtonState::Released] {
+            self.now_ms += 10;
+            let event = VirtualButton {
+                device: VirtualDevice {
+                    id: "test-pointer".into(),
+                    name: "test pointer".into(),
+                    keyboard: false,
+                },
+                time: self.now_ms,
+                button: 0x110,
+                state,
+            };
+            self.state
+                .process_input_event(InputEvent::<VirtualInput>::PointerButton { event });
+            self.roundtrip();
+        }
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+    }
+
+    /// Turns the loop until `done`: what a timer of the engine's does is
+    /// not there on the turn that set it.
+    fn until(&mut self, done: impl Fn() -> bool) -> bool {
+        for _ in 0..200 {
+            if done() {
+                return true;
+            }
+            self.roundtrip();
+        }
+        done()
+    }
+
     /// One touchpad event on the first output, through the compositor's
     /// door to its config.
     fn swipe(&mut self, phase: Phase, fingers: u32, total: (f64, f64), velocity: (f64, f64)) {
@@ -320,6 +465,28 @@ impl Session {
 #[derive(Default)]
 struct Client {
     globals: Vec<(String, u32)>,
+    /// The evdev codes of the keys pressed on its keyboard.
+    keys: Vec<u32>,
+}
+
+impl Dispatch<wl_keyboard::WlKeyboard, ()> for Client {
+    fn event(
+        client: &mut Self,
+        _: &wl_keyboard::WlKeyboard,
+        event: wl_keyboard::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_keyboard::Event::Key {
+            key,
+            state: wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed),
+            ..
+        } = event
+        {
+            client.keys.push(key);
+        }
+    }
 }
 
 impl Dispatch<wl_registry::WlRegistry, ()> for Client {
@@ -385,6 +552,8 @@ ignore_events!(
     wl_shm_pool::WlShmPool,
     wl_buffer::WlBuffer,
     xdg_toplevel::XdgToplevel,
+    XdgToplevelTagManagerV1,
+    wl_seat::WlSeat,
     zwlr_layer_shell_v1::ZwlrLayerShellV1,
     zwlr_layer_surface_v1::ZwlrLayerSurfaceV1
 );
@@ -753,6 +922,347 @@ fn two_outputs_and_the_touchpad() {
         session.pointer_by(12.0, 0.0);
         assert_eq!(shaped(&session), None, "a hidden cursor is not shaped");
     }
+
+    // A window's xdg-toplevel-tag is in its row, and follows the client.
+    let native = session.open("native");
+    session.draw(&native, 400, 300);
+    let (mac, toplevel) = session.open_tagged("mac", Some("atoll-mac"));
+    session.draw(&mac, 400, 300);
+    settle();
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    let row = |app: &str| {
+        let seen = state();
+        seen.windows
+            .into_iter()
+            .find(|window| window.app_id == app)
+            .unwrap()
+    };
+    assert_eq!(row("mac").tag, "atoll-mac");
+    assert_eq!(row("native").tag, "");
+    let mut listener = session.socket();
+    session.tag(&toplevel, "atoll-mac-sheet");
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    let told = session.message(&mut listener, |message| {
+        message["event"] == proto::event::STATE_CHANGED
+            && message["payload"]["windows"]
+                .as_array()
+                .is_some_and(|rows| rows.iter().any(|row| row["tag"] == "atoll-mac-sheet"))
+    });
+    assert!(told.is_some(), "the new tag is broadcast");
+    assert_eq!(row("mac").tag, "atoll-mac-sheet");
+    drop(listener);
+
+    // `binds.handOver`: the Mac window is handed the Super chords while it
+    // has the keyboard. Until then Super+Z is the zen bind and the window
+    // never sees the Z.
+    const SUPER: u32 = 125;
+    const Z: u32 = 44;
+    const H: u32 = 35;
+    const L: u32 = 38;
+    let seat: wl_seat::WlSeat = session.bind("wl_seat");
+    seat.get_keyboard(&session.queue.handle(), ());
+    session.roundtrip();
+    let zen = || {
+        let seen = state();
+        let focused = seen.workspaces.into_iter().find(|ws| ws.focused);
+        focused.and_then(|ws| ws.zen).is_some()
+    };
+    let handed = || state().hand_over.map(|held| (held.window, held.active));
+    assert!(row("mac").focused);
+    session.typed();
+    session.chord(&[SUPER, Z]);
+    assert!(zen(), "the bind ran");
+    assert_eq!(session.typed(), [SUPER]);
+    session.chord(&[SUPER, Z]);
+    assert!(!zen());
+    session.typed();
+
+    let mut shell = session.socket();
+    let reserved = json!(["SUPER + H", "super+l"]);
+    session.call(
+        &mut shell,
+        proto::method::BINDS_HAND_OVER,
+        json!({ "on": true, "reserved": reserved, "window": row("mac").id }),
+    );
+    assert_eq!(handed(), Some((row("mac").id, true)));
+    let wire = session.call(&mut shell, proto::method::STATE_GET, Value::Null);
+    assert_eq!(wire["handOver"]["reserved"], reserved);
+    assert_eq!(wire["handOver"]["active"], json!(true));
+    let tags: Vec<&Value> = wire["windows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|window| &window["tag"])
+        .filter(|tag| *tag != "")
+        .collect();
+    assert_eq!(tags, ["atoll-mac-sheet"]);
+    session.chord(&[SUPER, Z]);
+    assert!(!zen(), "the chord is the window's, the bind is off the key");
+    assert_eq!(session.typed(), [SUPER, Z]);
+
+    // A reserved chord is still the bind's. It moves the focus, and with
+    // the keyboard on another window every bind is back.
+    session.chord(&[SUPER, H]);
+    assert!(row("native").focused);
+    assert_eq!(session.typed(), [SUPER]);
+    assert_eq!(handed(), Some((row("mac").id, false)));
+    session.chord(&[SUPER, Z]);
+    assert!(zen(), "over the other window the bind runs");
+    session.chord(&[SUPER, Z]);
+    assert!(!zen());
+    assert_eq!(session.typed(), [SUPER, SUPER]);
+
+    // It holds over the window it was asked for: the keyboard back on it,
+    // its chords are its own again without another word from the shell.
+    session.chord(&[SUPER, L]);
+    assert!(row("mac").focused);
+    assert_eq!(handed(), Some((row("mac").id, true)));
+    session.typed();
+    session.chord(&[SUPER, Z]);
+    assert!(!zen());
+    assert_eq!(session.typed(), [SUPER, Z]);
+
+    // Not while a layer has the keyboard, and not under the overview.
+    let (layer, surface) = session.layer();
+    session.roundtrip();
+    assert_eq!(handed(), Some((row("mac").id, false)));
+    layer.destroy();
+    surface.destroy();
+    session.roundtrip();
+    assert_eq!(handed(), Some((row("mac").id, true)));
+    let overview = |open: bool| {
+        ask(move |engine| {
+            engine.set_overview(Some(open));
+            Ok(())
+        })
+        .unwrap();
+    };
+    overview(true);
+    assert_eq!(handed(), Some((row("mac").id, false)));
+    overview(false);
+    session.roundtrip();
+    assert_eq!(handed(), Some((row("mac").id, true)));
+
+    // Another list over the same window binds the keys again.
+    session.call(
+        &mut shell,
+        proto::method::BINDS_HAND_OVER,
+        json!({ "on": true, "reserved": ["SUPER + Z"] }),
+    );
+    session.typed();
+    session.chord(&[SUPER, Z]);
+    assert!(zen(), "reserved now, it is the bind's");
+    session.chord(&[SUPER, Z]);
+    assert!(!zen());
+    assert_eq!(session.typed(), [SUPER, SUPER]);
+
+    // The shell asks out with the window it sees focused, not the one held.
+    session.call(
+        &mut shell,
+        proto::method::BINDS_HAND_OVER,
+        json!({ "on": false, "window": row("native").id }),
+    );
+    assert_eq!(handed(), None);
+
+    // The connection that asked is gone: so is the hand-over, and the
+    // binds are on the keys again.
+    session.call(
+        &mut shell,
+        proto::method::BINDS_HAND_OVER,
+        json!({ "on": true, "reserved": [] }),
+    );
+    assert_eq!(handed(), Some((row("mac").id, true)));
+    drop(shell);
+    for _ in 0..200 {
+        session.roundtrip();
+        if handed().is_none() {
+            break;
+        }
+    }
+    assert_eq!(handed(), None, "the shell died over the window");
+    session.typed();
+    session.chord(&[SUPER, Z]);
+    assert!(zen(), "the bind is back");
+    session.chord(&[SUPER, Z]);
+    assert!(!zen());
+    assert_eq!(session.typed(), [SUPER, SUPER]);
+
+    // The window closing ends it too.
+    let mut shell = session.socket();
+    session.call(
+        &mut shell,
+        proto::method::BINDS_HAND_OVER,
+        json!({ "on": true }),
+    );
+    assert_eq!(handed(), Some((row("mac").id, true)));
+    toplevel.destroy();
+    mac.destroy();
+    session.roundtrip();
+    assert_eq!(handed(), None);
+    drop(shell);
+
+    // The keyboard is where the model has the focus, and the model where
+    // the keyboard is. Two windows nobody has used yet, the newer one with
+    // the keyboard.
+    let older = session.open("older");
+    let newer = session.open("newer");
+    for (surface, app) in [(&older, "older"), (&newer, "newer")] {
+        settle();
+        let rect = row(app).rect.unwrap();
+        session.draw(surface, rect.width, rect.height);
+    }
+    settle();
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    // The window the seat's keyboard is on, and the one the state says.
+    let keyed = || {
+        ask(|engine| {
+            let focus = COMPOSITOR.input.keyboard_focus().get_untracked();
+            let window = focus.and_then(|focus| focus.window_id);
+            Ok(window.map(|id| engine.public(&id)))
+        })
+        .unwrap()
+    };
+    let said = || state().focused_window_id;
+    let (older, newer) = (row("older").id, row("newer").id);
+    assert_eq!((keyed(), said()), (Some(newer.clone()), newer.clone()));
+
+    // A focus the compositor refuses does not stay in the model: it gives
+    // an older window nothing over a newer one unless it is asked on
+    // request.
+    let id = older.clone();
+    ask(move |engine| {
+        let id = engine.resolve(&id)?;
+        engine.model.focus_window(&id);
+        engine.windows[&id].handle.focus();
+        engine.asked_focus = Some(id);
+        engine.commit();
+        engine.settle_focus();
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(said(), older, "the model has it for now");
+    let back = newer.clone();
+    assert!(
+        session.until(|| state().focused_window_id == back),
+        "the model follows the keyboard back"
+    );
+    assert_eq!(keyed(), Some(newer.clone()));
+
+    // `window.focus`, the shell's pick: the older window has the keyboard
+    // and the state says so.
+    let mut shell = session.socket();
+    session.call(
+        &mut shell,
+        proto::method::WINDOW_FOCUS,
+        json!({ "id": older }),
+    );
+    session.roundtrip();
+    assert_eq!((keyed(), said()), (Some(older.clone()), older.clone()));
+    // A press on the newer one: both say so again.
+    let rect = row("newer").rect.unwrap();
+    session.pointer_to(
+        f64::from(rect.x + rect.width / 2),
+        f64::from(rect.y + rect.height / 2),
+    );
+    session.click();
+    assert_eq!((keyed(), said()), (Some(newer.clone()), newer.clone()));
+    drop(shell);
+
+    // `bind.escape`: the shell's command runs and the Escape is the
+    // focused client's all the same.
+    const ESCAPE: u32 = 1;
+    let mark =
+        std::env::temp_dir().join(format!("formalwm-headless-{}/escaped", std::process::id()));
+    let argv = vec!["touch".to_owned(), mark.display().to_string()];
+    ask(move |engine| {
+        engine.escapes.insert("card".into(), argv);
+        engine.bind_escapes();
+        Ok(())
+    })
+    .unwrap();
+    session.typed();
+    session.chord(&[ESCAPE]);
+    assert_eq!(session.typed(), [ESCAPE], "the key reaches the client");
+    assert!(session.until(|| mark.exists()), "and the command ran");
+    escape(None);
+
+    // A modifier let go runs its bind when it was pressed and let go
+    // alone. After a chord with it, only a bind that holds the modifier
+    // it is on runs.
+    const CTRL: u32 = 29;
+    const SHIFT: u32 = 42;
+    const A: u32 = 30;
+    let binds = r#"{ "binds": [
+        { "chord": "Control_L", "action": "zen", "release": true, "passthrough": true },
+        { "chord": "SHIFT+Shift_L", "action": "float", "release": true, "passthrough": true }
+    ] }"#;
+    let binds = Settings::parse(binds, None).unwrap().binds;
+    ask(move |engine| {
+        let mut settings = (*engine.settings).clone();
+        settings.binds.extend(binds);
+        engine.settings = Rc::new(settings);
+        engine.bind_keys();
+        Ok(())
+    })
+    .unwrap();
+    session.chord(&[CTRL]);
+    assert!(zen(), "let go alone, the bind runs");
+    session.chord(&[CTRL, A]);
+    assert!(zen(), "after a chord it does not");
+    session.chord(&[CTRL]);
+    assert!(!zen());
+    session.chord(&[SHIFT, A]);
+    assert!(row("newer").floating, "this one runs after a chord too");
+    session.chord(&[SHIFT]);
+    assert!(!row("newer").floating);
+
+    // The output under the pointer is the focused one, and the keyboard
+    // stays with its window. The first output shows an empty workspace.
+    assert_eq!(state().focused_output, "TEST-2");
+    let mut listener = session.socket();
+    session.pointer_to(WIDTH / 2.0, HEIGHT / 2.0);
+    let told = session.message(&mut listener, |message| {
+        message["event"] == proto::event::STATE_CHANGED
+            && message["payload"]["focusedOutput"] == "TEST-1"
+    });
+    assert!(told.is_some(), "the pointer's output is broadcast");
+    drop(listener);
+    let seen = state();
+    assert_eq!(
+        (seen.focused_output.as_str(), seen.focused_window_id),
+        ("TEST-1", newer.clone())
+    );
+    assert_eq!(keyed(), Some(newer.clone()));
+    // A press on an output with nothing to press on reaches it too.
+    let focus_output = |output: &'static str| {
+        ask(move |engine| {
+            engine.model.focus_output(output);
+            engine.commit();
+            Ok(())
+        })
+        .unwrap();
+    };
+    focus_output("TEST-2");
+    assert_eq!(state().focused_output, "TEST-2");
+    session.click();
+    assert_eq!(state().focused_output, "TEST-1");
+    // Not while a window is dragged across.
+    let dragging = |on: bool| {
+        ask(move |engine| {
+            engine.hold.window_drag = on;
+            Ok(())
+        })
+        .unwrap();
+    };
+    dragging(true);
+    session.pointer_to(WIDTH * 1.5, HEIGHT / 2.0);
+    assert_eq!(state().focused_output, "TEST-1");
+    dragging(false);
+    session.pointer_by(1.0, 0.0);
+    assert_eq!(state().focused_output, "TEST-2");
 
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {

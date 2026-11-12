@@ -7,6 +7,7 @@ pub mod chord;
 pub mod color;
 pub mod cursor;
 pub mod geom;
+pub mod handover;
 pub mod model;
 pub mod motion;
 pub mod overview;
