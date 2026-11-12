@@ -534,10 +534,7 @@ impl Engine {
         let chrome = &self.theme.chrome;
         self.signals.look.set(look_of(&self.theme));
         self.scene.set_motion(&chrome.motion);
-        self.model.set_options(
-            self.settings
-                .options(chrome.gaps_in as f64, chrome.gaps_out as f64),
-        );
+        self.model.set_options(self.settings.options(chrome));
         layers::install(self.settings.clone(), chrome.blur);
         for win in self.windows.values() {
             win.handle

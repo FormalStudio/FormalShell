@@ -671,12 +671,14 @@ impl Settings {
             .is_some_and(|lid| lid == facts.name || facts.described_by(lid))
     }
 
-    pub fn options(&self, gaps_in: f64, gaps_out: f64) -> Options {
+    /// The layout's options under the shell's chrome.
+    pub fn options(&self, chrome: &fs_wm_proto::Chrome) -> Options {
         Options {
             default_width: self.layout.column_width,
             presets: self.layout.presets.clone(),
-            gaps_in,
-            gaps_out,
+            gaps_in: chrome.gaps_in as f64,
+            gaps_out: chrome.gaps_out as f64,
+            border: chrome.border_size.max(0) as f64,
         }
     }
 

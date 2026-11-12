@@ -24,6 +24,9 @@ pub struct Options {
     pub gaps_in: f64,
     /// At the output's edge.
     pub gaps_out: f64,
+    /// The border drawn around a window's rect. Gaps are measured to its
+    /// outer edge, as Hyprland's are.
+    pub border: f64,
 }
 
 impl Default for Options {
@@ -33,7 +36,15 @@ impl Default for Options {
             presets: vec![0.333, 0.5, 0.667, 1.0],
             gaps_in: 4.0,
             gaps_out: 8.0,
+            border: 0.0,
         }
+    }
+}
+
+impl Options {
+    /// What a tile keeps clear on each side of its cell.
+    pub fn tile_inset(&self) -> f64 {
+        self.gaps_in + self.border
     }
 }
 
@@ -1386,6 +1397,7 @@ impl Model {
             let shown = output.active == ws.id;
             let strip = self.strip_of(&ws.output);
             let zen_rect = self.zen_rect(&ws.output);
+            let maximized = output.geo.usable.inset(self.options.border);
             let zen_column = ws
                 .zen
                 .as_ref()
@@ -1406,7 +1418,7 @@ impl Model {
             };
             for (order, cell) in ws
                 .tape
-                .cells(strip, self.options.gaps_in)
+                .cells(strip, self.options.tile_inset())
                 .into_iter()
                 .enumerate()
             {
@@ -1435,7 +1447,7 @@ impl Model {
                 {
                     place.scrolls = false;
                     (place.rect, place.layer) = match kind {
-                        Big::Maximized => (output.geo.usable, Layer::Maximized),
+                        Big::Maximized => (maximized, Layer::Maximized),
                         Big::Fullscreen => (output.geo.rect, Layer::Fullscreen),
                     };
                 }
@@ -1461,7 +1473,7 @@ impl Model {
                     && big == id
                 {
                     (place.rect, place.layer) = match kind {
-                        Big::Maximized => (output.geo.usable, Layer::Maximized),
+                        Big::Maximized => (maximized, Layer::Maximized),
                         Big::Fullscreen => (output.geo.rect, Layer::Fullscreen),
                     };
                 }

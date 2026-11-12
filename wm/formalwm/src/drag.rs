@@ -403,7 +403,7 @@ impl Engine {
             let strip = self.model.strip_of(&output).w.max(1.0);
             self.model.focus_window(&id);
             self.model
-                .set_column_width((rect.w + 2.0 * self.model.options.gaps_in) / strip);
+                .set_column_width((rect.w + 2.0 * self.model.options.tile_inset()) / strip);
         }
         self.scene.sync(&self.model);
         self.scene.finish();

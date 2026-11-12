@@ -37,7 +37,7 @@ fn setup() {
         look: signal(engine::look_of(&theme)),
         stage: signal(stage::Stage::default()),
     };
-    let options = settings.options(theme.chrome.gaps_in as f64, theme.chrome.gaps_out as f64);
+    let options = settings.options(&theme.chrome);
     engine::install(Engine {
         dir,
         settings: Rc::new(settings),

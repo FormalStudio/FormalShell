@@ -3,7 +3,7 @@ mod common;
 use common::*;
 use formalwm_core::{
     geom::Rect,
-    model::{Big, Home, Layer, Placement, WorkspaceSpec},
+    model::{Big, Home, Layer, Options, Placement, WorkspaceSpec},
     tape::Side,
 };
 
@@ -641,10 +641,58 @@ fn the_outer_gap_lies_inside_what_a_layer_reserves_at_the_side() {
     );
     // A lone column narrower than the strip is centred in what is left.
     model.set_column_width(0.5);
-    assert_eq!(place(&model, "a").rect, Rect::new(602.0, 8.0, 871.0, 1064.0));
+    assert_eq!(
+        place(&model, "a").rect,
+        Rect::new(602.0, 8.0, 871.0, 1064.0)
+    );
 
     model.set_outputs(side(0.0, 1766.0));
-    assert_eq!(place(&model, "a").rect, Rect::new(448.0, 8.0, 871.0, 1064.0));
+    assert_eq!(
+        place(&model, "a").rect,
+        Rect::new(448.0, 8.0, 871.0, 1064.0)
+    );
     model.set_column_width(1.0);
     assert_eq!(place(&model, "a").rect, Rect::new(8.0, 8.0, 1750.0, 1064.0));
+}
+
+#[test]
+fn gaps_are_measured_to_the_outer_edge_of_a_window_s_border() {
+    for border in [1.0, 2.0] {
+        let mut model = desk();
+        model.set_options(Options {
+            border,
+            ..Options::default()
+        });
+        let mut geo = output("A", 0.0, 1920.0, 1080.0);
+        geo.usable = Rect::new(154.0, 0.0, 1766.0, 1080.0);
+        model.set_outputs(vec![geo]);
+        open(&mut model, "a");
+        open(&mut model, "b");
+        let (a, b) = (place(&model, "a"), place(&model, "b"));
+        // The outer gap, from what the layers leave to the border.
+        assert_eq!(a.rect.x - border, 154.0 + 8.0);
+        assert_eq!(a.rect.y - border, 8.0);
+        assert_eq!(1080.0 - (a.rect.bottom() + border), 8.0);
+        assert_eq!(1920.0 - (b.rect.right() + border), 8.0);
+        // The inner gap, from border to border.
+        assert_eq!(b.rect.x - a.rect.right(), 8.0 + 2.0 * border);
+
+        assert!(model.consume_or_expel(Side::Prev));
+        let (a, b) = (place(&model, "a"), place(&model, "b"));
+        assert_eq!((a.column, b.column), (0, 0));
+        assert_eq!(b.rect.y - a.rect.bottom(), 8.0 + 2.0 * border);
+        assert_eq!(1080.0 - (b.rect.bottom() + border), 8.0);
+
+        // A maximised window's border lies inside what the layers leave.
+        assert!(model.toggle_big("b", Big::Maximized));
+        assert_eq!(
+            place(&model, "b").rect,
+            Rect::new(
+                154.0 + border,
+                border,
+                1766.0 - 2.0 * border,
+                1080.0 - 2.0 * border
+            )
+        );
+    }
 }
