@@ -20,7 +20,8 @@ no Xwayland. A second output is one `outputs.create` makes. What needs more
 than that is headless, unit or **no** below.
 
 Sessions and what they need: `session.sh`, `session2.sh`, `tape.sh`,
-`rules.sh`, `layers.sh`, `drags.sh`, `overview.sh`, `outputs.sh` run bare.
+`rules.sh`, `layers.sh`, `drags.sh`, `overview.sh`, `outputs.sh`, `cursor.sh`
+run bare.
 `host.sh` with `FWM_HOST=host-default.json`, `misc.sh` with
 `FWM_HOST=host-misc.json`, `motion.sh` with `FWM_TIMING=1`, `shell.sh` with
 `FWM_SHELL` naming FormalShell, `binds.sh` with `FWM_KEYS=wtype` and
@@ -28,9 +29,12 @@ Sessions and what they need: `session.sh`, `session2.sh`, `tape.sh`,
 `FWM_SHELL`.
 
 Every rig, headless and unit line was run again on one build: `shoji`
-0425449c on `formal` 8709f3c, `formalwm` sha256
-`7dc572d41ebf227a98b5b5c00d05b19bbe0b93f17f072ca630347ad2ebc62491`. The
-numbers quoted are that run's.
+96614b42 on the fork's `formal-rs` 85f78ef, which is `formal` 50100de and six
+commits on it, `formalwm` sha256
+`edd2b879d8a4963fe148e2355405bb4ac0d7689918856e656b150aa90c880134`. The
+numbers quoted are that run's. The default border is 2 px and every rect
+below is a window's content, so the first column starts at x 10: 8 of gap
+and 2 of border.
 
 ## Spec 2: the engine
 
@@ -39,22 +43,26 @@ numbers quoted are that run's.
 | `formalwm` is the compositor, on `shojiwm_rs`, in its own workspace | rig | every session starts it on the tty |
 | Settings are data in `~/.config/formalwm/`, read at start | rig | `session.sh` start: the nine names, 73 binds; `host.sh`: the host file's pins and mode |
 | Read again on the control socket's `reload` | rig | `session.sh`, `host.sh`: `config.reloaded`, new binds and outputs in force |
-| A bad file keeps the running settings and reports the error | rig | `session.sh`: `config.failed` with `binds[0]: unknown action`, windows unmoved, SUPER+Return still opens a terminal |
+| A bad file keeps the running settings and reports the error | rig, unit | `session.sh`: `config.failed` for an action the engine has not, a key no keymap has (`shortcut \`Super+Retrun\` contains unknown key \`Retrun\``), an env name and an env value that cannot be set (`env: \`A=B\` cannot be set`); windows unmoved, SUPER+Return still opens a terminal; `an_env_name_or_value_that_cannot_be_set_is_refused`, `a_shortcut_the_core_cannot_read_is_refused` |
 | The shell's settings format: comments, trailing commas | unit | `comments_and_trailing_commas_are_allowed`, `the_shared_file_loads_on_its_own` |
 | The host file lays over the shared one | rig, unit | `host.sh`; `the_host_file_lays_over_the_shared_one`, `g815_lays_its_outputs_over_the_shared_file` |
 | Wire types are `crates/fs-wm-proto` | unit | its eight tests read and write the spec's JSON |
-| Columns of stacked windows | rig | `tape.sh`: `[8,8 500x372]` over `[8,388 500x372]`; `session.sh`: `05-stack` |
-| Default column width 0.5 | rig | `tape.sh`: 500 of 1024 less the gaps |
-| Presets 0.333, 0.5, 0.667, 1.0 | rig, unit | `tape.sh`: SUPER+R to 670, SUPER+F to 1008; the wrap to 0.333 in `presets_cycle_upward_and_wrap` |
-| A lone column keeps its width and is centred | rig | `tape.sh`: `[262,8 500x752]` |
+| Columns of stacked windows | rig | `tape.sh`: `[10,10 496x368]` over `[10,390 496x368]`; `session.sh`: `05-stack` |
+| Default column width 0.5 | rig | `tape.sh`: 496 of 1024 less the gaps and the border |
+| Presets 0.333, 0.5, 0.667, 1.0 | rig, unit | `tape.sh`: SUPER+R to 666, SUPER+F to 1004; the wrap to 0.333 in `presets_cycle_upward_and_wrap` |
+| A lone column keeps its width and is centred | rig | `tape.sh`: `[264,10 496x748]` |
 | Focus fits the column by the least scroll, no recentring | rig, unit | `tape.sh`: focus three moves nothing, focus two scrolls one column; `focus_fits_by_the_least_scroll_and_does_not_recentre` |
-| 8 px between everything, from the theme | rig, unit | `tape.sh`: x 8, 516; `session.sh` with `gapsIn` 8 and `gapsOut` 16: `[16,16 488x736]`, `[520,16 488x736]`; `eight_pixels_between_everything` |
+| 8 px between everything, from the theme | rig, unit | `tape.sh`: x 10 and 518, 496 wide; `session.sh` with `gapsIn` 8, `gapsOut` 16 and `borderSize` 4: `[20,20 480x728]`, `[524,20 480x728]`; `eight_pixels_between_everything` |
+| Gaps are measured to the outer edge of a window's border | rig, unit | `tape.sh` at border 2: 8 from the output's edge to the border, 8 between two borders (one content ends at 506, the next starts at 518, less 2 and 2); `shell.sh` under the shell's gap of 6 and border of 1: `[7,41 500x720]` below a bar reserving 34; `session2.sh`: 154 reserved on the left puts the window at x 164, on the right its far edge at 860; `gaps_are_measured_to_the_outer_edge_of_a_window_s_border` (border 1 and 2: the outer gap, between columns, between stacked windows), `the_outer_gap_lies_inside_what_a_layer_reserves_at_the_side` |
+| A maximised window keeps its border in view | rig, unit | `tape.sh`: SUPER+M is `[2,2 1020x764]`; the same test. Zen and fullscreen are as they were |
 | Nine workspaces with the spec's names | rig | `session.sh` start |
-| Stacked vertically, a switch slides vertically | rig | `motion.sh`: `one y` frame by frame from 8 to -760; `session.sh`: `08-switching` |
+| Stacked vertically, a switch slides vertically | rig | `motion.sh`: `one y` frame by frame from 10 to -758; `session.sh`: `08-switching` |
 | A workspace pinned to an output by the host settings | rig, headless, unit | `host.sh` on the one output (2, 3, 4 pinned, 3 in view at the start); `outputs.sh`: 4 and 8 move to a made output on a reload, and Slack opens there; headless: stacks `1 2 3 5 6 7 9` and `4 8`; `workspaces_pinned_by_the_host_live_on_their_output` |
 | Focus changes on click only | rig | `rules.sh`: the pointer over another window leaves the focus; `session2.sh`: a click moves it |
 | The hovered window still gets pointer events | rig | `rules.sh`: the unfocused client prints `hover` |
 | Every bind in `hyprland.lua`, same chords | rig | the bind table below |
+| A chord runs every bind it has, each by its own flags | rig, unit | `binds.sh`: a second bind on the volume key, not marked `locked` and not `repeat`, runs beside the first, once while the key is held for 23 runs of the first, and not on the lock screen; `on_the_lock_screen_a_chord_runs_only_its_binds_marked_locked`, `each_bind_of_a_shortcut_keeps_what_it_says_of_itself` |
+| A bind on a modifier let go is taken by the chord that used it, unless `passthrough` | rig, unit | `binds.sh`: a plain bind on Alt let go does not run after Alt+Tab, where the `passthrough` one commits the switcher, and both run when Alt is tapped alone; the same test |
 | The es number row by keycode | rig | `tape.sh` through `--key` and again through wtype typing the es digits; SUPER+SHIFT+4 too |
 | Three fingers sideways drag the tape 1:1 | headless | scroll 716 for 300 px of fingers from 1016 |
 | A release flings and snaps to a column | headless, unit | rests on a column edge with the focus in view; `a_released_scroll_snaps_a_column_edge_to_a_view_edge` |
@@ -65,18 +73,24 @@ numbers quoted are that run's.
 | Rule matcher: toplevel tag | rig, unit | `rules.sh`: a window tagged `atoll` floats, the same app untagged tiles; `tag_and_xwayland_matchers` |
 | Rule matcher: xwayland | unit | `tag_and_xwayland_matchers`; no Xwayland on the rig |
 | Rule effects: workspace, float, pin, size, position | rig | `rules.sh`, the rule table below |
-| Rule effect: opacity | rig | `rules.sh`: a rule of 0.5 added by a reload; a window of 42 74 106 reads 148 164 180 over white and 31 50 69 over the desk, half of each (`71-opacity`). No rule of the owner's sets one |
+| Rule effect: `confinePointer` | rig, headless, unit | `cursor.sh`: over a window of `[264,10 496x748]` whose rule sets it, a mouse pushed 3000 px stops at 760, at 758 and at 264, 10, and runs on to 1024 once another window has the keyboard; headless: held at the window's edge on the second output, free when another window opens; the matcher in `the_rules_place_the_apps_they_name` |
+| Rule effect: opacity | rig | `rules.sh`: a rule of 0.5 added by a reload; a window of 42 74 106 reads 148 164 180 over white and 21 37 53 over the black desk, half of each (`71-opacity`). No rule of the owner's sets one |
 | Motion on the six families | rig, unit | the motion section below |
+| The dynamic cursor: stretched along the way it travels | rig, headless, unit | `cursor.sh`, the pointer's picture cut out of a screenshot against the bare desk: 16x24 at rest; 28x16 gliding right at 1600 px/s (told 1.8 along, 0.6 across, axis 0), 11x40 down at 1500 (1.73, 0.64, axis 90), 34x39 down and right at 1770 (1.81, 0.59, axis 45), never rotated, 16x24 again a second later; headless: the core holds a transform while the pointer moves and none at rest; `a_pointer_at_speed_stretches_along_its_way_and_stays_upright`, `the_speed_s_share_of_the_full_effect` |
+| Shaken, it grows, and stays grown two seconds | rig, unit | `cursor.sh`: 126x189 after fourteen strokes, 16x24 four and a half seconds on; `a_shaken_pointer_grows_and_goes_back_after_the_timeout`. The growth stops at 8 times, the core's bound, where the plugin has none |
+| `cursor.dynamic`: `tilt`, `none`, shake off, what cannot be | rig, unit | `cursor.sh` after reloads: tilt turns the image up to 16 degrees right and -16 left with no stretch, `none` with shake off tells the core nothing, a limit of 0 is `config.failed`; `a_tilt_leans_into_sideways_travel`, `the_settings_default_to_the_owner_s_and_refuse_what_cannot_be`; the example file's values in `the_shared_file_loads_on_its_own` |
+| No shape while the cursor is hidden or the session locked, none at rest | rig, headless | `cursor.sh`: a hidden pointer's glide tells the core nothing, and every glide ends on no transform; `locked.sh` with the shell: a sweep across the lock screen tells nothing, the same sweep after the unlock 21 shapes |
+| The same on a hardware cursor plane | no | the rig draws the cursor in software; needs the g815. The plugin pivots the stretch at the leading edge of the image, the core at the hotspot |
 | Blur and alpha threshold per layer namespace | rig | `layers.sh` |
 | No compositor animation on a `formalshell:*` layer | no | nothing to observe: the engine animates no layer and the core has no layer animation. `animate` is read (`a_layer_rule_by_namespace`) |
 | A settings reload keeps every window where it is | rig, unit | `session.sh`: same workspaces and columns after `reload`; `a_settings_reload_keeps_every_window_where_it_is` |
 | Session start runs `formalshell-start.sh` once the socket is up | rig | `session2.sh`: the script wrote `display wayland-1, socket up` |
-| `FORMALWM_START_LOCKED=1`: nothing is drawn before the lock | rig | `locked.sh` with the shell: the start script takes 70 screenshots as fast as grim can from the moment it runs. Two are the core's clear colour, three black, then the lock's picture, secure 400 ms after the first; none has the window the script started, though `state.get` lists it |
+| `FORMALWM_START_LOCKED=1`: nothing is drawn before the lock | rig | `locked.sh` with the shell: the start script takes 70 screenshots as fast as grim can from the moment it runs. The first six are black, 0 0 0, then the lock's own frames, secure 137 ms after the first; none has the window the script started, though `state.get` lists it |
 | The shell's lock comes up and the password opens the desktop | rig | `locked.sh` with the shell: `lock status` secure with `boot` true, `85-locked` without a pixel of the window; the password typed through wtype, `86-unlocked` with the window and the shell's six layers |
 | The start script runs while locked | rig | `locked.sh`, both ways: `display wayland-1, socket up`, and the shell it starts is what locks |
-| Locked and no shell: it stays dark and does not unlock | rig | `locked.sh` bare: all 70 frames the one clear colour, also at 13 s (`87-dark`, and `88-dark-with-pointer`: the pointer stays hidden too), SUPER+Return opens nothing |
+| Locked and no shell: it stays dark and does not unlock | rig | `locked.sh` bare: all 70 frames black, also at 13 s (`87-dark`, and `88-dark-with-pointer`: the pointer stays hidden too), SUPER+Return opens nothing |
 | Without the variable nothing changes | rig | every other session starts without it and draws at once |
-| `shojiwm_rs` and `shojiwm_lib` by git rev | rig | `formalwm/Cargo.toml` names a rev of `formal`; a fresh clone of this branch builds with `--locked` in the container, with no ShojiWM checkout beside it |
+| `shojiwm_rs` and `shojiwm_lib` by git rev | rig | `formalwm/Cargo.toml` names a rev of the fork's `formal-rs`; a fresh clone of this branch builds with `--locked` in the container, with no ShojiWM checkout beside it |
 
 ## Spec 3: the socket
 
@@ -87,6 +101,7 @@ numbers quoted are that run's.
 | `$SHOJIWM_SOCKET` is never bound by the engine | rig, unit | `reload` written to `$SHOJIWM_SOCKET` works in `session.sh`, `host.sh`, `binds.sh`; `the_json_socket_is_not_the_control_socket` |
 | `state.changed` once per tick, dropped when unchanged | rig, unit | `session.sh`: one broadcast across one focus change, none in the idle seconds around it; `the_same_model_publishes_the_same_json` |
 | `State.outputs`, logical | rig | `session2.sh`: 512x384 at scale 2 |
+| `outputs[].reserved` | rig, unit | `session2.sh`: top 36 under a bar, and 154 or 148 at the side a layer reserves there; `shell.sh`: 34 under the shell's bar on both outputs; `an_output_says_what_its_layers_reserve` |
 | `State.workspaces`: id, idx, name, output, active, focused | rig | `session.sh` start |
 | `workspaces[].urgent`, `columns` | unit | `zen_fullscreen_urgency_and_the_shown_overlay`, `the_state_the_socket_publishes` |
 | `workspaces[].zen` | rig | `tape.sh`, `session.sh` |
@@ -102,7 +117,7 @@ numbers quoted are that run's.
 | `focusedWindowId`, `focusedWorkspaceId`, `focusedOutput`, `overview` | rig | `session.sh` |
 | `keyboard` | rig | `host.sh`: `es`, then `us` after a reload |
 | `cursorHidden` | rig | `rules.sh`, `session2.sh` |
-| `chrome` | rig | `session.sh`: `gapsOut` 16, `activeBorder` `#ff0000`; `shell.sh`: the shell's own theme |
+| `chrome`, with `borderSize` | rig, unit | `session.sh`: `gapsOut` 16, `borderSize` 4, `activeBorder` `#ff0000`; `shell.sh`: the shell's own, `borderSize` 1; `the_chrome_says_the_border_the_gaps_are_measured_to` |
 | `workspace.focus` | rig | `session.sh` |
 | `workspace.focusAt` | rig, unit | `session2.sh` by idx; with `output` in `workspaces_by_stack_position_and_by_neighbour` |
 | `window.focus` | rig | `motion.sh`, `drags.sh` |
@@ -118,18 +133,19 @@ numbers quoted are that run's.
 | `overview.set` | rig | `motion.sh`, `overview.sh` |
 | `spawn` with `cwd` | rig | `session2.sh` |
 | `bind.escape` | rig | `session2.sh`: runs once while set, not after; `misc.sh` |
-| `binds.list` | rig | `session.sh`: 73 rows, `mods` in the wire order, `code:10` |
+| `binds.list` | rig, headless | `session.sh`: 73 rows, `mods` in the wire order, `code:10`; `session2.sh` and headless: a row for the shell's Escape while `bind.escape` is set, gone after |
 | `cursor.pos` | rig | `session2.sh`, `misc.sh` |
 | `cursor.hide` | rig | `session2.sh` |
-| `layers.list` | rig | `session2.sh`: three layers bottom first with boxes and pids; `shell.sh`: the shell's own |
+| `layers.list` | rig | `session2.sh`: three layers bottom first with boxes and pids; `shell.sh`: the shell's own, and with a made output each one once under its output |
 | `outputs.get` | rig | `session2.sh`: 34 modes, 60.004 Hz; `overview.sh`: zeros when disabled; `outputs.sh`: a made output lists its one mode |
 | `outputs.set` `scale` | rig | `session2.sh`: 2 and back, `30-scale2` |
 | `outputs.set` `enabled` | rig | `overview.sh`: off, on, every window where it was; `outputs.sh` on a made output |
+| `outputs.set` `width`, `height` | rig, unit | `shell.sh`: a made output of 800x600 set to 1600x900 is that size in `State.outputs`, the shell's wallpaper and bar on it are told 1600 wide and none is closed or made twice; refused on `Virtual-4`; one field alone and what is refused in `outputs_set_resizes_only_an_output_outputs_create_made` |
 | `outputs.set` `mirror`, set and cleared | rig | `outputs.sh` on a made output: the core is given the mirror and its source, `mirrorOf` reports it, and clearing it brings the output back with its workspace and window |
 | The mirrored picture | no | the rig's only second output has no connector, and the core mirrors onto a scanout: the made output's capture shows the bare desk while it mirrors (`52-mirror`) |
-| `outputs.set` `color` | no | vkms has no HDR. The core is given `hdr` on a `cm` other than `srgb`; `bitdepth`, `sdrBrightness` and `sdrSaturation` have no core setting (it takes SDR white in cd/m² and a gamut, not Hyprland's factors) |
+| `outputs.set` `color` | no | vkms has no HDR. The core is given HDR on for a `cm` other than `srgb` and its automatic mode otherwise (line 299 below); `bitdepth`, `sdrBrightness` and `sdrSaturation` have no core setting (it takes SDR white in cd/m² and a gamut, not Hyprland's factors) |
 | `outputs.create` | rig | `outputs.sh`: answers the name, right of the others at y 0, a workspace of its own, one `state.changed`, a window drawn on it (`50-made-output`), kept across a reload; a taken name and a size of 0 are refused |
-| `outputs.remove` | rig | `outputs.sh`: its workspaces and windows go to the output that is left; an output with a connector and an unknown name are refused |
+| `outputs.remove` | rig | `outputs.sh`: its workspaces and windows go to the output that is left; an output with a connector and an unknown name are refused; `shell.sh`: its layers are gone from `layers.list` and none is left on the other output, also when it is made again under its name |
 | `theme.set` | rig | `session.sh`, `motion.sh`, `misc.sh`, `layers.sh` |
 | The last theme stands across a settings reload | rig | `overview.sh` |
 | `session.exit` | rig | `session2.sh`: socket gone, no `formalwm` left |
@@ -167,7 +183,7 @@ numbers quoted are that run's.
 | --- | --- | --- |
 | A layout mode, not a float: `floating` stays false, the column is kept | rig | `tape.sh`: `three c2` throughout |
 | The zen window takes the zen size, centred | rig | `tape.sh`: `[12,46 1000x676]`; `session.sh`: `10-zen` |
-| Every other column slides off the side it was on | rig | `tape.sh`: -1524, -1016 to the left, 2048 to the right |
+| Every other column slides off the side it was on | rig | `tape.sh`: -1522, -1014 to the left, 2050 to the right |
 | The tape does not scroll while it holds | unit | `zen_takes_the_centre_and_the_tape_slides_off_its_sides` |
 | Toggling again slides the tape back, the window in its column at its width | rig | `tape.sh`: `the tape is as it was` |
 | Closing the window brings the tape back | rig | `tape.sh` |
@@ -195,10 +211,11 @@ numbers quoted are that run's.
 | Held at the corner, the overview opens (data) | rig | `drags.sh`: `78-corner` |
 | Held at the corner, the overview opens (a window) | rig | `session2.sh`: `25-sprung` |
 | Held over a workspace there, the session goes to it | rig | `drags.sh`, `session2.sh` |
-| Held at a tape edge, the tape scrolls | rig | `drags.sh`: scroll to 1016 and back, with data and with a window in the hand |
+| Held at a tape edge, the tape scrolls | rig | `drags.sh`: 941 px on a second after the hand set off, and back, with data and with a window in the hand |
 | Held over a window, that window is focused and the drop lands in it | rig | `drags.sh`: the text arrives in the terminal and the keyboard follows, `73-dropped` |
 | SUPER and the left button lift a window out of the tape | rig | `session2.sh`: `21-dragging` |
 | Dropped into the column gap under the pointer | rig, unit | `session2.sh`: `22-dropped`; `a_drop_lands_in_the_gap_under_the_pointer` |
+| One window of a stack in the hand leaves the rest of its column | rig, unit | `drags.sh`: of two stacked in column 2 the one dragged lands in a column of its own, the other fills the column it stays in; `one_window_moved_out_of_a_stack_leaves_the_rest_of_its_column` |
 | Dropped onto a workspace in the overview | rig | `session2.sh`: `26-dropped-in-overview` |
 
 ## hyprland.lua, top to bottom
@@ -219,11 +236,11 @@ numbers quoted are that run's.
 | 142-151 | The environment, the host's on top | rig | `host.sh`: a spawned shell prints `nvidia direct Bibata-Modern-Classic qt6ct` |
 | 157 | `kb_layout = es` | rig | `host.sh`: `keyboard.layouts` |
 | 159 | `caps:escape` | rig | `misc.sh`: key 66 runs what Escape is bound to |
-| 160-161 | Repeat 40 a second after 250 ms | rig | `binds.sh`: 25 runs in 900 ms held |
+| 160-161 | Repeat 40 a second after 250 ms | rig | `binds.sh`: 23 to 25 runs in 900 ms held |
 | 165 | `follow_mouse = 2` | rig | `rules.sh` |
 | 168-182 | Pointer and touchpad: accel, sensitivity, natural scroll, clickfinger, typing, scroll factor | no | handed to the core's input factory; no libinput device on the rig |
 | 190-191 | The gaps from the theme | rig | `session.sh` |
-| 192 | The border, 2 px | rig | `session.sh` with `borderSize` 4: `16-theme` |
+| 192 | The border, 2 px | rig | `session.sh` with `borderSize` 4: `16-theme`, the rects 4 further in; `chrome.borderSize` says the width |
 | 194 | The scrolling layout | rig | `tape.sh` |
 | 195 | `resize_on_border` | rig | `rules.sh`: a float's edge and a tile's |
 | 200-203 | Border colours from the theme | rig | `motion.sh`: 67 133 190 focused; `session.sh`: red |
@@ -234,19 +251,19 @@ numbers quoted are that run's.
 | 234 | A vertical swipe goes on past the neighbour | headless | |
 | 240 | A focus change leaves the pointer where it is | rig | `misc.sh`: 700,500 before and after |
 | 244 | Rounding from the theme | rig | `session.sh` with rounding 0: `16-theme` |
-| 248-255 | The shadow from the theme | rig | `misc.sh`: 40 41 43 without, 97 97 99 with a white one, `99-shadow` |
+| 248-255 | The shadow from the theme | rig | `misc.sh`: 34 34 34 without, 92 92 92 with a white one, `99-shadow` |
 | 260 | `dim_special = 0.6` | rig | `motion.sh` |
 | 264-265 | The host's opacity on every window | rig | `host.sh`: a terminal's 36 36 36 reads 45 45 45 at 0.96 over white; `rules.sh` at 0.5 |
-| 266-271 | Blur behind what is translucent, size 8, two passes | rig | `misc.sh`: text behind a 0.8 window has sharpness 0.11 blurred, 0.51 with the theme's blur off, 20.37 beside the window (`97-blur`, `98-no-blur`); `rules.sh`: six pixels from a white strip's edge behind a 0.5 window, 56 74 93 blurred against 31 50 69 |
+| 266-271 | Blur behind what is translucent, size 8, two passes | rig | `misc.sh`: text behind a 0.8 window has sharpness 0.12 blurred, 0.53 with the theme's blur off, 19.81 beside the window (`97-blur`, `98-no-blur`); `rules.sh`: six pixels from a white strip's edge behind a 0.5 window, 49 65 81 blurred against 21 37 53 |
 | 273 | Animations off with the shell's motion | rig | `motion.sh` |
 | 275-276 | No logo, no splash | rig | any screenshot |
-| 279 | Black under everything | no | not met: the core clears to its own 20 26 33 (`CLEAR_COLOR` in `tty.rs`), which is also what a locked start shows until the lock's first frame |
+| 279 | Black under everything | rig, headless | the core's clear colour, set at the start and again after a settings reload: `session.sh` reads the bare desk 0 0 0 after its reloads, `outputs.sh` the same at a made output's edge, `locked.sh` 70 black frames; headless: black at the start and after a reload |
 | 284 | A window that asks for the focus gets it | rig | `misc.sh`: `wlrctl toplevel focus`, the view follows to its workspace |
 | 285 | `anr_missed_pings` | no | not ported: the core has no dialog for a client that stopped answering |
 | 288 | The lock is taken back by a restarted shell | no | the core's session lock; the backend agent's sweep proved lock and unlock on this build |
 | 291 | VRR off unless an output asks | rig, headless, unit | every bare session: `Output.vrr` false and the core never asked; `vrr` 2 and 3 as in the host table below; the levels 0 to 3 in `outputs_match_by_connector_then_description_then_the_catch_all` |
-| 294 | Direct scanout per host | no | the core has no switch; `directScanout` is read and unused. A fullscreen window is given no frame so its buffer can reach the plane |
-| 299 | Auto HDR | no | the core has no such mode |
+| 294 | Direct scanout per host | headless | `directScanout` false in the host file reaches the core's setting for every output. What a plane then shows needs hardware |
+| 299 | Auto HDR | headless | every output is given the core's automatic mode: SDR until a fullscreen window shows HDR content. The switch itself needs an HDR panel, the g815's |
 | 306-308 | Xwayland renders at scale 1 | no | no Xwayland on the rig, no core setting |
 | 318-322 | The DualSense touchpad: flat, 0.7 | no | handed to the core by device name; no such device on the rig |
 | 329-346 | The animations | rig | the motion section |
@@ -255,7 +272,7 @@ numbers quoted are that run's.
 | 358 | Three fingers up and down | headless | |
 | 360-415 | The pointer hidden until the shell arrives | rig | `rules.sh`: hidden at the start; `shell.sh`: shown once the shell asks |
 | 445-447 | Shown after ten seconds without a shell | rig | `rules.sh`: hidden, then shown, the pointer's picture in the second shot |
-| 417-434 | The pointer leaning and growing | no | not ported: a Hyprland plugin, the core draws the cursor untransformed |
+| 417-434 | The pointer leaning and growing | rig, headless, unit | `cursor.dynamic` in the settings, with the plugin's values as `hyprland.lua` sets them: `stretch`, the tilt's 20 degrees at 3000 px/s, shake on. The rows of spec 2 above; on a hardware cursor plane: no, needs the g815 |
 | 438-444 | Xwayland's primary output | no | `xrandr` is run at start and when an output is added; no Xwayland on the rig |
 
 ### Binds (452 to 593)
@@ -269,13 +286,13 @@ Pressed through wtype with FormalShell running and a recorder standing in for
 | 452 | SUPER+Space, menu toggle | rig | `binds.sh` |
 | 456 | SUPER+period, emoji | rig | `binds.sh` |
 | 458 | SUPER+ntilde, clipboard | rig | `binds.sh` |
-| 464, 533 | SUPER+plus, console toggle and +10% | rig | `binds.sh`: the command ran; `tape.sh`: 568 to 670 |
+| 464, 533 | SUPER+plus, console toggle and +10% | rig | `binds.sh`: the command ran; `tape.sh`: 564 to 666 |
 | 465 | SUPER+SHIFT+T, theme mode | rig | `binds.sh` |
 | 469 | SUPER+SHIFT+E, logout | rig | `binds.sh` |
 | 470 | SUPER+SHIFT+Escape, lock then suspend | rig | `binds.sh`: `lock lock`, then `systemctl suspend`, through sh |
 | 482 | Print | rig | `binds.sh` |
 | 483 | SUPER+SHIFT+S | rig | `binds.sh` |
-| 491-492 | Volume up and down, locked, repeating | rig | `binds.sh`: 25 runs held, and they run locked |
+| 491-492 | Volume up and down, locked, repeating | rig | `binds.sh`: 23 and 24 runs held, and they run locked |
 | 493-494 | Mute, mic mute | rig | `binds.sh`: once held, not while locked |
 | 495-496 | Brightness, locked, repeating | rig | `binds.sh` |
 | 497-500 | Play, pause, next, previous | rig | `binds.sh` |
@@ -288,10 +305,10 @@ Pressed through wtype with FormalShell running and a recorder standing in for
 | 517-518 | SUPER+H, L, wrapping | rig | `tape.sh` |
 | 519-520 | SUPER+J, K | rig | `tape.sh` |
 | 521-524 | SUPER+SHIFT+H, L, J, K | rig | `tape.sh` |
-| 529 | SUPER+F | rig | `tape.sh`: `[8,8 1008x752]` |
-| 530 | SUPER+M | rig | `tape.sh`: `[0,0 1024x768]` |
+| 529 | SUPER+F | rig | `tape.sh`: `[10,10 1004x748]` |
+| 530 | SUPER+M | rig | `tape.sh`: `[2,2 1020x764]`, the border in view |
 | 531 | SUPER+R | rig | `tape.sh` |
-| 532 | SUPER+minus | rig | `tape.sh`: 670 to 568 |
+| 532 | SUPER+minus | rig | `tape.sh`: 666 to 564 |
 | 538 | SUPER+C | rig | `tape.sh` |
 | 539-540 | SUPER+comma, SUPER+SHIFT+comma | rig | `tape.sh` |
 | 544-547 | SUPER+1 to 9, SUPER+SHIFT+1 to 9 following | rig | `tape.sh`: all nine; SUPER+SHIFT+4 |
@@ -299,7 +316,7 @@ Pressed through wtype with FormalShell running and a recorder standing in for
 | 554, 556 | SUPER+O, SUPER+E | rig | `session.sh`, `overview.sh`; the engine's own overview, not the shell's |
 | 560 | SUPER+Z | rig | `tape.sh`; the engine's own zen |
 | 569-570 | ALT+Tab, ALT+SHIFT+Tab, repeating | rig | `binds.sh`: `switcher next`, `switcher prev` |
-| 575-576 | Letting Alt go commits | rig | `binds.sh` through wtype: `switcher next`, then `switcher commit` when Alt goes, no key after it; Tab twice under Alt steps twice before the one commit; while Alt is held another window hears the pointer and a click focuses it. The compositor's `--key` presses and lets go at once: both commands run, in the order their two processes reach the recorder. A release bind of a reloaded file in `session2.sh` |
+| 575-576 | Letting Alt go commits | rig | `binds.sh` through wtype: `switcher next`, then `switcher commit` when Alt goes, no key after it; Tab twice under Alt steps twice before the one commit; while Alt is held another window hears the pointer and a click focuses it. The compositor's `--key` presses and lets go at once: both commands run, in the order their two processes reach the recorder. A second bind on Alt let go, without `passthrough`, runs only when Alt is tapped with no key between. A release bind of a reloaded file in `session2.sh` |
 | 586-587 | SUPER and the wheel | rig | `tape.sh`: the occupied workspaces, wrapping, both ways |
 | 588-589 | XF86Tools, XF86Launch5 | rig | `tape.sh` |
 | 592 | SUPER and the left button | rig | `session2.sh` |
@@ -320,7 +337,7 @@ Pressed through wtype with FormalShell running and a recorder standing in for
 | 625, 627 | Sober and Steam games as game content | rig, unit | `misc.sh` under `vrr` 3: fullscreen, `steam_app_1` is asked VRR by its rule, a plain window is not; Sober's rule is the same effect, read in `the_rules_place_the_apps_they_name` |
 | 630-633 | An idle pointer hides after 3 s over a Steam game, and only there | rig | `rules.sh` |
 | 636 | YouTube Music to 8 | rig | `rules.sh` |
-| 643 | Minecraft confines the pointer | no | no Xwayland on the rig and no core hook for an X11 grab |
+| 643 | Minecraft confines the pointer | rig, headless, unit | the rule `appId` `Minecraft.*` with `confinePointer`, as the config's class `^(Minecraft.*)$`: `cursor.sh` with a terminal named `Minecraft-rig`, headless with `Minecraft 1.21`; `Minecraft 1.21.4`, `Minecraft* 1.20.1` and `Minecraft` match and the launchers do not in `the_rules_place_the_apps_they_name`. The game itself, an X11 window: no, no Xwayland on the rig, needs the g815 |
 | 657-660 | Video picture in picture: float, pin, 28%, bottom right | rig | `rules.sh`: `[721,537 287x215]`, there on every workspace |
 | 664-667 | A helium popup that maps floating: the same | rig | `rules.sh` |
 | 671-673 | The built-in notification: float, pin, top right | rig | `rules.sh`: `[648,16 360x120]` |
@@ -352,7 +369,7 @@ Pressed through wtype with FormalShell running and a recorder standing in for
 | `vrr = 2` on the desk: on while a window is fullscreen | rig, headless | `misc.sh`: asked of the core with a window fullscreen, not before and not after; headless the same on the second output |
 | `vrr = 3` on the panel: on for a fullscreen game or video | rig, unit | `misc.sh` after a reload onto `vrr` 3: not for a plain window or a photo, asked for `steam_app_1` by its rule and for a client that declares video |
 | A panel that does switch VRR on | no | the rig's connector is not `vrr_capable`; the core refuses with a warning and stays fixed |
-| `direct_scanout = 0` | no | no core setting |
+| `direct_scanout = 0` | headless | as line 294 above |
 | The environment | rig | `host.sh` |
 
 ## Motion
@@ -362,12 +379,12 @@ Read from the engine's frame log in `motion.sh`, and from `core/tests/scene.rs`.
 
 | What moves | Leaf | Family | Evidence |
 | --- | --- | --- | --- |
-| A window's place and size in the tape: scroll, width, swap, stack, zen | `windows` | spatial | a scroll to x 8 goes on to 15 and comes back; `a_spatial_spring_overshoots_as_far_as_its_curve` |
-| A window opening: from a point at its centre | `windows` | spatial | width from 5 px to 500 |
+| A window's place and size in the tape: scroll, width, swap, stack, zen | `windows` | spatial | a scroll to x 10 goes on to 17 and comes back; `a_spatial_spring_overshoots_as_far_as_its_curve` |
+| A window opening: from a point at its centre | `windows` | spatial | width from 5 px to 496 |
 | Its opacity coming in | `fade` | effects | 0 to 100, no overshoot; `an_effects_spring_never_overshoots_and_arrives_on_time` |
 | A window closing: shrinks to 90% | `windowsOut` | spatialFast | `90-closing` with the fast clocks slowed to two seconds |
 | Its opacity going out | `fadeOut` | effectsFast | `90-closing` |
-| The border colour | `border` | effectsSlow | 73 120 160 on the way, 67 133 190 landed |
+| The border colour | `border` | effectsSlow | 70 99 122 on the way, 67 133 190 landed |
 | A workspace switch, vertical | `workspaces` | spatial | `one y` frame by frame |
 | The console dropping in | `specialWorkspace` | spatial | y from -728 past 40 to 51 and back to 40 |
 | The dim under it | | follows the console's way in, clamped | 0.6 at rest |
@@ -384,12 +401,12 @@ the same move run whole):
 
 | Move | Cut short by | Result |
 | --- | --- | --- |
-| A tape scroll | a second scroll 50 ms in | continuous, largest step 103 px against 67 whole, over twice the way |
+| A tape scroll | a second scroll 50 ms in | continuous, largest step 104 px against 67 whole, over twice the way |
 | A workspace switch | a second switch 50 ms in | continuous, largest step 156 px against 102 whole, over twice the way |
-| The overview opening | closing 120 ms in | turns back at 92% and closes from there |
+| The overview opening | closing 120 ms in | turns back at 93% and closes from there |
 | Zen | zen off 50 ms in | the columns turn back from where they are drawn, largest step 136 px, the same as whole |
 | A width change | the next preset 50 ms in | continuous, largest step 56 px |
-| The console dropping in | park, then show 120 ms later | turns back at y -641, largest step 113 px against 102 whole |
+| The console dropping in | park, then show 120 ms later | turns back at y -642, largest step 128 px against 102 whole |
 | A window opening | its first commit | starts again from 5 px and opacity 0; until that commit the window has no buffer to draw |
 | A closing window | | not interruptible: the core animates a snapshot of a window that is gone |
 
@@ -410,16 +427,16 @@ engine presented; render and CPU time are the core's own
 
 | Move | Frames | Interval ms (median, p95, worst) | Render ms | CPU ms | Present rate |
 | --- | --- | --- | --- | --- | --- |
-| A tape scroll, four columns | 41 | 16.7, 18.9, 20.6 | 5.0, 7.0, 12.6 | 5.3, 7.3, 13.2 | 59 to 60 Hz |
-| The overview opening | 43 | 16.6, 20.7, 41.0 | 2.8, 8.8, 14.5 | 2.9, 9.0, 14.6 | 32 Hz in the second it began |
+| A tape scroll, four columns | 41 | 15.6, 25.3, 28.2 | 7.8, 11.7, 17.8 | 8.4, 12.0, 18.0 | 60 Hz |
+| The overview opening | 40 | 18.6, 29.6, 34.0 | 9.6, 28.6, 32.4 | 10.0, 28.8, 32.5 | 43 Hz in the second it began |
 
-The overview's worst interval is one frame of 41 ms at the open, two and a
-half refreshes; the render and CPU times of that move stay under one.
+The overview's worst interval is one frame of 34 ms at the open, two
+refreshes, with a render of 32 ms in it; its median render is under one.
 
 ## The build
 
 `formalwm/Cargo.toml` names `shojiwm_rs` and `shojiwm_lib` by a rev of the
-fork's `formal` branch and `Cargo.lock` is committed. `dev/fresh.sh` clones
+fork's `formal-rs` branch and `Cargo.lock` is committed. `dev/fresh.sh` clones
 this branch, copies only `wm/` and `crates/` to the rig and runs cargo in the
 container with an empty target directory and an empty cargo home, no ShojiWM
 checkout beside it:
@@ -427,7 +444,7 @@ checkout beside it:
 | Command | Result |
 | --- | --- |
 | `cargo build --locked --profile release-fast -p formalwm` | exit 0 |
-| `cargo test --locked --profile release-fast --workspace` | exit 0: 55, 4, 27, 11 and 3 in `formalwm-core`, the headless session's 1 |
+| `cargo test --locked --profile release-fast --workspace` | exit 0: 63, 4, 33, 11 and 5 in `formalwm-core`, 3 in `formalwm`, the headless session among them |
 | `cargo clippy --locked --profile release-fast --workspace --all-targets -- -D warnings` | exit 0 |
 | `cargo test --locked -p fs-wm-proto` in `crates/` | 8 passed |
 
@@ -442,9 +459,40 @@ until the core does.
   engine draws the blur as a node of the window's frame instead.
 - The window's opacity kept off that blur: at opacity a, the sharp desk shows
   through at (1 - a) squared. 0.16% at the g815's 0.96.
-- The clear colour (line 279), which a locked start shows until the lock's
-  first frame.
-- The direct scanout switch, auto HDR, Xwayland's scale, confinement of an
-  X11 pointer grab, cursor transforms, a dialog for a client that stopped
-  answering.
+- Xwayland's scale, a dialog for a client that stopped answering.
+- A bound on the cursor's scale other than 8, and a pivot for it other than
+  the hotspot.
 - `bitdepth` and the SDR brightness and saturation of `outputs.set` `color`.
+
+## Review and sweep findings
+
+Each with the commit that settles it. `core` commits are on the fork's
+`formal-rs`, above `formal` 50100de, each with a test there that failed
+before it (489 pass in `shojiwm_rs` and `shojiwm_lib` at 85f78ef).
+
+| Finding | Commit | Check |
+| --- | --- | --- |
+| S1: an env name or value that cannot be set | 392f2c35 | `session.sh`; `an_env_name_or_value_that_cannot_be_set_is_refused` |
+| S2: nothing in view to type into, the keyboard stays on a window | f119542c | `session2.sh`: a terminal sent away hears no more keys; headless |
+| S3: on the lock screen a chord ran its unmarked binds too | 1a525ec4 | `binds.sh`; `on_the_lock_screen_a_chord_runs_only_its_binds_marked_locked` |
+| S4: a zen or big window that changes workspace | 0a5e9e25 | `a_zen_or_big_window_that_changes_workspace_leaves_no_mark_behind` |
+| S5: one window dragged out of a stack took its column along | d28af08b | `drags.sh`; `one_window_moved_out_of_a_stack_leaves_the_rest_of_its_column` |
+| S6: an overlay shown on an output that goes | 7155a4af | `an_overlay_shown_on_an_output_that_goes_is_parked` |
+| S7: a shortcut the core cannot read was dropped without a word | 6580404e | `session.sh`; `a_shortcut_the_core_cannot_read_is_refused` |
+| B1: a window out of view handed the keyboard was shown for it | 67f7933e | headless; `a_window_is_in_view_on_a_shown_workspace_or_a_shown_overlay` |
+| B2: what the layers reserve on each edge | 92dbe8db | `session2.sh`, `shell.sh`; `an_output_says_what_its_layers_reserve` |
+| B3: `binds.list` without the shell's Escape | f0655471 | `session2.sh`; headless |
+| The sidebar: the border ate into the gap | 4f27e28b, test 8cae4696 | the gap rows of spec 2 |
+| `chrome.borderSize` | eedf7e5a | `session.sh`, `shell.sh`; `the_chrome_says_the_border_the_gaps_are_measured_to` |
+| A made output's layers outlive it | core 2dc2846, 85f78ef | `shell.sh`: before 85f78ef every layer of one output was listed twice while there were two outputs; core tests `removing_an_output_closes_its_layers_and_moves_none`, `a_layer_is_stacked_once_with_two_outputs` |
+| `outputs.set` `width`, `height` on a made output | d718d51d, core 4bd8be1 | `shell.sh`; core test `a_resized_headless_output_keeps_its_wl_output_and_layers` |
+| Two release binds on one modifier merged | 4bb3ca8a, core 15b2700 | `binds.sh`; `each_bind_of_a_shortcut_keeps_what_it_says_of_itself`; core test `a_held_binding_tells_its_repeats_from_the_press` |
+| A pointer lock outlived its window's focus | core a978879 | core tests `a_lock_follows_its_window_keyboard_focus`, `an_unfocused_confining_window_lets_the_pointer_go`; on the rig only the `confinePointer` side, in `cursor.sh`: no client there locks the pointer |
+| `confinePointer` | 0fa49d27 | the rule row of spec 2 |
+| The dynamic cursor | e4599d27, core 716706f | the cursor rows of spec 2; core test `a_stretch_along_a_turned_axis_leaves_the_image_upright` |
+| Black under everything, also after a reload | b103e542, 5c1ba125 | line 279 above |
+| `directScanout`, auto HDR | 186f3cae, 2d0e1edf | lines 294 and 299 above |
+
+Needs the g815: Minecraft's confinement as an X11 window, the dynamic cursor
+on a hardware cursor plane, the HDR switch on a fullscreen HDR window, what
+`directScanout` does to a plane.
