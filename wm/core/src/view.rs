@@ -14,6 +14,7 @@ pub struct Extras {
     /// The focused window's border, `#rrggbb` or `#rrggbbaa`.
     pub active_border: String,
     pub blur: bool,
+    pub motion: proto::Motion,
 }
 
 pub fn state(model: &Model, extras: &Extras) -> proto::State {
@@ -135,6 +136,7 @@ pub fn state(model: &Model, extras: &Extras) -> proto::State {
             border_size: model.options.border.round() as i32,
             active_border: extras.active_border.clone(),
             blur: extras.blur,
+            motion: extras.motion,
         },
         hand_over: None,
     }

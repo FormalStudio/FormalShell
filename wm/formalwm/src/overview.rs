@@ -142,12 +142,14 @@ impl Engine {
 
     /// The overview takes the keyboard and the pointer's buttons. Not while
     /// something is being dragged: that drag has the pointer and must keep
-    /// it to be dropped.
+    /// it to be dropped. The shell's bar and corners are drawn over it and
+    /// keep the pointer there.
     fn grab_overview(&mut self) {
         if self.hold.data_drag || self.hold.window_drag || self.overview.grab.is_some() {
             return;
         }
         let options = InputGrabOptions::new()
+            .leave_layers_the_pointer()
             .on_key(|event| {
                 let (key, code) = (event.key.clone(), event.keycode);
                 if event.state != InputGrabState::Pressed {

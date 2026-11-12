@@ -255,6 +255,9 @@ pub struct ChromeState {
     /// The focused window's border, `#rrggbb` or `#rrggbbaa`.
     pub active_border: String,
     pub blur: bool,
+    /// What windows move and fade on: the last `theme.set`'s.
+    #[serde(default)]
+    pub motion: Motion,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -707,7 +710,10 @@ mod tests {
             "overview": false,
             "keyboard": { "layouts": ["es"], "active": 0 },
             "cursorHidden": false,
-            "chrome": { "gapsOut": { "top": 8, "right": 8, "bottom": 8, "left": 8 }, "borderSize": 2, "activeBorder": "#4385be", "blur": true },
+            "chrome": {
+                "gapsOut": { "top": 8, "right": 8, "bottom": 8, "left": 8 }, "borderSize": 2, "activeBorder": "#4385be", "blur": true,
+                "motion": { "enabled": false, "families": to_value(Families::default()).unwrap() }
+            },
             "handOver": { "window": "a1", "reserved": ["SUPER + H", "SUPER + 1"], "active": true }
         });
         let state: State = from_value(wire.clone()).unwrap();
@@ -716,14 +722,17 @@ mod tests {
         assert_eq!(state.workspaces[0].zen, None);
         assert_eq!(state.outputs[0].reserved.top, 36);
         assert_eq!(state.windows[0].tag, "atoll-mac");
+        assert!(!state.chrome.motion.enabled);
         assert_eq!(to_value(&state).unwrap(), wire);
 
-        // A state written before the tag and the hand-over reads without them.
+        // A state written before the tag, the hand-over and the motion reads without them.
         let mut older = wire;
         older.as_object_mut().unwrap().remove("handOver");
         older["windows"][0].as_object_mut().unwrap().remove("tag");
+        older["chrome"].as_object_mut().unwrap().remove("motion");
         let state: State = from_value(older).unwrap();
         assert_eq!((state.hand_over, state.windows[0].tag.as_str()), (None, ""));
+        assert_eq!(state.chrome.motion, Motion::default());
         assert_eq!(to_value(State::default()).unwrap()["handOver"], json!(null));
     }
 

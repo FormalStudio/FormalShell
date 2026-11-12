@@ -23,6 +23,10 @@ fn the_state_the_socket_publishes() {
         keyboard_layouts: vec!["es".into()],
         active_border: "#4385be".into(),
         blur: true,
+        motion: fs_wm_proto::Motion {
+            enabled: false,
+            ..Default::default()
+        },
         ..Extras::default()
     };
     let state = state(&model, &extras);
@@ -34,6 +38,7 @@ fn the_state_the_socket_publishes() {
     assert_eq!(state.focused_workspace_id, "8");
     assert_eq!(state.focused_window_id, "music");
     assert_eq!(state.chrome.gaps_out.left, 8);
+    assert!(!state.chrome.motion.enabled);
     assert_eq!(state.keyboard.layouts, ["es"]);
 
     let ws = |id: &str| state.workspaces.iter().find(|ws| ws.id == id).unwrap();

@@ -208,6 +208,9 @@ wm_zen=layout
 # formalwm keeps the settings' nine workspaces.
 wm_workspaces_grow=false
 
+# formalwm copies a window wherever the tape puts it, on a monitor or off.
+wm_offscreen_frames=true
+
 # formalwm's column tape, which shoji-ctl answers as Hyprland's scrolling.
 wm_layouts="scrolling"
 

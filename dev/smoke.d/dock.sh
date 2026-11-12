@@ -24,6 +24,7 @@
 # pinned.
 leg_dock_flag="--dock"
 leg_dock_order=174
+leg_dock_compositors="hyprland shoji"
 leg_dock_needs="python3 jq foot wlrctl convert"
 leg_dock_claims="screen=shared"
 
@@ -247,15 +248,20 @@ leg_dock_assert() {
   expect_jq "$m-urgent.json" '.shown and (.held | not)' "--dock: the stub turning urgent did not bring the dock out"
   # The row the stub's icon starts on, in the frame's own pixels: the top
   # of its own colour's box. A hop is that row above where the icon rests,
-  # which the frame of the pinned dock at rest gives.
+  # which the frame of the pinned dock at rest gives, cut to the hop
+  # frames' region: the bar shows the stub's icon too, at full colour while
+  # it has the keyboard, which formalwm leaves it (focus on click only).
   icon_top() {
     local w top
     IFS='x+' read -r w _ _ top <<< "$("$convert_bin" "$1" -fuzz 8% -fill black +opaque '#E0A021' -fill white -opaque '#E0A021' -format '%@' info: 2>/dev/null)"
     [ "${w:-0}" -lt "$(logical_px 30)" ] || echo "$top"
   }
-  local rest tops lift
-  rest=$(icon_top "$m-ruled.png")
-  lift=$(logical_px "$("$jq_bin" '.rect.y - 40' "$m-ruled.json")")
+  local rest tops lift cut
+  read -r -a cut <<< "$("$jq_bin" -r '.rect | "\(.width + 40) \(.height + 44) \(.x - 20) \(.y - 40)"' "$m-ruled.json")"
+  lift=$(logical_px "${cut[3]}")
+  "$convert_bin" "$m-ruled.png" -crop "$(logical_px "${cut[0]}")x$(logical_px "${cut[1]}")+$(logical_px "${cut[2]}")+$lift" +repage "$m-ruled-dock.png" 2>/dev/null
+  rest=$(icon_top "$m-ruled-dock.png")
+  [ -z "$rest" ] || rest=$((rest + lift))
   tops=$(for shot in $(seq 1 12); do icon_top "$m-hop-$shot.png"; done | sort -n | head -n 1)
   echo "hop: the icon rests on row ${rest:-none} and stood highest on row $((${tops:-9999} + lift))"
   [ -n "$rest" ] && [ "$((rest - ${tops:-9999} - lift))" -ge "$(logical_px 4)" ] \

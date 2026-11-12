@@ -33,6 +33,7 @@
 # with the ring drawn, none without.
 leg_multi_output_flag="--multi-output"
 leg_multi_output_order=217
+leg_multi_output_compositors="hyprland shoji"
 leg_multi_output_needs="jq wlrctl convert wtype foot"
 leg_multi_output_claims="outputs=shared frame=6/20"
 

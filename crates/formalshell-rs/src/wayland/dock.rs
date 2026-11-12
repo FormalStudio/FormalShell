@@ -432,7 +432,8 @@ impl App {
         let (edge, chrome) = (self.dock_edge(), self.chrome());
         let size = self.dock_size();
         let theme = &self.store.theme.theme;
-        let spec = CardSpec { ends: chrome.ends(edge), ..CardSpec::new(edge, chrome.inset(edge), Sizing::Card { size, anchor: ow / 2.0, length: ow as i32 }) };
+        let room = (if edge.is_vertical() { ow } else { oh }) as i32;
+        let spec = CardSpec { ends: chrome.ends(edge), ..CardSpec::new(edge, chrome.inset(edge), Sizing::Card { size, anchor: ow / 2.0, length: ow as i32, room }) };
         let card = Card::new(theme, spec, self.cast);
         let surface = self.popout_surface(&card, Layer::Top);
         let mut popup = Popup::new(surface, card);
@@ -638,7 +639,8 @@ impl App {
         let anchor = rest.x0 + along + cw / 2.0;
         let line_at = rest.y1;
         let cap = oh - line_at - theme.space.bar_margin - theme.space.screen_padding;
-        let hang = Hang { edge: d.edge, line_at, length: ow as i32, cap };
+        let room = (if d.edge.is_vertical() { ow } else { oh }) as i32;
+        let hang = Hang { edge: d.edge, line_at, length: ow as i32, cap, room };
         let (app, pid) = (menu.app.clone(), menu.pid.filter(|pid| appmenu::registered(*pid)));
         let title = self.dock_marks().0.get(index).map_or_else(|| app.clone(), |m| m.name.clone());
         self.dock.menu = Some(menu);

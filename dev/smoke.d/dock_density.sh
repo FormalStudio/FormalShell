@@ -11,6 +11,7 @@
 # focus back on the first output both follow it back.
 leg_dock_density_flag="--dock-density"
 leg_dock_density_order=176
+leg_dock_density_compositors="hyprland shoji"
 leg_dock_density_needs="python3 jq convert"
 leg_dock_density_claims="outputs=shared"
 

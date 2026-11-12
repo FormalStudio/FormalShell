@@ -168,8 +168,11 @@ pub enum Sizing {
     Surface { size: (i32, i32), rest: Rect },
     /// A card (along, depth) centred on `anchor` along a line `length`
     /// long, a `screenPadding` in from either end and a `barMargin` off
-    /// the line, on a surface sized to it.
-    Card { size: (f64, f64), anchor: f64, length: i32 },
+    /// the line, on a surface sized to it. It is held to the line less a
+    /// `screenPadding` at each end, and to `room`, the output's extent away
+    /// from the line, less its offset and a `screenPadding`; on the bottom
+    /// or right edge the surface is at most `room` deep.
+    Card { size: (f64, f64), anchor: f64, length: i32, room: i32 },
 }
 
 /// Everything a card is built from; nothing of it changes afterwards.
@@ -278,13 +281,27 @@ impl Card {
         let mut look = Look::new(theme, role, state, cast);
         let (size, rest, clear) = match size {
             Sizing::Surface { size, rest } => (size, rest, true),
-            Sizing::Card { size: (w, h), anchor, length } => {
+            Sizing::Card { size: (w, h), anchor, length, room } => {
                 let pad = theme.space.screen_padding;
-                let u = crate::paint::place_along(anchor, w, pad, length as f64 - pad);
                 let v = line_at + theme.space.bar_margin;
+                // Held to the room there is first, so neither the rest nor
+                // the surface sized off it can reach past the output.
+                let w = w.min(f64::from(length) - 2.0 * pad).max(0.0);
+                let h = h.min(f64::from(room) - v - pad).max(0.0);
+                let u = crate::paint::place_along(anchor, w, pad, length as f64 - pad);
                 let rest = Rect::new(u, v, u + w, v + h);
                 let slack = SLACK.max(look.reach().ceil() as i32);
-                ((length, rest.y1 as i32 + slack), rest, false)
+                let depth = rest.y1 as i32 + slack;
+                // Smithay's LayerMap holds a layer surface to its output's
+                // size and places a held one on the bottom or right edge from
+                // the near side, off where the scene puts the card. Elsewhere
+                // the surface stays deeper: one exactly the output's size
+                // with no keyboard is passed over by ShojiWM's hit test.
+                let depth = match edge {
+                    Edge::Bottom | Edge::Right => depth.min(room).max(rest.y1.ceil() as i32),
+                    Edge::Top | Edge::Left => depth,
+                };
+                ((length, depth), rest, false)
             }
         };
         if capsule {
@@ -937,7 +954,7 @@ mod tests {
         let t = theme();
         let margin = t.space.bar_margin as i32;
         for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
-            let card = Card::new(&t, CardSpec::new(edge, 40.0, Sizing::Card { size: (200.0, 60.0), anchor: 500.0, length: 1080 }), false);
+            let card = Card::new(&t, CardSpec::new(edge, 40.0, Sizing::Card { size: (200.0, 60.0), anchor: 500.0, length: 1080, room: 1920 }), false);
             let r = card.rest_rect();
             let depth = card.depth();
             let (along, off) = match edge {
@@ -950,6 +967,53 @@ mod tests {
             assert!(card.scene.size.intersect(&r) == r, "{edge:?} outside its surface");
             let clip = card.content_clip();
             assert!(clip.intersect(&r) == r, "{edge:?} content clipped off its own rest");
+        }
+    }
+
+    /// A card filling the room past its line, as the dock's menu does: on
+    /// the bottom edge its surface is no deeper than the output, so its
+    /// rest on the output is the same whether the compositor holds the
+    /// layer to the output's size or not; on the top edge it keeps its
+    /// slack past the output, where a hold leaves it in place.
+    #[test]
+    fn a_card_filling_the_room_stays_inside_the_output() {
+        let t = theme();
+        let (length, room, line_at) = (1536, 864, 60.0);
+        let h = f64::from(room) - line_at - t.space.bar_margin - t.space.screen_padding;
+        for edge in [Edge::Top, Edge::Bottom] {
+            let card = Card::new(&t, CardSpec::new(edge, line_at, Sizing::Card { size: (356.0, h), anchor: 768.0, length, room }), false);
+            if edge == Edge::Bottom {
+                assert_eq!(card.depth(), room);
+            } else {
+                assert!(card.depth() > room, "{}", card.depth());
+            }
+            let r = card.rest_on((f64::from(length), f64::from(room)));
+            let off = if edge == Edge::Top { r.y } else { room - r.bottom() };
+            assert_eq!(off, (line_at + t.space.bar_margin) as i32, "{edge:?} {r:?}");
+        }
+    }
+
+    /// A card asking for more than the output has, along the line and past
+    /// it, rests inside the output on every edge, a `screenPadding` in from
+    /// its sides, on a surface no deeper than the output on the bottom and
+    /// right edges.
+    #[test]
+    fn an_oversized_card_is_held_to_the_output() {
+        let t = theme();
+        let pad = t.space.screen_padding as i32;
+        let (length, room, line_at) = (1080, 300, 40.0);
+        let h = 460.0 - line_at - t.space.bar_margin;
+        for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
+            let size = (f64::from(length) + 100.0, h);
+            let card = Card::new(&t, CardSpec::new(edge, line_at, Sizing::Card { size, anchor: 500.0, length, room }), false);
+            let output = if edge.is_vertical() { (room, length) } else { (length, room) };
+            let r = card.rest_on((f64::from(output.0), f64::from(output.1)));
+            assert!(r.x >= 0 && r.y >= 0 && r.right() <= output.0 && r.bottom() <= output.1, "{edge:?} {r:?} off a {output:?} output");
+            let (start, end) = if edge.is_vertical() { (r.y, r.bottom()) } else { (r.x, r.right()) };
+            assert!(start >= pad && end <= length - pad, "{edge:?} {r:?} past the padding along the line");
+            if matches!(edge, Edge::Bottom | Edge::Right) {
+                assert!(card.depth() <= room, "{edge:?} {}", card.depth());
+            }
         }
     }
 }

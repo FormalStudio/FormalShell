@@ -223,6 +223,11 @@ wm_zen=float
 # A window sent to a workspace past the last makes it.
 wm_workspaces_grow=true
 
+# Whether a window off every monitor still gives a capture frames: Hyprland
+# copies one only while its box overlaps its monitor
+# (`CScreenshareManager::onOutputCommit`).
+wm_offscreen_frames=false
+
 # The tiling layouts a leg can switch to with `hl.config({ general = { layout } })`.
 wm_layouts="scrolling dwindle"
 
