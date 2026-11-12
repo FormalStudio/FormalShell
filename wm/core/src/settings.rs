@@ -14,6 +14,7 @@ use serde_json::Value;
 use crate::{
     action::Action,
     chord::{Chord, Key},
+    cursor::Dynamic,
     model::{Options, WorkspaceSpec},
     rules::{Anchor, Effect, Length, Matcher, Pattern, Position, Rule},
 };
@@ -94,6 +95,9 @@ pub struct Input {
 pub struct Cursor {
     pub theme: String,
     pub size: u32,
+    /// The stretch or the lean that follows the pointer's speed, and the
+    /// magnification of a shaken one.
+    pub dynamic: Dynamic,
 }
 
 impl Default for Cursor {
@@ -101,6 +105,7 @@ impl Default for Cursor {
         Self {
             theme: "default".to_owned(),
             size: 24,
+            dynamic: Dynamic::default(),
         }
     }
 }
@@ -191,6 +196,17 @@ impl OutputSettings {
             .as_deref()
             .and_then(|mode| parse_mode(mode).ok())
             .unwrap_or(ModeChoice::Preferred)
+    }
+
+    /// Whether `vrr` asks for variable refresh now. `fullscreen` is the
+    /// content type of the window fullscreen on the output, empty when its
+    /// rule names none.
+    pub fn wants_vrr(&self, fullscreen: Option<&str>) -> bool {
+        match (self.vrr, fullscreen) {
+            (1, _) | (2, Some(_)) => true,
+            (3, Some(content)) => matches!(content, "game" | "video"),
+            _ => false,
+        }
     }
 }
 
@@ -306,6 +322,46 @@ pub struct Bind {
     /// Hyprland's `transparent`: on a modifier's release, fires after a
     /// chord with that modifier too, not only after a tap.
     pub passthrough: bool,
+}
+
+/// The key and wheel binds of one shortcut. Hyprland runs every bind a
+/// chord has; ShojiWM fires one shortcut once, so they share a registration.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BindGroup {
+    /// ShojiWM's shortcut: the chord, or the modifier alone for one let go.
+    pub shortcut: String,
+    /// The first of its binds, by its place in the settings.
+    pub index: usize,
+    pub release: bool,
+    /// Hyprland's `transparent`, on a modifier let go: it fires whatever
+    /// was pressed while the modifier was down. One without it is taken by
+    /// the chord that used the modifier, so the two are registered apart.
+    pub transparent: bool,
+    /// Some bind of the group fires while the session is locked.
+    pub locked: bool,
+    /// Some bind of the group repeats while the key is held.
+    pub repeat: bool,
+    actions: Vec<Run>,
+}
+
+/// One action of a shortcut, with what its own bind says of it.
+#[derive(Clone, Debug, PartialEq)]
+struct Run {
+    action: Action,
+    locked: bool,
+    repeat: bool,
+}
+
+impl BindGroup {
+    /// What the shortcut runs: on the lock screen only the actions of the
+    /// binds marked `locked`, on a held key's repeat only those marked
+    /// `repeat`.
+    pub fn actions(&self, locked: bool, repeat: bool) -> impl Iterator<Item = &Action> {
+        self.actions
+            .iter()
+            .filter(move |run| (run.locked || !locked) && (run.repeat || !repeat))
+            .map(|run| &run.action)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -439,6 +495,12 @@ impl Settings {
                 workspace(*number, &at)?;
             }
         }
+        // `std::env::set_var` panics on each of these.
+        for (name, value) in &file.env {
+            if name.is_empty() || name.contains(['=', '\0']) || value.contains('\0') {
+                return Err(format!("env: `{}` cannot be set", name.escape_debug()));
+            }
+        }
         let mut rules = Vec::new();
         for (index, rule) in file.rules.into_iter().enumerate() {
             let at = format!("rules[{index}]");
@@ -530,6 +592,7 @@ impl Settings {
                 passthrough: bind.passthrough,
             });
         }
+        file.cursor.dynamic.check()?;
         Ok(Self {
             workspaces: file.workspaces,
             terminal: file.terminal,
@@ -546,6 +609,53 @@ impl Settings {
             layers,
             binds,
         })
+    }
+
+    /// The binds by shortcut, in the shortcuts' order. A pointer button has
+    /// no shortcut and is in none.
+    pub fn bind_groups(&self) -> Vec<BindGroup> {
+        let mut groups: BTreeMap<(String, bool, bool), BindGroup> = BTreeMap::new();
+        for (index, bind) in self.binds.iter().enumerate() {
+            let shortcut = match (bind.release, bind.chord.modifier_key()) {
+                (true, Some(modifier)) => Some(modifier.to_owned()),
+                _ => bind.chord.shortcut(),
+            };
+            let Some(shortcut) = shortcut else {
+                continue;
+            };
+            let transparent = bind.release && bind.passthrough;
+            let repeat = bind.repeat && !bind.release;
+            // Both Alt keys let go are one shortcut here.
+            let group = groups
+                .entry((shortcut.clone(), bind.release, transparent))
+                .or_insert_with(|| BindGroup {
+                    shortcut,
+                    index,
+                    release: bind.release,
+                    transparent,
+                    locked: false,
+                    repeat: false,
+                    actions: Vec::new(),
+                });
+            group.locked |= bind.locked;
+            group.repeat |= repeat;
+            match group
+                .actions
+                .iter_mut()
+                .find(|run| run.action == bind.action)
+            {
+                Some(run) => {
+                    run.locked |= bind.locked;
+                    run.repeat |= repeat;
+                }
+                None => group.actions.push(Run {
+                    action: bind.action.clone(),
+                    locked: bind.locked,
+                    repeat,
+                }),
+            }
+        }
+        groups.into_values().collect()
     }
 
     /// The entry for a connected output: the first that names it, else the
@@ -586,12 +696,14 @@ impl Settings {
             .is_some_and(|lid| lid == facts.name || facts.described_by(lid))
     }
 
-    pub fn options(&self, gaps_in: f64, gaps_out: f64) -> Options {
+    /// The layout's options under the shell's chrome.
+    pub fn options(&self, chrome: &fs_wm_proto::Chrome) -> Options {
         Options {
             default_width: self.layout.column_width,
             presets: self.layout.presets.clone(),
-            gaps_in,
-            gaps_out,
+            gaps_in: chrome.gaps_in as f64,
+            gaps_out: chrome.gaps_out as f64,
+            border: chrome.border_size.max(0) as f64,
         }
     }
 
@@ -829,6 +941,84 @@ mod tests {
     }
 
     #[test]
+    fn on_the_lock_screen_a_chord_runs_only_its_binds_marked_locked() {
+        let text = r#"{ "binds": [
+            { "chord": "XF86AudioRaiseVolume", "action": "spawn", "args": ["louder"], "locked": true, "repeat": true },
+            { "chord": "XF86AudioRaiseVolume", "action": "spawn", "args": ["osd"] },
+            { "chord": "ALT+Alt_L", "action": "spawn", "args": ["commit"], "release": true, "passthrough": true },
+            { "chord": "ALT+Alt_R", "action": "spawn", "args": ["commit"], "release": true, "passthrough": true },
+            { "chord": "SUPER+mouse:272", "action": "move-window" }
+        ] }"#;
+        let groups = Settings::parse(text, None).unwrap().bind_groups();
+        let spawn = |command: &str| Action::Spawn(vec![command.to_owned()]);
+        let run =
+            |group: &BindGroup, locked| group.actions(locked, false).cloned().collect::<Vec<_>>();
+        assert_eq!(groups.len(), 2, "a pointer button has no shortcut");
+
+        let alt = &groups[0];
+        assert_eq!((alt.shortcut.as_str(), alt.index), ("Alt", 2));
+        assert!(alt.release && alt.transparent && !alt.locked);
+        assert_eq!(run(alt, false), [spawn("commit")]);
+        assert_eq!(run(alt, true), []);
+
+        let volume = &groups[1];
+        assert_eq!(volume.shortcut, "XF86AudioRaiseVolume");
+        assert!(volume.locked && volume.repeat && !volume.release);
+        assert_eq!(run(volume, false), [spawn("louder"), spawn("osd")]);
+        assert_eq!(run(volume, true), [spawn("louder")]);
+    }
+
+    #[test]
+    fn each_bind_of_a_shortcut_keeps_what_it_says_of_itself() {
+        let text = r#"{ "binds": [
+            { "chord": "ALT+Alt_L", "action": "spawn", "args": ["commit"], "release": true, "passthrough": true },
+            { "chord": "ALT+Alt_L", "action": "spawn", "args": ["plain"], "release": true },
+            { "chord": "SUPER+Up", "action": "spawn", "args": ["louder"], "repeat": true },
+            { "chord": "SUPER+Up", "action": "spawn", "args": ["osd"] }
+        ] }"#;
+        let groups = Settings::parse(text, None).unwrap().bind_groups();
+        let spawn = |command: &str| Action::Spawn(vec![command.to_owned()]);
+        let run =
+            |group: &BindGroup, repeat| group.actions(false, repeat).cloned().collect::<Vec<_>>();
+        // A modifier let go: the bind a chord takes and the one it cannot
+        // take are two registrations.
+        let [plain, commit, up] = &groups[..] else {
+            panic!("{groups:?}");
+        };
+        assert_eq!((plain.shortcut.as_str(), plain.transparent), ("Alt", false));
+        assert_eq!(run(plain, false), [spawn("plain")]);
+        assert_eq!(
+            (commit.shortcut.as_str(), commit.transparent),
+            ("Alt", true)
+        );
+        assert_eq!(run(commit, false), [spawn("commit")]);
+        // A held key repeats the binds that say so and no other.
+        assert!(up.repeat);
+        assert_eq!(run(up, false), [spawn("louder"), spawn("osd")]);
+        assert_eq!(run(up, true), [spawn("louder")]);
+    }
+
+    #[test]
+    fn an_env_name_or_value_that_cannot_be_set_is_refused() {
+        for env in [
+            r#"{ "FOO": "a\u0000b" }"#,
+            r#"{ "": "x" }"#,
+            r#"{ "A=B": "x" }"#,
+            r#"{ "A\u0000": "x" }"#,
+        ] {
+            let error = Settings::parse(&format!(r#"{{ "env": {env} }}"#), None).unwrap_err();
+            assert!(error.starts_with("env:"), "{env} gave {error:?}");
+            let host = format!(r#"{{ "env": {env} }}"#);
+            assert!(
+                Settings::parse("{}", Some(&host)).is_err(),
+                "{env} in host.json"
+            );
+        }
+        let fine = Settings::parse(r#"{ "env": { "FOO": "", "BAR": "a=b" } }"#, None).unwrap();
+        assert_eq!(fine.env["BAR"], "a=b");
+    }
+
+    #[test]
     fn outputs_match_by_connector_then_description_then_the_catch_all() {
         let text = r#"{ "outputs": [
             { "description": "ASUSTek COMPUTER INC PA278CGV T1LMQS063802", "mode": "2560x1440@144", "position": [2560, 0], "scale": 1, "vrr": 2, "defaultWorkspace": 1 },
@@ -888,6 +1078,20 @@ mod tests {
         assert_eq!(unlisted.mode(), ModeChoice::HighRefresh);
         assert_eq!(OutputSettings::default().mode(), ModeChoice::Preferred);
         assert_eq!(matched.vrr, 2);
+        let vrr = |vrr: u8, fullscreen| {
+            OutputSettings {
+                vrr,
+                ..Default::default()
+            }
+            .wants_vrr(fullscreen)
+        };
+        assert!(!vrr(0, Some("game")));
+        assert!(vrr(1, None));
+        assert!(!vrr(2, None));
+        assert!(vrr(2, Some("")));
+        assert!(!vrr(3, Some("")));
+        assert!(vrr(3, Some("game")));
+        assert!(vrr(3, Some("video")));
         assert_eq!(settings.output_for(&panel).unwrap().scale, Some(1.25));
         assert_eq!(settings.output_for(&hdmi).unwrap().scale, Some(2.0));
         assert_eq!(settings.output_for(&other).unwrap().scale, Some(1.0));

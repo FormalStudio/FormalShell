@@ -88,5 +88,18 @@ ipc workspace.focus '{"id":"2"}' >/dev/null; sleep 1; hand at $(centre two) pres
 grim -c "$run/69-plain-pointer.png"; sleep 3.5; grim -c "$run/70-plain-pointer-later.png"
 echo "over a terminal it stays: $(px diff "$run/69-plain-pointer.png" "$run/70-plain-pointer-later.png" 296 296 30 30)"
 
+step "a rule's opacity, from a reloaded file: the window at 0.5 over a white strip and the desk, half of each; at the strip's edge what is behind it is blurred, until the theme's blur is off"
+sed -i 's|"rules": \[|"rules": [ {"match": {"appId": "faint"}, "opacity": 0.5},|' "$XDG_CONFIG_HOME/formalwm/settings.json"
+printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1.5
+ipc workspace.focus '{"id":"6"}' >/dev/null; sleep 1
+layer wallpaper background left 256 0 --color ffffffff; sleep 0.6
+win faint >/dev/null; sleep 1.5; win solid >/dev/null; sleep 1.5; row faint; shot 71-opacity
+ipc theme.set '{"colors":{},"chrome":{"blur":false}}' >/dev/null; sleep 1; shot 72-opacity-no-blur
+probe() { echo "$1: $(px mean "$run/71-opacity.png" "$2" 300 "$3" 100) blurred, $(px mean "$run/72-opacity-no-blur.png" "$2" 300 "$3" 100) with the blur off"; }
+probe "over the strip" 100 40
+probe "over the desk" 420 40
+probe "six pixels on the desk's side of the edge" 258 6
+read -r x y <<< "$(centre solid)"; echo "its neighbour: $(px mean "$run/71-opacity.png" "$((x - 20))" "$((y - 20))" 40 40)"
+
 step "the log"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx\|cursor image\|cursor theme\|smithay::backend\|backend::tty\|XWayland\|xwayland" | cut -c1-300 | tail -12

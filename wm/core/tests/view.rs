@@ -2,7 +2,7 @@ mod common;
 
 use common::*;
 use formalwm_core::{
-    model::{Big, Placement},
+    model::{Big, Options, Placement},
     view::{Extras, state},
 };
 
@@ -111,4 +111,28 @@ fn the_same_model_publishes_the_same_json() {
     let second = serde_json::to_string(&state(&model, &Extras::default())).unwrap();
     assert_eq!(first, second);
     assert!(first.contains("\"focusedWindowId\":\"a\""));
+}
+
+#[test]
+fn an_output_says_what_its_layers_reserve() {
+    let mut model = desk();
+    let mut geo = output("A", 0.0, 1920.0, 1080.0);
+    geo.usable = formalwm_core::geom::Rect::new(12.0, 40.0, 1900.0, 1030.0);
+    model.set_outputs(vec![geo]);
+    let reserved = state(&model, &Extras::default()).outputs[0].reserved;
+    assert_eq!(
+        (reserved.top, reserved.right, reserved.bottom, reserved.left),
+        (40, 8, 10, 12)
+    );
+}
+
+#[test]
+fn the_chrome_says_the_border_the_gaps_are_measured_to() {
+    let mut model = desk();
+    model.set_options(Options {
+        border: 2.0,
+        ..Options::default()
+    });
+    let chrome = state(&model, &Extras::default()).chrome;
+    assert_eq!((chrome.border_size, chrome.gaps_out.left), (2, 8));
 }

@@ -32,6 +32,8 @@ pub static FORCE: WindowStateKey<bool> = WindowStateKey::new("force", |_| true);
 
 /// The desk behind this window is blurred.
 pub static BLUR: WindowStateKey<bool> = WindowStateKey::new("blur", |_| false);
+/// Its rule keeps the pointer inside it while it has the keyboard.
+pub static CONFINE: WindowStateKey<bool> = WindowStateKey::new("confine", |_| false);
 
 const REST: ManagedTransform = ManagedTransform {
     origin_x: 0.0,
@@ -66,9 +68,10 @@ pub fn setup(signals: Signals) {
         .kde_default_decoration(|_| WindowDecorationModeSnapshot::Server);
 
     COMPOSITOR.window.composition(move |window| {
-        // Read here on purpose: either one changes what the frame is made of.
+        // Read here on purpose: each one changes what the frame is made of.
         let look = signals.look.get();
         let full = window.state(&FULL).get();
+        let blurred = window.state(&BLUR).get();
 
         let managed = ManagedWindow::new()
             .rect(window.state(&RECT))
@@ -79,7 +82,8 @@ pub fn setup(signals: Signals) {
             .force_rect_size(window.state(&FORCE))
             .tiled(true)
             .idle(window.state(&IDLE))
-            .interactive(window.state(&LIVE));
+            .interactive(window.state(&LIVE))
+            .confine_pointer(window.state(&CONFINE));
         // No frame at all, so the client's buffer can go straight to the
         // plane.
         if full {
@@ -114,11 +118,18 @@ pub fn setup(signals: Signals) {
                 }]
             }));
         }
+        // A node of the frame and not the core's `behind` slot: under a
+        // window drawn below full opacity that slot shows the window again.
+        let client = if blurred {
+            ShaderEffect::new(crate::layers::blur()).child(ClientWindow::new())
+        } else {
+            ClientWindow::new()
+        };
         managed.child(
             WindowBorder::new()
                 .style(style)
                 .resize_hit_area(8, 14)
-                .child(ClientWindow::new()),
+                .child(client),
         )
     });
 
@@ -131,6 +142,11 @@ pub fn setup(signals: Signals) {
             let app_id = window.app_id().get().unwrap_or_default();
             let _ = window.foreign_toplevel_id().get();
             enter(move |engine| engine.renamed(window, &title, &app_id));
+        });
+        // `vrr` 3 follows what a fullscreen client says it shows.
+        scope.effect(move || {
+            let _ = window.content_type().get();
+            enter(|engine| engine.sync_fullscreen());
         });
     });
     COMPOSITOR
@@ -229,6 +245,9 @@ impl Engine {
         let sized = effect.size.is_some();
         window.state(&FORCE).set(!floating || sized);
         window.state(&BLUR).set(self.blurs(&effect));
+        window
+            .state(&CONFINE)
+            .set(effect.confine_pointer == Some(true));
         self.model.open(
             NewWindow {
                 id: id.clone(),
@@ -364,10 +383,17 @@ impl Engine {
     }
 
     /// A click, or a client the compositor let take the keyboard.
-    fn focused(&mut self, window: Window) {
+    pub(crate) fn focused(&mut self, window: Window) {
         let id = window.id();
         self.asked_focus = Some(id.clone());
         if self.model.focused_window() == Some(&id) {
+            return;
+        }
+        // The compositor hands the keyboard back to the window that last had
+        // it when a layer lets go of it. One out of view is not shown for
+        // that: the keyboard goes back to where the model has it.
+        if !self.model.in_view(&id) {
+            self.focus();
             return;
         }
         if self.model.focus_window(&id) {

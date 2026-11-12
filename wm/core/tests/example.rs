@@ -3,6 +3,7 @@
 
 use formalwm_core::{
     action::{Action, WorkspaceRef},
+    cursor::Mode,
     rules::{Facts, resolve},
     settings::{ModeChoice, OutputFacts, Settings},
 };
@@ -25,6 +26,12 @@ fn the_shared_file_loads_on_its_own() {
     assert_eq!(settings.layers.len(), 11);
     assert_eq!(settings.opacity, 1.0);
     assert_eq!(settings.input.keyboard.layout.as_deref(), Some("es"));
+    // hypr-dynamic-cursors as `hyprland.lua` sets it: stretch, with the
+    // tilt's numbers kept beside it and shake to find left on.
+    let dynamic = settings.cursor.dynamic;
+    assert_eq!(dynamic.mode, Mode::Stretch);
+    assert_eq!((dynamic.tilt.full, dynamic.tilt.limit), (20.0, 3000.0));
+    assert!(dynamic.shake.enabled);
     let laptop = OutputFacts {
         name: "eDP-1",
         ..OutputFacts::default()
@@ -87,6 +94,21 @@ fn the_rules_place_the_apps_they_name() {
         Some("game")
     );
     assert_eq!(sum("steam_app_730", "CS2", false).idle_pointer, Some(3.0));
+    // `confine_pointer` on class `^(Minecraft.*)$`: the game, not its launcher.
+    for game in ["Minecraft 1.21.4", "Minecraft* 1.20.1", "Minecraft"] {
+        assert_eq!(sum(game, game, false).confine_pointer, Some(true), "{game}");
+    }
+    for other in [
+        "minecraft-launcher",
+        "org.prismlauncher.PrismLauncher",
+        "ghostty",
+    ] {
+        assert_eq!(
+            sum(other, "Minecraft", false).confine_pointer,
+            None,
+            "{other}"
+        );
+    }
     assert_eq!(sum("", "Picture in picture", false).pin, Some(true));
     assert_eq!(sum("", "", false).float, Some(true));
     assert_eq!(sum("ghostty", "~", false).workspace, None);

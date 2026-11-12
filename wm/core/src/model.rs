@@ -24,6 +24,9 @@ pub struct Options {
     pub gaps_in: f64,
     /// At the output's edge.
     pub gaps_out: f64,
+    /// The border drawn around a window's rect. Gaps are measured to its
+    /// outer edge, as Hyprland's are.
+    pub border: f64,
 }
 
 impl Default for Options {
@@ -33,7 +36,15 @@ impl Default for Options {
             presets: vec![0.333, 0.5, 0.667, 1.0],
             gaps_in: 4.0,
             gaps_out: 8.0,
+            border: 0.0,
         }
+    }
+}
+
+impl Options {
+    /// What a tile keeps clear on each side of its cell.
+    pub fn tile_inset(&self) -> f64 {
+        self.gaps_in + self.border
     }
 }
 
@@ -125,6 +136,16 @@ impl Workspace {
 
     pub fn windows(&self) -> impl Iterator<Item = &WinId> {
         self.tape.windows().chain(self.floats.iter())
+    }
+
+    /// Forgets the zen and big marks of a window that is leaving.
+    fn unmark(&mut self, id: &str) {
+        if self.big.as_ref().is_some_and(|(big, _)| big == id) {
+            self.big = None;
+        }
+        if self.zen.as_deref() == Some(id) {
+            self.zen = None;
+        }
     }
 }
 
@@ -319,6 +340,11 @@ impl Model {
             self.shown
                 .insert(output.geo.name.clone(), output.active.clone());
         }
+        for overlay in &mut self.overlays {
+            if overlay.shown_on.as_deref().is_some_and(|name| !has(name)) {
+                overlay.shown_on = None;
+            }
+        }
         for geo in outputs {
             let on_output = |id: &str| {
                 self.workspaces
@@ -436,6 +462,19 @@ impl Model {
 
     pub fn is_active(&self, id: &str) -> bool {
         self.outputs.iter().any(|o| o.active == id)
+    }
+
+    /// Whether an output shows the window: its workspace is the active one
+    /// there, or its overlay is up.
+    pub fn in_view(&self, id: &str) -> bool {
+        match self.window(id).map(|window| &window.home) {
+            Some(Home::Workspace(workspace)) => self.is_active(workspace),
+            Some(Home::Overlay(name)) => self
+                .overlays
+                .iter()
+                .any(|overlay| overlay.name == *name && overlay.shown_on.is_some()),
+            None => false,
+        }
     }
 
     pub fn shown_overlay(&self, output: &str) -> Option<&Overlay> {
@@ -603,12 +642,7 @@ impl Model {
                     if ws.floats.is_empty() {
                         ws.float_focused = false;
                     }
-                    if ws.big.as_ref().is_some_and(|(big, _)| big == id) {
-                        ws.big = None;
-                    }
-                    if ws.zen.as_deref() == Some(id) {
-                        ws.zen = None;
-                    }
+                    ws.unmark(id);
                 }
             }
         }
@@ -794,6 +828,15 @@ impl Model {
         true
     }
 
+    /// The window fullscreen on the workspace an output shows.
+    pub fn fullscreen_on(&self, output: &str) -> Option<&WinId> {
+        let workspace = self.workspace(&self.output(output)?.active)?;
+        match &workspace.big {
+            Some((id, Big::Fullscreen)) => Some(id),
+            _ => None,
+        }
+    }
+
     pub fn big_of(&self, id: &str) -> Option<Big> {
         let Home::Workspace(workspace) = &self.window(id)?.home else {
             return None;
@@ -889,9 +932,11 @@ impl Model {
         }
         if let Some(ws) = self.workspace_mut(&ws_a) {
             ws.tape.replace(a, b.to_owned());
+            ws.unmark(a);
         }
         if let Some(ws) = self.workspace_mut(&ws_b) {
             ws.tape.replace(b, a.to_owned());
+            ws.unmark(b);
         }
         for (id, ws) in [(a, ws_b), (b, ws_a)] {
             if let Some(window) = self.window_mut(id) {
@@ -934,6 +979,9 @@ impl Model {
             .tape
             .focus
             .min(source.tape.columns.len().saturating_sub(1));
+        for window in &column.windows {
+            source.unmark(window);
+        }
         let strip_from = self.strip_w(&from);
         if let Some(source) = self.workspace_mut(&from) {
             source.tape.fit(strip_from);
@@ -1275,9 +1323,18 @@ impl Model {
     /// Drops a lifted window as a column at gap `index` of a workspace's
     /// tape and focuses it there.
     pub fn drop_column(&mut self, lifted: &Lifted, workspace: &str, index: usize) {
+        if self.land(lifted, workspace, index) {
+            self.show_workspace(workspace);
+        }
+    }
+
+    /// The drop without the view: back where it came from when the
+    /// workspace is gone.
+    fn land(&mut self, lifted: &Lifted, workspace: &str, index: usize) -> bool {
         let strip_w = self.strip_w(workspace);
         let Some(ws) = self.workspace_mut(workspace) else {
-            return self.drop_back(lifted);
+            self.drop_back(lifted);
+            return false;
         };
         ws.tape.insert_at(index, lifted.id.clone(), lifted.width);
         ws.tape.fit(strip_w);
@@ -1286,7 +1343,30 @@ impl Model {
         if let Some(window) = self.window_mut(&lifted.id) {
             window.home = Home::Workspace(workspace.to_owned());
         }
-        self.show_workspace(workspace);
+        true
+    }
+
+    /// Makes one tiled window a column of its own on `workspace`, before
+    /// the column holding `before` or at the end of the tape, and focuses
+    /// it there. What it was stacked with stays where it is.
+    pub fn move_window(&mut self, id: &str, workspace: &str, before: Option<&str>) -> bool {
+        if before == Some(id) || self.workspace(workspace).is_none() {
+            return false;
+        }
+        let Some(lifted) = self.lift(id) else {
+            return false;
+        };
+        let index = self.workspace(workspace).and_then(|ws| match before {
+            Some(before) => ws.tape.find(before).map(|(column, _)| column),
+            None => Some(ws.tape.columns.len()),
+        });
+        let Some(index) = index else {
+            self.drop_back(&lifted);
+            return false;
+        };
+        let landed = self.land(&lifted, workspace, index);
+        self.collect();
+        landed
     }
 
     /// Puts a lifted window back where it came from.
@@ -1317,6 +1397,7 @@ impl Model {
             let shown = output.active == ws.id;
             let strip = self.strip_of(&ws.output);
             let zen_rect = self.zen_rect(&ws.output);
+            let maximized = output.geo.usable.inset(self.options.border);
             let zen_column = ws
                 .zen
                 .as_ref()
@@ -1337,7 +1418,7 @@ impl Model {
             };
             for (order, cell) in ws
                 .tape
-                .cells(strip, self.options.gaps_in)
+                .cells(strip, self.options.tile_inset())
                 .into_iter()
                 .enumerate()
             {
@@ -1366,7 +1447,7 @@ impl Model {
                 {
                     place.scrolls = false;
                     (place.rect, place.layer) = match kind {
-                        Big::Maximized => (output.geo.usable, Layer::Maximized),
+                        Big::Maximized => (maximized, Layer::Maximized),
                         Big::Fullscreen => (output.geo.rect, Layer::Fullscreen),
                     };
                 }
@@ -1392,7 +1473,7 @@ impl Model {
                     && big == id
                 {
                     (place.rect, place.layer) = match kind {
-                        Big::Maximized => (output.geo.usable, Layer::Maximized),
+                        Big::Maximized => (maximized, Layer::Maximized),
                         Big::Fullscreen => (output.geo.rect, Layer::Fullscreen),
                     };
                 }

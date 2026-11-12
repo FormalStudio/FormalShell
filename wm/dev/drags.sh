@@ -57,5 +57,12 @@ hold Super 4000
 hand at $(centre term) press glide 1018 400 300 wait 900 glide 700 400 200 wait 150 release; sleep 1.3
 tape
 
+step "one window of a stack in the hand: it alone lands in the gap, what it was stacked with stays where it is"
+ipc window.focus "{\"id\":\"$(id_of four)\"}" >/dev/null; sleep 1
+key Super+comma 1; tape
+hold Super 4000
+hand at $(centre four) press glide 500 400 300 wait 150 release; sleep 1.3
+tape
+
 step "the log"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx\|cursor image\|cursor theme" | cut -c1-300 | tail -12

@@ -2,6 +2,7 @@
 //! scene and the settings are `formalwm-core`; this crate is their hands.
 
 mod binds;
+mod cursor;
 mod drag;
 mod engine;
 mod gestures;
@@ -24,10 +25,11 @@ use shojiwm_rs::prelude::*;
 use engine::{Engine, Signals, enter};
 
 fn setup() {
+    session::black_desk();
     let dir = session::settings_dir();
     // A session has to start whatever the file says; the mistake is logged
     // and the next reload reports it to the shell.
-    let settings = Settings::load(&dir).unwrap_or_else(|error| {
+    let settings = session::load_settings(&dir).unwrap_or_else(|error| {
         tracing::error!(%error, "the settings were refused, starting on the defaults");
         Settings::default()
     });
@@ -36,7 +38,7 @@ fn setup() {
         look: signal(engine::look_of(&theme)),
         stage: signal(stage::Stage::default()),
     };
-    let options = settings.options(theme.chrome.gaps_in as f64, theme.chrome.gaps_out as f64);
+    let options = settings.options(&theme.chrome);
     engine::install(Engine {
         dir,
         settings: Rc::new(settings),
@@ -57,6 +59,7 @@ fn setup() {
         cursor_hidden: true,
         shell_arrived: false,
         cursor_idle: false,
+        cursor: Default::default(),
         idle_timer: None,
         gesture: Default::default(),
         overview: Default::default(),
@@ -82,5 +85,6 @@ fn main() -> std::process::ExitCode {
     ConfigBuilder::new(setup)
         .name("formalwm")
         .asset_root(layers::install_assets())
+        .start_locked(session::starts_locked())
         .run()
 }

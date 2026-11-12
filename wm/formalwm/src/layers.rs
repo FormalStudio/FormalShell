@@ -1,12 +1,10 @@
-//! Blur behind the layers the settings name and behind translucent
-//! windows, as `hyprland.lua`'s layer rules and `decoration.blur` had it.
+//! Blur behind the layers the settings name, as `hyprland.lua`'s layer
+//! rules had it, and the blur a translucent window's frame is drawn on.
 
 use std::{path::PathBuf, rc::Rc};
 
 use formalwm_core::settings::Settings;
 use shojiwm_rs::prelude::*;
-
-use crate::windows;
 
 /// Hyprland's `blur.size` and `blur.passes`.
 const RADIUS: i32 = 8;
@@ -32,7 +30,7 @@ pub fn install_assets() -> PathBuf {
     root
 }
 
-fn blur() -> Effect {
+pub fn blur() -> Effect {
     Effect::new(backdrop_source())
         .capture_padding(24)
         .invalidate(Invalidate::on_source_damage_box(8))
@@ -64,13 +62,6 @@ pub fn install(settings: Rc<Settings>, enabled: bool) {
                 SurfaceEffects::behind(masked(layer_source(), rule.alpha_threshold))
             }
             _ => SurfaceEffects::none(),
-        }
-    });
-    COMPOSITOR.effect.window(|window| {
-        if window.state(&windows::BLUR).get() {
-            SurfaceEffects::behind(masked(window_source(), 0.25))
-        } else {
-            SurfaceEffects::none()
         }
     });
     COMPOSITOR

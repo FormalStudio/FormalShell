@@ -74,13 +74,16 @@ step "state.changed while idle and across one focus change"
 ( ipc state.get --listen 3 | grep -c state.changed ) & listener=$!
 sleep 1; key Super+l 0.3; wait "$listener"
 
-step "reload: a good file, then a bad one"
-( ipc state.get --listen 4 | jq -c 'select(.event != null and .event != "state.changed")' ) & listener=$!
+step "reload: a good file, then four the engine refuses: an action it has not, a key no keymap has, an env name and an env value that cannot be set"
+( ipc state.get --listen 7 | jq -c 'select(.event != null and .event != "state.changed")' ) & listener=$!
 sleep 0.5
 printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1
 cp "$XDG_CONFIG_HOME/formalwm/settings.json" "$XDG_CONFIG_HOME/formalwm/settings.json.keep"
-echo '{"binds": [{"chord": "SUPER+Return", "action": "no-such-action"}]}' > "$XDG_CONFIG_HOME/formalwm/settings.json"
-printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1
+for bad in '{"binds": [{"chord": "SUPER+Return", "action": "no-such-action"}]}' \
+  '{"binds": [{"chord": "SUPER+Retrun", "action": "terminal"}]}' '{"env": {"A=B": "1"}}' '{"env": {"A": "x\u0000y"}}'; do
+  echo "$bad" > "$XDG_CONFIG_HOME/formalwm/settings.json"
+  printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1
+done
 mv "$XDG_CONFIG_HOME/formalwm/settings.json.keep" "$XDG_CONFIG_HOME/formalwm/settings.json"
 wait "$listener"
 windows | jq -c '[.windows[] | {app, ws, c}]'
@@ -89,4 +92,5 @@ key Super+Return 1.5; windows | jq -c '.windows | length'
 step "close them all"
 for _ in 1 2 3 4 5; do key Super+q 0.6; done
 windows | jq -c '.windows | length'; shot 17-empty
+echo "the bare desk, after the reloads: $(px mean "$SHOJI_RUN_DIR/17-empty.png" 100 100 200 200)"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx" | cut -c1-300 | tail -15

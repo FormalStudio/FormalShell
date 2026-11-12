@@ -3,7 +3,7 @@ mod common;
 use common::*;
 use formalwm_core::{
     geom::Rect,
-    model::{Big, Home, Layer, Placement, WorkspaceSpec},
+    model::{Big, Home, Layer, Options, Placement, WorkspaceSpec},
     tape::Side,
 };
 
@@ -194,7 +194,9 @@ fn fullscreen_covers_the_output_and_maximize_what_the_layers_leave() {
     model.set_outputs(vec![geo]);
     open(&mut model, "a");
     open(&mut model, "b");
+    assert_eq!(model.fullscreen_on("A"), None);
     assert!(model.toggle_big("b", Big::Fullscreen));
+    assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("b"));
     let b = place(&model, "b");
     assert_eq!(
         (b.rect, b.layer),
@@ -202,6 +204,7 @@ fn fullscreen_covers_the_output_and_maximize_what_the_layers_leave() {
     );
     assert!(!b.scrolls);
     assert!(model.toggle_big("b", Big::Maximized));
+    assert_eq!(model.fullscreen_on("A"), None);
     assert_eq!(
         place(&model, "b").rect,
         Rect::new(0.0, 40.0, 1920.0, 1040.0)
@@ -513,4 +516,183 @@ fn closing_the_last_window_leaves_no_focus() {
     model.close("a");
     assert_eq!(focused(&model), "");
     assert!(model.layout().is_empty());
+}
+
+#[test]
+fn a_zen_or_big_window_that_changes_workspace_leaves_no_mark_behind() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_workspace("2");
+    open(&mut model, "c");
+    model.focus_workspace("1");
+
+    assert!(model.set_zen(Some("b"), Some(true)));
+    assert!(model.swap("b", "c"));
+    let one = model.workspace("1").unwrap();
+    assert_eq!(one.zen, None);
+    assert_eq!(focused(&model), "c", "the focus is a window that is here");
+    assert_eq!(place(&model, "a").rect.x, 8.0, "the tape is back in view");
+
+    assert!(model.set_zen(Some("c"), Some(true)));
+    assert!(model.move_column("c", Some("b")));
+    assert_eq!(model.workspace("1").unwrap().zen, None);
+    assert_eq!(focused(&model), "a");
+
+    assert!(model.set_big("a", Some(Big::Fullscreen)));
+    assert!(model.move_column("a", Some("b")));
+    assert_eq!(model.workspace("1").unwrap().big, None);
+    model.close("a");
+    assert_eq!(model.workspace("1").unwrap().focused(), None);
+}
+
+#[test]
+fn one_window_moved_out_of_a_stack_leaves_the_rest_of_its_column() {
+    let mut model = desk();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    assert!(model.consume_or_expel(Side::Prev));
+    assert_eq!(
+        (place(&model, "b").column, place(&model, "c").column),
+        (1, 1)
+    );
+
+    assert!(model.move_window("c", "1", Some("a")));
+    let columns = |model: &formalwm_core::model::Model| {
+        ["a", "b", "c"].map(|id| (place(model, id).column, place(model, id).row))
+    };
+    assert_eq!(columns(&model), [(1, 0), (2, 0), (0, 0)]);
+    assert_eq!(focused(&model), "c");
+
+    assert!(model.consume_or_expel(Side::Next));
+    assert_eq!(columns(&model), [(0, 0), (1, 0), (0, 1)]);
+    assert!(model.move_window("c", "2", None));
+    assert_eq!(model.window("c").unwrap().home, Home::Workspace("2".into()));
+    assert_eq!(model.window("a").unwrap().home, Home::Workspace("1".into()));
+    assert_eq!(model.focused_workspace().unwrap().id, "1", "the view stays");
+    assert_eq!(model.workspace("2").unwrap().focused().unwrap(), "c");
+
+    assert!(!model.move_window("a", "1", Some("a")));
+    assert!(!model.move_window("a", "nope", None));
+    assert!(!model.move_window("a", "1", Some("nope")));
+    assert_eq!(columns(&model)[0], (0, 0), "a refused move changes nothing");
+}
+
+#[test]
+fn an_overlay_shown_on_an_output_that_goes_is_parked() {
+    let mut model = two_outputs();
+    let rule = Placement {
+        overlay: Some("formalshell-console".into()),
+        floating: true,
+        ..Placement::default()
+    };
+    open_with(&mut model, "console", rule);
+    model.focus_workspace("4");
+    assert!(model.show_overlay("console"));
+    assert_eq!(place(&model, "console").output, "B");
+
+    model.set_outputs(vec![output("A", 0.0, 1920.0, 1080.0)]);
+    let parked = place(&model, "console");
+    assert_eq!((parked.shown, parked.output.as_str()), (false, "A"));
+    assert!(!model.focus_window("console"));
+    assert_eq!(model.focused_output, "A");
+    assert!(model.show_overlay("console"));
+    assert_eq!(focused(&model), "console");
+}
+
+#[test]
+fn a_window_is_in_view_on_a_shown_workspace_or_a_shown_overlay() {
+    let mut model = two_outputs();
+    open(&mut model, "a");
+    let rule = Placement {
+        overlay: Some("formalshell-console".into()),
+        floating: true,
+        ..Placement::default()
+    };
+    open_with(&mut model, "console", rule);
+    assert!(model.in_view("a"));
+    assert!(!model.in_view("console"), "parked");
+    assert!(!model.in_view("nope"));
+
+    assert!(model.move_to_workspace("a", "5", false));
+    assert!(!model.in_view("a"), "its workspace is not the one shown");
+    assert_eq!(model.focused_window(), None);
+    assert!(model.show_overlay("console"));
+    assert!(model.in_view("console"));
+    model.focus_workspace("5");
+    assert!(model.in_view("a"));
+}
+
+#[test]
+fn the_outer_gap_lies_inside_what_a_layer_reserves_at_the_side() {
+    let mut model = desk();
+    let side = |x: f64, w: f64| {
+        let mut geo = output("A", 0.0, 1920.0, 1080.0);
+        geo.usable = Rect::new(x, 0.0, w, 1080.0);
+        vec![geo]
+    };
+    model.set_outputs(side(154.0, 1766.0));
+    open(&mut model, "a");
+    model.set_column_width(1.0);
+    assert_eq!(
+        place(&model, "a").rect,
+        Rect::new(162.0, 8.0, 1750.0, 1064.0)
+    );
+    // A lone column narrower than the strip is centred in what is left.
+    model.set_column_width(0.5);
+    assert_eq!(
+        place(&model, "a").rect,
+        Rect::new(602.0, 8.0, 871.0, 1064.0)
+    );
+
+    model.set_outputs(side(0.0, 1766.0));
+    assert_eq!(
+        place(&model, "a").rect,
+        Rect::new(448.0, 8.0, 871.0, 1064.0)
+    );
+    model.set_column_width(1.0);
+    assert_eq!(place(&model, "a").rect, Rect::new(8.0, 8.0, 1750.0, 1064.0));
+}
+
+#[test]
+fn gaps_are_measured_to_the_outer_edge_of_a_window_s_border() {
+    for border in [1.0, 2.0] {
+        let mut model = desk();
+        model.set_options(Options {
+            border,
+            ..Options::default()
+        });
+        let mut geo = output("A", 0.0, 1920.0, 1080.0);
+        geo.usable = Rect::new(154.0, 0.0, 1766.0, 1080.0);
+        model.set_outputs(vec![geo]);
+        open(&mut model, "a");
+        open(&mut model, "b");
+        let (a, b) = (place(&model, "a"), place(&model, "b"));
+        // The outer gap, from what the layers leave to the border.
+        assert_eq!(a.rect.x - border, 154.0 + 8.0);
+        assert_eq!(a.rect.y - border, 8.0);
+        assert_eq!(1080.0 - (a.rect.bottom() + border), 8.0);
+        assert_eq!(1920.0 - (b.rect.right() + border), 8.0);
+        // The inner gap, from border to border.
+        assert_eq!(b.rect.x - a.rect.right(), 8.0 + 2.0 * border);
+
+        assert!(model.consume_or_expel(Side::Prev));
+        let (a, b) = (place(&model, "a"), place(&model, "b"));
+        assert_eq!((a.column, b.column), (0, 0));
+        assert_eq!(b.rect.y - a.rect.bottom(), 8.0 + 2.0 * border);
+        assert_eq!(1080.0 - (b.rect.bottom() + border), 8.0);
+
+        // A maximised window's border lies inside what the layers leave.
+        assert!(model.toggle_big("b", Big::Maximized));
+        assert_eq!(
+            place(&model, "b").rect,
+            Rect::new(
+                154.0 + border,
+                border,
+                1766.0 - 2.0 * border,
+                1080.0 - 2.0 * border
+            )
+        );
+    }
 }

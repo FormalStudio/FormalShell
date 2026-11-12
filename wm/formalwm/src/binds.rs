@@ -1,27 +1,55 @@
 //! The settings' binds on the compositor's keys, and what each action does.
 
-use std::collections::BTreeMap;
-
 use formalwm_core::{
     action::{Action, Width, WorkspaceRef},
     chord::{Key, Mods},
     model::Big,
+    settings::{BindGroup, Settings},
 };
-use shojiwm_rs::prelude::*;
+use fs_wm_proto as proto;
+use shojiwm_rs::{prelude::*, runtime_key_binding::RuntimeKeyBindingEntry};
 
 use crate::engine::{Engine, enter};
 
+fn options_of(group: &BindGroup) -> KeyBindOptions {
+    let mut options = KeyBindOptions::new();
+    if group.release {
+        options = options.on_release();
+    }
+    options.transparent = group.transparent;
+    options.locked = group.locked;
+    options.repeat = group.repeat;
+    options
+}
+
+/// Whether the core takes every shortcut of the settings. It drops one it
+/// cannot read without a word, so this is asked before the settings replace
+/// the ones running.
+pub fn check_shortcuts(settings: &Settings) -> Result<(), String> {
+    for group in settings.bind_groups() {
+        let options = options_of(&group);
+        RuntimeKeyBindingEntry {
+            id: String::new(),
+            shortcut: group.shortcut.clone(),
+            on: options.on,
+            within: None,
+            locked: options.locked,
+            repeat: options.repeat,
+            transparent: options.transparent,
+        }
+        .compile()
+        .map_err(|error| format!("binds[{}]: {error}", group.index))?;
+    }
+    Ok(())
+}
+
 impl Engine {
     /// Registers every bind of the settings in place of the ones before.
-    /// Hyprland runs every bind a chord has; ShojiWM fires one shortcut
-    /// once, so the binds of one chord share a registration.
     pub fn bind_keys(&mut self) {
         for id in self.bind_ids.drain(..) {
             COMPOSITOR.key.unbind(&id);
         }
         let settings = self.settings.clone();
-        type Group = (KeyBindOptions, Vec<Action>);
-        let mut groups: BTreeMap<(String, bool), Group> = BTreeMap::new();
         let mut drags = (None, None);
         for bind in &settings.binds {
             let modifier = || {
@@ -35,49 +63,25 @@ impl Engine {
                 .into_iter()
                 .find_map(|(held, name)| held.then_some(name))
             };
+            // The core moves and resizes by a held modifier and the left
+            // and right buttons.
             match (&bind.action, &bind.chord.key) {
-                // The core moves and resizes by a held modifier and the
-                // left and right buttons.
                 (Action::MoveWindow, Key::Button(_)) => drags.0 = modifier(),
                 (Action::ResizeWindow, Key::Button(_)) => drags.1 = modifier(),
-                _ => {
-                    let shortcut = match (bind.release, bind.chord.modifier_key()) {
-                        // Letting go of a modifier: the core names the
-                        // modifier alone.
-                        (true, Some(modifier)) => Some(modifier.to_owned()),
-                        _ => bind.chord.shortcut(),
-                    };
-                    match shortcut {
-                        Some(shortcut) => {
-                            // Both Alt keys let go are one shortcut here.
-                            let (options, actions) =
-                                groups.entry((shortcut, bind.release)).or_default();
-                            if bind.release {
-                                *options = options.on_release();
-                            }
-                            // Hyprland's `transparent`: the modifier let go
-                            // after a chord, which is how Alt+Tab commits.
-                            if bind.release && bind.passthrough {
-                                *options = options.transparent();
-                            }
-                            options.locked |= bind.locked;
-                            options.repeat |= bind.repeat && !bind.release;
-                            if !actions.contains(&bind.action) {
-                                actions.push(bind.action.clone());
-                            }
-                        }
-                        None => tracing::warn!(
-                            chord = bind.chord.canonical(),
-                            "a pointer button binds only move-window and resize-window"
-                        ),
-                    }
-                }
+                _ => {}
             }
         }
-        for (index, ((shortcut, _), (options, actions))) in groups.into_iter().enumerate() {
+        for (index, group) in settings.bind_groups().into_iter().enumerate() {
             let id = format!("formalwm:{index}");
+            let shortcut = group.shortcut.clone();
+            let options = options_of(&group);
+            // The core fires a shortcut marked `locked` in both states and
+            // repeats one marked `repeat` whole; which of its binds run is
+            // theirs to say.
             let handler = move || {
-                let actions = actions.clone();
+                let locked = COMPOSITOR.session.is_locked();
+                let repeat = COMPOSITOR.key.is_repeat();
+                let actions: Vec<Action> = group.actions(locked, repeat).cloned().collect();
                 enter(move |engine| {
                     for action in &actions {
                         engine.run(action);
@@ -99,11 +103,13 @@ impl Engine {
     /// Runs the binds of a chord the engine was given instead of the core:
     /// under a grab no bind of the core's fires.
     pub fn run_chord(&mut self, key: &str, code: u32, mods: Mods) {
+        let locked = COMPOSITOR.session.is_locked();
         let actions: Vec<Action> = self
             .settings
             .binds
             .iter()
             .filter(|bind| !bind.release && bind.chord.mods == mods)
+            .filter(|bind| bind.locked || !locked)
             .filter(|bind| match &bind.chord.key {
                 Key::Sym(name) => name.eq_ignore_ascii_case(key),
                 Key::Code(bound) => *bound == code,
@@ -119,7 +125,9 @@ impl Engine {
     /// The same for a modifier let go under a grab.
     pub fn run_release(&mut self, key: &str) {
         let mut actions: Vec<Action> = Vec::new();
-        for bind in self.settings.binds.iter().filter(|bind| bind.release) {
+        let locked = COMPOSITOR.session.is_locked();
+        let binds = self.settings.binds.iter();
+        for bind in binds.filter(|bind| bind.release && (bind.locked || !locked)) {
             let released =
                 matches!(&bind.chord.key, Key::Sym(name) if name.eq_ignore_ascii_case(key));
             if released && !actions.contains(&bind.action) {
@@ -146,6 +154,27 @@ impl Engine {
                 }
             })
         });
+    }
+
+    /// `binds.list`: the settings' binds, then the shell's Escape while it
+    /// is bound.
+    pub fn binds_list(&self) -> Vec<proto::Bind> {
+        let binds = self.settings.binds.iter().map(|bind| proto::Bind {
+            chord: bind.chord.canonical(),
+            mods: bind.chord.mod_names(),
+            key: bind.chord.key_name(),
+            action: bind.action_name.clone(),
+            args: bind.args.clone(),
+            title: bind.title.clone(),
+        });
+        let escape = (!self.escapes.is_empty()).then(|| proto::Bind {
+            chord: "Escape".into(),
+            key: "Escape".into(),
+            action: "spawn".into(),
+            args: self.escapes.values().flatten().cloned().collect(),
+            ..Default::default()
+        });
+        binds.chain(escape).collect()
     }
 
     pub fn run(&mut self, action: &Action) {
@@ -241,5 +270,35 @@ impl Engine {
             win.handle.state(&crate::windows::FORCE).set(true);
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_shortcut_the_core_cannot_read_is_refused() {
+        let with = |chord: &str, more: &str| {
+            let text = format!(
+                r#"{{ "binds": [
+                    {{ "chord": "SUPER+q", "action": "close" }},
+                    {{ "chord": "{chord}", "action": "close"{more} }}
+                ] }}"#
+            );
+            check_shortcuts(&Settings::parse(&text, None).unwrap())
+        };
+        assert_eq!(with("SUPER+Return", ""), Ok(()));
+        assert_eq!(
+            with("ALT+Alt_L", r#", "release": true, "passthrough": true"#),
+            Ok(())
+        );
+        let error = with("SUPER+Retrun", "").unwrap_err();
+        assert!(
+            error.starts_with("binds[1]:") && error.contains("Retrun"),
+            "{error}"
+        );
+        assert!(with("SUPER+code:3", "").unwrap_err().contains("code:3"));
+        assert!(with("SUPER+mouse_up", r#", "locked": true"#).is_err());
     }
 }

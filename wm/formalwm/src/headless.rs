@@ -5,24 +5,35 @@
 //! The session is ShojiWM's own test harness
 //! (`src/shojiwm_rs/tests/common/mod.rs`), MIT, Copyright (c) 2026 bea4dev.
 
-use std::{os::unix::net::UnixStream, time::Duration};
+use std::{
+    fs::File,
+    os::{fd::AsFd, unix::net::UnixStream},
+    time::Duration,
+};
 
 use fs_wm_proto as proto;
-use shojiwm_lib::{config::RuntimeOutputMode, state::ShojiWM};
+use shojiwm_lib::{
+    config::{RuntimeHdrConfig, RuntimeHdrMode, RuntimeOutputMode},
+    state::ShojiWM,
+    virtual_input::{VirtualDevice, VirtualInput, VirtualMotion},
+};
 use shojiwm_rs::{
     COMPOSITOR, ConfigBuilder, RuntimeBoot,
     cli::CommonArgs,
     ssd::{GestureSwipeEventSnapshot, GestureSwipePhaseSnapshot as Phase},
 };
 use smithay::{
+    backend::input::InputEvent,
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{calloop::EventLoop, wayland_server::Display},
+    utils::SERIAL_COUNTER,
 };
 use wayland_client::{
     Connection, Dispatch, EventQueue, Proxy, QueueHandle,
-    protocol::{wl_compositor, wl_registry, wl_surface},
+    protocol::{wl_buffer, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_surface},
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
 use crate::engine::ask;
 
@@ -30,9 +41,10 @@ const HOST: &str = r#"{
   "terminal": "foot",
   "outputs": [
     { "name": "TEST-1", "defaultWorkspace": 1 },
-    { "name": "TEST-2", "workspaces": [4, 8], "defaultWorkspace": 4 }
+    { "name": "TEST-2", "workspaces": [4, 8], "defaultWorkspace": 4, "vrr": 2 }
   ],
-  "lidOutput": "TEST-2"
+  "lidOutput": "TEST-2",
+  "directScanout": false
 }"#;
 const WIDTH: f64 = 1024.0;
 const HEIGHT: f64 = 768.0;
@@ -45,6 +57,7 @@ struct Session {
     client: Client,
     registry: wl_registry::WlRegistry,
     now_ms: u64,
+    files: Vec<File>,
 }
 
 fn output(name: &str, x: i32) -> Output {
@@ -113,6 +126,7 @@ impl Session {
             client: Client::default(),
             registry,
             now_ms: 1000,
+            files: Vec::new(),
         };
         session.roundtrip();
         session
@@ -161,6 +175,97 @@ impl Session {
         surface.commit();
         self.roundtrip();
         surface
+    }
+
+    /// Gives a window something under the pointer: without a buffer the
+    /// compositor has no surface of it to find there.
+    fn draw(&mut self, surface: &wl_surface::WlSurface, width: i32, height: i32) {
+        let qh = self.queue.handle();
+        let shm: wl_shm::WlShm = self.bind("wl_shm");
+        let stride = width * 4;
+        let path = std::env::temp_dir().join(format!(
+            "formalwm-headless-{}-shm-{}",
+            std::process::id(),
+            self.files.len()
+        ));
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        std::fs::remove_file(&path).unwrap();
+        file.set_len((stride * height) as u64).unwrap();
+        let pool = shm.create_pool(file.as_fd(), stride * height, &qh, ());
+        let buffer =
+            pool.create_buffer(0, width, height, stride, wl_shm::Format::Argb8888, &qh, ());
+        self.files.push(file);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage(0, 0, width, height);
+        surface.commit();
+        self.roundtrip();
+        self.state.refresh_window_decorations().unwrap();
+        // A backend hands a new window the keyboard it asked for once it
+        // has painted it, and there is none here.
+        self.state.pending_initial_focus_window_ids.clear();
+        self.state
+            .update_keyboard_focus(SERIAL_COUNTER.next_serial());
+        self.roundtrip();
+    }
+
+    /// A layer across the top of the first output that takes the keyboard.
+    fn layer(
+        &mut self,
+    ) -> (
+        zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+        wl_surface::WlSurface,
+    ) {
+        let qh = self.queue.handle();
+        let compositor: wl_compositor::WlCompositor = self.bind("wl_compositor");
+        let shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = self.bind("zwlr_layer_shell_v1");
+        let surface = compositor.create_surface(&qh, ());
+        let layer = shell.get_layer_surface(
+            &surface,
+            None,
+            zwlr_layer_shell_v1::Layer::Top,
+            "launcher".into(),
+            &qh,
+            (),
+        );
+        layer.set_anchor(
+            zwlr_layer_surface_v1::Anchor::Top
+                | zwlr_layer_surface_v1::Anchor::Left
+                | zwlr_layer_surface_v1::Anchor::Right,
+        );
+        layer.set_size(0, 40);
+        layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive);
+        surface.commit();
+        self.roundtrip();
+        (layer, surface)
+    }
+
+    /// A mouse moved by this much.
+    fn pointer_by(&mut self, dx: f64, dy: f64) {
+        self.now_ms += 10;
+        let event = VirtualMotion {
+            device: VirtualDevice {
+                id: "test-pointer".into(),
+                name: "test pointer".into(),
+                keyboard: false,
+            },
+            time: self.now_ms,
+            dx,
+            dy,
+        };
+        self.state
+            .process_input_event(InputEvent::<VirtualInput>::PointerMotion { event });
+        self.roundtrip();
+    }
+
+    fn pointer(&self) -> (f64, f64) {
+        let at = self.state.seat.get_pointer().unwrap().current_location();
+        (at.x, at.y)
     }
 
     /// One touchpad event on the first output, through the compositor's
@@ -258,11 +363,30 @@ macro_rules! ignore_events {
     )*};
 }
 
+impl Dispatch<xdg_surface::XdgSurface, ()> for Client {
+    fn event(
+        _: &mut Self,
+        surface: &xdg_surface::XdgSurface,
+        event: xdg_surface::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_surface::Event::Configure { serial } = event {
+            surface.ack_configure(serial);
+        }
+    }
+}
+
 ignore_events!(
     wl_compositor::WlCompositor,
     wl_surface::WlSurface,
-    xdg_surface::XdgSurface,
-    xdg_toplevel::XdgToplevel
+    wl_shm::WlShm,
+    wl_shm_pool::WlShmPool,
+    wl_buffer::WlBuffer,
+    xdg_toplevel::XdgToplevel,
+    zwlr_layer_shell_v1::ZwlrLayerShellV1,
+    zwlr_layer_surface_v1::ZwlrLayerSurfaceV1
 );
 
 fn state() -> proto::State {
@@ -394,6 +518,241 @@ fn two_outputs_and_the_touchpad() {
     assert_eq!(seen.focused_workspace_id, "4");
     let rect = slack.rect.as_ref().unwrap();
     assert!(rect.x >= WIDTH as i32, "the window is on the second output");
+
+    // An empty workspace in view: the keyboard leaves the window it was on.
+    let keyboard = |session: &Session| session.state.window_keyboard_focus.is_some();
+    let go = |workspace: &'static str| {
+        ask(|engine| {
+            engine.model.focus_workspace(workspace);
+            engine.commit();
+            Ok(())
+        })
+        .unwrap();
+    };
+    assert!(keyboard(&session), "Slack has the keyboard");
+    go("8");
+    session.roundtrip();
+    assert!(!keyboard(&session), "nothing in view, nobody has it");
+    go("4");
+    session.roundtrip();
+    assert!(
+        keyboard(&session),
+        "back on Slack's workspace, Slack has it"
+    );
+
+    // A window sent away without the view following gives the keyboard up,
+    // and a layer that had it in between hands it to nobody: the workspace
+    // the window went to stays out of view.
+    let slack = ask(|engine| Ok(engine.model.focused_window().cloned())).unwrap();
+    let slack = slack.expect("Slack is focused");
+    let send = |workspace: &'static str, follow: bool| {
+        let id = slack.clone();
+        ask(move |engine| {
+            let moved = engine.model.move_to_workspace(&id, workspace, follow);
+            engine.commit();
+            moved.then_some(()).ok_or("not moved".into())
+        })
+        .unwrap();
+    };
+    let typing = |session: &Session| {
+        let keyboard = session.state.seat.get_keyboard();
+        keyboard
+            .and_then(|keyboard| keyboard.current_focus())
+            .is_some()
+    };
+    let shown = || active(&state(), "TEST-2");
+    send("8", false);
+    session.roundtrip();
+    assert_eq!(shown().as_deref(), Some("4"));
+    assert!(!keyboard(&session), "sent away, it gives the keyboard up");
+    let (layer, surface) = session.layer();
+    assert!(typing(&session), "the layer takes the keyboard");
+    layer.destroy();
+    surface.destroy();
+    session.roundtrip();
+    assert!(!typing(&session), "the layer gone, nobody has it");
+    assert_eq!(
+        shown().as_deref(),
+        Some("4"),
+        "and no workspace is shown for it"
+    );
+    // The compositor giving it the keyboard all the same shows nothing:
+    // the engine hears of it and takes the keyboard back.
+    let id = slack.clone();
+    ask(move |engine| {
+        engine.windows[&id].handle.focus();
+        Ok(())
+    })
+    .unwrap();
+    session.roundtrip();
+    assert!(keyboard(&session));
+    let id = slack.clone();
+    ask(move |engine| {
+        let window = engine.windows[&id].handle;
+        engine.focused(window);
+        Ok(())
+    })
+    .unwrap();
+    session.roundtrip();
+    assert_eq!(shown().as_deref(), Some("4"));
+    assert!(!keyboard(&session), "out of view, it keeps no keyboard");
+    send("4", true);
+    session.roundtrip();
+    assert!(keyboard(&session), "back in view, it has the keyboard");
+
+    // `binds.list`: the shell's Escape is a row while it is bound.
+    let escapes = || {
+        ask(|engine| {
+            let binds = engine.binds_list().into_iter();
+            Ok(binds
+                .filter(|bind| bind.key == "Escape" && bind.mods.is_empty())
+                .collect::<Vec<_>>())
+        })
+        .unwrap()
+    };
+    let escape = |argv: Option<&'static str>| {
+        ask(move |engine| {
+            match argv {
+                Some(argv) => engine.escapes.insert("card".into(), vec![argv.into()]),
+                None => engine.escapes.remove("card"),
+            };
+            engine.bind_escapes();
+            Ok(())
+        })
+        .unwrap();
+    };
+    assert_eq!(escapes(), []);
+    escape(Some("true"));
+    let listed = escapes();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        (listed[0].action.as_str(), &listed[0].args[..]),
+        ("spawn", &["true".to_string()][..])
+    );
+    escape(None);
+    assert_eq!(escapes(), []);
+
+    // Black under everything, and again after a reload, on which the
+    // compositor goes back to its own colour.
+    let black = [0.0, 0.0, 0.0, 1.0];
+    assert_eq!(session.state.clear_color, black);
+    session.state.reload_decoration_runtime();
+    for _ in 0..40 {
+        session.roundtrip();
+        if session.state.clear_color == black {
+            break;
+        }
+    }
+    assert_eq!(session.state.clear_color, black);
+
+    // `directScanout` false: the core is told to composite every frame.
+    let configs = &session.state.runtime_output_configs;
+    let scanout = |name: &str| configs.get(name).and_then(|config| config.direct_scanout);
+    assert_eq!(
+        (scanout("TEST-1"), scanout("TEST-2")),
+        (Some(false), Some(false))
+    );
+
+    // `cm_auto_hdr`: every output is SDR until fullscreen HDR content.
+    let auto = Some(RuntimeHdrConfig::Mode(RuntimeHdrMode::Auto));
+    assert_eq!(
+        configs.get("TEST-1").and_then(|config| config.hdr.clone()),
+        auto
+    );
+
+    // `vrr` 2: asked of the core only while a window is fullscreen there.
+    let vrr = |session: &Session| {
+        let config = session.state.runtime_output_configs.get("TEST-2");
+        config.and_then(|config| config.vrr)
+    };
+    let toggle = || {
+        ask(|engine| {
+            let id = engine.model.focused_window().cloned().ok_or("no focus")?;
+            engine.toggle_fullscreen(&id);
+            Ok(())
+        })
+        .unwrap();
+    };
+    assert_eq!(vrr(&session), Some(false));
+    toggle();
+    session.roundtrip();
+    assert_eq!(vrr(&session), Some(true), "fullscreen, vrr is asked for");
+    toggle();
+    session.roundtrip();
+    assert_eq!(vrr(&session), Some(false));
+
+    // A window its rule confines the pointer to keeps it for as long as it
+    // has the keyboard.
+    let surface = session.open("Minecraft 1.21");
+    settle();
+    session.roundtrip();
+    let game = state()
+        .windows
+        .iter()
+        .find(|window| window.app_id == "Minecraft 1.21")
+        .and_then(|window| window.rect)
+        .unwrap();
+    session.draw(&surface, game.width, game.height);
+    settle();
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    let right = f64::from(game.x + game.width);
+    let (x, y) = session.pointer();
+    session.pointer_by(
+        f64::from(game.x + game.width / 2) - x,
+        f64::from(game.y + game.height / 2) - y,
+    );
+    session.pointer_by(4000.0, 0.0);
+    let (x, _) = session.pointer();
+    assert!(
+        x < right && x > right - 2.0,
+        "the pointer at {x} is not held at the edge at {right}"
+    );
+    let other = session.open("other");
+    session.draw(&other, 400, 300);
+    settle();
+    session.roundtrip();
+    session.pointer_by(4000.0, 0.0);
+    let (x, _) = session.pointer();
+    assert!(
+        x > right,
+        "the pointer at {x} is still held, without the keyboard"
+    );
+
+    // The dynamic cursor: stretched along its way at speed, as it is at
+    // rest, and never shaped while it is hidden.
+    let shaped = |session: &Session| session.state.config_cursor_transform;
+    ask(|engine| {
+        engine.cursor_hidden = false;
+        Ok(())
+    })
+    .unwrap();
+    session.pointer_by(-600.0, 0.0);
+    let mut seen = None;
+    for _ in 0..40 {
+        session.pointer_by(-12.0, 0.0);
+        seen = seen.or(shaped(&session));
+    }
+    let seen = seen.expect("at speed the cursor is shaped");
+    assert!(seen.scale_x > 1.0 && seen.scale_y < 1.0, "{seen:?}");
+    assert_eq!((seen.rotate, seen.scale_axis.abs()), (0.0, 180.0));
+    for _ in 0..200 {
+        if shaped(&session).is_none() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+        session.roundtrip();
+    }
+    assert_eq!(shaped(&session), None, "at rest it is drawn as it is");
+    ask(|engine| {
+        engine.cursor_hidden = true;
+        Ok(())
+    })
+    .unwrap();
+    for _ in 0..40 {
+        session.pointer_by(12.0, 0.0);
+        assert_eq!(shaped(&session), None, "a hidden cursor is not shaped");
+    }
 
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {

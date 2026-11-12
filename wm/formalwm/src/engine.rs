@@ -73,6 +73,7 @@ pub struct Engine {
     /// The pointer went idle over a window whose rule hides it then.
     pub cursor_idle: bool,
     pub idle_timer: Option<TimerHandle>,
+    pub cursor: crate::cursor::Dynamic,
     pub gesture: gestures::Gesture,
     pub overview: overview::Overview,
     pub drag: Option<drag::Drag>,
@@ -196,11 +197,40 @@ impl Engine {
     /// After the model changed: everything that follows from it.
     pub fn commit(&mut self) {
         self.scene.sync(&self.model);
+        self.sync_fullscreen();
         self.focus();
         self.present();
         self.kick();
         self.publish();
         self.publish_workspaces();
+    }
+
+    pub fn sync_fullscreen(&self) {
+        crate::session::set_fullscreen(self.fullscreen());
+    }
+
+    /// By output, the content type of its fullscreen window: the one a rule
+    /// gives it, else the one its client declares.
+    fn fullscreen(&self) -> BTreeMap<String, String> {
+        let content = |id: &String| {
+            let win = self.windows.get(id)?;
+            let declared = || match win.handle.content_type().get_untracked() {
+                Some(WindowContentType::Photo) => "photo",
+                Some(WindowContentType::Video) => "video",
+                Some(WindowContentType::Game) => "game",
+                None => "",
+            };
+            let ruled = win.effect.content.clone();
+            Some(ruled.unwrap_or_else(|| declared().to_owned()))
+        };
+        self.model
+            .outputs
+            .iter()
+            .filter_map(|output| {
+                let id = self.model.fullscreen_on(&output.geo.name)?;
+                Some((output.geo.name.clone(), content(id)?))
+            })
+            .collect()
     }
 
     /// Gives the keyboard to the window the model has focused. Not while
@@ -212,11 +242,23 @@ impl Engine {
         if want == self.asked_focus || self.hold.data_drag {
             return;
         }
-        self.asked_focus = want.clone();
-        if let Some(win) = want.and_then(|id| self.windows.get(&id))
-            && !win.handle.is_focused().get_untracked()
-        {
-            win.handle.focus();
+        let had = std::mem::replace(&mut self.asked_focus, want.clone());
+        match want {
+            Some(id) => {
+                if let Some(win) = self.windows.get(&id)
+                    && !win.handle.is_focused().get_untracked()
+                {
+                    win.handle.focus();
+                }
+            }
+            // Nothing in view to type into. The compositor keeps the keyboard
+            // on a window as long as it is mapped, in view or not.
+            None => {
+                let asked = had.and_then(|id| self.windows.get(&id).map(|win| win.handle));
+                for window in asked.into_iter().chain(COMPOSITOR.window.focused()) {
+                    window.unfocus();
+                }
+            }
         }
         self.arm_idle_pointer();
     }

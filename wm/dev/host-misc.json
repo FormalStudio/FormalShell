@@ -1,1 +1,1 @@
-{"terminal": "foot", "opacity": 0.8, "outputs": [{"name": "Virtual-4", "mode": "1024x768@60", "scale": 1}]}
+{"terminal": "foot", "opacity": 0.8, "outputs": [{"name": "Virtual-4", "mode": "1024x768@60", "scale": 1, "vrr": 2}]}

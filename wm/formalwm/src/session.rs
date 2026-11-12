@@ -3,10 +3,10 @@
 
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     io::{Read, Write},
     os::unix::net::UnixStream,
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     time::Instant,
 };
@@ -19,7 +19,7 @@ use formalwm_core::{
 use fs_wm_proto::{self as proto, event};
 use serde_json::json;
 use shojiwm_rs::{
-    compositor::{OutputHdr, OutputMode, OutputPosition, OutputResolution},
+    compositor::{OutputHdr, OutputHdrMode, OutputMode, OutputPosition, OutputResolution},
     prelude::*,
     runtime_input::{
         RuntimeInputAccelProfile, RuntimeInputClickMethod, RuntimeInputDeviceConfig,
@@ -50,11 +50,23 @@ pub struct OutputOverride {
 
 thread_local! {
     static OVERRIDES: RefCell<BTreeMap<String, OutputOverride>> = const { RefCell::new(BTreeMap::new()) };
-    /// The outputs `outputs.create` made: the only ones `outputs.remove` takes.
-    static CREATED: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    /// The outputs `outputs.create` made and their size in pixels: the only
+    /// ones `outputs.remove` takes and `outputs.set` resizes.
+    static CREATED: RefCell<BTreeMap<String, (i32, i32)>> = const { RefCell::new(BTreeMap::new()) };
+    /// By output, the content type of the window fullscreen on it as of
+    /// the last turn, empty when its rule names none.
+    static FULLSCREEN: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
     /// The ext-workspace model as of the last turn; its factory runs inside
     /// turns and cannot read the engine.
     static WORKSPACES: RefCell<RuntimeWorkspaceConfigUpdate> = RefCell::new(RuntimeWorkspaceConfigUpdate::default());
+}
+
+/// The settings in `dir`, refused when the files or a shortcut in them
+/// cannot be read.
+pub fn load_settings(dir: &Path) -> Result<Settings, String> {
+    let settings = Settings::load(dir)?;
+    crate::binds::check_shortcuts(&settings)?;
+    Ok(settings)
 }
 
 pub fn settings_dir() -> PathBuf {
@@ -65,11 +77,46 @@ pub fn settings_dir() -> PathBuf {
         .join("formalwm")
 }
 
+/// `FORMALWM_START_LOCKED=1`, set by a login that asked for no password:
+/// nothing is drawn until the shell has locked and been unlocked. An
+/// environment variable, since the command line is the core's.
+pub fn starts_locked() -> bool {
+    std::env::var("FORMALWM_START_LOCKED").is_ok_and(|value| value == "1")
+}
+
 pub fn override_of(output: &str) -> OutputOverride {
     OVERRIDES.with(|overrides| overrides.borrow().get(output).cloned().unwrap_or_default())
 }
 
-pub fn override_output(request: proto::OutputSet) {
+/// The size `outputs.set` asks for, of an output `outputs.create` made
+/// that is `now`. One of the two alone keeps the other.
+fn resized(
+    name: &str,
+    now: Option<(i32, i32)>,
+    width: Option<i32>,
+    height: Option<i32>,
+) -> Result<Option<(i32, i32)>, String> {
+    if width.is_none() && height.is_none() {
+        return Ok(None);
+    }
+    let Some(now) = now else {
+        return Err(format!(
+            "outputs.set: `{name}` is not an output outputs.create made, its size is its mode's"
+        ));
+    };
+    let size = (width.unwrap_or(now.0), height.unwrap_or(now.1));
+    if size.0 <= 0 || size.1 <= 0 {
+        return Err(format!("outputs.set: {}x{} is not a size", size.0, size.1));
+    }
+    Ok(Some(size).filter(|size| *size != now))
+}
+
+pub fn override_output(request: proto::OutputSet) -> Result<(), String> {
+    let now = CREATED.with(|created| created.borrow().get(&request.name).copied());
+    if let Some(size) = resized(&request.name, now, request.width, request.height)? {
+        CREATED.with(|created| created.borrow_mut().insert(request.name.clone(), size));
+        COMPOSITOR.output.resize(&request.name, size.0, size.1);
+    }
     OVERRIDES.with(|overrides| {
         let mut overrides = overrides.borrow_mut();
         let entry = overrides.entry(request.name).or_default();
@@ -87,6 +134,7 @@ pub fn override_output(request: proto::OutputSet) {
         }
     });
     COMPOSITOR.output.reconfigure();
+    Ok(())
 }
 
 /// `outputs.create`. The core puts an output no settings place to the right
@@ -104,7 +152,7 @@ pub fn create_output(request: proto::OutputCreate) -> Result<String, String> {
     }
     if let Some(name) = &request.name {
         let taken = COMPOSITOR.output.get(name).is_some()
-            || CREATED.with(|created| created.borrow().contains(name));
+            || CREATED.with(|created| created.borrow().contains_key(name));
         if name.is_empty() || taken {
             return Err(format!(
                 "outputs.create: `{name}` is no name for a new output"
@@ -117,7 +165,10 @@ pub fn create_output(request: proto::OutputCreate) -> Result<String, String> {
         height: request.height,
         scale: Some(scale),
     });
-    CREATED.with(|created| created.borrow_mut().insert(name.clone()));
+    CREATED.with(|created| {
+        let size = (request.width, request.height);
+        created.borrow_mut().insert(name.clone(), size)
+    });
     // Over the scale of the settings' rule for a display they do not list.
     OVERRIDES.with(|overrides| {
         overrides
@@ -131,7 +182,10 @@ pub fn create_output(request: proto::OutputCreate) -> Result<String, String> {
 
 /// `outputs.remove`: only what `outputs.create` made.
 pub fn remove_output(name: &str) -> Result<(), String> {
-    if !CREATED.with(|created| created.borrow_mut().remove(name)) {
+    if CREATED
+        .with(|created| created.borrow_mut().remove(name))
+        .is_none()
+    {
         return Err(format!(
             "outputs.remove: `{name}` is not an output outputs.create made"
         ));
@@ -139,6 +193,33 @@ pub fn remove_output(name: &str) -> Result<(), String> {
     OVERRIDES.with(|overrides| overrides.borrow_mut().remove(name));
     COMPOSITOR.output.remove(name);
     Ok(())
+}
+
+/// Each turn's fullscreen windows, which `vrr` 2 and 3 follow.
+pub fn set_fullscreen(now: BTreeMap<String, String>) {
+    let changed = FULLSCREEN.with(|last| {
+        let mut last = last.borrow_mut();
+        let changed = *last != now;
+        *last = now;
+        changed
+    });
+    if changed
+        && engine::settings()
+            .outputs
+            .iter()
+            .any(|output| output.vrr >= 2)
+    {
+        COMPOSITOR.output.reconfigure();
+    }
+}
+
+/// Whether the settings ask for variable refresh on an output now. The
+/// core keeps it off on a connector that cannot do it.
+pub fn wants_vrr(output: &WaylandOutputSnapshot) -> bool {
+    let fullscreen = FULLSCREEN.with(|last| last.borrow().get(&output.name).cloned());
+    engine::settings()
+        .output_for(&facts(output))
+        .is_some_and(|entry| entry.wants_vrr(fullscreen.as_deref()))
 }
 
 fn facts(output: &WaylandOutputSnapshot) -> OutputFacts<'_> {
@@ -193,6 +274,12 @@ fn device_name(name: &str) -> String {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect()
+}
+
+/// Black under everything, so the session arrives out of the greeter's
+/// black, a locked start included.
+pub fn black_desk() {
+    COMPOSITOR.output.set_clear_color(hex("#000000"));
 }
 
 pub fn setup() {
@@ -254,9 +341,16 @@ pub fn setup() {
                     config.mode = Some(OutputMode::Mirror);
                     config.source = Some(source);
                 }
-                if let Some(color) = over.color {
-                    config.hdr = Some(OutputHdr::Enabled(color.cm != "srgb"));
-                }
+                // `cm_auto_hdr`: SDR until a fullscreen window shows HDR
+                // content, unless the shell asked for an HDR desktop.
+                let hdr = over.color.is_some_and(|color| color.cm != "srgb");
+                config.hdr = Some(OutputHdr::Mode(if hdr {
+                    OutputHdrMode::On
+                } else {
+                    OutputHdrMode::Auto
+                }));
+                config.vrr = Some(wants_vrr(output));
+                config.direct_scanout = Some(settings.direct_scanout);
                 (output.name.clone(), Some(config))
             })
             .collect()
@@ -339,7 +433,10 @@ pub fn setup() {
             engine.xwayland_primary();
             engine.start_shell();
         });
-        wait_for_shell(Instant::now());
+        // Locked with no shell, the session stays dark, pointer and all.
+        if !starts_locked() {
+            wait_for_shell(Instant::now());
+        }
     });
 }
 
@@ -473,10 +570,7 @@ impl Engine {
         let chrome = &self.theme.chrome;
         self.signals.look.set(look_of(&self.theme));
         self.scene.set_motion(&chrome.motion);
-        self.model.set_options(
-            self.settings
-                .options(chrome.gaps_in as f64, chrome.gaps_out as f64),
-        );
+        self.model.set_options(self.settings.options(chrome));
         layers::install(self.settings.clone(), chrome.blur);
         for win in self.windows.values() {
             win.handle
@@ -511,7 +605,7 @@ impl Engine {
 
     /// Reads the settings again. A file with a mistake changes nothing.
     fn reload(&mut self) -> Result<(), String> {
-        match Settings::load(&self.dir) {
+        match load_settings(&self.dir) {
             Err(error) => {
                 tracing::error!(%error, "the settings were refused");
                 self.broadcast(event::CONFIG_FAILED, json!({ "error": error }));
@@ -523,9 +617,13 @@ impl Engine {
                 self.sync_outputs();
                 self.commit();
                 self.broadcast(event::CONFIG_RELOADED, json!({}));
-                // The compositor drops the cursor override when it swaps a
-                // config; this runs after it has.
-                set_timeout(1.0, || enter(|engine| engine.apply_cursor()));
+                // The compositor goes back to its own clear colour and
+                // drops the cursor override when it swaps a config; this
+                // runs after it has.
+                set_timeout(1.0, || {
+                    black_desk();
+                    enter(|engine| engine.apply_cursor());
+                });
                 Ok(())
             }
         }
@@ -586,5 +684,38 @@ impl Engine {
                 script.to_string_lossy().into_owned(),
             ]));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resized;
+
+    #[test]
+    fn outputs_set_resizes_only_an_output_outputs_create_made() {
+        let made = Some((800, 600));
+        assert_eq!(resized("FS-1", made, None, None), Ok(None));
+        assert_eq!(resized("DP-1", None, None, None), Ok(None));
+        assert_eq!(
+            resized("FS-1", made, Some(1280), Some(720)),
+            Ok(Some((1280, 720)))
+        );
+        assert_eq!(
+            resized("FS-1", made, Some(1280), None),
+            Ok(Some((1280, 600)))
+        );
+        assert_eq!(resized("FS-1", made, None, Some(720)), Ok(Some((800, 720))));
+        assert_eq!(resized("FS-1", made, Some(800), Some(600)), Ok(None));
+        assert!(
+            resized("FS-1", made, Some(0), None)
+                .unwrap_err()
+                .contains("0x600")
+        );
+        assert!(resized("FS-1", made, None, Some(-4)).is_err());
+        assert!(
+            resized("DP-1", None, Some(1280), None)
+                .unwrap_err()
+                .contains("DP-1")
+        );
     }
 }

@@ -13,7 +13,7 @@ step "layers: a wallpaper, a bar reserving 36 px, an overlay surface"
 layer wallpaper background fill 0 0 --color ff203040; sleep 0.4
 layer formalshell-bar top top 0 36 --exclusive 36 --color cc101010; sleep 0.4
 layer osd overlay none 200 80 --color ffaa3300; osd=$!; sleep 1
-ipc layers.list | jq -c '.[]'
+ipc layers.list | jq -c '.[]'; ipc state.get | jq -c '.outputs[] | {name, reserved}'
 for app in one two three; do foot -a "$app" >/dev/null 2>&1 & sleep 1.2; done
 cols; shot 20-layers
 kill "$osd"; sleep 0.8; ipc layers.list | jq -c '[.[] | .namespace]'
@@ -111,7 +111,35 @@ hold Super+F9 800; sleep 1.2; echo "repeat: $(wc -l < "$run/repeat")"
 hold Super+F10 800; sleep 1.2; echo "once: $(wc -l < "$run/once")"
 key Alt+F8 1; tr '\n' ' ' < "$run/alt"; echo
 ipc bind.escape "{\"name\":\"menu\",\"argv\":[\"sh\",\"-c\",\"echo esc >> $run/esc\"]}" >/dev/null
-key Escape 0.8; ipc bind.escape '{"name":"menu"}' >/dev/null; key Escape 0.8; echo "escape: $(wc -l < "$run/esc")"
+escapes() { ipc binds.list | jq -c '[.[] | select(.key == "Escape" and .mods == []) | {action, args: (.args | length)}]'; }
+echo "binds.list while it is bound: $(escapes)"
+key Escape 0.8; ipc bind.escape '{"name":"menu"}' >/dev/null; key Escape 0.8; echo "escape: $(wc -l < "$run/esc"), binds.list after: $(escapes)"
+
+step "a window sent away without the view following gives the keyboard up, and a layer that took the keyboard in between shows no workspace"
+heard() { echo "$1: $(ipc state.get | jq -c '. as $s | {ws: .focusedWorkspaceId, focus: ([.windows[] | select(.id == $s.focusedWindowId) | .appId][0])}') the terminal heard: $(tr '\n' ' ' < "$run/kb")"; }
+empty=($(ipc state.get | jq -r '[.windows[].workspaceId] as $used | [.workspaces[] | select(.id as $id | $used | index($id) | not) | .idx] | .[0:2] | .[]'))
+ipc workspace.focusAt "{\"idx\":${empty[0]}}" >/dev/null; sleep 1
+foot -a kb sh -c "cat >> $run/kb" >/dev/null 2>&1 & sleep 1.5
+key a 0.2; key Return 0.5; heard "in view"
+ipc window.moveTo "{\"id\":\"$(id_of kb)\",\"idx\":${empty[1]},\"output\":\"$out\"}" >/dev/null; sleep 1
+key b 0.2; key Return 0.5; heard "sent away"
+layer launcher overlay none 300 200 --keyboard exclusive; sheet=$!; sleep 1
+key c 0.2; key Return 0.5; kill "$sheet"; sleep 1
+key d 0.2; key Return 0.5; heard "a layer came and went"
+ipc workspace.focusAt "{\"idx\":${empty[1]}}" >/dev/null; sleep 1
+key e 0.2; key Return 0.5; heard "its workspace in view"
+
+step "a layer's reserve at the side: the outer gap lies inside it, and a lone column narrower than the strip is centred in what is left"
+kb() { echo "$1: reserved $(ipc state.get | jq -c '.outputs[0].reserved | [.left, .top, .right, .bottom]') kb $(ipc state.get | jq -c '[.windows[] | select(.appId == "kb") | .rect | [.x, .y, .width, .height]][0]')"; }
+key Super+f 0.8; kb "nothing at the side"
+layer side top left 154 0 --exclusive 154 --color cc101010; side=$!; sleep 1; kb "154 wide on the left, reserving 154"
+key Super+r 0.8; kb "the next width"
+key Super+f 0.8; kill "$side"; sleep 0.8
+layer side top left 154 0 --exclusive 148 --color cc101010; side=$!; sleep 1; kb "154 wide on the left, reserving 148"
+kill "$side"; sleep 0.8
+layer side top right 154 0 --exclusive 154 --color cc101010; side=$!; sleep 1; kb "154 wide on the right, reserving 154"
+key Super+r 0.8; kb "the next width"
+kill "$side"; sleep 0.8
 
 step "the log, then session.exit"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx\|unknown key .code:" | cut -c1-300 | tail -12

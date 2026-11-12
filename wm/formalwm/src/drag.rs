@@ -367,17 +367,11 @@ impl Engine {
             .and_then(|at| self.output_at(at))
             .and_then(|output| self.model.active_workspace(&output))
             .map(|ws| ws.id.clone());
-        if let (Some(at), Some(workspace)) = (at, workspace) {
-            match self.column_before(&workspace, at.0, id) {
-                Some(Some(before)) => {
-                    self.model.move_column(id, Some(&before));
-                }
-                Some(None) => {
-                    self.model.move_to_workspace(id, &workspace, true);
-                    self.model.move_column(id, None);
-                }
-                None => {}
-            }
+        if let (Some(at), Some(workspace)) = (at, workspace)
+            && let Some(before) = self.column_before(&workspace, at.0, id)
+            && self.model.move_window(id, &workspace, before.as_deref())
+        {
+            self.model.focus_workspace(&workspace);
         }
         self.scene.sync(&self.model);
         let drawn = self.drag_box(drag);
@@ -409,7 +403,7 @@ impl Engine {
             let strip = self.model.strip_of(&output).w.max(1.0);
             self.model.focus_window(&id);
             self.model
-                .set_column_width((rect.w + 2.0 * self.model.options.gaps_in) / strip);
+                .set_column_width((rect.w + 2.0 * self.model.options.tile_inset()) / strip);
         }
         self.scene.sync(&self.model);
         self.scene.finish();
@@ -418,6 +412,7 @@ impl Engine {
 
     fn pointer_moved(&mut self, at: (f64, f64)) {
         self.arm_idle_pointer();
+        self.cursor_moved(at);
         if self.hold.data_drag {
             self.hold_at(at, true);
         }
