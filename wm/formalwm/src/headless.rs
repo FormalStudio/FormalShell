@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use shojiwm_lib::{
     config::{RuntimeHdrConfig, RuntimeHdrMode, RuntimeOutputMode},
     state::ShojiWM,
-    virtual_input::{VirtualDevice, VirtualInput, VirtualKey, VirtualMotion},
+    virtual_input::{VirtualButton, VirtualDevice, VirtualInput, VirtualKey, VirtualMotion},
 };
 use shojiwm_rs::{
     COMPOSITOR, ConfigBuilder, RuntimeBoot,
@@ -25,7 +25,7 @@ use shojiwm_rs::{
     ssd::{GestureSwipeEventSnapshot, GestureSwipePhaseSnapshot as Phase},
 };
 use smithay::{
-    backend::input::{InputEvent, KeyState},
+    backend::input::{ButtonState, InputEvent, KeyState},
     input::keyboard::Keycode,
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{calloop::EventLoop, wayland_server::Display},
@@ -204,8 +204,7 @@ impl Session {
     }
 
     /// The keys of a chord by their evdev codes, pressed in order and let
-    /// go in reverse. The windows are read again after it, as a frame does:
-    /// the engine asks for the keyboard by what they say of their focus.
+    /// go in reverse. The windows are read again after it, as a frame does.
     fn chord(&mut self, keys: &[u32]) {
         let pressed = keys.iter().map(|key| (*key, KeyState::Pressed));
         let released = keys.iter().rev().map(|key| (*key, KeyState::Released));
@@ -371,6 +370,45 @@ impl Session {
     fn pointer(&self) -> (f64, f64) {
         let at = self.state.seat.get_pointer().unwrap().current_location();
         (at.x, at.y)
+    }
+
+    fn pointer_to(&mut self, x: f64, y: f64) {
+        let (from_x, from_y) = self.pointer();
+        self.pointer_by(x - from_x, y - from_y);
+    }
+
+    /// The left button pressed and let go where the pointer is.
+    fn click(&mut self) {
+        for state in [ButtonState::Pressed, ButtonState::Released] {
+            self.now_ms += 10;
+            let event = VirtualButton {
+                device: VirtualDevice {
+                    id: "test-pointer".into(),
+                    name: "test pointer".into(),
+                    keyboard: false,
+                },
+                time: self.now_ms,
+                button: 0x110,
+                state,
+            };
+            self.state
+                .process_input_event(InputEvent::<VirtualInput>::PointerButton { event });
+            self.roundtrip();
+        }
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+    }
+
+    /// Turns the loop until `done`: what a timer of the engine's does is
+    /// not there on the turn that set it.
+    fn until(&mut self, done: impl Fn() -> bool) -> bool {
+        for _ in 0..200 {
+            if done() {
+                return true;
+            }
+            self.roundtrip();
+        }
+        done()
     }
 
     /// One touchpad event on the first output, through the compositor's
@@ -1061,6 +1099,74 @@ fn two_outputs_and_the_touchpad() {
     mac.destroy();
     session.roundtrip();
     assert_eq!(handed(), None);
+    drop(shell);
+
+    // The keyboard is where the model has the focus, and the model where
+    // the keyboard is. Two windows nobody has used yet, the newer one with
+    // the keyboard.
+    let older = session.open("older");
+    let newer = session.open("newer");
+    for (surface, app) in [(&older, "older"), (&newer, "newer")] {
+        settle();
+        let rect = row(app).rect.unwrap();
+        session.draw(surface, rect.width, rect.height);
+    }
+    settle();
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    // The window the seat's keyboard is on, and the one the state says.
+    let keyed = || {
+        ask(|engine| {
+            let focus = COMPOSITOR.input.keyboard_focus().get_untracked();
+            let window = focus.and_then(|focus| focus.window_id);
+            Ok(window.map(|id| engine.public(&id)))
+        })
+        .unwrap()
+    };
+    let said = || state().focused_window_id;
+    let (older, newer) = (row("older").id, row("newer").id);
+    assert_eq!((keyed(), said()), (Some(newer.clone()), newer.clone()));
+
+    // A focus the compositor refuses does not stay in the model: it gives
+    // an older window nothing over a newer one unless it is asked on
+    // request.
+    let id = older.clone();
+    ask(move |engine| {
+        let id = engine.resolve(&id)?;
+        engine.model.focus_window(&id);
+        engine.windows[&id].handle.focus();
+        engine.asked_focus = Some(id);
+        engine.commit();
+        engine.settle_focus();
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(said(), older, "the model has it for now");
+    let back = newer.clone();
+    assert!(
+        session.until(|| state().focused_window_id == back),
+        "the model follows the keyboard back"
+    );
+    assert_eq!(keyed(), Some(newer.clone()));
+
+    // `window.focus`, the shell's pick: the older window has the keyboard
+    // and the state says so.
+    let mut shell = session.socket();
+    session.call(
+        &mut shell,
+        proto::method::WINDOW_FOCUS,
+        json!({ "id": older }),
+    );
+    session.roundtrip();
+    assert_eq!((keyed(), said()), (Some(older.clone()), older.clone()));
+    // A press on the newer one: both say so again.
+    let rect = row("newer").rect.unwrap();
+    session.pointer_to(
+        f64::from(rect.x + rect.width / 2),
+        f64::from(rect.y + rect.height / 2),
+    );
+    session.click();
+    assert_eq!((keyed(), said()), (Some(newer.clone()), newer.clone()));
     drop(shell);
 
     // The lid: the host's lid output is off while it is shut.
