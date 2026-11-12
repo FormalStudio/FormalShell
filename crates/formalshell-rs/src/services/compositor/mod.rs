@@ -62,6 +62,9 @@ pub struct Snapshot {
     pub workspaces: Vec<Workspace>,
     pub windows: Vec<Window>,
     pub fullscreen_outputs: Vec<String>,
+    /// Each window covering an output, by output: what `fullscreen_outputs`
+    /// counts.
+    pub covers: Vec<(String, WindowId)>,
     /// The covered outputs with no tiled fullscreen window over them: the
     /// cover is a floating window, fullscreen or the size of the output.
     pub floating_outputs: Vec<String>,

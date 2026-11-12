@@ -80,6 +80,7 @@ pub fn snapshot(state: &proto::State) -> Snapshot {
     workspaces.sort_by_key(|w| w.idx);
 
     let (mut fullscreen, mut floating_on): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    let mut covers = Vec::new();
     let (mut parked, mut overlaid) = (Vec::new(), Vec::new());
     let mut windows = Vec::with_capacity(state.windows.len());
     for w in &state.windows {
@@ -101,8 +102,10 @@ pub fn snapshot(state: &proto::State) -> Snapshot {
         if let Some(name) = shown_on.filter(|n| !n.is_empty()) {
             let borderless = w.floating && matches!((&rect, output_rect(&name)), (Some(r), Some(o)) if fills(r, &o));
             if w.fullscreen && !w.floating {
+                covers.push((name.clone(), id.clone()));
                 fullscreen.push(name);
             } else if w.fullscreen || borderless {
+                covers.push((name.clone(), id.clone()));
                 floating_on.push(name);
             }
         }
@@ -135,6 +138,7 @@ pub fn snapshot(state: &proto::State) -> Snapshot {
         workspaces,
         windows,
         fullscreen_outputs: fullscreen,
+        covers,
         floating_outputs: floating_on,
         focused_window_id: WindowId::new(state.focused_window_id.as_str()),
         focused_workspace_id: WorkspaceId::new(state.focused_workspace_id.as_str()),

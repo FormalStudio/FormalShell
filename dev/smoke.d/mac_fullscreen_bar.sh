@@ -93,8 +93,34 @@ park "\$cx" 0
 sleep 1  # the pointer resting on the edge, where a line would have brought the bar up
 dump game
 fs formalshell-mac-fsbar-game unset
-"$wmctl_bin" dispatch "hl.dsp.window.close({ window = 'class:^(formalshell-mac-fsbar-game)\\\$' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch 'hl.dsp.window.close({ window = "class:formalshell-mac-fsbar-game" })' > /dev/null 2>&1
 until_jq 10 "\$m-ungame-dump.json" '.fullscreenOutputs == []' call debug dump
+
+# A Mac window floating over a borderless game, focused: the game covers
+# the output, so the top edge brings nothing. Borderless, as Hyprland takes
+# a fullscreen window out of full screen when another one takes focus; the
+# fixture's plain window, in an instance of its own, as its panel hides once
+# it loses focus.
+spawn_foot formalshell-mac-fsbar-game
+until_window formalshell-mac-fsbar-game
+game="class:formalshell-mac-fsbar-game"
+"$wmctl_bin" dispatch "hl.dsp.window.float({ window = '\$game', action = 'set' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.resize({ x = $logical_w, y = $logical_h, window = '\$game' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, window = '\$game' })" > /dev/null 2>&1
+until_jq 10 "\$m-over-cover.json" '.fullscreenOutputs | length > 0' call debug dump
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'ELECTRON_PANEL_WINDOW=1 exec \$bin --ozone-platform=wayland > \$m-over.log 2>&1']==])" > /dev/null 2>&1
+until_jq 60 "\$m-over-clients.json" 'any(.[]; .title == "ElectronPanel - Window")' "$wmctl_bin" -j clients
+over="title:ElectronPanel - Window"
+"$wmctl_bin" dispatch "hl.dsp.window.float({ window = '\$over', action = 'set' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = '\$over' })" > /dev/null 2>&1
+until_jq 10 "\$m-over-active.json" '.title == "ElectronPanel - Window"' "$wmctl_bin" -j activewindow
+park "\$cx" 0
+sleep 1  # the pointer resting on the edge, where a line would have brought the bar up
+dump over
+park "\$cx" "\$cy"
+kill "\$("$jq_bin" -r .pid "\$m-over-active.json")" 2>/dev/null
+"$wmctl_bin" dispatch 'hl.dsp.window.close({ window = "class:formalshell-mac-fsbar-game" })' > /dev/null 2>&1
+until_jq 10 "\$m-unover-dump.json" '.fullscreenOutputs == [] and .windows == []' call debug dump
 
 "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'ELECTRON_PANEL_OPEN=1 exec \$bin --ozone-platform=wayland > \$log 2>&1']==])" > /dev/null 2>&1
 "$wtype_bin" -s 170000 -k Shift_L &
@@ -104,7 +130,6 @@ until_jq 30 "\$m-clients.json" 'any(.[]; .class == "electronpanel")' "$wmctl_bin
 "$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(electronpanel)\\\$' })" > /dev/null 2>&1
 until_jq 30 "\$m-menu.json" '.pid != null and (.titles | length) > 0' call appmenu status
 height > "\$m-height.txt"
-
 timeout 200 busctl --user monitor --match "type='signal',interface='org.freedesktop.DBus.Properties',path='/com/canonical/AppMenu/Registrar'" > "\$m-signals.txt" 2>&1 &
 mon=\$!
 sleep 1  # the monitor has to be on the bus before the first change
@@ -194,7 +219,7 @@ leg_mac_fullscreen_bar_assert() {
   for shot in hidden revealed menu gone held; do
     [ ! -f "$m-$shot.png" ] || echo "SMOKE_MAC_FSBAR_$(echo "$shot" | tr 'a-z' 'A-Z') $m-$shot.png"
   done
-  for phase in game hidden revealed menu gone held closed after; do
+  for phase in game over hidden revealed menu gone held closed after; do
     echo "$phase: reveal=$("$jq_bin" -c .reveal "$m-$phase-dump.json" 2>/dev/null) Revealed='$(cat "$m-$phase-revealed.txt" 2>/dev/null)'" \
       "bar top=$(_mac_fsbar_level "$m-$phase-layers.json" formalshell:bar 2) overlay=$(_mac_fsbar_level "$m-$phase-layers.json" formalshell:bar 3)" \
       "line=$(_mac_fsbar_level "$m-$phase-layers.json" formalshell:reveal 3)"
@@ -205,6 +230,10 @@ leg_mac_fullscreen_bar_assert() {
   [ "$(_mac_fsbar_level "$m-game-layers.json" formalshell:bar 2)$(_mac_fsbar_level "$m-game-layers.json" formalshell:bar 3)" = 00 ] \
     || fail "--mac-fullscreen-bar: the bar was mapped over the fullscreen game"
   expect_jq "$m-menu.json" '.pid != null' "the fixture's process registered no menu"
+  expect_jq "$m-over-dump.json" '.fullscreenOutputs | length > 0' "the game did not cover the output under the focused Mac window"
+  expect_jq "$m-over-dump.json" '.reveal.sensor == false and .reveal.shown == false' "a Mac window focused over a game covering the output got the line or the bar"
+  [ "$(_mac_fsbar_level "$m-over-layers.json" formalshell:bar 2)$(_mac_fsbar_level "$m-over-layers.json" formalshell:bar 3)" = 00 ] \
+    || fail "--mac-fullscreen-bar: the bar was mapped over a game covering the output under a focused Mac window"
 
   [ "$(_mac_fsbar_level "$m-hidden-layers.json" formalshell:bar 2)$(_mac_fsbar_level "$m-hidden-layers.json" formalshell:bar 3)" = 00 ] \
     || fail "--mac-fullscreen-bar: the bar stayed mapped over the fullscreen Mac window before the pointer reached the edge"

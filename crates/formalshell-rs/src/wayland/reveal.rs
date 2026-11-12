@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
-use fs_types::Edge;
+use fs_types::{Edge, WindowId};
 use serde_json::{Value, json};
 use smithay_client_toolkit::reexports::client::protocol::wl_buffer::WlBuffer;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
@@ -60,16 +60,16 @@ pub struct Reveal {
 }
 
 impl App {
-    /// The focused window is a Mac app's, fullscreen on the live bar's
-    /// output with the bar taken off it.
+    /// The bar is taken off its output by Mac windows alone, and the
+    /// focused window is one of them.
     fn mac_fullscreen(&self) -> bool {
         if !self.chrome().bar_covered() {
             return false;
         }
         let h = &self.store.compositor;
-        let Some(w) = h.window(&h.held_focused_window_id()) else { return false };
-        let output = &live!(self).bar.output;
-        self.store.appmenu.is_mac(w) && h.snapshot.workspaces.iter().any(|ws| ws.id == w.workspace_id && ws.output == *output)
+        mac_covers(&h.snapshot.covers, &live!(self).bar.output, &h.held_focused_window_id(), |id| {
+            h.window(id).is_some_and(|w| self.store.appmenu.is_mac(w))
+        })
     }
 
     /// The bar's window is down: a fullscreen window covers its output and
@@ -194,5 +194,45 @@ impl App {
 
     pub(super) fn reveal_report(&self) -> Value {
         json!({"sensor": self.reveal.sensor.is_some(), "shown": self.reveal.shown, "over": self.reveal.over})
+    }
+}
+
+/// Every window covering `output` is a Mac app's, and `focused` is one of
+/// them: a Mac window focused over a game it does not cover brings nothing.
+fn mac_covers(covers: &[(String, WindowId)], output: &str, focused: &WindowId, is_mac: impl Fn(&WindowId) -> bool) -> bool {
+    let mut on = covers.iter().filter(|(o, _)| o == output).map(|(_, id)| id).peekable();
+    on.peek().is_some() && on.clone().any(|id| id == focused) && on.all(is_mac)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn id(s: &str) -> WindowId {
+        WindowId::new(s)
+    }
+
+    #[test]
+    fn a_mac_window_over_a_fullscreen_game_brings_no_bar() {
+        let covers = [("DP-1".to_owned(), id("game"))];
+        assert!(!mac_covers(&covers, "DP-1", &id("mac"), |w| *w == id("mac")));
+    }
+
+    #[test]
+    fn the_focused_fullscreen_mac_window_brings_the_bar() {
+        let covers = [("DP-1".to_owned(), id("mac")), ("HDMI-A-1".to_owned(), id("game"))];
+        assert!(mac_covers(&covers, "DP-1", &id("mac"), |w| *w == id("mac")));
+        assert!(!mac_covers(&covers, "HDMI-A-1", &id("mac"), |w| *w == id("mac")), "the game's output");
+    }
+
+    #[test]
+    fn a_game_beside_the_mac_window_on_its_output_keeps_the_bar_down() {
+        let covers = [("DP-1".to_owned(), id("mac")), ("DP-1".to_owned(), id("game"))];
+        assert!(!mac_covers(&covers, "DP-1", &id("mac"), |w| *w == id("mac")));
+    }
+
+    #[test]
+    fn an_uncovered_output_brings_nothing() {
+        assert!(!mac_covers(&[], "DP-1", &id("mac"), |_| true));
     }
 }

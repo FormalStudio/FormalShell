@@ -42,7 +42,8 @@
 set -Eeuo pipefail
 # errexit ends the run without a word, in this file and in every leg it
 # sources, so name the command that ended it.
-trap 'echo "SMOKE_FAIL: ${BASH_SOURCE[0]}:$LINENO: $BASH_COMMAND exited $?" >&2' ERR
+# 141 is a reader closing a pipe early (head), which ends nothing.
+trap 'rc=$?; [ "$rc" = 141 ] || echo "SMOKE_FAIL: ${BASH_SOURCE[0]}:$LINENO: $BASH_COMMAND exited $rc" >&2' ERR
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 cd "$script_dir/.."
 
