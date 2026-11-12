@@ -60,7 +60,13 @@ key Super+Return 1.5; ipc state.get | jq -c '[.windows[] | .appId]'
 key Super+q 1.2; ipc state.get | jq -c '[.windows[] | .appId]'
 
 if [ -n "${FWM_SHELL:-}" ]; then
-  step "locked: the binds marked locked still run, the others do not"
+  step "a second bind on the volume key, not marked locked: both run"
+  ln -s spy "$run/twin"
+  sed -i "/\"chord\": \"XF86AudioRaiseVolume\"/a {\"chord\": \"XF86AudioRaiseVolume\", \"action\": \"spawn\", \"args\": [\"$run/twin\"]}," "$settings"
+  printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1
+  : > "$run/spied"; press XF86AudioRaiseVolume
+
+  step "locked: the binds marked locked still run, the others do not, the volume key's second bind among them"
   "$FWM_SHELL" ipc --any-display call lock lock; sleep 2; shot 80-locked
   : > "$run/spied"
   for chord in XF86AudioRaiseVolume XF86MonBrightnessUp XF86AudioMute XF86AudioPlay Super+b Super+space; do press "$chord"; done

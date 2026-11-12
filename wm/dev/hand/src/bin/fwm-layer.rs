@@ -7,7 +7,8 @@
 //! `bottom`, `top` or `overlay`. EDGE is the edge it lies along (`top`,
 //! `bottom`, `left`, `right`), `fill` for all four or `none` for the middle
 //! of the output. A WIDTH or HEIGHT of 0 takes what the compositor gives.
-//! `--color` is AARRGGBB, not premultiplied. It stays until it is killed.
+//! `--color` is AARRGGBB, not premultiplied. `--keyboard exclusive` takes
+//! the keyboard while it is up. It stays until it is killed.
 
 use std::error::Error;
 
@@ -17,7 +18,7 @@ use wayland_client::{
 };
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1::{Layer, ZwlrLayerShellV1},
-    zwlr_layer_surface_v1::{Anchor, Event, ZwlrLayerSurfaceV1},
+    zwlr_layer_surface_v1::{Anchor, Event, KeyboardInteractivity, ZwlrLayerSurfaceV1},
 };
 
 #[derive(Default)]
@@ -116,7 +117,7 @@ impl Sheet {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut words = std::env::args().skip(1);
-    let usage = "fwm-layer NAMESPACE LAYER EDGE WIDTH HEIGHT [--exclusive N] [--color AARRGGBB]";
+    let usage = "fwm-layer NAMESPACE LAYER EDGE WIDTH HEIGHT [--exclusive N] [--color AARRGGBB] [--keyboard exclusive]";
     let mut word = || words.next().ok_or(usage);
     let namespace = word()?;
     let layer = match word()?.as_str() {
@@ -137,11 +138,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let asked: (u32, u32) = (word()?.parse()?, word()?.parse()?);
     let (mut exclusive, mut color) = (0i32, 0xff20_2020u32);
+    let mut keyboard = KeyboardInteractivity::None;
     while let Some(flag) = words.next() {
         let value = words.next().ok_or(usage)?;
         match flag.as_str() {
             "--exclusive" => exclusive = value.parse()?,
             "--color" => color = u32::from_str_radix(&value, 16)?,
+            "--keyboard" if value == "exclusive" => keyboard = KeyboardInteractivity::Exclusive,
             other => return Err(format!("unknown flag `{other}`").into()),
         }
     }
@@ -174,6 +177,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     layer.set_size(asked.0, asked.1);
     layer.set_anchor(anchor);
     layer.set_exclusive_zone(exclusive);
+    layer.set_keyboard_interactivity(keyboard);
     // The first commit carries no buffer; the configure that answers it
     // says how large to paint.
     surface.commit();
