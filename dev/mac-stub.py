@@ -34,7 +34,8 @@ The menu is fixed (MENU): an application menu, File with a submenu and a
 disabled item, Edit with a section heading and a checkmark that flips when
 it is clicked (ItemsPropertiesUpdated), and Window, which is empty until its
 first AboutToShow fills it (LayoutUpdated). Super+Q and a click on Quit both
-end the process, as a Mac app's key equivalent and menu item do.
+end the process, as a Mac app's key equivalent and menu item do; Super+Q
+once Q is back up, so the log holds the key's release too.
 
 A key is named by the first keysym its keycode carries in the keymap the
 compositor sent, read off the keymap's text: wtype types through a keymap
@@ -198,6 +199,7 @@ class Stub:
         self.buffer = None
         self.fds = []
         self.syms = {}
+        self.quitting = False
 
     def log(self, line):
         print(f"{self.args.name}: {line}", flush=True)
@@ -394,8 +396,11 @@ class Stub:
             _serial, _time, key, state = struct.unpack_from("<IIII", body)
             sym = self.syms.get(key, f"code:{key}")
             self.log(f"key {sym} {'down' if state else 'up'} mods={self.mods}")
-            if state and sym.lower() == "q" and self.mods == MOD_SUPER:
-                self.quit()
+            if sym.lower() == "q":
+                if state and self.mods == MOD_SUPER:
+                    self.quitting = True
+                elif not state and self.quitting:
+                    self.quit()
         elif obj == self.keyboard and op == 4:
             self.mods = struct.unpack_from("<II", body)[1]
 

@@ -23,9 +23,11 @@
 # default one again and SUPER + C leaves its mark. Back on the stub with
 # `macApps.reservedBinds` rewritten to keep SUPER + C for the window
 # manager, it leaves its mark again and the stub sees no further `c`. Last,
-# SUPER + Q reaches the stub as its own key equivalent: it logs the key and
-# `quit`, where the window manager's close would have closed it with no key
-# at all.
+# SUPER + Q reaches the stub as its own key equivalent: it logs the key down
+# and up and `quit`, where the window manager's close would have closed it
+# with no key at all. Over the whole run the stub logs no `h` or `l`, down or
+# up: a reserved chord's key is the window manager's from press to release,
+# also when the chord moved focus onto the stub between the two.
 leg_mac_keys_flag="--mac-keys"
 leg_mac_keys_order=173
 leg_mac_keys_needs="python3 jq foot wtype"
@@ -92,7 +94,7 @@ mark p "\$m-mark-p-mac.txt"
 front formalshell-mac-keys; echo "\$?" > "\$m-left-stub.txt"
 until_jq 10 "\$m-outside.json" '.macKeys | not' call appmenu status
 submap > "\$m-submap-default.txt"
-seen '^key l down' "\$m-super-l.txt"
+seen '^key l ' "\$m-super-l.txt"
 "$wtype_bin" -M logo c -m logo
 mark c "\$m-mark-c-native.txt"
 
@@ -110,6 +112,8 @@ seen '^key c down mods=64\$' "\$m-super-c-reserved.txt"
 "$wtype_bin" -M logo q -m logo
 for _ in \$(seq 1 20); do grep -qx quit "\$log" 2>/dev/null && break; sleep 0.25; done
 seen '^key q down mods=64\$' "\$m-super-q.txt"
+seen '^key q up mods=64\$' "\$m-super-q-up.txt"
+seen '^key [hl] ' "\$m-reserved-keys.txt"
 EOF
   write_script "$shot_dir/mac-keys-kill.sh" <<EOF
 #!/usr/bin/env bash
@@ -142,7 +146,7 @@ leg_mac_keys_assert() {
   [ "$(count "$m-ctrl-c.txt")" = 1 ] || fail "--mac-keys: CTRL + C did not reach the stub once with Control held (got $(count "$m-ctrl-c.txt"))"
   [ "$(count "$m-mark-p-mac.txt")" = 1 ] || fail "--mac-keys: SUPER + CTRL + P, never handed, did not fire in the mac submap"
   [ "$(count "$m-left-stub.txt")" = 0 ] || fail "--mac-keys: SUPER + L did not move focus off the stub"
-  [ "$(count "$m-super-l.txt")" = 0 ] || fail "--mac-keys: the reserved SUPER + L reached the stub as a key"
+  [ "$(count "$m-super-l.txt")" = 0 ] || fail "--mac-keys: the reserved SUPER + L reached the stub as a key, down or up"
   expect_jq "$m-outside.json" '.macKeys | not' "--mac-keys: the foot window in front left the session in the mac submap"
   [ "$(cat "$m-submap-default.txt" 2>/dev/null)" = "default" ] || fail "--mac-keys: the compositor's submap with the foot window in front is '$(cat "$m-submap-default.txt")'"
   [ "$(count "$m-mark-c-native.txt")" = 1 ] || fail "--mac-keys: SUPER + C did not fire over the foot window"
@@ -150,6 +154,8 @@ leg_mac_keys_assert() {
   [ "$(count "$m-mark-c-reserved.txt")" = 2 ] || fail "--mac-keys: SUPER + C reserved in macApps.reservedBinds did not fire over the stub (marks $(count "$m-mark-c-reserved.txt"))"
   [ "$(count "$m-super-c-reserved.txt")" = 1 ] || fail "--mac-keys: the reserved SUPER + C still reached the stub"
   [ "$(count "$m-super-q.txt")" = 1 ] || fail "--mac-keys: SUPER + Q did not reach the stub as a key"
+  [ "$(count "$m-super-q-up.txt")" = 1 ] || fail "--mac-keys: the stub saw SUPER + Q go down but not come up (got $(count "$m-super-q-up.txt"))"
+  [ "$(count "$m-reserved-keys.txt")" = 0 ] || fail "--mac-keys: the reserved SUPER + H or SUPER + L reached the stub as a key, down or up ($(grep -E '^key [hl] ' "$mac_keys_log" | tr '\n' ';'))"
   grep -qx quit "$mac_keys_log" || fail "--mac-keys: the stub did not quit on SUPER + Q"
-  echo "SMOKE_MAC_KEYS ok handed SUPER + C and SUPER + Q, kept SUPER + L and SUPER + CTRL + P, CTRL + C untouched, reservedBinds followed"
+  echo "SMOKE_MAC_KEYS ok handed SUPER + C and SUPER + Q (down and up), kept SUPER + H, SUPER + L (neither down nor up) and SUPER + CTRL + P, CTRL + C untouched, reservedBinds followed"
 }

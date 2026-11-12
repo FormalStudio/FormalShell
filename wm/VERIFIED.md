@@ -109,7 +109,7 @@ and 2 of border.
 | The start script runs while locked | rig | `locked.sh`, both ways: `display wayland-1, socket up`, and the shell it starts is what locks |
 | Locked and no shell: it stays dark and does not unlock | rig | `locked.sh` bare: all 70 frames black, also at 13 s (`87-dark`, and `88-dark-with-pointer`: the pointer stays hidden too), SUPER+Return opens nothing |
 | Without the variable nothing changes | rig | every other session starts without it and draws at once |
-| `shojiwm_rs` and `shojiwm_lib` by git rev | rig | `formalwm/Cargo.toml` names a rev of the fork's `formal-rs`; a fresh clone of this branch builds with `--locked` in the container, with no ShojiWM checkout beside it |
+| `shojiwm_rs` and `shojiwm_lib` by git rev | rig | `formalwm/Cargo.toml` names a rev of the fork's `formal`; a fresh clone of this branch builds with `--locked` in the container, with no ShojiWM checkout beside it |
 
 ## Spec 3: the socket
 
@@ -456,7 +456,7 @@ refreshes, with a render of 32 ms in it; its median render is under one.
 ## The build
 
 `formalwm/Cargo.toml` names `shojiwm_rs` and `shojiwm_lib` by a rev of the
-fork's `formal-rs` branch and `Cargo.lock` is committed. `dev/fresh.sh` clones
+fork's `formal` branch (0cf156b) and `Cargo.lock` is committed. `dev/fresh.sh` clones
 this branch, copies only `wm/` and `crates/` to the rig and runs cargo in the
 container with an empty target directory and an empty cargo home, no ShojiWM
 checkout beside it:
@@ -522,6 +522,7 @@ run of its workspace at e6493f8 has 581 passing).
 | A bare modifier's `passthrough` release bind ran after a chord | 46842223 | `binds.sh`; headless; `a_bare_modifier_let_go_fires_after_the_modifier_alone`. The core had both kinds of release bind already (`tests/transparent_release.rs`) |
 | The focused output did not follow the pointer | 3395202f, core 8f0b97b for the press | `outputs.sh`; headless; `the_pointer_takes_the_outputs_focus_and_leaves_the_keyboard` |
 | S9: a workspace in view under the pointer, asked for, changed the focused window and left the keyboard on the other output | 279becde | `outputs.sh`; headless, which fails at the keyboard without it; `a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for`. `workspace.focusAt`, the relative, occupied and last workspace go through the same line; a bind on the tape had the same skipped commit and has the same fix; `window.focus` and an overlay always commit, and `window.moveTo` over the socket does not follow |
+| The release of a key a bind or a grab took reached the window focused when it came up (`key h up` with no `down` under the hand over) | core 0cf156b | core tests `tests/consumed_keys.rs`, four, each failing on e6493f8 with the stray release, and `key_pairing_tests`; on the build at 0cf156b the engine's tests and clippy, `overview.sh`, and `--mac-keys` with `FS_COMPOSITOR=shoji`: the stub logs no `h` or `l`, down or up, also when SUPER + H gives it the keyboard, where the build at e6493f8 logs `key p up mods=68` and `key q up mods=64` with no `down`. On both builds the leg then stops at SUPER + H: the seat gives the stub the keyboard, the model keeps the foot window, and SUPER + Q closes foot |
 
 Needs the g815: Minecraft's confinement as an X11 window, the dynamic cursor
 on a hardware cursor plane, the HDR switch on a fullscreen HDR window, what
