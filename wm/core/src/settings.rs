@@ -328,23 +328,34 @@ pub struct BindGroup {
     /// The first of its binds, by its place in the settings.
     pub index: usize,
     pub release: bool,
-    /// Hyprland's `transparent`, on a modifier let go.
+    /// Hyprland's `transparent`, on a modifier let go: it fires whatever
+    /// was pressed while the modifier was down. One without it is taken by
+    /// the chord that used the modifier, so the two are registered apart.
     pub transparent: bool,
     /// Some bind of the group fires while the session is locked.
     pub locked: bool,
+    /// Some bind of the group repeats while the key is held.
     pub repeat: bool,
-    /// Each action and whether its bind fires while the session is locked.
-    actions: Vec<(Action, bool)>,
+    actions: Vec<Run>,
+}
+
+/// One action of a shortcut, with what its own bind says of it.
+#[derive(Clone, Debug, PartialEq)]
+struct Run {
+    action: Action,
+    locked: bool,
+    repeat: bool,
 }
 
 impl BindGroup {
     /// What the shortcut runs: on the lock screen only the actions of the
-    /// binds marked `locked`.
-    pub fn actions(&self, locked: bool) -> impl Iterator<Item = &Action> {
+    /// binds marked `locked`, on a held key's repeat only those marked
+    /// `repeat`.
+    pub fn actions(&self, locked: bool, repeat: bool) -> impl Iterator<Item = &Action> {
         self.actions
             .iter()
-            .filter(move |(_, on_lock)| *on_lock || !locked)
-            .map(|(action, _)| action)
+            .filter(move |run| (run.locked || !locked) && (run.repeat || !repeat))
+            .map(|run| &run.action)
     }
 }
 
@@ -597,7 +608,7 @@ impl Settings {
     /// The binds by shortcut, in the shortcuts' order. A pointer button has
     /// no shortcut and is in none.
     pub fn bind_groups(&self) -> Vec<BindGroup> {
-        let mut groups: BTreeMap<(String, bool), BindGroup> = BTreeMap::new();
+        let mut groups: BTreeMap<(String, bool, bool), BindGroup> = BTreeMap::new();
         for (index, bind) in self.binds.iter().enumerate() {
             let shortcut = match (bind.release, bind.chord.modifier_key()) {
                 (true, Some(modifier)) => Some(modifier.to_owned()),
@@ -606,28 +617,36 @@ impl Settings {
             let Some(shortcut) = shortcut else {
                 continue;
             };
+            let transparent = bind.release && bind.passthrough;
+            let repeat = bind.repeat && !bind.release;
             // Both Alt keys let go are one shortcut here.
             let group = groups
-                .entry((shortcut.clone(), bind.release))
+                .entry((shortcut.clone(), bind.release, transparent))
                 .or_insert_with(|| BindGroup {
                     shortcut,
                     index,
                     release: bind.release,
-                    transparent: false,
+                    transparent,
                     locked: false,
                     repeat: false,
                     actions: Vec::new(),
                 });
-            group.transparent |= bind.release && bind.passthrough;
             group.locked |= bind.locked;
-            group.repeat |= bind.repeat && !bind.release;
+            group.repeat |= repeat;
             match group
                 .actions
                 .iter_mut()
-                .find(|(action, _)| *action == bind.action)
+                .find(|run| run.action == bind.action)
             {
-                Some((_, locked)) => *locked |= bind.locked,
-                None => group.actions.push((bind.action.clone(), bind.locked)),
+                Some(run) => {
+                    run.locked |= bind.locked;
+                    run.repeat |= repeat;
+                }
+                None => group.actions.push(Run {
+                    action: bind.action.clone(),
+                    locked: bind.locked,
+                    repeat,
+                }),
             }
         }
         groups.into_values().collect()
@@ -926,7 +945,8 @@ mod tests {
         ] }"#;
         let groups = Settings::parse(text, None).unwrap().bind_groups();
         let spawn = |command: &str| Action::Spawn(vec![command.to_owned()]);
-        let run = |group: &BindGroup, locked| group.actions(locked).cloned().collect::<Vec<_>>();
+        let run =
+            |group: &BindGroup, locked| group.actions(locked, false).cloned().collect::<Vec<_>>();
         assert_eq!(groups.len(), 2, "a pointer button has no shortcut");
 
         let alt = &groups[0];
@@ -940,6 +960,36 @@ mod tests {
         assert!(volume.locked && volume.repeat && !volume.release);
         assert_eq!(run(volume, false), [spawn("louder"), spawn("osd")]);
         assert_eq!(run(volume, true), [spawn("louder")]);
+    }
+
+    #[test]
+    fn each_bind_of_a_shortcut_keeps_what_it_says_of_itself() {
+        let text = r#"{ "binds": [
+            { "chord": "ALT+Alt_L", "action": "spawn", "args": ["commit"], "release": true, "passthrough": true },
+            { "chord": "ALT+Alt_L", "action": "spawn", "args": ["plain"], "release": true },
+            { "chord": "SUPER+Up", "action": "spawn", "args": ["louder"], "repeat": true },
+            { "chord": "SUPER+Up", "action": "spawn", "args": ["osd"] }
+        ] }"#;
+        let groups = Settings::parse(text, None).unwrap().bind_groups();
+        let spawn = |command: &str| Action::Spawn(vec![command.to_owned()]);
+        let run =
+            |group: &BindGroup, repeat| group.actions(false, repeat).cloned().collect::<Vec<_>>();
+        // A modifier let go: the bind a chord takes and the one it cannot
+        // take are two registrations.
+        let [plain, commit, up] = &groups[..] else {
+            panic!("{groups:?}");
+        };
+        assert_eq!((plain.shortcut.as_str(), plain.transparent), ("Alt", false));
+        assert_eq!(run(plain, false), [spawn("plain")]);
+        assert_eq!(
+            (commit.shortcut.as_str(), commit.transparent),
+            ("Alt", true)
+        );
+        assert_eq!(run(commit, false), [spawn("commit")]);
+        // A held key repeats the binds that say so and no other.
+        assert!(up.repeat);
+        assert_eq!(run(up, false), [spawn("louder"), spawn("osd")]);
+        assert_eq!(run(up, true), [spawn("louder")]);
     }
 
     #[test]

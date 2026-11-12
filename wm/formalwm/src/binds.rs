@@ -75,11 +75,13 @@ impl Engine {
             let id = format!("formalwm:{index}");
             let shortcut = group.shortcut.clone();
             let options = options_of(&group);
-            // The core fires a shortcut marked `locked` in both states; which
-            // of its binds run is theirs to say.
+            // The core fires a shortcut marked `locked` in both states and
+            // repeats one marked `repeat` whole; which of its binds run is
+            // theirs to say.
             let handler = move || {
                 let locked = COMPOSITOR.session.is_locked();
-                let actions: Vec<Action> = group.actions(locked).cloned().collect();
+                let repeat = COMPOSITOR.key.is_repeat();
+                let actions: Vec<Action> = group.actions(locked, repeat).cloned().collect();
                 enter(move |engine| {
                     for action in &actions {
                         engine.run(action);
