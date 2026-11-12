@@ -180,8 +180,16 @@ pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
         }
         Topic::Compositor => {
             appmenu::follow(store);
+            appmenu::tag(store);
             mackeys::sync(store);
             launch::windows_changed(store)
+        }
+        // A registration makes its process's windows Mac windows.
+        Topic::AppMenu => {
+            appmenu::follow(store);
+            appmenu::tag(store);
+            mackeys::sync(store);
+            None
         }
         Topic::Launch => launch::windows_changed(store),
         Topic::Menu | Topic::Activity => packages::land(store),

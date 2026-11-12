@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use fs_chrome::bar::panels::PanelId;
 use fs_types::{Edge, IRect};
+use smithay_client_toolkit::activation::{ActivationHandler, RequestData};
 use smithay_client_toolkit::compositor::CompositorState;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
@@ -36,6 +37,16 @@ pub(super) struct Hang {
     pub line_at: f64,
     pub length: i32,
     pub cap: f64,
+}
+
+/// A tray item's menu asked for and not yet loaded. Its card waits for the
+/// tree: an item with an empty layout (Electron exports one for a tray with
+/// no context menu) gets no card at all.
+pub struct PendingMenu {
+    key: String,
+    title: String,
+    anchor: Option<f64>,
+    over_panel: bool,
 }
 
 /// The menu card.
@@ -88,7 +99,8 @@ impl App {
         if !item.has_menu {
             return Err(format!("tray item '{}' has no menu", item.id));
         }
-        self.open_menu_card(Source::Tray(item.key.clone()), item.key.clone(), item.tooltip.clone(), anchor, over_panel);
+        self.drop_tray_menu();
+        self.tray_menu_pending = Some(PendingMenu { key: item.key.clone(), title: item.tooltip.clone(), anchor, over_panel });
         let (key, largest) = (item.key, self.store.display.scales.largest());
         self.runtime.service(move |ctx| tray::open_menu(ctx, key, largest));
         Ok(())
@@ -226,6 +238,9 @@ impl App {
 
     /// Closes the menu through its exit, telling its owner.
     pub fn close_tray_menu(&mut self) {
+        if let Some(PendingMenu { key, .. }) = self.tray_menu_pending.take() {
+            self.runtime.service(move |ctx| tray::close_menu(ctx, key));
+        }
         let now = Instant::now();
         let Some(p) = self.tray_menu.as_mut().filter(|p| p.win.card.is_open()) else { return };
         p.win.card.set_open(now, false);
@@ -285,6 +300,26 @@ impl App {
     /// The tray changed: a menu waiting on its tree gets it, one whose item
     /// went away shuts.
     pub(super) fn tray_changed(&mut self) {
+        if let Some(pending) = self.tray_menu_pending.take() {
+            let tree = self.store.tray.menu.as_ref().filter(|m| m.key == pending.key).map(|m| m.root.clone());
+            match tree {
+                None if self.store.tray.by_key(&pending.key).is_some() => self.tray_menu_pending = Some(pending),
+                None => {}
+                Some(root) if root.children.is_empty() => {
+                    let key = pending.key;
+                    self.runtime.service(move |ctx| tray::close_menu(ctx, key));
+                }
+                Some(root) => {
+                    let PendingMenu { key, title, anchor, over_panel } = pending;
+                    self.open_menu_card(Source::Tray(key.clone()), key, title, anchor, over_panel);
+                    if let Some(menu) = self.tray_menu.as_mut().and_then(|p| p.menu.as_mut()) {
+                        menu.set_tree(Some(&root));
+                    }
+                    self.resize_menu();
+                }
+            }
+            return;
+        }
         let Some(p) = &mut self.tray_menu else { return };
         if !matches!(p.source, Source::Tray(_)) {
             return;
@@ -347,13 +382,39 @@ impl App {
     }
 
     /// `tray activate`: the item's own Activate, as its cell's click does.
-    pub fn tray_activate(&self, id: &str) -> Result<(), String> {
+    pub fn tray_activate(&mut self, id: &str) -> Result<(), String> {
         let Some(item) = self.store.tray.by_id(id) else { return Err(format!("no tray item with id '{id}'")) };
         let key = item.key.clone();
-        self.runtime.service(move |ctx| tray::activate(ctx, key));
+        self.tray_activate_key(key);
         Ok(())
     }
 
+    /// The item's Activate, after an xdg-activation token for the last
+    /// click: without one the window it shows (a quick search panel) may not
+    /// take focus, and one that hides on blur never shows. The token comes
+    /// back in `new_token`, which sends both.
+    pub(super) fn tray_activate_key(&mut self, key: String) {
+        match (&self.activation, &self.seat, &self.press) {
+            (Some(activation), Some(seat), Some((serial, surface))) => {
+                let data = RequestData { app_id: None, seat_and_serial: Some((seat.clone(), *serial)), surface: Some(surface.clone()), udata: key };
+                activation.request_token(&self.qh, data);
+            }
+            _ => self.runtime.service(move |ctx| tray::activate(ctx, key, None)),
+        }
+    }
+
+}
+
+impl ActivationHandler for App {
+    type RequestUdata = String;
+
+    fn new_token(&mut self, token: String, data: &RequestData<String>) {
+        let key = data.udata.clone();
+        self.runtime.service(move |ctx| tray::activate(ctx, key, Some(token)));
+    }
+}
+
+impl App {
     /// `tray menu`: opens over the second bar while that is up, as a right
     /// click on its cell does.
     pub fn tray_menu(&mut self, id: &str) -> Result<(), String> {

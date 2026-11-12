@@ -40,6 +40,8 @@ pub struct Held {
 pub enum AppMenuEvent {
     /// [`AppMenus::held`] changed.
     Changed,
+    /// [`AppMenus::pids`] changed and the held menu did not.
+    Registrations,
     /// A call on the followed menu failed; it is held as it was.
     Failed(zbus::Error),
 }
@@ -77,6 +79,8 @@ pub struct AppMenus {
 pub struct AppMenuEvents {
     core: Core,
     backlog: VecDeque<Input>,
+    /// The registered processes last reported.
+    pids: Vec<u32>,
 }
 
 struct Core {
@@ -128,7 +132,7 @@ impl AppMenus {
             return Err(zbus::Error::NameTaken);
         }
         let core = Core { shared: shared.clone(), inputs, pid: None, signals: None };
-        Ok((AppMenus { shared }, AppMenuEvents { core, backlog }))
+        Ok((AppMenus { shared }, AppMenuEvents { core, backlog, pids: Vec::new() }))
     }
 
     /// The process whose menu is held from here on, or none.
@@ -148,6 +152,12 @@ impl AppMenus {
 
     pub fn event(&self, id: i32, kind: MenuEventKind) {
         let _ = self.shared.asks.try_send(Ask::Event(id, kind));
+    }
+
+    /// The processes that registered a main menu, ascending: every running
+    /// Mac app, whether or not it has a window.
+    pub fn pids(&self) -> Vec<u32> {
+        self.shared.registry.pids()
     }
 
     /// The main menu the process `pid` registered.
@@ -175,8 +185,13 @@ impl AppMenuEvents {
                 Some(input) => input,
                 None => poll_fn(|cx| inputs.lock().unwrap().poll_next_unpin(cx)).await?,
             };
-            match drain_while(&inputs, &mut self.backlog, self.core.handle(input)).await {
+            let handled = drain_while(&inputs, &mut self.backlog, self.core.handle(input)).await;
+            let pids = self.core.shared.registry.pids();
+            let moved = pids != self.pids;
+            self.pids = pids;
+            match handled {
                 Ok(true) => return Some(AppMenuEvent::Changed),
+                Ok(false) if moved => return Some(AppMenuEvent::Registrations),
                 Ok(false) => {}
                 Err(err) => return Some(AppMenuEvent::Failed(err)),
             }

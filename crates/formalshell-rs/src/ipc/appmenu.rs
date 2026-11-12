@@ -19,6 +19,7 @@ pub fn target() -> Target<App> {
             Function { name: "close", params: &[], ret: Type::String, call: close },
             Function { name: "activate", params: &[("path", Type::String)], ret: Type::String, call: activate },
             Function { name: "run", params: &[("id", Type::Int)], ret: Type::String, call: run },
+            Function { name: "key", params: &[("chord", Type::String)], ret: Type::String, call: key },
         ],
     }
 }
@@ -106,6 +107,20 @@ fn click(item: &MenuNode, name: &str) -> Reply {
 fn activate(app: &mut App, args: &[Value]) -> Reply {
     let path = args[0].str();
     click(node(app, path)?, &format!("'{path}'"))
+}
+
+/// The item whose key equivalent is `chord` ("SUPER + Q"), as the app runs
+/// it for its own key: the `macapp` submap's binds call this while a Mac app
+/// with no window in focus is frontmost.
+fn key(app: &mut App, args: &[Value]) -> Reply {
+    let chord = args[0].str();
+    let Some(menu) = app.store.appmenu.menu.as_ref() else { return Err("no Mac app's menu is held".into()) };
+    let found = menu.commands().into_iter().find(|c| appmenu::chord(&c.shortcut).eq_ignore_ascii_case(chord)).map(|c| c.id);
+    let id = found.or_else(|| chord.eq_ignore_ascii_case(appmenu::QUIT_CHORD).then(|| appmenu::quit_item(&menu.root)).flatten());
+    match id.and_then(|id| app.store.appmenu.node(id)) {
+        Some(item) => click(item, &format!("'{chord}'")),
+        None => Err(format!("no menu item on '{chord}'")),
+    }
 }
 
 /// The item by its dbusmenu id, which a launcher row carries.

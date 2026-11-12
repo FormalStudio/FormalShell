@@ -1,16 +1,18 @@
 //! The focused Mac app's main menu (fs-tray): the registrar atoll apps name
 //! their dbusmenu to, and the tree of the one whose window holds focus,
 //! which the menu bar, the open menu card and the launcher's menu route
-//! read. A window that is not a Mac app's has no menu here, whatever its
-//! process registered.
+//! read. Only atoll's apps know the registrar's name, so a process that
+//! registered is a Mac app and its windows are Mac windows, tagged or not.
 
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{LazyLock, OnceLock};
+use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
 use fs_tray::{AppMenuEvent, AppMenus, MenuEventKind, REGISTRAR_NAME};
+use fs_types::{Window, WindowId};
 
+use super::compositor;
 use super::tray::{MenuNode, node_of};
 use crate::runtime::Ctx;
 use crate::store::{self, Store};
@@ -35,16 +37,32 @@ pub struct DockMenu {
 pub struct State {
     pub menu: Option<Menu>,
     pub dock: Option<DockMenu>,
+    /// The processes that registered a main menu: the running Mac apps,
+    /// windows or none.
+    pub registered: Vec<u32>,
 }
 
 pub enum Diff {
     Menu(Option<Menu>),
     Dock(Option<DockMenu>),
+    Registered(Vec<u32>),
 }
 
 impl State {
+    /// Whether `w` is a Mac app's window: atoll's own carry the `atoll`
+    /// tag, and an Electron app in atoll's Mac mode, whose windows Chromium
+    /// makes, is known by its process's registration.
+    pub fn is_mac(&self, w: &Window) -> bool {
+        w.is_mac() || u32::try_from(w.pid).is_ok_and(|pid| self.registered.binary_search(&pid).is_ok())
+    }
+
     pub fn apply(&mut self, diff: Diff) -> bool {
         match diff {
+            Diff::Registered(pids) => {
+                let changed = pids != self.registered;
+                self.registered = pids;
+                changed
+            }
             Diff::Menu(menu) => {
                 let changed = menu != self.menu;
                 self.menu = menu;
@@ -115,6 +133,29 @@ impl Menu {
         collect(&self.root, &mut Vec::new(), &mut out);
         out
     }
+
+    /// The Super key equivalents of its commands, as Hyprland chords, and
+    /// Super+Q, which quits by the Quit item when none carries it.
+    pub fn chords(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.commands().iter().filter(|c| c.shortcut.iter().any(|k| k == "Super")).map(|c| chord(&c.shortcut)).collect();
+        out.push(QUIT_CHORD.to_owned());
+        out.sort();
+        out.dedup();
+        out
+    }
+}
+
+pub const QUIT_CHORD: &str = "SUPER + Q";
+
+/// A key equivalent as a Hyprland chord: `["Super", "Shift", "N"]` is
+/// "SUPER + SHIFT + N".
+pub fn chord(shortcut: &[String]) -> String {
+    let key = |k: &String| match k.as_str() {
+        "Super" | "Shift" | "Alt" => k.to_uppercase(),
+        "Control" => "CTRL".to_owned(),
+        _ => k.clone(),
+    };
+    shortcut.iter().map(key).collect::<Vec<_>>().join(" + ")
 }
 
 impl DockMenu {
@@ -152,12 +193,32 @@ const ANSWER: Duration = Duration::from_secs(3);
 static FOLLOW: LazyLock<(Sender<u32>, Receiver<u32>)> = LazyLock::new(async_channel::unbounded);
 static FOLLOWED: AtomicI64 = AtomicI64::new(-1);
 
+/// The Mac app whose window last held focus, 0 after any other window held
+/// it. Set on the UI thread by [`follow`].
+static FRONT: AtomicU32 = AtomicU32::new(0);
+
 /// The process of the Mac window that holds focus, 0 with none: focus held
 /// across a shell surface taking the keyboard, so an open menu card or the
-/// launcher keeps the menu it is showing.
+/// launcher keeps the menu it is showing. With no window in focus it is
+/// [`front`]'s.
 fn focused(store: &Store) -> u32 {
     let h = &store.compositor;
-    h.window(&h.held_focused_window_id()).filter(|w| w.is_mac()).and_then(|w| u32::try_from(w.pid).ok()).unwrap_or(0)
+    match h.window(&h.held_focused_window_id()) {
+        Some(w) => mac_pid(store, w),
+        None => front(store).unwrap_or(0),
+    }
+}
+
+fn mac_pid(store: &Store, w: &Window) -> u32 {
+    Some(w).filter(|w| store.appmenu.is_mac(w)).and_then(|w| u32::try_from(w.pid).ok()).unwrap_or(0)
+}
+
+/// The Mac app still frontmost with no window in focus, as a Mac app stays
+/// once its last window closes: the one whose window last had focus, while
+/// it runs.
+pub fn front(store: &Store) -> Option<u32> {
+    let pid = FRONT.load(Ordering::Relaxed);
+    (pid != 0 && store.appmenu.registered.binary_search(&pid).is_ok()).then_some(pid)
 }
 
 /// Whether the menu held is another process's than the focused window's.
@@ -168,8 +229,34 @@ pub fn stale(store: &Store) -> bool {
     store.appmenu.menu.as_ref().is_some_and(|m| m.pid != focused(store))
 }
 
+/// The windows a tag was asked for, until the compositor lists them tagged
+/// or they go.
+static TAGGING: Mutex<Vec<WindowId>> = Mutex::new(Vec::new());
+
+/// A registered process's windows that carry no `atoll` xdg tag (an
+/// Electron app in atoll's Mac mode cannot set one) get the compositor's
+/// own tag, so the config gives them a Mac window's chrome too.
+pub fn tag(store: &Store) {
+    if !compositor::ready() {
+        return;
+    }
+    let windows = &store.compositor.snapshot.windows;
+    let mut asked = TAGGING.lock().unwrap();
+    asked.retain(|id| windows.iter().any(|w| &w.id == id && !w.mac_tagged));
+    for w in windows.iter().filter(|w| !w.is_mac() && !w.mac_tagged && store.appmenu.is_mac(w)) {
+        if !asked.contains(&w.id) {
+            compositor::send(compositor::Command::TagMac(w.id.clone()));
+            asked.push(w.id.clone());
+        }
+    }
+}
+
 /// The compositor changed: the menu follows the focused window.
 pub fn follow(store: &Store) {
+    let h = &store.compositor;
+    if let Some(w) = h.window(&h.held_focused_window_id()) {
+        FRONT.store(mac_pid(store, w), Ordering::Relaxed);
+    }
     let pid = focused(store);
     if FOLLOWED.swap(i64::from(pid), Ordering::Relaxed) != i64::from(pid) {
         let _ = FOLLOW.0.try_send(pid);
@@ -205,6 +292,7 @@ async fn run(ctx: Ctx) {
         // After a failure too: a read that failed had already let go of
         // the menu it was replacing.
         let menu = menus.held().map(|h| Menu { pid: h.pid, root: node_of(&h.tree, 1.0) });
+        ctx.publish(store::Diff::AppMenu(Diff::Registered(menus.pids())));
         ctx.publish(store::Diff::AppMenu(Diff::Menu(menu)));
     }
 }
@@ -327,7 +415,24 @@ mod tests {
         let export = node(6, "Export", vec![node(7, "PDF", Vec::new())]);
         let file = node(2, "File", vec![node(3, "New", Vec::new()), rule, export]);
         let app = node(1, "TextEdit", vec![node(8, "Quit TextEdit", Vec::new())]);
-        State { menu: Some(Menu { pid: 9, root: node(0, "", vec![app, file]) }), dock: None }
+        State { menu: Some(Menu { pid: 9, root: node(0, "", vec![app, file]) }), ..State::default() }
+    }
+
+    #[test]
+    fn key_equivalents_are_chords_and_super_q_is_always_one() {
+        let mut s = state();
+        let file = &mut s.menu.as_mut().unwrap().root.children[1];
+        file.children[0].shortcut = vec!["Super".into(), "Shift".into(), "N".into()];
+        file.children[2].children[0].shortcut = vec!["Control".into(), "P".into()];
+        assert_eq!(s.menu.unwrap().chords(), ["SUPER + Q", "SUPER + SHIFT + N"]);
+        assert_eq!(chord(&["Control".into(), "Alt".into(), "comma".into()]), "CTRL + ALT + comma");
+    }
+
+    #[test]
+    fn a_registered_process_makes_its_windows_mac_windows() {
+        let s = State { registered: vec![4, 40], ..State::default() };
+        let w = |pid| Window { pid, ..Window::default() };
+        assert!(s.is_mac(&w(40)) && !s.is_mac(&w(41)));
     }
 
     #[test]

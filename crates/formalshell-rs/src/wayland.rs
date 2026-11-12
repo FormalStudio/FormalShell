@@ -64,6 +64,7 @@ use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers};
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
+use smithay_client_toolkit::activation::ActivationState;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{
     Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface, LayerSurfaceConfigure,
@@ -220,6 +221,11 @@ pub struct App {
     /// (the lock's blank, settle) ignores inhibitors, which a playing video
     /// holds; caffeinate's idle takes either version.
     idle_notifier: Option<ExtIdleNotifierV1>,
+    activation: Option<ActivationState>,
+    seat: Option<wl_seat::WlSeat>,
+    /// The last button press's serial and surface, which an activation
+    /// token for what the click opens is asked with.
+    press: Option<(u32, wl_surface::WlSurface)>,
     display: WlDisplay,
     qh: QueueHandle<Self>,
     handle: LoopHandle<'static, App>,
@@ -266,6 +272,7 @@ pub struct App {
     join_preview: Option<(Surface, crate::scene::Scene, Vec<NodeId>)>,
     /// The tray item menu, over whatever popout it hangs off.
     pub tray_menu: Option<Popout>,
+    tray_menu_pending: Option<tray_menu::PendingMenu>,
     scrim: Option<(Scrim, PixelSurface)>,
     pointer: Option<wl_pointer::WlPointer>,
     /// The pointing hand over a cell that answers a click,
@@ -333,6 +340,9 @@ impl App {
             shm,
             pixels,
             idle_notifier: globals.bind(qh, 1..=2, crate::surface::Ignore).ok(),
+            activation: ActivationState::bind(globals, qh).ok(),
+            seat: None,
+            press: None,
             display,
             qh: qh.clone(),
             handle,
@@ -361,6 +371,7 @@ impl App {
             sidebar_keys: None,
             panel: None,
             tray_menu: None,
+            tray_menu_pending: None,
             outgoing: None,
             panel_dirty: false,
             keyboard: None,
@@ -994,10 +1005,10 @@ impl App {
                 if self.store.tray.by_key(&key).is_none() {
                     return;
                 }
-                self.runtime.service(move |ctx| match click {
-                    TrayClick::Secondary => tray::secondary_activate(ctx, key),
-                    _ => tray::activate(ctx, key),
-                });
+                match click {
+                    TrayClick::Secondary => self.runtime.service(move |ctx| tray::secondary_activate(ctx, key)),
+                    _ => self.tray_activate_key(key),
+                }
             }
             Action::AppMenu { id, offset } => {
                 let _ = self.open_app_menu(id, Some(anchor + offset));
@@ -1195,6 +1206,9 @@ impl App {
     /// when no owner took it.
     fn pointer_events(&mut self, events: &[PointerEvent]) {
         'events: for e in events {
+            if let PointerEventKind::Press { serial, .. } = e.kind {
+                self.press = Some((serial, e.surface.clone()));
+            }
             let (e, mut target) = self.over_strip(e, owner::target(self, &e.surface));
             for o in owner::INPUT {
                 match o.pointer(self, &e, target) {
@@ -1339,7 +1353,8 @@ impl SeatHandler for App {
         &mut self.seats
     }
 
-    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+        self.seat.get_or_insert(seat);
         self.arm_idle();
         self.arm_settle();
     }

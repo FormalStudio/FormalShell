@@ -15,7 +15,7 @@
 use std::time::{Duration, Instant};
 
 use fs_activity::{Origin, State as ItemState};
-use fs_chrome::dock::{self as model, Item, Open, Show};
+use fs_chrome::dock::{self as model, Item, Open, Show, Windowless};
 use fs_types::{Edge, IRect, Window, WindowId};
 use serde_json::{Value, json};
 use smithay_client_toolkit::reexports::client::protocol::wl_buffer::WlBuffer;
@@ -127,6 +127,11 @@ fn app_of(w: &Window) -> &str {
     if w.app_id.is_empty() { &w.initial_class } else { &w.app_id }
 }
 
+/// The icon query of a Mac app's process that has no window.
+fn lone_icon(pid: u32) -> String {
+    format!("dock-pid:{pid}")
+}
+
 impl App {
     /// The dock's edge: the bottom, or the top where the bar has the bottom.
     fn dock_edge(&self) -> Edge {
@@ -169,13 +174,24 @@ impl App {
                 Open {
                     app: entry.map_or_else(|| app_of(w).to_owned(), |e| e.id),
                     window: w.id.clone(),
-                    mac: w.is_mac(),
+                    mac: self.store.appmenu.is_mac(w),
                     urgent: w.is_urgent,
                     focused: w.id == snapshot.focused_window_id,
                 }
             })
             .collect();
-        let items = model::items(&self.store.state.data.dock_pins, &open);
+        // Filed by the entry its process resolves to; one that resolves to
+        // none has nothing to show and stays out.
+        let lone: Vec<u32> =
+            self.store.appmenu.registered.iter().copied().filter(|pid| !snapshot.windows.iter().any(|w| w.pid == i64::from(*pid))).collect();
+        let windowless: Vec<Windowless> = lone
+            .iter()
+            .filter_map(|pid| {
+                let entry = self.store.appicon.get(&lone_icon(*pid), ICON as u32, scale)?.entry?;
+                Some(Windowless { app: entry.id, pid: *pid })
+            })
+            .collect();
+        let items = model::items(&self.store.state.data.dock_pins, &open, &windowless);
         let exists = model::exists(show, &items);
         let focused = Some(snapshot.focused_window_id.clone());
         let refocused = focused != self.dock.focused;
@@ -190,8 +206,17 @@ impl App {
                     .collect();
                 keys.sort();
                 keys.dedup();
-                let pid = own.iter().find(|w| w.is_mac()).or(own.first()).and_then(|w| u32::try_from(w.pid).ok());
-                let icon = own.first().map_or_else(|| format!("dock:{}", item.app), |w| w.id.to_string());
+                let pid = own
+                    .iter()
+                    .find(|w| self.store.appmenu.is_mac(w))
+                    .or(own.first())
+                    .and_then(|w| u32::try_from(w.pid).ok())
+                    .or(item.windowless.first().copied());
+                let icon = match (own.first(), item.windowless.first()) {
+                    (Some(w), _) => w.id.to_string(),
+                    (None, Some(pid)) => lone_icon(*pid),
+                    (None, None) => format!("dock:{}", item.app),
+                };
                 Entry { item, keys, pid, icon }
             })
             .collect();
@@ -204,6 +229,13 @@ impl App {
                 initial_title: w.initial_title.clone(),
                 pid: w.pid,
             })
+            .chain(lone.iter().map(|pid| Query {
+                id: lone_icon(*pid),
+                app_id: String::new(),
+                initial_class: String::new(),
+                initial_title: String::new(),
+                pid: i64::from(*pid),
+            }))
             .chain(entries.iter().filter(|e| !e.item.running()).map(|e| Query {
                 id: e.icon.clone(),
                 app_id: e.item.app.clone(),

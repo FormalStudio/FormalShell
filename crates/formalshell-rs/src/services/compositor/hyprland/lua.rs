@@ -51,6 +51,10 @@ pub fn spawn(argv: &[String]) -> String {
     format!("hl.dsp.exec_cmd({})", string(&cmd.join(" ")))
 }
 
+pub fn tag_mac(id: &WindowId) -> String {
+    format!("hl.dsp.window.tag({{ tag = \"+{}\", window = {} }})", fs_types::MAC_TAG, string(&selector(id)))
+}
+
 pub fn float_window(id: &WindowId) -> String {
     format!("hl.dsp.window.float({{ window = {}, action = \"set\" }})", string(&selector(id)))
 }
@@ -227,6 +231,17 @@ pub fn mac_recorded(answer: &str) -> Option<u32> {
 pub fn mac_focus(on: bool, window: &WindowId) -> String {
     let asked = if window.is_empty() { "nil".to_owned() } else { string(&selector(window)) };
     format!("if formalshell_mac_focus then formalshell_mac_focus({on}, {asked}) end")
+}
+
+/// The include's `formalshell_mac_app`: into the `macapp` submap, where each
+/// of `chords` runs `appmenu key` on it, or out of it with none.
+pub fn mac_app(chords: Option<&[String]>) -> String {
+    let Some(chords) = chords else { return "if formalshell_mac_app then formalshell_mac_app(nil) end".into() };
+    let binds: Vec<String> = chords
+        .iter()
+        .map(|c| format!("{{ chord = {}, action = {} }}", string(c), spawn(&crate::services::compositor::ipc_argv(&["appmenu", "key", c]))))
+        .collect();
+    format!("if formalshell_mac_app then formalshell_mac_app({{ {} }}) end", binds.join(", "))
 }
 
 /// Showing it goes through the include's `formalshell_arrived` where the

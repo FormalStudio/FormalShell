@@ -67,7 +67,7 @@ impl Cell for ActiveWindow {
             name: resolved.and_then(|i| i.entry.as_ref()).map(|e| if e.name.is_empty() { w.app_id.clone() } else { e.name.clone() }),
             icon: Pic(resolved.and_then(|i| i.image.clone())),
             size,
-            menu: w.is_mac().then(|| env.store.appmenu.titles().first().map(|t| t.label.clone())).flatten(),
+            menu: env.store.appmenu.is_mac(w).then(|| env.store.appmenu.titles().first().map(|t| t.label.clone())).flatten(),
         };
         let changed = self.window.as_ref() != Some(&next);
         self.window = Some(next);

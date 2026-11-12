@@ -159,6 +159,8 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             // Special workspaces carry a negative id.
             special: workspace.is_some_and(|n| n < 0),
             xdg_tag: string(c.get("xdgTag")),
+            // A dynamic tag is listed with a `*` after it.
+            mac_tagged: c.get("tags").and_then(Value::as_array).is_some_and(|t| t.iter().any(|t| t.as_str().is_some_and(|t| t.trim_end_matches('*') == fs_types::MAC_TAG))),
             id,
         });
     }

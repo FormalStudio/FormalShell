@@ -45,6 +45,14 @@ impl Registry {
         self.entries.lock().unwrap().clone()
     }
 
+    /// The processes with a registration, ascending.
+    pub fn pids(&self) -> Vec<u32> {
+        let mut pids: Vec<u32> = self.entries.lock().unwrap().iter().map(|r| r.pid).collect();
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+
     /// Drops what the connection `service` registered, once it left the
     /// bus. True when it had registered anything.
     pub fn forget(&self, service: &str) -> bool {

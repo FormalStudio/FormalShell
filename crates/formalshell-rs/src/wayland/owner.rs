@@ -1300,10 +1300,8 @@ impl Owner for Dock {
         matches!(topic, Topic::Compositor | Topic::State | Topic::Config | Topic::Activity | Topic::AppIcon | Topic::AppMenu | Topic::Display)
     }
 
-    fn changed(&self, app: &mut App, topic: Topic) {
-        if topic != Topic::AppMenu {
-            app.dock_sync();
-        }
+    fn changed(&self, app: &mut App, _: Topic) {
+        app.dock_sync();
         app.dock_menu_changed();
     }
 

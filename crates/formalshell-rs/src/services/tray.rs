@@ -256,8 +256,12 @@ fn spawn_on(ctx: &Ctx, f: impl AsyncFnOnce(&fs_tray::Tray) + 'static) {
     });
 }
 
-pub fn activate(ctx: &Ctx, key: String) {
+/// `token` is an xdg-activation token for the click, handed over first.
+pub fn activate(ctx: &Ctx, key: String, token: Option<String>) {
     spawn_on(ctx, async move |tray| {
+        if let Some(token) = token {
+            logged("activation token", &key, tray.provide_activation_token(&key, &token).await);
+        }
         logged("activate", &key, tray.activate(&key).await);
     });
 }

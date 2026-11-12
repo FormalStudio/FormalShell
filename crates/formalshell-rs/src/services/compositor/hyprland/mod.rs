@@ -364,6 +364,7 @@ async fn commands(
                 }
             }
             Command::MacFocus(on, window) => eval(&lua::mac_focus(on, &window)).await,
+            Command::MacApp(chords) => eval(&lua::mac_app(chords.as_deref())).await,
             Command::Cursor { hidden } => eval(&lua::cursor(hidden)).await,
             // theme.rs wrote both files before sending this.
             Command::Theme(_) => reload(&ctx, &shared),
@@ -377,6 +378,7 @@ async fn commands(
                     dispatch(&lua::float_window(&id)).await;
                 }
             }
+            Command::TagMac(id) => dispatch(&lua::tag_mac(&id)).await,
             Command::ToggleFloating(id) => dispatch(&lua::toggle_floating(&id)).await,
             Command::ToggleFullscreen(id) => dispatch(&lua::toggle_fullscreen(&id)).await,
             Command::MoveWindowTo { id, idx, output } => {
