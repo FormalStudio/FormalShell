@@ -16,7 +16,7 @@
 # Then settings.json rewritten with `bar.position: right` moves it to the
 # right edge. The session runs with Hyprland's `gaps_out` 10 and
 # `border_size` 2, and the fixture window's visible left edge (its `at`
-# less the border, off `hyprctl -j clients`) sits as far off the cards'
+# less the compositor's own border width, off `getoption`) sits as far off the cards'
 # right edge as the cards sit off the screen's, both read off the layer's
 # geometry and the time card's hit rect. The open, panel and rail frames
 # are pulled for reading.
@@ -48,6 +48,7 @@ sidebar_status_rail="$shot_dir/sidebar-status-rail.json"
 sidebar_rail_clock="$shot_dir/sidebar-rail-clock.txt"
 sidebar_status_expanded="$shot_dir/sidebar-status-expanded.json"
 sidebar_layers_open="$shot_dir/sidebar-layers-open.json"
+sidebar_border="$shot_dir/sidebar-border.json"
 sidebar_layers_rail="$shot_dir/sidebar-layers-rail.json"
 sidebar_layers_right="$shot_dir/sidebar-layers-right.json"
 sidebar_monitors="$shot_dir/sidebar-monitors.json"
@@ -142,6 +143,7 @@ sleep 5
 $ipc call sidebar status > "$sidebar_status_open" 2>&1
 "$wmctl_bin" -j layers > "$sidebar_layers_open" 2>&1
 "$wmctl_bin" -j clients > "$sidebar_clients" 2>&1
+"$wmctl_bin" -j getoption general:border_size > "$sidebar_border" 2>&1
 "$wmctl_bin" -j monitors > "$sidebar_monitors" 2>&1
 "$grim_bin" "$sidebar_open_png" > /dev/null 2>&1
 if [ "$(sidebar_clock_case && echo 1)" = 1 ]; then
@@ -315,11 +317,13 @@ leg_sidebar_assert() {
   echo "sidebar layer open: x=$bx y=$by w=$bw h=$bh on ${mw}x${mh}"
   [ "$bx" -eq 0 ] && [ "$bw" -eq 154 ] && [ "$bh" -eq "$mh" ] \
     || fail "sidebar: the open column is not 154 wide down the left edge: x=$bx y=$by w=$bw h=$bh"
-  local cx cw wx outer inner
+  local cx cw wx border outer inner
   read -r cx cw <<< "$("$jq_bin" -r '.hits[] | select(.on == "panel:calendar") | "\(.x) \(.w)"' "$sidebar_status_open" | head -1)"
   wx=$("$jq_bin" -r '[.[] | select(.workspace.id == 1 and .mapped and .hidden != true) | .at[0]] | min' "$sidebar_clients")
+  border=$("$jq_bin" -r '.int' "$sidebar_border" 2>/dev/null)
+  [[ $border =~ ^[0-9]+$ ]] || fail "sidebar: no border width off the compositor: $(cat "$sidebar_border")"
   outer=$((bx + cx))
-  inner=$((wx - 2 - bx - cx - cw))
+  inner=$((wx - border - bx - cx - cw))
   echo "sidebar gaps: screen edge to card $outer, card to window $inner (window at $wx)"
   [ -n "$cw" ] && [ "$wx" != null ] && [ "$inner" -eq "$outer" ] \
     || fail "sidebar: the card sits $outer off the screen's edge but $inner off the window: $(cat "$sidebar_clients")"

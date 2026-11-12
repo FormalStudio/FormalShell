@@ -247,12 +247,12 @@ EOS
 
 # A window by its sidebar id in a clients dump: "<x> <workspace id>".
 minimap_where() {
-  "$jq_bin" -r --arg id "$1" '.[] | select((.address | ltrimstr("0x") | sub("^0+"; "")) == $id) | "\(.at[0]) \(.at[1]) \(.workspace.id)"' "$2"
+  "$jq_bin" -r --arg id "$1" '.[] | select((.address | if startswith("0x") then ltrimstr("0x") | sub("^0+"; "") else . end) == $id) | "\(.at[0]) \(.at[1]) \(.workspace.id)"' "$2"
 }
 
 # Workspace 4's windows by position as sidebar ids, the map's own order.
 minimap_order() {
-  "$jq_bin" -r '[.[] | select(.workspace.id == 4)] | sort_by(.at[0], .at[1]) | map(.address | ltrimstr("0x") | sub("^0+"; "")) | join(" ")' "$1"
+  "$jq_bin" -r '[.[] | select(.workspace.id == 4)] | sort_by(.at[0], .at[1]) | map(.address | if startswith("0x") then ltrimstr("0x") | sub("^0+"; "") else . end) | join(" ")' "$1"
 }
 
 leg_minimap_assert() {
@@ -362,6 +362,10 @@ PY
   echo "$trail"
   echo "SMOKE_MINIMAP_CROWDED $shot_dir/minimap-crowded.png"
   echo "SMOKE_MINIMAP_SCROLLED $shot_dir/minimap-scrolled.png"
+  if ! $wm_workspaces_grow; then
+    echo "minimap: the compositor keeps a fixed set of workspaces, so the map never crowds"
+    return 0
+  fi
   "$jq_bin" -e '(.rows | length) + 1 > .shown.count and .shown.first == 0
       and ([.hits[] | select(.on | startswith("row:") or . == "new") | .y + .h] | max)
         <= ([.hits[] | select(.on == "panel:settings") | .y] | min)' "$shot_dir/minimap-crowded.json" > /dev/null \

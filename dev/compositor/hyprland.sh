@@ -213,6 +213,9 @@ wm_hypr_palette=true
 # scrolling layout centres the narrower tape left of it.
 wm_zen=float
 
+# A window sent to a workspace past the last makes it.
+wm_workspaces_grow=true
+
 # The tiling layouts a leg can switch to with `hl.config({ general = { layout } })`.
 wm_layouts="scrolling dwindle"
 

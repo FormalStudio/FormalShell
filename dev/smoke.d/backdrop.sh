@@ -91,6 +91,7 @@ dump resumed
 "$grim_bin" "$shot_dir/backdrop-resumed-1.png"; sleep 1
 "$grim_bin" "$shot_dir/backdrop-resumed-2.png"
 EOF
+  wm_full_width_columns
   wm_exec_once "bash $script"
 }
 

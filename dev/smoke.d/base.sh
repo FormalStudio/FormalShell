@@ -74,10 +74,10 @@ leg_base_assert() {
   dumps=$(awk 'prev=="> debug dump"{print} {prev=$0}' "$rs_ipc_path")
   [ "$(printf '%s\n' "$dumps" | wc -l)" -eq 2 ] || fail "expected two debug dump replies in $rs_ipc_path"
   check_dump() {
-    printf '%s' "$1" | "$jq_bin" -e --argjson allowed "$dump_keys" --argjson join "$2" '
+    printf '%s' "$1" | "$jq_bin" -e --argjson allowed "$dump_keys" --argjson join "$2" --arg compositor "$FS_COMPOSITOR" '
       (keys - $allowed) == []
       and (["compositor","configLoaded","join","bar","frame","theme","animating"] - keys) == []
-      and .compositor == "hyprland"
+      and .compositor == $compositor
       and (.animating | type) == "array" and all(.animating[]; type == "string")
       and (.bar | length) == 1
       and (.frame | keys) == ["enabled","thickness"]

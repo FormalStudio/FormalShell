@@ -38,14 +38,15 @@ shoji_host_path="$iso_home/.config/formalwm/host.json"
 # The session script's head. formalwm reads its settings at start, so what
 # the rig pins goes in a host.json beside them, merged over settings.json as
 # on a real machine, where a list replaces the shared one whole. One mode for
-# whatever connector the card has, at the run's scale; the us layout with no
+# whatever connector the card has, at the run's scale, and no position,
+# which the rule would give an output a leg makes too; the us layout with no
 # options; no layer blurs (the Hyprland base turns blur off for the reason
 # hyprland.sh gives); and no binds but the ones legs add, as on Hyprland.
 wm_base_config() {
   mkdir -p "$iso_home/.config/formalwm"
   cp "$PWD/wm/example/settings.json" "$iso_home/.config/formalwm/settings.json"
   "$jq_bin" -n --arg mode "${out_w}x${out_h}@60" --argjson scale "${FS_SMOKE_SCALE:-1}" '{
-    outputs: [{ mode: $mode, position: [0, 0], scale: $scale }],
+    outputs: [{ mode: $mode, scale: $scale }],
     input: { keyboard: { layout: "us", variant: null, options: null } },
     layers: [],
     binds: []
@@ -197,6 +198,9 @@ wm_hypr_palette=false
 # formalwm's zen is a layout mode of the workspace (spec section 5): the
 # window stays tiled, centred, and each other column slides off its own side.
 wm_zen=layout
+
+# formalwm keeps the settings' nine workspaces.
+wm_workspaces_grow=false
 
 # formalwm's column tape, which shoji-ctl answers as Hyprland's scrolling.
 wm_layouts="scrolling"

@@ -109,13 +109,21 @@ def workspace(state, ws):
         "hasfullscreen": any(w["fullscreen"] for w in windows),
         "lastwindow": last["id"] if last else "0x0",
         "lastwindowtitle": last["title"] if last else "",
+        # Every formalwm workspace is the column tape.
+        "tiledLayout": "scrolling",
     }
 
 
-def monitors(state):
+def monitors(state, every=False):
     rows = {o["name"]: o for o in call("outputs.get")}
+    shown = [o for o in state["outputs"] if o["enabled"]]
+    # A mirroring output leaves the layout, but Hyprland still lists it,
+    # naming its source by id; `monitors all` lists the disabled ones too.
+    shown += [row for name, row in rows.items()
+              if (row.get("mirrorOf") or (every and not row["enabled"])) and name not in {o["name"] for o in shown}]
+    ids = {o["name"]: n for n, o in enumerate(shown)}
     out = []
-    for n, o in enumerate(o for o in state["outputs"] if o["enabled"]):
+    for n, o in enumerate(shown):
         row = rows.get(o["name"], {})
         active = next((ws for ws in state["workspaces"] if ws["output"] == o["name"] and ws["active"]), None)
         out.append({
@@ -130,12 +138,12 @@ def monitors(state):
             "y": o["y"],
             "scale": o["scale"],
             "transform": row.get("transform", 0),
-            "mirrorOf": row.get("mirrorOf") or "none",
+            "mirrorOf": str(ids.get(row["mirrorOf"], -1)) if row.get("mirrorOf") else "none",
             # Hyprland's order: left, top, right, bottom.
             "reserved": [o["reserved"][k] for k in ("left", "top", "right", "bottom")] if o.get("reserved") else None,
             "focused": o["name"] == state["focusedOutput"],
             "activeWorkspace": {"id": active["idx"], "name": active["name"]} if active else {"id": -1, "name": ""},
-            "disabled": False,
+            "disabled": not o.get("enabled", True) and not row.get("mirrorOf"),
         })
     return out
 
@@ -172,6 +180,11 @@ def binds():
 
 
 def read(verb, args, as_json):
+    if verb == "getoption" and args == ["general:border_size"]:
+        size = call("state.get")["chrome"].get("borderSize")
+        if size is None:
+            raise Unsupported("getoption general:border_size: the engine's state carries no chrome.borderSize")
+        return {"option": args[0], "int": size} if as_json else f"int: {size}"
     if verb == "getoption":
         if args != ["general:col.active_border"]:
             raise Unsupported(f"getoption {' '.join(args)}")
@@ -197,7 +210,7 @@ def read(verb, args, as_json):
         ws = next(ws for ws in state["workspaces"] if ws["id"] == state["focusedWorkspaceId"])
         return workspace(state, ws)
     if verb == "monitors":
-        return monitors(state)
+        return monitors(state, args == ["all"])
     if verb == "layers":
         return layers(state)
     if verb == "overview":
@@ -276,6 +289,11 @@ def dispatch(text):
     if name == "focus":
         if "workspace" in t:
             return call("workspace.focusAt", {"idx": int(t["workspace"])}, answer=False)
+        if "monitor" in t:
+            ws = next((x for x in state["workspaces"] if x["output"] == t["monitor"] and x["active"]), None)
+            if not ws:
+                raise Unsupported(f"no output {t['monitor']} to focus")
+            return call("workspace.focusAt", {"idx": ws["idx"], "output": t["monitor"]}, answer=False)
         return call("window.focus", {"id": select(state, t.get("window"))["id"]}, answer=False)
     w = select(state, t.get("window"))
     if name == "window.close":
@@ -332,8 +350,9 @@ def evaluate(text):
     """`hl.monitor({ output, mode, position, scale })` on an output this
     made: hyprctl sizes a headless output after making it, and
     `outputs.create` takes the size up front, so it is made again at that
-    size. The engine places a made output right of the rest, which is the
-    one position the legs ask for. `hl.config` asking for the scrolling
+    size. The engine places a made output against the right of the rest,
+    which stands in for any position right of them: a leg sizes the gap off
+    the first output's pixels, Hyprland's layout off its logical width. `hl.config` asking for the scrolling
     layout, formalwm's only one, at the column width wm/example/settings.json
     opens columns at, changes nothing."""
     c = re.fullmatch(r"\s*hl\.config\((.*)\)\s*", text, re.S)
@@ -348,7 +367,8 @@ def evaluate(text):
         raise Unsupported(f"hl.monitor mode {t.get('mode')}")
     state = call("state.get")
     right = max((o["x"] + o["width"] for o in state["outputs"] if o["enabled"] and o["name"] != t["output"]), default=0)
-    if t.get("position") not in (None, f"{right}x0"):
+    at = re.fullmatch(r"(\d+)x0", t.get("position", f"{right}x0"))
+    if not at or int(at.group(1)) < right:
         raise Unsupported(f"hl.monitor position {t['position']} (a made output sits at {right}x0)")
     call("outputs.remove", {"name": t["output"]})
     # The output goes a moment after the answer, and its name stays taken

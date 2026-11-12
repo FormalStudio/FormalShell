@@ -49,7 +49,10 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
         phone["recentCount"] = json!(recent.as_array().map_or(0, Vec::len));
     }
     let mut dump = json!({
-        "compositor": "hyprland",
+        "compositor": match crate::services::compositor::kind() {
+            crate::services::compositor::Kind::Hyprland => "hyprland",
+            crate::services::compositor::Kind::Shoji => "shoji",
+        },
         "available": c.available,
         "workspaces": c.workspaces,
         "windows": c.windows,

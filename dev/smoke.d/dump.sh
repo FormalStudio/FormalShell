@@ -30,7 +30,7 @@ leg_dump_assert() {
   cat "$dump_path"; echo
   # The top-level `available` is the backend's; audio and brightness carry
   # their own deeper in, which would pass on a shell with no backend at all.
-  expect_jq "$dump_path" '.compositor == "hyprland" and .available == true' "the dump does not report a connected hyprland backend" '{compositor, available}'
+  expect_jq "$dump_path" ".compositor == \"$FS_COMPOSITOR\" and .available == true" "the dump does not report a connected $FS_COMPOSITOR backend" '{compositor, available}'
   # A backend that connected but never got its state populated reports an
   # empty list here, which is what an event stream that dropped looks like.
   expect_jq "$dump_path" '.workspaces != []' "the dump carries no workspaces, the backend connected but its state never populated" '{workspaces}'
