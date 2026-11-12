@@ -57,6 +57,17 @@ from 400 400 $shake; wait "$moving"
 echo "just shaken: the picture $(box 66-shaken), told: $(shapes)"
 sleep 4.5; echo "four and a half seconds on: the picture $(box 67-settled), told last: $(tail -1 "$log" | jq -c '.shape')"
 
+step "shake turned off by a reload while the cursor is magnified: the image as it is, and its clock stops"
+# With FWM_TIMING the core logs every frame it renders; on a still desk the
+# only thing asking for frames is the cursor's clock.
+drawn() { [ -z "${SHOJI_ANIMATION_TIMING_DEBUG:-}" ] || timing "$1" "$(loglen)" | cut -d';' -f1; }
+from 400 400 $shake; wait "$moving"
+line=$(loglen); sleep 1.5; echo "magnified and still for a second and a half: $(drawn "$line")"
+sed -i 's/"mode": "stretch"/"mode": "stretch", "shake": { "enabled": false }/' "$settings"; reload
+echo "after the reload: the picture $(box 68-shake-off), told last: $(tail -1 "$log" | jq -c '.shape')"
+line=$(loglen); sleep 2; echo "the two seconds after: $(drawn "$line")"
+sed -i 's/, "shake": { "enabled": false }//' "$settings"; reload
+
 step "a hidden cursor is not shaped"
 ipc cursor.hide '{"hidden":true}' >/dev/null; from 100 400 glide 900 400 500 wait 300; wait "$moving"; echo "hidden: $(shapes)"
 ipc cursor.hide '{"hidden":false}' >/dev/null; sleep 0.5
