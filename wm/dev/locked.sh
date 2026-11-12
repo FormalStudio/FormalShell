@@ -50,14 +50,21 @@ if [ -n "${FWM_SHELL:-}" ]; then
   for _ in $(seq 150); do lock | jq -e '.secure == true' >/dev/null 2>&1 && secure=$(now) && break; sleep 0.1; done
   lock | jq -c '{locked, secure, boot}'
   for _ in $(seq 60); do [ "$(ls "$burst" | wc -l)" -ge 70 ] && break; sleep 0.5; done
+  # The engine's cursor log has a line per shape it told the compositor and
+  # is not there before the first.
+  told() { cat "$XDG_CONFIG_HOME/cursor" 2>/dev/null | wc -l; }
   step "every frame from the start script's first on"
   frames "$secure"
   shot 85-locked; echo "the lock at rest: $(blue "$run/85-locked.png")"
+  hand at 200 200 glide 800 600 300 wait 300
+  echo "the pointer swept across the lock screen, cursor shapes told: $(told)"
   step "the password opens the desktop"
   wtype -s 300 formalshell-test -k Return
   for _ in $(seq 100); do lock | jq -e '.locked == false' >/dev/null 2>&1 && break; sleep 0.2; done
   lock | jq -c '{locked}'; sleep 2.5; shot 86-unlocked; echo "the desktop: $(blue "$run/86-unlocked.png")"
   ipc layers.list | jq -c '[.[] | .namespace]'
+  hand at 200 200 glide 800 600 300 wait 300
+  echo "the same sweep on the desktop, cursor shapes told: $(told)"
 else
   step "no shell: the session stays dark, the pointer too, past the ten seconds after which an unlocked start shows it"
   for _ in $(seq 60); do [ "$(ls "$burst" | wc -l)" -ge 70 ] && break; sleep 0.5; done

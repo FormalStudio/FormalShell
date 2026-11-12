@@ -30,7 +30,7 @@ if [ "${FORMALWM_START_LOCKED:-}" = 1 ]; then
 fi
 [ -z "${FWM_SHELL:-}" ] || exec "$FWM_SHELL" > "$XDG_CONFIG_HOME/shell.log" 2>&1
 START
-export FWM_SHELL=${FWM_SHELL:-} FWM_KEYS=${FWM_KEYS:-} FORMALWM_FRAMES="$config/frames"
+export FWM_SHELL=${FWM_SHELL:-} FWM_KEYS=${FWM_KEYS:-} FORMALWM_FRAMES="$config/frames" FORMALWM_CURSOR="$config/cursor"
 [ -z "${FWM_LOCKED:-}" ] || export FORMALWM_START_LOCKED=1
 # FWM_TIMING has the core log every frame's render and cpu time and the
 # rate it presents at.

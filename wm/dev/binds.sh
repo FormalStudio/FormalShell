@@ -14,6 +14,10 @@ for name in formalshell wpctl helium ghostty systemctl; do ln -s spy "$run/$name
 sed -i -e "s#/opt/fspec/current/bin/formalshell#$run/formalshell#g" -e "s#/usr/bin/wpctl#$run/wpctl#g" \
   -e "s#/opt/fspec/current/bin/helium#$run/helium#g" -e "s#\"ghostty\"#\"$run/ghostty\"#g" \
   -e "s#&& systemctl suspend#\&\& $run/systemctl suspend#g" "$settings"
+# A second bind on Alt let go, without `passthrough`: a chord that used Alt
+# takes it, Alt on its own does not.
+printf '    {"chord": "ALT+Alt_L", "action": "spawn", "args": ["%s/formalshell", "plain"], "release": true},\n' "$run" > "$run/binds"
+sed -i "/\"binds\": \[/r $run/binds" "$settings"
 ( ipc state.get --listen 2 | jq -c 'select(.event != null and .event != "state.changed")' ) & listener=$!
 sleep 0.4; printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; wait "$listener"
 ipc binds.list | jq -c 'length'
@@ -32,6 +36,7 @@ key Alt+Tab 1; pressed Alt+Tab
 key Alt+Shift+Tab 1; pressed Alt+Shift+Tab
 wtype -M alt -k Tab -s 300 -k Tab -s 300 -m alt; sleep 0.8; pressed "Alt+Tab, Tab"
 "$SHOJI_BIN" --key Alt+Tab >/dev/null; sleep 1; pressed "--key Alt+Tab"
+"$SHOJI_BIN" --key Alt_L >/dev/null; sleep 1; pressed "--key Alt_L, alone"
 
 step "while Alt is held the pointer is free: another window hears it, and a click focuses it"
 win left > "$run/left.out"; sleep 1.2; win right > "$run/right.out"; sleep 1.2; focus_app
@@ -65,6 +70,8 @@ if [ -n "${FWM_SHELL:-}" ]; then
   sed -i "/\"chord\": \"XF86AudioRaiseVolume\"/a {\"chord\": \"XF86AudioRaiseVolume\", \"action\": \"spawn\", \"args\": [\"$run/twin\"]}," "$settings"
   printf 'reload\n' | socat - UNIX-CONNECT:"$SHOJIWM_SOCKET"; sleep 1
   : > "$run/spied"; press XF86AudioRaiseVolume
+  hold XF86AudioRaiseVolume 900; sleep 1.2
+  echo "held: the volume $(grep -c '^wpctl' "$run/spied") times, its twin, which does not repeat, $(grep -c '^twin' "$run/spied")"; : > "$run/spied"
 
   step "locked: the binds marked locked still run, the others do not, the volume key's second bind among them"
   "$FWM_SHELL" ipc --any-display call lock lock; sleep 2; shot 80-locked

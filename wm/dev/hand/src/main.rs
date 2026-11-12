@@ -4,7 +4,8 @@
 //!   fwm-hand at 300 200 press glide 700 200 400 wait 200 release
 //!
 //! `at X Y` jumps there, `glide X Y MS` travels there in a straight line
-//! over MS milliseconds, `press` and `release` take a button (`left`,
+//! over MS milliseconds, `by DX DY` moves that far as a mouse does (the
+//! only motion a confinement holds), `press` and `release` take a button (`left`,
 //! `right`, `middle`; left when the next word is not one), `wait MS` holds
 //! still. Positions are logical pixels of the layout, 1024x768 unless
 //! `--size WxH` comes first.
@@ -121,6 +122,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     sleep(STEP);
                 }
                 at = to;
+            }
+            "by" => {
+                let (dx, dy) = (number(&mut words, "by")?, number(&mut words, "by")?);
+                pointer.motion(now(), dx, dy);
+                pointer.frame();
+                at = (at.0 + dx, at.1 + dy);
             }
             "press" | "release" => {
                 let code = match words.peek().and_then(|name| button(name)) {
