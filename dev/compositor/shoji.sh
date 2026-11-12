@@ -150,10 +150,12 @@ wm_config_tail() {
 }
 
 # A lone formalwm column keeps the settings' width, so the window floats,
-# placed over the whole output.
+# placed over the output. Two pixels short of it: the shell reads a float
+# within a pixel of its output's size as a game covering it
+# (shoji/model.rs, fills) and holds the OSD back over one.
 wm_cover_output() {
   cat <<EOS
-read -r cover_w cover_h <<< "\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0] | "\(.width / .scale | floor) \(.height / .scale | floor)"')"
+read -r cover_w cover_h <<< "\$("$wmctl_bin" -j monitors | "$jq_bin" -r '.[0] | "\(.width / .scale | floor - 2) \(.height / .scale | floor - 2)"')"
 "$wmctl_bin" dispatch "hl.dsp.window.float({ window = '$1', action = 'enable' })" > /dev/null 2>&1
 "$wmctl_bin" dispatch "hl.dsp.window.resize({ x = \$cover_w, y = \$cover_h, window = '$1' })" > /dev/null 2>&1
 "$wmctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, window = '$1' })" > /dev/null 2>&1
