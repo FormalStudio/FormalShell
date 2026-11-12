@@ -131,6 +131,7 @@ pub fn state(model: &Model, extras: &Extras) -> proto::State {
                 bottom: gap,
                 left: gap,
             },
+            border_size: model.options.border.round() as i32,
             active_border: extras.active_border.clone(),
             blur: extras.blur,
         },

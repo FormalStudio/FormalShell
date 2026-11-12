@@ -229,6 +229,9 @@ pub struct Keyboard {
 #[serde(rename_all = "camelCase")]
 pub struct ChromeState {
     pub gaps_out: Gaps,
+    /// The width of the border around a window, in logical pixels. Gaps
+    /// are measured to its outer edge.
+    pub border_size: i32,
     /// The focused window's border, `#rrggbb` or `#rrggbbaa`.
     pub active_border: String,
     pub blur: bool,
@@ -661,7 +664,7 @@ mod tests {
             "overview": false,
             "keyboard": { "layouts": ["es"], "active": 0 },
             "cursorHidden": false,
-            "chrome": { "gapsOut": { "top": 8, "right": 8, "bottom": 8, "left": 8 }, "activeBorder": "#4385be", "blur": true }
+            "chrome": { "gapsOut": { "top": 8, "right": 8, "bottom": 8, "left": 8 }, "borderSize": 2, "activeBorder": "#4385be", "blur": true }
         });
         let state: State = from_value(wire.clone()).unwrap();
         assert_eq!(state.version, VERSION);

@@ -2,7 +2,7 @@ mod common;
 
 use common::*;
 use formalwm_core::{
-    model::{Big, Placement},
+    model::{Big, Options, Placement},
     view::{Extras, state},
 };
 
@@ -124,4 +124,15 @@ fn an_output_says_what_its_layers_reserve() {
         (reserved.top, reserved.right, reserved.bottom, reserved.left),
         (40, 8, 10, 12)
     );
+}
+
+#[test]
+fn the_chrome_says_the_border_the_gaps_are_measured_to() {
+    let mut model = desk();
+    model.set_options(Options {
+        border: 2.0,
+        ..Options::default()
+    });
+    let chrome = state(&model, &Extras::default()).chrome;
+    assert_eq!((chrome.border_size, chrome.gaps_out.left), (2, 8));
 }
