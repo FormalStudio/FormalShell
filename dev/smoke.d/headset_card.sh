@@ -45,6 +45,7 @@
 # tooltip.sh documents: only one sends the surface a pointer enter.
 leg_headset_card_flag="--headset-card"
 leg_headset_card_order=177
+leg_headset_card_compositors="hyprland shoji"
 leg_headset_card_needs="wlrctl jq wtype foot python3"
 leg_headset_card_claims="bus.system pointer layout bar.position=top frame=none"
 

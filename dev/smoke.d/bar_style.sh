@@ -23,6 +23,7 @@
 # With --frame the ring's own fillets are the corners (frame.sh reads them).
 leg_bar_style_flag="--bar-style <style>"
 leg_bar_style_order=7
+leg_bar_style_compositors="hyprland shoji"
 leg_bar_style_needs="convert jq"
 leg_bar_style_fixture_window=keep
 
