@@ -623,3 +623,28 @@ fn a_window_is_in_view_on_a_shown_workspace_or_a_shown_overlay() {
     model.focus_workspace("5");
     assert!(model.in_view("a"));
 }
+
+#[test]
+fn the_outer_gap_lies_inside_what_a_layer_reserves_at_the_side() {
+    let mut model = desk();
+    let side = |x: f64, w: f64| {
+        let mut geo = output("A", 0.0, 1920.0, 1080.0);
+        geo.usable = Rect::new(x, 0.0, w, 1080.0);
+        vec![geo]
+    };
+    model.set_outputs(side(154.0, 1766.0));
+    open(&mut model, "a");
+    model.set_column_width(1.0);
+    assert_eq!(
+        place(&model, "a").rect,
+        Rect::new(162.0, 8.0, 1750.0, 1064.0)
+    );
+    // A lone column narrower than the strip is centred in what is left.
+    model.set_column_width(0.5);
+    assert_eq!(place(&model, "a").rect, Rect::new(602.0, 8.0, 871.0, 1064.0));
+
+    model.set_outputs(side(0.0, 1766.0));
+    assert_eq!(place(&model, "a").rect, Rect::new(448.0, 8.0, 871.0, 1064.0));
+    model.set_column_width(1.0);
+    assert_eq!(place(&model, "a").rect, Rect::new(8.0, 8.0, 1750.0, 1064.0));
+}

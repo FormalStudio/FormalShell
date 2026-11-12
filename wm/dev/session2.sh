@@ -129,6 +129,18 @@ key d 0.2; key Return 0.5; heard "a layer came and went"
 ipc workspace.focusAt "{\"idx\":${empty[1]}}" >/dev/null; sleep 1
 key e 0.2; key Return 0.5; heard "its workspace in view"
 
+step "a layer's reserve at the side: the outer gap lies inside it, and a lone column narrower than the strip is centred in what is left"
+kb() { echo "$1: reserved $(ipc state.get | jq -c '.outputs[0].reserved | [.left, .top, .right, .bottom]') kb $(ipc state.get | jq -c '[.windows[] | select(.appId == "kb") | .rect | [.x, .y, .width, .height]][0]')"; }
+key Super+f 0.8; kb "nothing at the side"
+layer side top left 154 0 --exclusive 154 --color cc101010; side=$!; sleep 1; kb "154 wide on the left, reserving 154"
+key Super+r 0.8; kb "the next width"
+key Super+f 0.8; kill "$side"; sleep 0.8
+layer side top left 154 0 --exclusive 148 --color cc101010; side=$!; sleep 1; kb "154 wide on the left, reserving 148"
+kill "$side"; sleep 0.8
+layer side top right 154 0 --exclusive 154 --color cc101010; side=$!; sleep 1; kb "154 wide on the right, reserving 154"
+key Super+r 0.8; kb "the next width"
+kill "$side"; sleep 0.8
+
 step "the log, then session.exit"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx\|unknown key .code:" | cut -c1-300 | tail -12
 ipc session.exit; sleep 2
