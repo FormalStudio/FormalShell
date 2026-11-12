@@ -74,6 +74,9 @@ either. A leg defines:
   of the scaffold's, for a leg that runs some other build of the shell
   (`--installed`). It still logs to `$shell_log_path` and may write the
   shell's pid to `$shot_dir/shell.pid` for the memory sample.
+- `leg_<n>_session` may replace `wm_cmd`, the command line the session
+  runs, with one that starts it (`--login-switch` runs it through the login
+  script, as `uwsm`).
 - A fixture may set `shell_env` (`NAME=value ...`) for the shell's own
   environment and nothing else in the session (`--bluez-rssi`, `--earbuds`
   and `--headset-card` point the shell's system bus at a private one where

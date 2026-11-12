@@ -16,6 +16,11 @@ pub const SHELL_DIR: &str = "formalshell";
 /// the boot lock when it finds it.
 pub const LOGIN_LOCK_MARKER: &str = "login-lock";
 
+/// Left by the boot lock once the password has been checked, carrying
+/// another session's environment and command; the login script starts that
+/// one when the compositor has gone.
+pub const LOGIN_SESSION_MARKER: &str = "login-session";
+
 /// The XDG base directory spec treats a relative value as unset.
 fn var(name: &str) -> Option<PathBuf> {
     std::env::var_os(name).map(PathBuf::from).filter(|p| p.is_absolute())
@@ -66,6 +71,45 @@ pub fn data_dirs() -> Vec<PathBuf> {
 /// nothing without it (another program's socket).
 pub fn session_runtime() -> Option<PathBuf> {
     var("XDG_RUNTIME_DIR")
+}
+
+/// `<session runtime>/formalshell/login-session`, only while the session's
+/// runtime dir is this user's alone. The login script runs what it finds
+/// there, so a dir another user can reach, or no `$XDG_RUNTIME_DIR` at all
+/// (the `/tmp` fallback), means no handover.
+pub fn login_session_marker() -> Option<PathBuf> {
+    let runtime = session_runtime()?;
+    private_dir(&runtime).then(|| runtime.join(SHELL_DIR).join(LOGIN_SESSION_MARKER))
+}
+
+/// A directory, not a link to one, owned by this user with no group or
+/// world access.
+pub fn private_dir(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir() && m.uid() == unsafe { libc::geteuid() } && m.mode() & 0o077 == 0)
+}
+
+/// A fresh 0600 file in a 0700 directory of this user's own, never through
+/// a link. The directory is made if missing; one that is a link or another
+/// user's is refused.
+pub fn write_private(path: &Path, body: impl AsRef<[u8]>) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+    let dir = path.parent().unwrap_or(Path::new("."));
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        made => made?,
+    }
+    let meta = std::fs::symlink_metadata(dir)?;
+    if !meta.is_dir() || meta.uid() != unsafe { libc::geteuid() } {
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "not a directory of this user's own"));
+    }
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        removed => removed?,
+    }
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).custom_flags(libc::O_NOFOLLOW).open(path)?;
+    file.write_all(body.as_ref())
 }
 
 /// `$XDG_RUNTIME_DIR`, else `/tmp/formalshell-<uid>`.
@@ -148,4 +192,42 @@ mod tests {
         assert_eq!(left, ["state.json"]);
     }
 
+    #[test]
+    fn a_private_dir_is_this_users_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("run");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(private_dir(&dir));
+        std::os::unix::fs::symlink(&dir, root.path().join("link")).unwrap();
+        assert!(!private_dir(&root.path().join("link")));
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o770)).unwrap();
+        assert!(!private_dir(&dir));
+        assert!(!private_dir(&root.path().join("missing")));
+    }
+
+    #[test]
+    fn a_private_write_never_follows_a_link() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("formalshell").join("login-session");
+        write_private(&path, "one\n").unwrap();
+        std::fs::set_permissions(path.parent().unwrap(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_private(&path, "two\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "two\n");
+        assert_eq!((mode(path.parent().unwrap()), mode(&path)), (0o700, 0o600));
+
+        let elsewhere = root.path().join("elsewhere");
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &path).unwrap();
+        write_private(&path, "three\n").unwrap();
+        assert!(!elsewhere.exists() && std::fs::read_to_string(&path).unwrap() == "three\n");
+
+        let linked = root.path().join("linked");
+        std::os::unix::fs::symlink(path.parent().unwrap(), &linked).unwrap();
+        assert!(write_private(&linked.join("login-session"), "four\n").is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "three\n");
+    }
 }

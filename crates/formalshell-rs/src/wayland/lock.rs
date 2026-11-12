@@ -19,7 +19,10 @@
 //! off it before anything else, that picture alone on its first frame. Once
 //! the lock's backdrop is made the picture dissolves into it, and only then
 //! does the card enter. The first unlock deletes the marker; until then the
-//! card offers "Other user".
+//! card offers "Other user", and the greeter's session chip with the
+//! running session picked. Another session picked there is started by the
+//! login script once the password has been checked and the compositor has
+//! gone ([`crate::paths::LOGIN_SESSION_MARKER`]).
 //!
 //! The screensaver can show inside the lock: its scene is presented on the
 //! lock surfaces in place of the card, input dismisses it back to the card,
@@ -66,11 +69,15 @@ use crate::surface::{Backend, Surface};
 use crate::store::Topic;
 use crate::surfaces::dissolve::{self, Dissolve};
 use crate::surfaces::lock::{self as view, Button, Buttons, Control, Cursor, NowPlaying, Shared, TKey};
-use crate::surfaces::login::{self, View};
+use crate::surfaces::login::{self, Menu, View};
+use crate::greeter::sessions::{self, Session};
+use crate::ui::Ui;
 
 /// What finishes off the UI thread and comes back to the lock.
 pub enum LockMsg {
     Pam(u64, Outcome),
+    /// The attempt's login keyring unlock has its answer.
+    Keyring(u64),
     Avatar(Option<Bitmap>),
     /// The polkit dialog's identity picture.
     PolkitAvatar(Option<Bitmap>),
@@ -236,6 +243,20 @@ pub struct Lock {
     /// PrepareForShutdown while locked: the lock itself fades to black, 1 at rest.
     depart: Animated,
     departing: bool,
+    /// The boot lock's sessions, read with the settings; none when the
+    /// running one is not among them, so nothing else can be picked.
+    sessions: Option<Sessions>,
+    /// The session the login script was asked to start, while this
+    /// compositor ends.
+    leaving: Option<Session>,
+}
+
+struct Sessions {
+    list: Vec<Session>,
+    names: Vec<String>,
+    running: usize,
+    picked: usize,
+    menu: bool,
 }
 
 impl Lock {
@@ -281,6 +302,8 @@ impl Lock {
             armed: Armed::default(),
             depart: Animated::new(1.0, Clock::Effects.curve()),
             departing: false,
+            sessions: None,
+            leaving: None,
         }
     }
 }
@@ -334,8 +357,12 @@ fn login_marker() -> PathBuf {
 /// waiting on something that is not coming.
 const CHECK_DEADLINE: Duration = Duration::from_secs(15);
 /// The keyring is unlocked after the lock has lifted, so this only bounds a
-/// thread nobody waits on.
+/// thread nobody waits on, but for a handover's, which the compositor's end
+/// waits for: the shell goes with the compositor, the thread with it.
 const KEYRING_DEADLINE: Duration = Duration::from_secs(5);
+/// How long the lock holds after asking the compositor to end before it
+/// takes the session pick back.
+const LEAVE_WAIT: Duration = Duration::from_secs(10);
 /// How long the boot's splash waits for the lock's backdrop before it
 /// dissolves into the dark fallback.
 const BOOT_WAIT: Duration = Duration::from_secs(2);
@@ -577,6 +604,20 @@ impl App {
     pub(super) fn lock_pointer(&mut self, e: &PointerEvent) {
         let Some(o) = self.lock.outs.iter_mut().find(|o| *o.surface.layer.wl_surface() == e.surface) else { return };
         let last = o.pointer.replace(e.position);
+        let (x, y) = e.position;
+        let ui = &mut o.view.ui;
+        let at = ui.hit(x, y).map(|h| h.path.clone());
+        let clicked = match e.kind {
+            PointerEventKind::Press { button: crate::input::BTN_LEFT, .. } => {
+                ui.pressed = at;
+                None
+            }
+            PointerEventKind::Release { button: crate::input::BTN_LEFT, .. } => {
+                let pressed = ui.pressed.take();
+                ui.hit(x, y).filter(|_| pressed.is_some() && pressed == at).and_then(|h| Ui::event(h, x, crate::ui::Button::Left)).map(|e| e.on)
+            }
+            _ => None,
+        };
         let moved = match e.kind {
             PointerEventKind::Enter { .. } => return,
             PointerEventKind::Leave { .. } => {
@@ -593,7 +634,84 @@ impl App {
         }
         if moved && self.saver.active {
             self.saver_input(None, SaverInput::Press);
+        } else if let Some(on) = clicked.filter(|_| !self.saver.active && !self.lock_blanked()) {
+            self.session_press(&on);
         }
+    }
+
+    /// The session chip or one of its menu's rows, clicked.
+    fn session_press(&mut self, on: &crate::ui::On) {
+        let Some(s) = self.lock.sessions.as_mut().filter(|_| self.lock.leaving.is_none()) else { return };
+        if on.as_str() == "sessions" {
+            s.menu = !s.menu;
+        } else if let Some(&login::Press::Session(i)) = on.get::<login::Press>() {
+            s.picked = i.min(s.list.len() - 1);
+            s.menu = false;
+        } else {
+            return;
+        }
+        self.lock.dirty = true;
+    }
+
+    /// The sessions the greeter offers, from the same `greeter.sessionDirs`,
+    /// with the one this compositor runs picked. A pick still listed after
+    /// the settings moved is kept. None without a private runtime dir, which
+    /// is the only place the login script takes a pick from.
+    fn load_login_sessions(&mut self) {
+        if crate::paths::login_session_marker().is_none() {
+            self.lock.sessions = None;
+            return;
+        }
+        let list = sessions::scan(&crate::settings::greeter_session_dirs(&self.store.config, &sessions::DIRS));
+        let picked = self.lock.sessions.as_ref().map(|s| s.list[s.picked].id.clone());
+        self.lock.sessions = sessions::running(&list, compositor::kind().desktop()).map(|running| {
+            let picked = picked.and_then(|id| list.iter().position(|s| s.id == id)).unwrap_or(running);
+            Sessions { names: list.iter().map(|s| s.name.clone()).collect(), list, running, picked, menu: false }
+        });
+        self.lock.cursor.clear();
+    }
+
+    /// The boot lock offers a pick: more than one session, the running one
+    /// among them.
+    fn sessions_shown(&self) -> bool {
+        self.lock.login && self.lock.sessions.as_ref().is_some_and(|s| s.list.len() > 1)
+    }
+
+    /// Another session picked on the boot lock, the password checked: the
+    /// login script starts it once this compositor has gone, and the lock
+    /// stays up until then. The compositor is asked to end once the login
+    /// keyring has its unlock ([`LockMsg::Keyring`]), as a plain unlock
+    /// gives it.
+    fn leave_for(&mut self, s: &Session) {
+        let written = match crate::paths::login_session_marker() {
+            Some(marker) => crate::paths::write_private(&marker, sessions::handover(s)).map_err(|err| format!("{}: {err}", marker.display())),
+            None => Err("no private runtime dir".into()),
+        };
+        if let Err(err) = written {
+            eprintln!("lock: {err}");
+            self.lock.error = format!("Could not start {}", s.name);
+            return;
+        }
+        eprintln!("lock: leaving for {}", s.id);
+        self.lock.leaving = Some(s.clone());
+        self.lock.dirty = true;
+    }
+
+    /// A compositor still here after `LEAVE_WAIT` leaves the pick undone and
+    /// the lock as it was.
+    fn end_session(&mut self) {
+        let _ = self.handle.insert_source(Timer::from_duration(LEAVE_WAIT), |_, _, app: &mut App| {
+            if app.lock.leaving.take().is_some() {
+                eprintln!("lock: the compositor did not end in {}s", LEAVE_WAIT.as_secs());
+                if let Some(marker) = crate::paths::login_session_marker() {
+                    let _ = std::fs::remove_file(marker);
+                }
+                app.lock.error = "Could not end the session".into();
+                app.lock.dirty = true;
+            }
+            TimeoutAction::Drop
+        });
+        compositor::send(compositor::Command::Exit);
     }
 
     /// A lock surface for every output that has none yet.
@@ -682,6 +800,11 @@ impl App {
         match msg {
             LockMsg::Pam(attempt, outcome) if attempt == self.lock.attempt => self.lock_result(outcome),
             LockMsg::Pam(..) => {}
+            LockMsg::Keyring(attempt) => {
+                if attempt == self.lock.attempt && self.lock.leaving.is_some() {
+                    self.end_session();
+                }
+            }
             LockMsg::Avatar(a) => {
                 if let Some(a) = a {
                     crate::scene::keep(&mut self.lock.avatar, a);
@@ -804,6 +927,7 @@ impl App {
             // After the lock has its answer, never before it (fs_auth::keyring).
             if unlocked {
                 crate::trace::keyring(&keyring::unlock_login(&keyring_password, KEYRING_DEADLINE));
+                let _ = tx.send(LockMsg::Keyring(attempt));
             }
         });
         if spawned.is_err() {
@@ -855,7 +979,13 @@ impl App {
     fn lock_result(&mut self, outcome: Outcome) {
         self.end_check();
         match outcome {
-            Outcome::Success => self.begin_unlock(),
+            Outcome::Success => match self.lock.sessions.as_ref().filter(|s| self.sessions_shown() && s.picked != s.running) {
+                Some(s) => {
+                    let s = s.list[s.picked].clone();
+                    self.leave_for(&s);
+                }
+                None => self.begin_unlock(),
+            },
             Outcome::Failed(_) => self.lock.error = "Wrong password".into(),
             Outcome::MaxTries(_) => self.lock.error = "Account locked".into(),
             Outcome::AccountUnavailable(why) => {
@@ -928,6 +1058,7 @@ impl App {
         self.lock.armed.clear();
         if std::mem::take(&mut self.lock.login) {
             self.lock.splash.clear();
+            self.lock.sessions = None;
             drop(self.lock.prompter.lock().unwrap_or_else(|e| e.into_inner()).take());
         }
         if let Some(t) = self.lock.clock.take() {
@@ -952,13 +1083,28 @@ impl App {
 
     /// The controls the keyboard walks past the field.
     fn lock_controls(&self) -> Vec<Control> {
-        view::controls(self.lock_media().is_some(), &self.lock_buttons())
+        view::controls(self.sessions_shown(), self.lock_media().is_some(), &self.lock_buttons())
     }
 
     /// The transport's and the buttons' keys first (through the field's own
     /// key filter, over both), then
     /// the field's.
     fn transport_key(&mut self, event: &KeyEvent) -> bool {
+        // The open session menu: Up and Down pick, Return or Escape close
+        // it, and any other key closes it and goes on.
+        if let Some(s) = self.lock.sessions.as_mut().filter(|s| s.menu) {
+            let n = s.list.len();
+            match event.keysym {
+                Keysym::Up => s.picked = (s.picked + n - 1) % n,
+                Keysym::Down => s.picked = (s.picked + 1) % n,
+                Keysym::Return | Keysym::KP_Enter | Keysym::Escape => s.menu = false,
+                _ => {
+                    s.menu = false;
+                    return self.transport_key(event);
+                }
+            }
+            return true;
+        }
         let controls = self.lock_controls();
         let key = match event.keysym {
             Keysym::Tab => TKey::Tab,
@@ -978,6 +1124,11 @@ impl App {
         };
         self.lock.armed.keep(button.as_ref());
         match pressed {
+            Some(Control::Sessions) => {
+                if let Some(s) = &mut self.lock.sessions {
+                    s.menu = true;
+                }
+            }
             Some(Control::Button(b)) => {
                 if !b.confirms() || self.lock.armed.press(b) {
                     self.lock_button(b);
@@ -1032,7 +1183,14 @@ impl App {
                 self.lock.backdrop.clear();
                 self.load_lock_pictures();
             }
-            Topic::Config if DepthCut::read(&self.store.config, "lock", Some(DepthCut::THRESHOLD)) != self.lock.depth_cut => self.load_lock_backdrops(),
+            Topic::Config => {
+                if self.lock.login {
+                    self.load_login_sessions();
+                }
+                if DepthCut::read(&self.store.config, "lock", Some(DepthCut::THRESHOLD)) != self.lock.depth_cut {
+                    self.load_lock_backdrops();
+                }
+            }
             // A map written for the picture under the lock.
             Topic::Depth if self.store.wallpaper.latest().is_some_and(|p| self.store.depth.wrote(&p.path)) => self.load_lock_backdrops(),
             Topic::Media => {
@@ -1083,7 +1241,7 @@ impl App {
         if self.lock.session.is_none() {
             return false;
         }
-        if self.lock.unlocking {
+        if self.lock.unlocking || self.lock.leaving.is_some() {
             return true;
         }
         // Repeats are timed on this loop, so a frame that holds back a
@@ -1274,6 +1432,12 @@ impl App {
         let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now) || departing;
         let dark = self.lock.departing && !self.lock.depart.running(now);
         let has_wallpaper = !self.store.desktop().is_empty();
+        let starting = self.lock.leaving.as_ref().map(|s| format!("Starting {}\u{2026}", s.name));
+        let prompt = view::prompt(self.lock.password.text(), self.lock.password.caret_chars(), self.lock.checking);
+        let prompt = match &starting {
+            Some(busy) => prompt.checking(busy),
+            None => prompt,
+        };
         let shared = Shared {
             error: &self.lock.error,
             has_wallpaper,
@@ -1281,7 +1445,7 @@ impl App {
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),
             blanked,
             wake: (self.lock.wake.value(now) * self.lock.depart.value(now)).clamp(0.0, 1.0) as f32,
-            ..Shared::new(crate::services::users::name(), view::prompt(self.lock.password.text(), self.lock.password.caret_chars(), self.lock.checking))
+            ..Shared::new(crate::services::users::name(), prompt)
         };
         let active = self.lock_media();
         let mpris = active.as_ref().and_then(|a| self.store.media.mpris.iter().find(|p| p.id == a.id));
@@ -1300,6 +1464,10 @@ impl App {
                 art: None,
             }),
             buttons: Buttons { shown, armed: self.lock.armed.get().copied() },
+            sessions: self.lock.sessions.as_ref().filter(|_| self.sessions_shown()).and_then(|s| {
+                let menu = if s.menu { Menu::Sessions } else { Menu::Closed };
+                login::Controls { sessions: &s.names, session: s.picked, users: &[], user: 0, menu }.chips(theme)
+            }),
             cursor,
             ..shared
         };
@@ -1405,8 +1573,16 @@ impl App {
                 "buttons": self.lock_buttons().iter().map(|b| b.id()).collect::<Vec<_>>(),
                 "buttonCursor": match self.lock.cursor.on(&self.lock_controls()) {
                     Some(Control::Button(b)) => Some(b.id()),
+                    Some(Control::Sessions) => Some("sessions"),
                     _ => None,
                 },
+                "sessions": self.lock.sessions.as_ref().filter(|_| self.sessions_shown()).map(|s| json!({
+                    "ids": s.list.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
+                    "running": s.list[s.running].id,
+                    "picked": s.list[s.picked].id,
+                    "menu": s.menu,
+                })),
+                "leavingFor": self.lock.leaving.as_ref().map(|s| s.id.as_str()),
                 "armed": self.lock.armed.get().copied().map(Button::id),
             })
         };

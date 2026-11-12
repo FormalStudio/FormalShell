@@ -6,7 +6,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::paths::{LOGIN_LOCK_MARKER, SHELL_DIR};
 use crate::services::proc::on_path;
 
 const REPO: &str = "FormalStudio/FormalShell";
@@ -552,21 +551,11 @@ const LOGIN_ENV_BODY: &str = "XDG_SESSION_TYPE DEFAULT=wayland OVERRIDE=${XDG_SE
 /// greetd's `initial_session`: Hyprland locked before its first output
 /// (`--locked-cmd`), its locked command starting the shell, which finds the
 /// marker and takes the lock over. The unit is the shell's only launcher,
-/// so the include's own start of it later does nothing.
+/// so the include's own start of it later does nothing. Another session
+/// picked on that lock comes after Hyprland, in the same login. A file of
+/// its own so `--login-switch` (dev/smoke.d) runs the same script.
 fn login_script() -> String {
-    format!(
-        "#!/bin/sh
-# Written by `formalshell install`; `formalshell update` rewrites it.
-# The same fallback as the shell's paths::runtime, so it finds the marker.
-case \"${{XDG_RUNTIME_DIR:-}}\" in
-  /*) runtime=$XDG_RUNTIME_DIR ;;
-  *) runtime=/tmp/formalshell-$(id -u) ;;
-esac
-mkdir -p \"$runtime/{SHELL_DIR}\"
-: > \"$runtime/{SHELL_DIR}/{LOGIN_LOCK_MARKER}\"
-exec uwsm start -g -1 -e -D Hyprland -- hyprland.desktop -- --locked-cmd '{START}'
-"
-    )
+    include_str!("formalshell-login.sh").replace("@START@", START)
 }
 
 /// greetd execs this with PAM's environment alone, and the greeter account's
@@ -678,6 +667,7 @@ fn writable(dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paths::{LOGIN_LOCK_MARKER, LOGIN_SESSION_MARKER, SHELL_DIR};
 
     fn layout(root: &Path) -> Layout {
         Layout { prefix: root.join("prefix"), config: root.join("config") }
@@ -719,6 +709,118 @@ mod tests {
         assert_eq!(out.matches("pam_env.so").count(), 1);
         assert_eq!(login_pam("auth include common-auth\n"), None);
         assert!(login_script().contains("--locked-cmd '") && login_script().contains("formalshell.service"));
+        for name in [LOGIN_LOCK_MARKER, LOGIN_SESSION_MARKER] {
+            assert!(login_script().contains(&format!("$runtime/{SHELL_DIR}/{name}")));
+        }
+    }
+
+    /// What the login script finds around the session marker.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Around {
+        /// `$XDG_RUNTIME_DIR` 0700 and this user's.
+        Private,
+        /// No `$XDG_RUNTIME_DIR`: the `/tmp` fallback, private as well.
+        Unset,
+        /// `formalshell` a link to a private dir elsewhere.
+        LinkedDir,
+        /// `$XDG_RUNTIME_DIR` open to its group.
+        GroupWritable,
+        /// An `rm` that leaves the stale marker in place.
+        Stuck,
+        /// The marker a link to the command.
+        LinkedMarker,
+    }
+
+    /// The script run with a `uwsm` that stands in for Hyprland and its
+    /// boot lock: it leaves `leave` as the session marker, if given, and
+    /// exits 3. What the session it started wrote, and the script's status.
+    fn login_run(around: Around, leave: Option<&dyn Fn(&Path) -> String>) -> (String, Option<i32>) {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let private = |p: &Path| fs::set_permissions(p, fs::Permissions::from_mode(0o700)).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let (bin, out) = (dir.path().join("bin"), dir.path().join("out"));
+        let fallback = tempfile::Builder::new().prefix("formalshell-").tempdir_in("/tmp").unwrap();
+        let runtime = if around == Around::Unset { fallback.path().to_owned() } else { dir.path().join("run") };
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&runtime).unwrap();
+        private(&runtime);
+        if around == Around::LinkedDir {
+            fs::create_dir(dir.path().join("elsewhere")).unwrap();
+            private(&dir.path().join("elsewhere"));
+            symlink(dir.path().join("elsewhere"), runtime.join(SHELL_DIR)).unwrap();
+        } else {
+            fs::create_dir(runtime.join(SHELL_DIR)).unwrap();
+            private(&runtime.join(SHELL_DIR));
+        }
+        if around == Around::GroupWritable {
+            fs::set_permissions(&runtime, fs::Permissions::from_mode(0o770)).unwrap();
+        }
+        let marker = runtime.join(SHELL_DIR).join(LOGIN_SESSION_MARKER);
+        fs::write(&marker, format!("echo stale > {}\n", out.display())).unwrap();
+        let tool = |name: &str, body: String| {
+            fs::write(bin.join(name), format!("#!/bin/sh\n{body}\n")).unwrap();
+            fs::set_permissions(bin.join(name), fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let leave = leave.map(|body| {
+            fs::write(dir.path().join("leave"), body(&out)).unwrap();
+            match around {
+                Around::LinkedMarker => format!("ln -s {} {}", dir.path().join("leave").display(), marker.display()),
+                _ => format!("cp {} {}", dir.path().join("leave").display(), marker.display()),
+            }
+        });
+        let stale = if around != Around::Private { String::new() } else { format!("[ -e {} ] && echo stale-marker > {}", marker.display(), out.display()) };
+        tool(
+            "uwsm",
+            format!(
+                "{stale}\n[ -e {lock} ] || echo no-lock > {out}\n{leave}\nexit 3",
+                lock = runtime.join(SHELL_DIR).join(LOGIN_LOCK_MARKER).display(),
+                out = out.display(),
+                leave = leave.unwrap_or_default(),
+            ),
+        );
+        let name = fallback.path().file_name().unwrap().to_string_lossy();
+        tool("id", format!("echo {}", name.trim_start_matches("formalshell-")));
+        if around == Around::Stuck {
+            tool("rm", String::new());
+        }
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+        let mut script = Command::new("sh");
+        script.arg("-c").arg(login_script()).env("PATH", path).env_remove("XDG_SESSION_DESKTOP").env_remove("XDG_CURRENT_DESKTOP");
+        match around {
+            Around::Unset => script.env_remove("XDG_RUNTIME_DIR"),
+            _ => script.env("XDG_RUNTIME_DIR", &runtime),
+        };
+        let status = script.status().unwrap();
+        if around == Around::Private {
+            assert!(!marker.exists(), "the session marker outlived the login script");
+        }
+        (fs::read_to_string(&out).unwrap_or_default(), status.code())
+    }
+
+    /// A session as the boot lock would leave it, writing its environment.
+    fn formalwm(out: &Path) -> String {
+        let s = crate::greeter::sessions::Session {
+            id: "formalwm-uwsm".into(),
+            name: "formalwm".into(),
+            exec: format!("echo \"$XDG_SESSION_TYPE $XDG_SESSION_DESKTOP $XDG_CURRENT_DESKTOP\" > {}", out.display()),
+            desktops: "ShojiWM".into(),
+        };
+        crate::greeter::sessions::handover(&s)
+    }
+
+    #[test]
+    fn the_login_script_starts_the_session_the_boot_lock_left() {
+        assert_eq!(login_run(Around::Private, None), (String::new(), Some(3)));
+        assert_eq!(login_run(Around::Private, Some(&formalwm)), ("wayland formalwm-uwsm ShojiWM\n".into(), Some(0)));
+        let other = |out: &Path| format!("FS_LOGIN_OTHER=set\necho \"[$FS_LOGIN_OTHER]\" > {}\n", out.display());
+        assert_eq!(login_run(Around::Private, Some(&other)), ("[]\n".into(), Some(0)));
+    }
+
+    #[test]
+    fn the_login_script_takes_a_session_only_from_a_private_runtime_dir() {
+        for around in [Around::Unset, Around::LinkedDir, Around::GroupWritable, Around::Stuck, Around::LinkedMarker] {
+            assert_eq!(login_run(around, Some(&formalwm)), (String::new(), Some(3)));
+        }
     }
 
     #[test]

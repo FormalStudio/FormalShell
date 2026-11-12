@@ -244,6 +244,18 @@ impl Controls<'_> {
     pub fn el(&self, theme: &Theme) -> El {
         let s = &theme.space;
         // Power on its own row: beside two chips it runs out of the column.
+        let power = power::Action::ALL.map(|a| w::icon_button(a.icon()).on(a.id())).to_vec();
+        let mut col = Vec::new();
+        col.extend(self.chips(theme));
+        col.push(w::row(s.xs, power));
+        w::column(s.sm, col).fill()
+    }
+
+    /// The session chip and the user chip, each shown only with more than
+    /// one to pick from: what the boot's lock carries of the greeter's
+    /// controls.
+    pub fn chips(&self, theme: &Theme) -> Option<El> {
+        let s = &theme.space;
         let (items, current, press): (&[String], usize, fn(usize) -> Press) = match self.menu {
             Menu::Sessions => (self.sessions, self.session, Press::Session),
             Menu::Users => (self.users, self.user, Press::User),
@@ -262,20 +274,14 @@ impl Controls<'_> {
         };
         let mut chips = Vec::new();
         if let Some(name) = self.sessions.get(self.session).filter(|_| self.sessions.len() > 1) {
-            let chip = w::trigger(s, "monitor", name, self.menu == Menu::Sessions).on("sessions");
+            let chip = w::trigger(s, "monitor", name, self.menu == Menu::Sessions).stop("sessions").on("sessions");
             chips.push(if self.menu == Menu::Sessions { chip.float(list()) } else { chip });
         }
         if let Some(name) = self.users.get(self.user).filter(|_| self.users.len() > 1) {
             let chip = w::trigger(s, "users", name, self.menu == Menu::Users).on("users");
             chips.push(if self.menu == Menu::Users { chip.float(list()) } else { chip });
         }
-        let power = power::Action::ALL.map(|a| w::icon_button(a.icon()).on(a.id())).to_vec();
-        let mut col = Vec::new();
-        if !chips.is_empty() {
-            col.push(w::row(s.sm, chips));
-        }
-        col.push(w::row(s.xs, power));
-        w::column(s.sm, col).fill()
+        (!chips.is_empty()).then(|| w::row(s.sm, chips))
     }
 }
 

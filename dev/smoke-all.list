@@ -93,6 +93,8 @@
 --lock-restore
 --lock-media
 --login-lock
+--login-switch
+--login-stuck
 --lyrics
 --lyrics-blur
 --kopuz

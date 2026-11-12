@@ -95,6 +95,24 @@ pub fn pick(sessions: &[Session], remembered: Option<&str>, default: Option<&str
         .unwrap_or(0)
 }
 
+/// The session whose `DesktopNames` lead with `desktop`. The boot login
+/// starts its compositor through uwsm, so a uwsm entry wins over a plain
+/// one for the same desktop.
+pub fn running(sessions: &[Session], desktop: &str) -> Option<usize> {
+    let matches = |s: &&Session| s.desktops.split(':').next() == Some(desktop);
+    let uwsm = sessions.iter().position(|s| matches(&s) && s.exec.contains("uwsm"));
+    uwsm.or_else(|| sessions.iter().position(|s| matches(&s)))
+}
+
+/// What the boot lock leaves for the login script
+/// ([`crate::paths::LOGIN_SESSION_MARKER`]): the session's environment as
+/// the greeter hands it to greetd, a line each, then its command.
+pub fn handover(s: &Session) -> String {
+    let mut lines = s.env();
+    lines.push(s.exec.clone());
+    lines.join("\n") + "\n"
+}
+
 /// The last user to log in here.
 pub fn last_user(state: &Path) -> Option<String> {
     let text = std::fs::read_to_string(state.join("sessions/.user")).ok()?;
@@ -170,6 +188,32 @@ mod tests {
         assert_eq!(pick(&list, Some("plasma"), Some("formalwm")), 2);
         assert_eq!(pick(&list, Some("gone"), Some("formalwm")), 1);
         assert_eq!(pick(&list, None, Some("niri")), 0);
+    }
+
+    #[test]
+    fn the_running_session_is_the_current_desktops() {
+        let entry = |id: &str, desktops: &str, exec: &str| Session { desktops: desktops.into(), exec: exec.into(), ..session(id) };
+        let list = [
+            entry("formalwm-uwsm", "ShojiWM", "uwsm start -e -D ShojiWM formalwm.desktop"),
+            entry("hyprland", "Hyprland", "Hyprland"),
+            entry("hyprland-uwsm", "Hyprland", "uwsm start -e -D Hyprland hyprland.desktop"),
+            entry("plasma", "KDE", "startplasma-wayland"),
+        ];
+        assert_eq!(running(&list, "Hyprland"), Some(2));
+        assert_eq!(running(&list, "ShojiWM"), Some(0));
+        assert_eq!(running(&list, "KDE"), Some(3));
+        assert_eq!(running(&list[..2], "Hyprland"), Some(1));
+        assert_eq!(running(&list, "sway"), None);
+        assert_eq!(running(&[session("formalshell")], "Hyprland"), None);
+    }
+
+    #[test]
+    fn the_handover_is_what_greetd_would_start() {
+        let s = Session { desktops: "ShojiWM".into(), exec: "uwsm start -e -D ShojiWM formalwm.desktop".into(), ..session("formalwm-uwsm") };
+        assert_eq!(
+            handover(&s),
+            "XDG_SESSION_TYPE=wayland\nXDG_SESSION_DESKTOP=formalwm-uwsm\nXDG_CURRENT_DESKTOP=ShojiWM\nuwsm start -e -D ShojiWM formalwm.desktop\n"
+        );
     }
 
     #[test]

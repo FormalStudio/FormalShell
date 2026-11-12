@@ -610,7 +610,17 @@ paths = [
   "crates/fs-auth/src/lib.rs",
   "crates/fs-auth/src/pam.rs",
 ]
-runs = ["--lock", "--unlock", "--lock-restore", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep", "--login-lock"]
+runs = ["--lock", "--unlock", "--lock-restore", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep", "--login-lock", "--login-switch", "--login-stuck"]
+
+# The sessions the greeter lists, which the boot's lock offers too.
+[[rule]]
+paths = ["crates/formalshell-rs/src/greeter/sessions.rs"]
+runs = ["--login-lock", "--login-switch"]
+
+# The login script greetd runs, which both legs run as it is.
+[[rule]]
+paths = ["crates/formalshell-rs/src/formalshell-login.sh", "dev/smoke.d/login_switch.sh"]
+runs = ["--login-switch", "--login-stuck"]
 
 # The veils: the arrival every run starts under, and the unlock's hand-over.
 [[rule]]
@@ -742,7 +752,7 @@ runs = ["--instance", "--lock-restore", "--dump"]
 # markers.
 [[rule]]
 paths = ["crates/formalshell-rs/src/paths.rs"]
-runs = ["--instance", "--lock-restore", "--login-lock", "--lock"]
+runs = ["--instance", "--lock-restore", "--login-lock", "--login-switch", "--login-stuck", "--lock"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/ipc/debug.rs", "crates/formalshell-rs/src/wayland/owner.rs"]

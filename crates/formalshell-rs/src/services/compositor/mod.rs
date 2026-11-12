@@ -25,6 +25,17 @@ pub enum Kind {
     Shoji,
 }
 
+impl Kind {
+    /// The name a session entry's `DesktopNames` leads with for this
+    /// compositor.
+    pub fn desktop(self) -> &'static str {
+        match self {
+            Kind::Hyprland => "Hyprland",
+            Kind::Shoji => "ShojiWM",
+        }
+    }
+}
+
 /// Read once: ShojiWM's control socket marks its session, else Hyprland's.
 /// Each session's start line unsets the other's variable in the user
 /// manager, so a unit started there never carries both.

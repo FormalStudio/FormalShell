@@ -55,6 +55,8 @@ pub struct Shared<'a> {
     /// black, 1 the whole screen.
     pub wake: f32,
     pub buttons: Buttons,
+    /// The boot lock's session chip, over the now playing.
+    pub sessions: Option<El>,
     /// Where the keyboard's cursor rests past the field.
     pub cursor: Option<Control>,
 }
@@ -79,6 +81,7 @@ impl<'a> Shared<'a> {
             blanked: false,
             wake: 1.0,
             buttons: Buttons::default(),
+            sessions: None,
             cursor: None,
         }
     }
@@ -186,10 +189,11 @@ pub struct NowPlaying<'a> {
     pub art: Option<&'a Bitmap>,
 }
 
-/// A control the keyboard's cursor rests on past the field: the
-/// transport's, then the buttons under the field.
+/// A control the keyboard's cursor rests on past the field: the session
+/// chip, the transport's, then the buttons under the field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Control {
+    Sessions,
     Previous,
     PlayPause,
     Next,
@@ -198,11 +202,12 @@ pub enum Control {
 
 pub const TRANSPORT: [Control; 3] = [Control::Previous, Control::PlayPause, Control::Next];
 
-/// The controls in the cursor's order: the transport while a track
-/// shows, then `buttons`.
-pub fn controls(media: bool, buttons: &[Button]) -> Vec<Control> {
+/// The controls in the cursor's order: the session chip while it shows,
+/// the transport while a track shows, then `buttons`.
+pub fn controls(sessions: bool, media: bool, buttons: &[Button]) -> Vec<Control> {
+    let chip: &[Control] = if sessions { &[Control::Sessions] } else { &[] };
     let transport: &[Control] = if media { &TRANSPORT } else { &[] };
-    transport.iter().copied().chain(buttons.iter().map(|&b| Control::Button(b))).collect()
+    chip.iter().chain(transport).copied().chain(buttons.iter().map(|&b| Control::Button(b))).collect()
 }
 
 /// The keyboard's place in a row of controls, or the field.
@@ -294,11 +299,12 @@ pub fn draw(view: &mut View, s: &Shared, theme: &Theme, kit: &mut Kit, now: Inst
         avatar: s.avatar,
         prompt: s.prompt.clone(),
         error: s.error,
-        below: s.media.as_ref().map(|m| now_playing(m, ring, theme)),
+        below: below(s.sessions.clone(), s.media.as_ref().map(|m| now_playing(m, ring, theme)), theme),
         under_field: s.buttons.el(),
     };
     view.ui.cursor = match s.cursor {
         Some(Control::Button(b)) => Some(stop(b)),
+        Some(Control::Sessions) => Some("sessions".to_owned()),
         Some(_) => Some("transport".to_owned()),
         None => None,
     };
@@ -318,6 +324,14 @@ pub fn draw(view: &mut View, s: &Shared, theme: &Theme, kit: &mut Kit, now: Inst
         "transportCursor": ring.map_or(-1, |i| i as i32),
     });
     (drawn.animating, Some(report))
+}
+
+/// Under the clock: the session chip over the now playing, either alone.
+fn below(sessions: Option<El>, media: Option<El>, theme: &Theme) -> Option<El> {
+    match (sessions, media) {
+        (Some(chip), Some(media)) => Some(w::column(theme.space.md, vec![chip, media])),
+        (chip, media) => chip.or(media),
+    }
 }
 
 /// The boot lock's first frame on this output: the splash's picture on
@@ -503,18 +517,28 @@ mod tests {
 
     #[test]
     fn one_cursor_walks_the_transport_then_the_buttons() {
-        let row = controls(true, &[Button::SHUTDOWN, Button::REBOOT]);
+        let row = controls(false, true, &[Button::SHUTDOWN, Button::REBOOT]);
         let mut c = Cursor::default();
         for _ in 0..4 {
             assert_eq!(c.key(&row, TKey::Tab), (true, None));
         }
         assert_eq!(c.on(&row), Some(Control::Button(Button::SHUTDOWN)));
         assert_eq!(c.key(&row, TKey::Enter), (true, Some(Control::Button(Button::SHUTDOWN))));
-        let bare = controls(false, &[Button::SHUTDOWN, Button::REBOOT]);
+        let bare = controls(false, false, &[Button::SHUTDOWN, Button::REBOOT]);
         assert_eq!(c.on(&bare), None);
         c.clear();
         assert_eq!(c.key(&bare, TKey::Tab), (true, None));
         assert_eq!(c.on(&bare), Some(Control::Button(Button::SHUTDOWN)));
+    }
+
+    #[test]
+    fn the_boot_locks_session_chip_comes_first() {
+        let row = controls(true, true, &[Button::SHUTDOWN, Button::REBOOT, Button::OtherUser]);
+        assert_eq!(row.first(), Some(&Control::Sessions));
+        assert_eq!(row[1..4], TRANSPORT);
+        let mut c = Cursor::default();
+        assert_eq!(c.key(&row, TKey::Tab), (true, None));
+        assert_eq!(c.key(&row, TKey::Enter), (true, Some(Control::Sessions)));
     }
 
     /// Big enough that the top-left corner is clear of the card.

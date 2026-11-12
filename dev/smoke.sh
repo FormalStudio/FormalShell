@@ -1384,6 +1384,9 @@ if systemd-run --user --scope --quiet --collect --unit="$wm_unit-probe" true > /
 fi
 wm_status=0
 wm_command "$session_timeout"
+for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
+  if declare -F "leg_${leg_name}_session" >/dev/null; then "leg_${leg_name}_session"; fi
+done
 env "${session_env[@]}" ${session_scope[@]+"${session_scope[@]}"} dbus-run-session -- \
   "${wm_cmd[@]}" > "$wm_log_path" 2>&1 || wm_status=$?
 # The shell goes with its compositor and takes every child it started with

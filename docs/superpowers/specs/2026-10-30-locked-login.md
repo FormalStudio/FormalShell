@@ -183,6 +183,28 @@ left as they are.
   ends this session through logind's `TerminateSession` on its own id, and
   greetd shows the greeter. A lock raised later in the session has no
   such button, since ending the session there would drop the user's work.
+- The boot lock also carries the greeter's session chip, over the same
+  `greeter.sessionDirs` (read from the user's own settings) with the
+  running compositor's entry picked (the first of its `DesktopNames` is
+  `Hyprland` or `ShojiWM`, as the compositor seam tells them); with that
+  entry missing from the list it shows none. Tab reaches it, Return opens
+  its menu, Up and Down pick. With another session picked, the password is
+  still checked on the lock, and the lock then stays up: it writes
+  `$XDG_RUNTIME_DIR/formalshell/login-session` (the session's environment
+  as the greeter hands it to greetd, a line each, then its command), waits
+  for the login keyring's unlock to answer as a plain unlock gives it, and
+  ends the compositor through the seam's Exit. The login script, which no
+  longer execs uwsm, starts that session in the same login once uwsm
+  returns, so the password is typed once. The script runs what the marker
+  says, so both sides take it only from a private runtime directory: set
+  in `$XDG_RUNTIME_DIR` (never the `/tmp` fallback), not a link, the
+  user's own and closed to group and others, the same for `formalshell`
+  inside it, which the lock makes 0700 and writes a fresh 0600 file in
+  without following a link. The script clears any marker before the
+  compositor starts and takes no handover when it cannot, and reads only a
+  regular file of the user's own. Without such a directory the lock shows
+  no chip. A compositor still running 10 s after the Exit leaves the pick
+  undone, the marker removed, and says so under the field.
 - `formalshell install` asks between `autologin` (the user running it) and
   `greeter`; `--login autologin|greeter` answers without asking. `greeter`
   writes no `initial_session` and is today's path exactly. The fspec hosts
@@ -277,3 +299,11 @@ VM rig's floor by decision; the 100 ms bound is read on g815's real boot.
   locked, and "Other user" reaching the greeter.
 - Lock buttons: a `--lock` frame with them, and `--power`'s logind path for
   the refused case.
+- The session pick: `--login-lock` opens the chip's menu and unlocks on the
+  running session. `--login-switch` and `--login-stuck` run the login
+  script itself (`crates/formalshell-rs/src/formalshell-login.sh`) with the
+  rig's session as uwsm, under Hyprland and formalwm: a wrong password
+  writes no marker, the right one starts the picked entry once the first
+  compositor is gone, unlocked; a compositor held stopped leaves the lock
+  up with its error and nothing started. The script's refusals are
+  `install.rs`'s `the_login_script_takes_a_session_only_from_a_private_runtime_dir`.

@@ -18,11 +18,15 @@
 # middle third read on its 32 px grid (dev/dissolve-cells.py) carrying
 # cells of the splash and of the lock, and no frame still showing the
 # splash's colour carrying any of the card's (the avatar fixture's green).
-# Once the card has entered, the splash's colour is gone. It then Tabs
-# onto the buttons (`buttonCursor`, `armed`), arms Other user, confirms a
-# Reboot logind refuses (the nested run's system bus is a private, empty
-# one, checked before the confirm is typed), and types the real password:
-# unlocked, the marker spent as the lock went up.
+# Once the card has entered, the splash's colour is gone. The card carries
+# the greeter's session chip over `greeter.sessionDirs` (three fixture
+# entries) with the running compositor's entry picked: Tab reaches it,
+# Return opens its menu (photographed), Down and Up move the pick and
+# Return closes it again on the running one. It then Tabs onto the buttons
+# (`buttonCursor`, `armed`), arms Other user, confirms a Reboot logind
+# refuses (the nested run's system bus is a private, empty one, checked
+# before the confirm is typed), and types the real password: unlocked into
+# the running session, the marker spent as the lock went up.
 leg_login_lock_flag="--login-lock"
 leg_login_lock_order=113
 leg_login_lock_compositors="hyprland shoji"
@@ -34,6 +38,11 @@ login_lock_colour='#E0457B'
 login_lock_early_png="$shot_dir/login-lock-early.png"
 login_lock_card_png="$shot_dir/login-lock-card.png"
 login_lock_buttons_png="$shot_dir/login-lock-buttons.png"
+login_lock_sessions_png="$shot_dir/login-lock-sessions.png"
+login_lock_chip_json="$shot_dir/login-lock-chip.json"
+login_lock_menu_json="$shot_dir/login-lock-menu.json"
+login_lock_down_json="$shot_dir/login-lock-down.json"
+login_lock_closed_json="$shot_dir/login-lock-closed.json"
 login_lock_armed_png="$shot_dir/login-lock-armed.png"
 login_lock_refused_png="$shot_dir/login-lock-refused.png"
 login_lock_early_json="$shot_dir/login-lock-early.json"
@@ -52,11 +61,27 @@ login_lock_rescale=1.25
 # could reach anything under it.
 leg_login_lock_claims="session"
 
+# The entries the boot lock lists, the hosts' three (FormalSpec's
+# /etc/formalshell-greeter/wayland-sessions), and the one the run's
+# compositor is.
+login_lock_sessions() {
+  local dir="$shot_dir/wayland-sessions"
+  mkdir -p "$dir"
+  printf '[Desktop Entry]\nName=formalwm (uwsm-managed)\nExec=/usr/bin/uwsm start -e -D ShojiWM formalwm.desktop\nDesktopNames=ShojiWM\nType=Application\n' > "$dir/formalwm-uwsm.desktop"
+  printf '[Desktop Entry]\nName=Hyprland (uwsm-managed)\nExec=/usr/bin/uwsm start -e -D Hyprland hyprland.desktop\nDesktopNames=Hyprland\nType=Application\n' > "$dir/hyprland-uwsm.desktop"
+  printf '[Desktop Entry]\nName=Plasma (Wayland)\nExec=/usr/bin/startplasma-wayland\nDesktopNames=KDE\nType=Application\n' > "$dir/plasma.desktop"
+  settings_pin ".greeter.sessionDirs = [\"$dir\"]"
+}
+login_lock_running() {
+  case $FS_COMPOSITOR in shoji) echo formalwm-uwsm ;; *) echo hyprland-uwsm ;; esac
+}
+
 leg_login_lock_fixture() {
   $convert_bin -size 640x360 xc:"$login_lock_colour" "png:$login_lock_picture"
   mkdir -p "$(dirname "$login_lock_marker")"
   printf '%s\n' "$login_lock_picture" > "$login_lock_marker"
   $convert_bin -size 256x256 xc:"$login_lock_avatar" "png:$iso_home/.face"
+  login_lock_sessions
   shell_env="${shell_env:+$shell_env }FORMALSHELL_SMOKE_MOTION_SCALE=1000"
 }
 
@@ -107,6 +132,19 @@ sleep 5
 "$grim_bin" "$login_lock_card_png" > /dev/null 2>&1
 call debug motionScale 100 > /dev/null 2>&1
 "$wtype_bin" -s 300 -k Tab
+sleep 0.5
+call lock status > "$login_lock_chip_json" 2>&1
+"$wtype_bin" -s 300 -k Return
+sleep 1
+call lock status > "$login_lock_menu_json" 2>&1
+"$grim_bin" "$login_lock_sessions_png" > /dev/null 2>&1
+"$wtype_bin" -s 300 -k Down
+sleep 0.5
+call lock status > "$login_lock_down_json" 2>&1
+"$wtype_bin" -s 300 -k Up -k Return
+sleep 0.5
+call lock status > "$login_lock_closed_json" 2>&1
+"$wtype_bin" -s 300 -k Tab
 sleep 1
 call lock status > "$login_lock_tab_json" 2>&1
 "$grim_bin" "$login_lock_buttons_png" > /dev/null 2>&1
@@ -119,7 +157,7 @@ call lock status > "$login_lock_armed_json" 2>&1
 "$wtype_bin" -s 300 -k Escape
 sleep 0.5
 if [ "\${DBUS_SYSTEM_BUS_ADDRESS:-}" = "unix:path=$shot_dir/system-bus/socket" ]; then
-  "$wtype_bin" -s 300 -k Tab -k Tab
+  "$wtype_bin" -s 300 -k Tab -k Tab -k Tab
   sleep 0.5
   "$wtype_bin" -s 300 -k Return
   sleep 0.5
@@ -155,11 +193,12 @@ login_lock_mixed() {
 
 leg_login_lock_assert() {
   local f
-  for f in "$login_lock_early_png" "$login_lock_card_png" "$login_lock_buttons_png" "$login_lock_armed_png"; do
+  for f in "$login_lock_early_png" "$login_lock_card_png" "$login_lock_sessions_png" "$login_lock_buttons_png" "$login_lock_armed_png"; do
     [ -f "$f" ] || fail "no screenshot at $f"
   done
   echo "SMOKE_LOGIN_LOCK_EARLY $login_lock_early_png"
   echo "SMOKE_LOGIN_LOCK_CARD $login_lock_card_png"
+  echo "SMOKE_LOGIN_LOCK_SESSIONS $login_lock_sessions_png"
   echo "SMOKE_LOGIN_LOCK_BUTTONS $login_lock_buttons_png"
   echo "SMOKE_LOGIN_LOCK_ARMED $login_lock_armed_png"
   [ -f "$login_lock_refused_png" ] && echo "SMOKE_LOGIN_LOCK_REFUSED $login_lock_refused_png"
@@ -232,6 +271,18 @@ leg_login_lock_assert() {
   [ -n "$mixed" ] || fail "no frame shows 32 px cells of both the splash and the lock: not the pixel dissolve"
   [ "$first_card" -eq 0 ] || [ "$first_card" -gt "$last_pink" ] || fail "the card entered before the splash was gone"
 
+  local running
+  running=$(login_lock_running)
+  cat "$login_lock_chip_json"; echo
+  expect_jq "$login_lock_chip_json" '.buttonCursor == "sessions"' "Tab did not reach the session chip first" '{buttonCursor, sessions}'
+  expect_jq "$login_lock_chip_json" '.sessions.ids == ["formalwm-uwsm", "hyprland-uwsm", "plasma"]' "the boot lock does not list the three fixture sessions" '{sessions}'
+  expect_jq "$login_lock_chip_json" ".sessions.running == \"$running\" and .sessions.picked == \"$running\"" "the boot lock's pick is not the running $running" '{sessions}'
+  cat "$login_lock_menu_json"; echo
+  expect_jq "$login_lock_menu_json" '.sessions.menu == true' "Return on the chip did not open the session menu" '{sessions}'
+  cat "$login_lock_down_json"; echo
+  expect_jq "$login_lock_down_json" ".sessions.picked != \"$running\" and .sessions.menu == true" "Down in the open menu did not move the pick" '{sessions}'
+  cat "$login_lock_closed_json"; echo
+  expect_jq "$login_lock_closed_json" ".sessions.picked == \"$running\" and .sessions.menu == false" "Up and Return did not close the menu on the running session" '{sessions}'
   cat "$login_lock_tab_json"; echo
   expect_jq "$login_lock_tab_json" '.buttonCursor == "poweroff"' "Tab did not reach the Shutdown button" '{buttonCursor}'
   cat "$login_lock_armed_json"; echo
@@ -246,6 +297,7 @@ leg_login_lock_assert() {
 
   cat "$login_lock_after_json"; echo
   expect_jq "$login_lock_after_json" '.locked == false' "the real password did not unlock the login lock" '{locked}'
-  expect_jq "$login_lock_after_json" '.boot == false' "the boot lock outlived its unlock" '{boot}'
+  expect_jq "$login_lock_after_json" '.boot == false and .sessions == null' "the boot lock outlived its unlock" '{boot, sessions}'
+  if grep -q '^lock: leaving for ' "$shell_log_path"; then fail "unlocking on the running session handed over to another one"; fi
   grep -q '^gone$' "$login_lock_marker_after" || fail "the login marker was still there once the boot lock was up"
 }
