@@ -20,10 +20,9 @@ no Xwayland. A second output is one `outputs.create` makes. What needs more
 than that is headless, unit or **no** below.
 
 Sessions and what they need: `session.sh`, `session2.sh`, `tape.sh`,
-`rules.sh`, `layers.sh`, `drags.sh`, `overview.sh`, `outputs.sh`, `cursor.sh`
-run bare.
+`rules.sh`, `layers.sh`, `drags.sh`, `overview.sh`, `outputs.sh` run bare.
 `host.sh` with `FWM_HOST=host-default.json`, `misc.sh` with
-`FWM_HOST=host-misc.json`, `motion.sh` with `FWM_TIMING=1`, `shell.sh` with
+`FWM_HOST=host-misc.json`, `motion.sh` and `cursor.sh` with `FWM_TIMING=1`, `shell.sh` with
 `FWM_SHELL` naming FormalShell, `binds.sh` with `FWM_KEYS=wtype` and
 `FWM_SHELL`, `locked.sh` with `FWM_LOCKED=1`, once bare and once with
 `FWM_SHELL`.
@@ -35,6 +34,12 @@ commits on it, `formalwm` sha256
 numbers quoted are that run's. The default border is 2 px and every rect
 below is a window's content, so the first column starts at x 10: 8 of gap
 and 2 of border.
+
+The published build is one commit on, `shoji` 4cc164d2, sha256
+`e8b565b18032b3668ec5e4fa9726b5b64a7c2b75db37edb5bd0e5dddb9d91f62`. It differs
+in `wm/core/src/cursor.rs` alone. On it `cursor.sh`, the headless session and
+the unit tests were run again, and the fresh-clone build of the last section;
+the cursor rows quote that run. The other sessions were not run again on it.
 
 ## Spec 2: the engine
 
@@ -76,9 +81,10 @@ and 2 of border.
 | Rule effect: `confinePointer` | rig, headless, unit | `cursor.sh`: over a window of `[264,10 496x748]` whose rule sets it, a mouse pushed 3000 px stops at 760, at 758 and at 264, 10, and runs on to 1024 once another window has the keyboard; headless: held at the window's edge on the second output, free when another window opens; the matcher in `the_rules_place_the_apps_they_name` |
 | Rule effect: opacity | rig | `rules.sh`: a rule of 0.5 added by a reload; a window of 42 74 106 reads 148 164 180 over white and 21 37 53 over the black desk, half of each (`71-opacity`). No rule of the owner's sets one |
 | Motion on the six families | rig, unit | the motion section below |
-| The dynamic cursor: stretched along the way it travels | rig, headless, unit | `cursor.sh`, the pointer's picture cut out of a screenshot against the bare desk: 16x24 at rest; 28x16 gliding right at 1600 px/s (told 1.8 along, 0.6 across, axis 0), 11x40 down at 1500 (1.73, 0.64, axis 90), 34x39 down and right at 1770 (1.81, 0.59, axis 45), never rotated, 16x24 again a second later; headless: the core holds a transform while the pointer moves and none at rest; `a_pointer_at_speed_stretches_along_its_way_and_stays_upright`, `the_speed_s_share_of_the_full_effect` |
-| Shaken, it grows, and stays grown two seconds | rig, unit | `cursor.sh`: 126x189 after fourteen strokes, 16x24 four and a half seconds on; `a_shaken_pointer_grows_and_goes_back_after_the_timeout`. The growth stops at 8 times, the core's bound, where the plugin has none |
-| `cursor.dynamic`: `tilt`, `none`, shake off, what cannot be | rig, unit | `cursor.sh` after reloads: tilt turns the image up to 16 degrees right and -16 left with no stretch, `none` with shake off tells the core nothing, a limit of 0 is `config.failed`; `a_tilt_leans_into_sideways_travel`, `the_settings_default_to_the_owner_s_and_refuse_what_cannot_be`; the example file's values in `the_shared_file_loads_on_its_own` |
+| The dynamic cursor: stretched along the way it travels | rig, headless, unit | `cursor.sh`, the pointer's picture cut out of a screenshot against the bare desk: 16x24 at rest; 26x17 gliding right at 1600 px/s (told 1.8 along, 0.6 across, axis 0), 15x26 early in a glide down at 1500 (told up to 1.73, 0.64, axis 90), 34x39 down and right at 1770 (1.85, 0.57, axis 45), never rotated, 16x24 again a second later; headless: the core holds a transform while the pointer moves and none at rest; `a_pointer_at_speed_stretches_along_its_way_and_stays_upright`, `the_speed_s_share_of_the_full_effect` |
+| Shaken, it grows, and stays grown two seconds | rig, unit | `cursor.sh`: 128x192 after fourteen strokes, 16x24 four and a half seconds on; `a_shaken_pointer_grows_and_goes_back_after_the_timeout`. The growth stops at 8 times, the core's bound, where the plugin has none |
+| A change of `cursor.dynamic` drops what was begun under the old settings | rig, unit | `cursor.sh`: shake turned off by a reload while the cursor is magnified leaves the image 16x24 and the core renders 0 frames in the two seconds after, where it rendered 64 in the second and a half before; the build before this one rendered 105 after. `other_settings_drop_what_was_begun_under_the_last`: shake off, the whole of it off, another mode mid-motion |
+| `cursor.dynamic`: `tilt`, `none`, shake off, what cannot be | rig, unit | `cursor.sh` after reloads: tilt turns the image up to 12 degrees right and -16 left with no stretch, `none` with shake off tells the core nothing, a limit of 0 is `config.failed`; `a_tilt_leans_into_sideways_travel`, `the_settings_default_to_the_owner_s_and_refuse_what_cannot_be`; the example file's values in `the_shared_file_loads_on_its_own` |
 | No shape while the cursor is hidden or the session locked, none at rest | rig, headless | `cursor.sh`: a hidden pointer's glide tells the core nothing, and every glide ends on no transform; `locked.sh` with the shell: a sweep across the lock screen tells nothing, the same sweep after the unlock 21 shapes |
 | The same on a hardware cursor plane | no | the rig draws the cursor in software; needs the g815. The plugin pivots the stretch at the leading edge of the image, the core at the hotspot |
 | Blur and alpha threshold per layer namespace | rig | `layers.sh` |
@@ -444,7 +450,7 @@ checkout beside it:
 | Command | Result |
 | --- | --- |
 | `cargo build --locked --profile release-fast -p formalwm` | exit 0 |
-| `cargo test --locked --profile release-fast --workspace` | exit 0: 63, 4, 33, 11 and 5 in `formalwm-core`, 3 in `formalwm`, the headless session among them |
+| `cargo test --locked --profile release-fast --workspace` | exit 0: 64, 4, 33, 11 and 5 in `formalwm-core`, 3 in `formalwm`, the headless session among them |
 | `cargo clippy --locked --profile release-fast --workspace --all-targets -- -D warnings` | exit 0 |
 | `cargo test --locked -p fs-wm-proto` in `crates/` | 8 passed |
 
@@ -490,6 +496,7 @@ before it (489 pass in `shojiwm_rs` and `shojiwm_lib` at 85f78ef).
 | A pointer lock outlived its window's focus | core a978879 | core tests `a_lock_follows_its_window_keyboard_focus`, `an_unfocused_confining_window_lets_the_pointer_go`; on the rig only the `confinePointer` side, in `cursor.sh`: no client there locks the pointer |
 | `confinePointer` | 0fa49d27 | the rule row of spec 2 |
 | The dynamic cursor | e4599d27, core 716706f | the cursor rows of spec 2; core test `a_stretch_along_a_turned_axis_leaves_the_image_upright` |
+| S8: shake turned off while magnified left the cursor's clock running | 4cc164d2 | `cursor.sh`; `other_settings_drop_what_was_begun_under_the_last` |
 | Black under everything, also after a reload | b103e542, 5c1ba125 | line 279 above |
 | `directScanout`, auto HDR | 186f3cae, 2d0e1edf | lines 294 and 299 above |
 
