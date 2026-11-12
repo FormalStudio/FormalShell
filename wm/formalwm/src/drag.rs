@@ -367,17 +367,11 @@ impl Engine {
             .and_then(|at| self.output_at(at))
             .and_then(|output| self.model.active_workspace(&output))
             .map(|ws| ws.id.clone());
-        if let (Some(at), Some(workspace)) = (at, workspace) {
-            match self.column_before(&workspace, at.0, id) {
-                Some(Some(before)) => {
-                    self.model.move_column(id, Some(&before));
-                }
-                Some(None) => {
-                    self.model.move_to_workspace(id, &workspace, true);
-                    self.model.move_column(id, None);
-                }
-                None => {}
-            }
+        if let (Some(at), Some(workspace)) = (at, workspace)
+            && let Some(before) = self.column_before(&workspace, at.0, id)
+            && self.model.move_window(id, &workspace, before.as_deref())
+        {
+            self.model.focus_workspace(&workspace);
         }
         self.scene.sync(&self.model);
         let drawn = self.drag_box(drag);

@@ -1299,9 +1299,18 @@ impl Model {
     /// Drops a lifted window as a column at gap `index` of a workspace's
     /// tape and focuses it there.
     pub fn drop_column(&mut self, lifted: &Lifted, workspace: &str, index: usize) {
+        if self.land(lifted, workspace, index) {
+            self.show_workspace(workspace);
+        }
+    }
+
+    /// The drop without the view: back where it came from when the
+    /// workspace is gone.
+    fn land(&mut self, lifted: &Lifted, workspace: &str, index: usize) -> bool {
         let strip_w = self.strip_w(workspace);
         let Some(ws) = self.workspace_mut(workspace) else {
-            return self.drop_back(lifted);
+            self.drop_back(lifted);
+            return false;
         };
         ws.tape.insert_at(index, lifted.id.clone(), lifted.width);
         ws.tape.fit(strip_w);
@@ -1310,7 +1319,30 @@ impl Model {
         if let Some(window) = self.window_mut(&lifted.id) {
             window.home = Home::Workspace(workspace.to_owned());
         }
-        self.show_workspace(workspace);
+        true
+    }
+
+    /// Makes one tiled window a column of its own on `workspace`, before
+    /// the column holding `before` or at the end of the tape, and focuses
+    /// it there. What it was stacked with stays where it is.
+    pub fn move_window(&mut self, id: &str, workspace: &str, before: Option<&str>) -> bool {
+        if before == Some(id) || self.workspace(workspace).is_none() {
+            return false;
+        }
+        let Some(lifted) = self.lift(id) else {
+            return false;
+        };
+        let index = self.workspace(workspace).and_then(|ws| match before {
+            Some(before) => ws.tape.find(before).map(|(column, _)| column),
+            None => Some(ws.tape.columns.len()),
+        });
+        let Some(index) = index else {
+            self.drop_back(&lifted);
+            return false;
+        };
+        let landed = self.land(&lifted, workspace, index);
+        self.collect();
+        landed
     }
 
     /// Puts a lifted window back where it came from.

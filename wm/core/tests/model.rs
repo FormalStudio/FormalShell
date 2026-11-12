@@ -547,6 +547,39 @@ fn a_zen_or_big_window_that_changes_workspace_leaves_no_mark_behind() {
 }
 
 #[test]
+fn one_window_moved_out_of_a_stack_leaves_the_rest_of_its_column() {
+    let mut model = desk();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    assert!(model.consume_or_expel(Side::Prev));
+    assert_eq!(
+        (place(&model, "b").column, place(&model, "c").column),
+        (1, 1)
+    );
+
+    assert!(model.move_window("c", "1", Some("a")));
+    let columns = |model: &formalwm_core::model::Model| {
+        ["a", "b", "c"].map(|id| (place(model, id).column, place(model, id).row))
+    };
+    assert_eq!(columns(&model), [(1, 0), (2, 0), (0, 0)]);
+    assert_eq!(focused(&model), "c");
+
+    assert!(model.consume_or_expel(Side::Next));
+    assert_eq!(columns(&model), [(0, 0), (1, 0), (0, 1)]);
+    assert!(model.move_window("c", "2", None));
+    assert_eq!(model.window("c").unwrap().home, Home::Workspace("2".into()));
+    assert_eq!(model.window("a").unwrap().home, Home::Workspace("1".into()));
+    assert_eq!(model.focused_workspace().unwrap().id, "1", "the view stays");
+    assert_eq!(model.workspace("2").unwrap().focused().unwrap(), "c");
+
+    assert!(!model.move_window("a", "1", Some("a")));
+    assert!(!model.move_window("a", "nope", None));
+    assert!(!model.move_window("a", "1", Some("nope")));
+    assert_eq!(columns(&model)[0], (0, 0), "a refused move changes nothing");
+}
+
+#[test]
 fn an_overlay_shown_on_an_output_that_goes_is_parked() {
     let mut model = two_outputs();
     let rule = Placement {

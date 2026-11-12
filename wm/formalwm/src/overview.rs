@@ -322,14 +322,8 @@ impl Engine {
                 .window(&id)
                 .is_some_and(|window| window.home == Home::Workspace(workspace.clone()));
             match before {
-                Some(Some(before)) => {
-                    self.model.move_column(&id, Some(&before));
-                }
-                Some(None) => {
-                    if !home {
-                        self.model.move_to_workspace(&id, &workspace, false);
-                    }
-                    self.model.move_column(&id, None);
+                Some(before) => {
+                    self.model.move_window(&id, &workspace, before.as_deref());
                 }
                 None if !home => {
                     self.model.move_to_workspace(&id, &workspace, false);
@@ -344,9 +338,9 @@ impl Engine {
         self.commit();
     }
 
-    /// The window a column dropped at global x `x` of a workspace's tape
-    /// goes before: `Some(None)` for the end of the tape, `None` when it
-    /// would land where `moving` already is.
+    /// The window `moving`, dropped at global x `x` of a workspace's tape,
+    /// goes before as a column of its own: `Some(None)` for the end of the
+    /// tape, `None` when it would land where it already is.
     pub fn column_before(&self, workspace: &str, x: f64, moving: &str) -> Option<Option<String>> {
         let ws = self.model.workspace(workspace)?;
         let strip = self.model.strip_of(&ws.output);
@@ -363,7 +357,7 @@ impl Engine {
             ws.tape
                 .columns
                 .get(gap)
-                .and_then(|column| column.windows.first().cloned()),
+                .and_then(|column| column.windows.iter().find(|id| *id != moving).cloned()),
         )
     }
 
