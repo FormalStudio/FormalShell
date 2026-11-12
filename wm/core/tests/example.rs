@@ -3,6 +3,7 @@
 
 use formalwm_core::{
     action::{Action, WorkspaceRef},
+    cursor::Mode,
     rules::{Facts, resolve},
     settings::{ModeChoice, OutputFacts, Settings},
 };
@@ -25,6 +26,12 @@ fn the_shared_file_loads_on_its_own() {
     assert_eq!(settings.layers.len(), 11);
     assert_eq!(settings.opacity, 1.0);
     assert_eq!(settings.input.keyboard.layout.as_deref(), Some("es"));
+    // hypr-dynamic-cursors as `hyprland.lua` sets it: stretch, with the
+    // tilt's numbers kept beside it and shake to find left on.
+    let dynamic = settings.cursor.dynamic;
+    assert_eq!(dynamic.mode, Mode::Stretch);
+    assert_eq!((dynamic.tilt.full, dynamic.tilt.limit), (20.0, 3000.0));
+    assert!(dynamic.shake.enabled);
     let laptop = OutputFacts {
         name: "eDP-1",
         ..OutputFacts::default()

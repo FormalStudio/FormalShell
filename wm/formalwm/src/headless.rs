@@ -719,6 +719,41 @@ fn two_outputs_and_the_touchpad() {
         "the pointer at {x} is still held, without the keyboard"
     );
 
+    // The dynamic cursor: stretched along its way at speed, as it is at
+    // rest, and never shaped while it is hidden.
+    let shaped = |session: &Session| session.state.config_cursor_transform;
+    ask(|engine| {
+        engine.cursor_hidden = false;
+        Ok(())
+    })
+    .unwrap();
+    session.pointer_by(-600.0, 0.0);
+    let mut seen = None;
+    for _ in 0..40 {
+        session.pointer_by(-12.0, 0.0);
+        seen = seen.or(shaped(&session));
+    }
+    let seen = seen.expect("at speed the cursor is shaped");
+    assert!(seen.scale_x > 1.0 && seen.scale_y < 1.0, "{seen:?}");
+    assert_eq!((seen.rotate, seen.scale_axis.abs()), (0.0, 180.0));
+    for _ in 0..200 {
+        if shaped(&session).is_none() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+        session.roundtrip();
+    }
+    assert_eq!(shaped(&session), None, "at rest it is drawn as it is");
+    ask(|engine| {
+        engine.cursor_hidden = true;
+        Ok(())
+    })
+    .unwrap();
+    for _ in 0..40 {
+        session.pointer_by(12.0, 0.0);
+        assert_eq!(shaped(&session), None, "a hidden cursor is not shaped");
+    }
+
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {
         session

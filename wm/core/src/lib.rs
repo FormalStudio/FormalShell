@@ -5,6 +5,7 @@
 pub mod action;
 pub mod chord;
 pub mod color;
+pub mod cursor;
 pub mod geom;
 pub mod model;
 pub mod motion;

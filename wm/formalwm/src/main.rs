@@ -2,6 +2,7 @@
 //! scene and the settings are `formalwm-core`; this crate is their hands.
 
 mod binds;
+mod cursor;
 mod drag;
 mod engine;
 mod gestures;
@@ -58,6 +59,7 @@ fn setup() {
         cursor_hidden: true,
         shell_arrived: false,
         cursor_idle: false,
+        cursor: Default::default(),
         idle_timer: None,
         gesture: Default::default(),
         overview: Default::default(),

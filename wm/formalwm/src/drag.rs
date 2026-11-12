@@ -412,6 +412,7 @@ impl Engine {
 
     fn pointer_moved(&mut self, at: (f64, f64)) {
         self.arm_idle_pointer();
+        self.cursor_moved(at);
         if self.hold.data_drag {
             self.hold_at(at, true);
         }

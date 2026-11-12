@@ -14,6 +14,7 @@ use serde_json::Value;
 use crate::{
     action::Action,
     chord::{Chord, Key},
+    cursor::Dynamic,
     model::{Options, WorkspaceSpec},
     rules::{Anchor, Effect, Length, Matcher, Pattern, Position, Rule},
 };
@@ -94,6 +95,9 @@ pub struct Input {
 pub struct Cursor {
     pub theme: String,
     pub size: u32,
+    /// The stretch or the lean that follows the pointer's speed, and the
+    /// magnification of a shaken one.
+    pub dynamic: Dynamic,
 }
 
 impl Default for Cursor {
@@ -101,6 +105,7 @@ impl Default for Cursor {
         Self {
             theme: "default".to_owned(),
             size: 24,
+            dynamic: Dynamic::default(),
         }
     }
 }
@@ -587,6 +592,7 @@ impl Settings {
                 passthrough: bind.passthrough,
             });
         }
+        file.cursor.dynamic.check()?;
         Ok(Self {
             workspaces: file.workspaces,
             terminal: file.terminal,
