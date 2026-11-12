@@ -157,6 +157,8 @@ pub struct StateOutput {
     pub height: i32,
     pub scale: f64,
     pub enabled: bool,
+    /// What the layers' exclusive zones take from each of its edges.
+    pub reserved: Gaps,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -644,7 +646,7 @@ mod tests {
     fn the_state_reads_as_the_spec_writes_it() {
         let wire = json!({
             "version": 1,
-            "outputs": [{ "name": "DP-1", "x": 0, "y": 0, "width": 2560, "height": 1440, "scale": 1.0, "enabled": true }],
+            "outputs": [{ "name": "DP-1", "x": 0, "y": 0, "width": 2560, "height": 1440, "scale": 1.0, "enabled": true, "reserved": { "top": 36, "right": 0, "bottom": 0, "left": 0 } }],
             "workspaces": [{
                 "id": "DP-1:1", "idx": 1, "name": "web", "output": "DP-1",
                 "active": true, "focused": true, "urgent": false, "columns": true, "zen": null
@@ -665,6 +667,7 @@ mod tests {
         assert_eq!(state.version, VERSION);
         assert_eq!(state.windows[0].rect, Some(Rect { x: 8, y: 8, width: 1272, height: 1424 }));
         assert_eq!(state.workspaces[0].zen, None);
+        assert_eq!(state.outputs[0].reserved.top, 36);
         assert_eq!(to_value(&state).unwrap(), wire);
     }
 

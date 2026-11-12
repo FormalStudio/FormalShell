@@ -26,14 +26,23 @@ pub fn state(model: &Model, extras: &Extras) -> proto::State {
     let outputs = model
         .outputs
         .iter()
-        .map(|output| proto::StateOutput {
-            name: output.geo.name.clone(),
-            x: output.geo.rect.x.round() as i32,
-            y: output.geo.rect.y.round() as i32,
-            width: output.geo.rect.w.round() as i32,
-            height: output.geo.rect.h.round() as i32,
-            scale: output.geo.scale,
-            enabled: true,
+        .map(|output| {
+            let (rect, usable) = (output.geo.rect, output.geo.usable);
+            proto::StateOutput {
+                name: output.geo.name.clone(),
+                x: rect.x.round() as i32,
+                y: rect.y.round() as i32,
+                width: rect.w.round() as i32,
+                height: rect.h.round() as i32,
+                scale: output.geo.scale,
+                enabled: true,
+                reserved: proto::Gaps {
+                    top: (usable.y - rect.y).round() as i32,
+                    right: (rect.right() - usable.right()).round() as i32,
+                    bottom: (rect.bottom() - usable.bottom()).round() as i32,
+                    left: (usable.x - rect.x).round() as i32,
+                },
+            }
         })
         .collect();
     let workspaces = model
