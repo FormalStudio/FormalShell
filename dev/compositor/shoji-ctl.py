@@ -348,13 +348,12 @@ def output(args):
 
 def evaluate(text):
     """`hl.monitor({ output, mode, position, scale })` on an output this
-    made: hyprctl sizes a headless output after making it, and
-    `outputs.create` takes the size up front, so it is made again at that
-    size. The engine places a made output against the right of the rest,
-    which stands in for any position right of them: a leg sizes the gap off
-    the first output's pixels, Hyprland's layout off its logical width. `hl.config` asking for the scrolling
-    layout, formalwm's only one, at the column width wm/example/settings.json
-    opens columns at, changes nothing."""
+    made, resized in place through `outputs.set`. The engine places a made
+    output against the right of the rest, which stands in for any position
+    right of them: a leg sizes the gap off the first output's pixels,
+    Hyprland's layout off its logical width. `hl.config` asking for the
+    scrolling layout, formalwm's only one, at the column width
+    wm/example/settings.json opens columns at, changes nothing."""
     c = re.fullmatch(r"\s*hl\.config\((.*)\)\s*", text, re.S)
     if c and lua_table(c.group(1)) in ({"layout": "scrolling"}, {"layout": "scrolling", "column_width": 0.5}):
         return "ok"
@@ -370,13 +369,7 @@ def evaluate(text):
     at = re.fullmatch(r"(\d+)x0", t.get("position", f"{right}x0"))
     if not at or int(at.group(1)) < right:
         raise Unsupported(f"hl.monitor position {t['position']} (a made output sits at {right}x0)")
-    call("outputs.remove", {"name": t["output"]})
-    # The output goes a moment after the answer, and its name stays taken
-    # until it has.
-    end = time.monotonic() + 5
-    while any(o["name"] == t["output"] for o in call("outputs.get")) and time.monotonic() < end:
-        time.sleep(0.05)
-    call("outputs.create", {"name": t["output"], "width": int(mode.group(1)), "height": int(mode.group(2)), "scale": float(t.get("scale", 1))})
+    call("outputs.set", {"name": t["output"], "width": int(mode.group(1)), "height": int(mode.group(2)), "scale": float(t.get("scale", 1))})
     return "ok"
 
 

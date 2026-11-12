@@ -1,8 +1,8 @@
 {
   "version": 1,
   "outputs": [
-    {"name": "Virtual-1", "x": 0, "y": 0, "width": 1920, "height": 1080, "scale": 1.25, "enabled": true},
-    {"name": "HDMI-A-1", "x": 1920, "y": 0, "width": 1280, "height": 720, "scale": 1, "enabled": true}
+    {"name": "Virtual-1", "x": 0, "y": 0, "width": 1920, "height": 1080, "scale": 1.25, "enabled": true, "reserved": {"top": 40, "right": 0, "bottom": 0, "left": 0}},
+    {"name": "HDMI-A-1", "x": 1920, "y": 0, "width": 1280, "height": 720, "scale": 1, "enabled": true, "reserved": {"top": 0, "right": 0, "bottom": 0, "left": 0}}
   ],
   "workspaces": [
     {"id": "ws-2", "idx": 2, "name": "web", "output": "Virtual-1", "active": true, "focused": true, "urgent": false, "columns": true, "zen": "tl-b"},
@@ -29,5 +29,5 @@
   "overview": false,
   "keyboard": {"layouts": ["English (US)", "Spanish"], "active": 1},
   "cursorHidden": false,
-  "chrome": {"gapsOut": {"top": 8, "right": 8, "bottom": 8, "left": 8}, "activeBorder": "#ff8000", "blur": true}
+  "chrome": {"gapsOut": {"top": 8, "right": 8, "bottom": 8, "left": 8}, "borderSize": 2, "activeBorder": "#ff8000", "blur": true}
 }
