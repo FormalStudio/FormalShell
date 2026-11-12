@@ -5,12 +5,17 @@
 //! The session is ShojiWM's own test harness
 //! (`src/shojiwm_rs/tests/common/mod.rs`), MIT, Copyright (c) 2026 bea4dev.
 
-use std::{os::unix::net::UnixStream, time::Duration};
+use std::{
+    fs::File,
+    os::{fd::AsFd, unix::net::UnixStream},
+    time::Duration,
+};
 
 use fs_wm_proto as proto;
 use shojiwm_lib::{
     config::{RuntimeHdrConfig, RuntimeHdrMode, RuntimeOutputMode},
     state::ShojiWM,
+    virtual_input::{VirtualDevice, VirtualInput, VirtualMotion},
 };
 use shojiwm_rs::{
     COMPOSITOR, ConfigBuilder, RuntimeBoot,
@@ -18,12 +23,14 @@ use shojiwm_rs::{
     ssd::{GestureSwipeEventSnapshot, GestureSwipePhaseSnapshot as Phase},
 };
 use smithay::{
+    backend::input::InputEvent,
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{calloop::EventLoop, wayland_server::Display},
+    utils::SERIAL_COUNTER,
 };
 use wayland_client::{
     Connection, Dispatch, EventQueue, Proxy, QueueHandle,
-    protocol::{wl_compositor, wl_registry, wl_surface},
+    protocol::{wl_buffer, wl_compositor, wl_registry, wl_shm, wl_shm_pool, wl_surface},
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
@@ -50,6 +57,7 @@ struct Session {
     client: Client,
     registry: wl_registry::WlRegistry,
     now_ms: u64,
+    files: Vec<File>,
 }
 
 fn output(name: &str, x: i32) -> Output {
@@ -118,6 +126,7 @@ impl Session {
             client: Client::default(),
             registry,
             now_ms: 1000,
+            files: Vec::new(),
         };
         session.roundtrip();
         session
@@ -168,6 +177,43 @@ impl Session {
         surface
     }
 
+    /// Gives a window something under the pointer: without a buffer the
+    /// compositor has no surface of it to find there.
+    fn draw(&mut self, surface: &wl_surface::WlSurface, width: i32, height: i32) {
+        let qh = self.queue.handle();
+        let shm: wl_shm::WlShm = self.bind("wl_shm");
+        let stride = width * 4;
+        let path = std::env::temp_dir().join(format!(
+            "formalwm-headless-{}-shm-{}",
+            std::process::id(),
+            self.files.len()
+        ));
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        std::fs::remove_file(&path).unwrap();
+        file.set_len((stride * height) as u64).unwrap();
+        let pool = shm.create_pool(file.as_fd(), stride * height, &qh, ());
+        let buffer =
+            pool.create_buffer(0, width, height, stride, wl_shm::Format::Argb8888, &qh, ());
+        self.files.push(file);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage(0, 0, width, height);
+        surface.commit();
+        self.roundtrip();
+        self.state.refresh_window_decorations().unwrap();
+        // A backend hands a new window the keyboard it asked for once it
+        // has painted it, and there is none here.
+        self.state.pending_initial_focus_window_ids.clear();
+        self.state
+            .update_keyboard_focus(SERIAL_COUNTER.next_serial());
+        self.roundtrip();
+    }
+
     /// A layer across the top of the first output that takes the keyboard.
     fn layer(
         &mut self,
@@ -197,6 +243,29 @@ impl Session {
         surface.commit();
         self.roundtrip();
         (layer, surface)
+    }
+
+    /// A mouse moved by this much.
+    fn pointer_by(&mut self, dx: f64, dy: f64) {
+        self.now_ms += 10;
+        let event = VirtualMotion {
+            device: VirtualDevice {
+                id: "test-pointer".into(),
+                name: "test pointer".into(),
+                keyboard: false,
+            },
+            time: self.now_ms,
+            dx,
+            dy,
+        };
+        self.state
+            .process_input_event(InputEvent::<VirtualInput>::PointerMotion { event });
+        self.roundtrip();
+    }
+
+    fn pointer(&self) -> (f64, f64) {
+        let at = self.state.seat.get_pointer().unwrap().current_location();
+        (at.x, at.y)
     }
 
     /// One touchpad event on the first output, through the compositor's
@@ -294,10 +363,27 @@ macro_rules! ignore_events {
     )*};
 }
 
+impl Dispatch<xdg_surface::XdgSurface, ()> for Client {
+    fn event(
+        _: &mut Self,
+        surface: &xdg_surface::XdgSurface,
+        event: xdg_surface::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_surface::Event::Configure { serial } = event {
+            surface.ack_configure(serial);
+        }
+    }
+}
+
 ignore_events!(
     wl_compositor::WlCompositor,
     wl_surface::WlSurface,
-    xdg_surface::XdgSurface,
+    wl_shm::WlShm,
+    wl_shm_pool::WlShmPool,
+    wl_buffer::WlBuffer,
     xdg_toplevel::XdgToplevel,
     zwlr_layer_shell_v1::ZwlrLayerShellV1,
     zwlr_layer_surface_v1::ZwlrLayerSurfaceV1
@@ -594,6 +680,44 @@ fn two_outputs_and_the_touchpad() {
     toggle();
     session.roundtrip();
     assert_eq!(vrr(&session), Some(false));
+
+    // A window its rule confines the pointer to keeps it for as long as it
+    // has the keyboard.
+    let surface = session.open("Minecraft 1.21");
+    settle();
+    session.roundtrip();
+    let game = state()
+        .windows
+        .iter()
+        .find(|window| window.app_id == "Minecraft 1.21")
+        .and_then(|window| window.rect)
+        .unwrap();
+    session.draw(&surface, game.width, game.height);
+    settle();
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    let right = f64::from(game.x + game.width);
+    let (x, y) = session.pointer();
+    session.pointer_by(
+        f64::from(game.x + game.width / 2) - x,
+        f64::from(game.y + game.height / 2) - y,
+    );
+    session.pointer_by(4000.0, 0.0);
+    let (x, _) = session.pointer();
+    assert!(
+        x < right && x > right - 2.0,
+        "the pointer at {x} is not held at the edge at {right}"
+    );
+    let other = session.open("other");
+    session.draw(&other, 400, 300);
+    settle();
+    session.roundtrip();
+    session.pointer_by(4000.0, 0.0);
+    let (x, _) = session.pointer();
+    assert!(
+        x > right,
+        "the pointer at {x} is still held, without the keyboard"
+    );
 
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {

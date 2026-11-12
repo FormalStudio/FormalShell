@@ -32,6 +32,8 @@ pub static FORCE: WindowStateKey<bool> = WindowStateKey::new("force", |_| true);
 
 /// The desk behind this window is blurred.
 pub static BLUR: WindowStateKey<bool> = WindowStateKey::new("blur", |_| false);
+/// Its rule keeps the pointer inside it while it has the keyboard.
+pub static CONFINE: WindowStateKey<bool> = WindowStateKey::new("confine", |_| false);
 
 const REST: ManagedTransform = ManagedTransform {
     origin_x: 0.0,
@@ -80,7 +82,8 @@ pub fn setup(signals: Signals) {
             .force_rect_size(window.state(&FORCE))
             .tiled(true)
             .idle(window.state(&IDLE))
-            .interactive(window.state(&LIVE));
+            .interactive(window.state(&LIVE))
+            .confine_pointer(window.state(&CONFINE));
         // No frame at all, so the client's buffer can go straight to the
         // plane.
         if full {
@@ -242,6 +245,9 @@ impl Engine {
         let sized = effect.size.is_some();
         window.state(&FORCE).set(!floating || sized);
         window.state(&BLUR).set(self.blurs(&effect));
+        window
+            .state(&CONFINE)
+            .set(effect.confine_pointer == Some(true));
         self.model.open(
             NewWindow {
                 id: id.clone(),

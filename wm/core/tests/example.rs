@@ -87,6 +87,21 @@ fn the_rules_place_the_apps_they_name() {
         Some("game")
     );
     assert_eq!(sum("steam_app_730", "CS2", false).idle_pointer, Some(3.0));
+    // `confine_pointer` on class `^(Minecraft.*)$`: the game, not its launcher.
+    for game in ["Minecraft 1.21.4", "Minecraft* 1.20.1", "Minecraft"] {
+        assert_eq!(sum(game, game, false).confine_pointer, Some(true), "{game}");
+    }
+    for other in [
+        "minecraft-launcher",
+        "org.prismlauncher.PrismLauncher",
+        "ghostty",
+    ] {
+        assert_eq!(
+            sum(other, "Minecraft", false).confine_pointer,
+            None,
+            "{other}"
+        );
+    }
     assert_eq!(sum("", "Picture in picture", false).pin, Some(true));
     assert_eq!(sum("", "", false).float, Some(true));
     assert_eq!(sum("ghostty", "~", false).workspace, None);
