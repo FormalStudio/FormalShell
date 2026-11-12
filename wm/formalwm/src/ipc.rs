@@ -391,6 +391,7 @@ impl Engine {
                     .unwrap_or(Rgba::BLACK)
                     .hex(),
                 blur: chrome.blur,
+                motion: chrome.motion,
             },
         );
         for window in &mut state.windows {
