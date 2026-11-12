@@ -40,6 +40,7 @@
 # the status card's tray button.
 leg_sidebar_flag="--sidebar"
 leg_sidebar_order=237
+leg_sidebar_compositors="hyprland shoji"
 leg_sidebar_needs="jq wlrctl notify-send convert foot python3 mpv ffmpeg"
 leg_sidebar_fixture_window=keep
 

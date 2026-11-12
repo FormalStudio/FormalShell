@@ -26,6 +26,7 @@
 # on the rail's one menu button opens the whole menu in a card.
 leg_mac_menu_flag="--mac-menu"
 leg_mac_menu_order=172
+leg_mac_menu_compositors="hyprland shoji"
 leg_mac_menu_needs="python3 jq foot wlrctl wtype"
 leg_mac_menu_claims="screen=shared launcher=shared"
 
