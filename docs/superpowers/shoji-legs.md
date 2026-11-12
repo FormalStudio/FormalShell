@@ -2,7 +2,7 @@
 
 Every line of `dev/smoke-all.list` run with `FS_COMPOSITOR=shoji` on the mac rig's slot 3 at scale 1.25 (the rig's default), each line's last result across the first pass and the reruns, the last of them on the engine binary built from `shoji` 0bdedfe7. A leg whose lines all pass carries `leg_<n>_compositors="hyprland shoji"`. Engine causes are with the engine agent; their rows rerun once its binary lands.
 
-Counts: shell cause fixed: 30, engine cause: 12, Hyprland only: 3, needs g815: 18, pass: 146.
+Counts: shell cause fixed: 32, engine cause: 10, Hyprland only: 3, needs g815: 18, pass: 146.
 
 | Row | Scale | Sort | Detail |
 |---|---|---|---|
@@ -11,6 +11,8 @@ Counts: shell cause fixed: 30, engine cause: 12, Hyprland only: 3, needs g815: 1
 | `--card-corner` | 1.25 | shell cause fixed | 988e4bde |
 | `--display` | 1.25 | shell cause fixed | f40742f0, 988e4bde |
 | `--glass` | 1.25 | shell cause fixed | 716a66be |
+| `--glass-behind` | 1.25 | shell cause fixed | 61b538ed (the cover float read as a game over the output, so the shell held the OSD back) |
+| `--glass-behind --no-morph` | 1.25 | shell cause fixed | 61b538ed (the cover float read as a game over the output, so the shell held the OSD back) |
 | `--hdr` | 1.25 | shell cause fixed | f40742f0 |
 | `--launcher-density` | 1.25 | shell cause fixed | 988e4bde |
 | `--launcher-overflow` | 1.25 | shell cause fixed | f40742f0 |
@@ -38,8 +40,6 @@ Counts: shell cause fixed: 30, engine cause: 12, Hyprland only: 3, needs g815: 1
 | `--zen` | 1.25 | shell cause fixed | 88f4c2f7 |
 | `--dock` | 1.25 | engine cause | the running binary (0bdedfe7) sends no window tag, so no window is a Mac one, the hand-over binary sends it |
 | `--dock-density` | 1.25 | engine cause | the running binary (0bdedfe7) sends no window tag, so no window is a Mac one, the hand-over binary sends it |
-| `--glass-behind` | 1.25 | engine cause | Overlay-level layers (osd, switcher, toast) get no blur, Top-level ones do, wm/formalwm/src/layers.rs:57 |
-| `--glass-behind --no-morph` | 1.25 | engine cause | Overlay-level layers (osd, switcher, toast) get no blur, Top-level ones do, wm/formalwm/src/layers.rs:57 |
 | `--headset-card` | 1.25 | engine cause | the Escape bind consumes the key the card's terminal should also read, wm/formalwm/src/binds.rs:150 |
 | `--mac-keys` | 1.25 | engine cause | the running binary (0bdedfe7) sends no window tag, so no window is a Mac one, the hand-over binary sends it |
 | `--mac-menu` | 1.25 | engine cause | the running binary (0bdedfe7) sends no window tag, so no window is a Mac one, the hand-over binary sends it |
