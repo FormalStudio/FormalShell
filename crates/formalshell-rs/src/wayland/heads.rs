@@ -488,10 +488,16 @@ impl App {
             // and crossfade once it lands, rather than cut to the plain
             // colour first.
             if picture.is_none() && (made.is_some() || b.holds(wanted)) {
-                b.wait();
+                b.wait(true);
                 continue;
             }
+            let plain = picture.is_none();
             b.draw(picture, background, under, reveal, &self.qh);
+            // The plain colour stands in for a first picture still being
+            // made, which the session is not settled without.
+            if plain {
+                b.wait(!wanted.is_empty() && !self.store.wallpaper.answered(wanted, w as u32, h as u32));
+            }
         }
         self.sync_shards();
         self.sync_desktop_clocks();

@@ -177,10 +177,10 @@ impl Backdrop {
         self.paint(None, shown.as_deref(), color, grid, 1.0, qh);
     }
 
-    /// The picture wanted is still being made: what is up stays until it
-    /// lands.
-    pub fn wait(&mut self) {
-        self.clock.set(true);
+    /// Whether the picture wanted is still being made: what is up stays
+    /// until it lands.
+    pub fn wait(&mut self, on: bool) {
+        self.clock.set(on);
     }
 
     /// Already showing `path` at this logical size, though at another

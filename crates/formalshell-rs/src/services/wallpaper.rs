@@ -255,11 +255,14 @@ const RAMP_SHARE: usize = 8;
 #[derive(Default)]
 pub struct State {
     pictures: Vec<Arc<Picture>>,
+    /// The path each size was last answered for, a failed one included.
+    answered: Vec<((u32, u32), String)>,
 }
 
 /// The picture for one size, none when the wallpaper is unset or failed.
 pub struct Diff {
     pub size: (u32, u32),
+    pub path: String,
     pub picture: Option<Arc<Picture>>,
 }
 
@@ -267,7 +270,9 @@ pub struct Diff {
 const KEPT: usize = 4;
 
 impl State {
-    pub fn apply(&mut self, Diff { size, picture }: Diff) -> bool {
+    pub fn apply(&mut self, Diff { size, path, picture }: Diff) -> bool {
+        self.answered.retain(|(s, _)| *s != size);
+        self.answered.push((size, path));
         let at = self.pictures.iter().position(|p| (p.width, p.height) == size);
         let old = at.map(|i| self.pictures.remove(i));
         let same = match (&old, &picture) {
@@ -288,6 +293,12 @@ impl State {
     /// The picture made for an output `width` by `height`.
     pub fn sized(&self, width: u32, height: u32) -> Option<&Arc<Picture>> {
         self.pictures.iter().rev().find(|p| (p.width, p.height) == (width, height))
+    }
+
+    /// Whether `path` at `width` by `height` was made or failed, rather
+    /// than still being made.
+    pub fn answered(&self, path: &str, width: u32, height: u32) -> bool {
+        self.answered.iter().any(|(s, p)| *s == (width, height) && p == path)
     }
 
     /// The picture at every size an output asked for.
@@ -396,9 +407,10 @@ async fn run(ctx: Ctx) {
             let picture = if path.is_empty() {
                 None
             } else {
+                let path = path.clone();
                 ctx.pool().run(move || render(&path, w, h, colors, grid)).await.flatten().map(Arc::new)
             };
-            ctx.publish(store::Diff::Wallpaper(Diff { size: (w, h), picture }));
+            ctx.publish(store::Diff::Wallpaper(Diff { size: (w, h), path, picture }));
         }
     }
 }
@@ -411,6 +423,16 @@ mod tests {
 
     fn data(picked: serde_json::Value, light: &str, dark: &str) -> state::Data {
         state::Data { wallpaper_color: picked, wallpaper: light.into(), wallpaper_dark: dark.into(), ..state::Data::default() }
+    }
+
+    #[test]
+    fn a_failed_picture_is_answered_and_a_new_path_is_not() {
+        let mut state = State::default();
+        assert!(!state.answered("/w.png", 1920, 1080));
+        state.apply(Diff { size: (1920, 1080), path: "/w.png".into(), picture: None });
+        assert!(state.answered("/w.png", 1920, 1080));
+        assert!(!state.answered("/w.png", 1536, 864));
+        assert!(!state.answered("/v.png", 1920, 1080));
     }
 
     #[test]
