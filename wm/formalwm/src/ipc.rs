@@ -240,7 +240,7 @@ pub fn serve() -> Option<IpcServer> {
         if COMPOSITOR.output.get(&request.name).is_none() {
             return Err(format!("no such output: {}", request.name));
         }
-        session::override_output(request);
+        session::override_output(request)?;
         Ok(Value::Null)
     });
     server.handle(method::OUTPUTS_CREATE, |value| {

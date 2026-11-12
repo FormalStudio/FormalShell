@@ -3,7 +3,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     io::{Read, Write},
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
@@ -50,8 +50,9 @@ pub struct OutputOverride {
 
 thread_local! {
     static OVERRIDES: RefCell<BTreeMap<String, OutputOverride>> = const { RefCell::new(BTreeMap::new()) };
-    /// The outputs `outputs.create` made: the only ones `outputs.remove` takes.
-    static CREATED: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    /// The outputs `outputs.create` made and their size in pixels: the only
+    /// ones `outputs.remove` takes and `outputs.set` resizes.
+    static CREATED: RefCell<BTreeMap<String, (i32, i32)>> = const { RefCell::new(BTreeMap::new()) };
     /// By output, the content type of the window fullscreen on it as of
     /// the last turn, empty when its rule names none.
     static FULLSCREEN: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
@@ -87,7 +88,35 @@ pub fn override_of(output: &str) -> OutputOverride {
     OVERRIDES.with(|overrides| overrides.borrow().get(output).cloned().unwrap_or_default())
 }
 
-pub fn override_output(request: proto::OutputSet) {
+/// The size `outputs.set` asks for, of an output `outputs.create` made
+/// that is `now`. One of the two alone keeps the other.
+fn resized(
+    name: &str,
+    now: Option<(i32, i32)>,
+    width: Option<i32>,
+    height: Option<i32>,
+) -> Result<Option<(i32, i32)>, String> {
+    if width.is_none() && height.is_none() {
+        return Ok(None);
+    }
+    let Some(now) = now else {
+        return Err(format!(
+            "outputs.set: `{name}` is not an output outputs.create made, its size is its mode's"
+        ));
+    };
+    let size = (width.unwrap_or(now.0), height.unwrap_or(now.1));
+    if size.0 <= 0 || size.1 <= 0 {
+        return Err(format!("outputs.set: {}x{} is not a size", size.0, size.1));
+    }
+    Ok(Some(size).filter(|size| *size != now))
+}
+
+pub fn override_output(request: proto::OutputSet) -> Result<(), String> {
+    let now = CREATED.with(|created| created.borrow().get(&request.name).copied());
+    if let Some(size) = resized(&request.name, now, request.width, request.height)? {
+        CREATED.with(|created| created.borrow_mut().insert(request.name.clone(), size));
+        COMPOSITOR.output.resize(&request.name, size.0, size.1);
+    }
     OVERRIDES.with(|overrides| {
         let mut overrides = overrides.borrow_mut();
         let entry = overrides.entry(request.name).or_default();
@@ -105,6 +134,7 @@ pub fn override_output(request: proto::OutputSet) {
         }
     });
     COMPOSITOR.output.reconfigure();
+    Ok(())
 }
 
 /// `outputs.create`. The core puts an output no settings place to the right
@@ -122,7 +152,7 @@ pub fn create_output(request: proto::OutputCreate) -> Result<String, String> {
     }
     if let Some(name) = &request.name {
         let taken = COMPOSITOR.output.get(name).is_some()
-            || CREATED.with(|created| created.borrow().contains(name));
+            || CREATED.with(|created| created.borrow().contains_key(name));
         if name.is_empty() || taken {
             return Err(format!(
                 "outputs.create: `{name}` is no name for a new output"
@@ -135,7 +165,10 @@ pub fn create_output(request: proto::OutputCreate) -> Result<String, String> {
         height: request.height,
         scale: Some(scale),
     });
-    CREATED.with(|created| created.borrow_mut().insert(name.clone()));
+    CREATED.with(|created| {
+        let size = (request.width, request.height);
+        created.borrow_mut().insert(name.clone(), size)
+    });
     // Over the scale of the settings' rule for a display they do not list.
     OVERRIDES.with(|overrides| {
         overrides
@@ -149,7 +182,10 @@ pub fn create_output(request: proto::OutputCreate) -> Result<String, String> {
 
 /// `outputs.remove`: only what `outputs.create` made.
 pub fn remove_output(name: &str) -> Result<(), String> {
-    if !CREATED.with(|created| created.borrow_mut().remove(name)) {
+    if CREATED
+        .with(|created| created.borrow_mut().remove(name))
+        .is_none()
+    {
         return Err(format!(
             "outputs.remove: `{name}` is not an output outputs.create made"
         ));
@@ -648,5 +684,38 @@ impl Engine {
                 script.to_string_lossy().into_owned(),
             ]));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resized;
+
+    #[test]
+    fn outputs_set_resizes_only_an_output_outputs_create_made() {
+        let made = Some((800, 600));
+        assert_eq!(resized("FS-1", made, None, None), Ok(None));
+        assert_eq!(resized("DP-1", None, None, None), Ok(None));
+        assert_eq!(
+            resized("FS-1", made, Some(1280), Some(720)),
+            Ok(Some((1280, 720)))
+        );
+        assert_eq!(
+            resized("FS-1", made, Some(1280), None),
+            Ok(Some((1280, 600)))
+        );
+        assert_eq!(resized("FS-1", made, None, Some(720)), Ok(Some((800, 720))));
+        assert_eq!(resized("FS-1", made, Some(800), Some(600)), Ok(None));
+        assert!(
+            resized("FS-1", made, Some(0), None)
+                .unwrap_err()
+                .contains("0x600")
+        );
+        assert!(resized("FS-1", made, None, Some(-4)).is_err());
+        assert!(
+            resized("DP-1", None, Some(1280), None)
+                .unwrap_err()
+                .contains("DP-1")
+        );
     }
 }

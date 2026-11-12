@@ -471,6 +471,12 @@ pub struct OutputSet {
     pub mirror: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
+    /// The mode's pixels, on an output `outputs.create` made: it is resized
+    /// in place. One alone keeps the other as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<i32>,
 }
 
 /// `outputs.create`: an output with no connector, made while the session
@@ -698,6 +704,10 @@ mod tests {
         let float: WindowFloat = from_str(r#"{"id":"a"}"#).unwrap();
         assert_eq!(float, WindowFloat { id: "a".into(), floating: None });
         assert_eq!(to_value(&float).unwrap(), json!({ "id": "a" }));
+
+        let resize: OutputSet = from_str(r#"{"name":"FS-1","width":1600,"height":900}"#).unwrap();
+        assert_eq!((resize.width, resize.height, resize.scale), (Some(1600), Some(900), None));
+        assert_eq!(to_value(&resize).unwrap(), json!({ "name": "FS-1", "width": 1600, "height": 900 }));
         assert_eq!(from_str::<ZenSet>("{}").unwrap(), ZenSet::default());
         assert_eq!(from_str::<OverviewSet>(r#"{"open":true}"#).unwrap(), OverviewSet { open: Some(true) });
         let escape: BindEscape = from_str(r#"{"name":"menu","argv":null}"#).unwrap();
