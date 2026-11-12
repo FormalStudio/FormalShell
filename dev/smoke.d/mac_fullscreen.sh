@@ -121,7 +121,7 @@ EOF
 #!/usr/bin/env bash
 m="$mac_fs_prefix"
 jq="$jq_bin"
-hc="$hyprctl_bin"
+hc="$wmctl_bin"
 scale=\$("\$hc" -j monitors 2>/dev/null | "\$jq" -r '.[0].scale')
 # seen <log> <fixed text> <count>: once that many of the app's lines carry
 # it, or 10 s; prints the count, or - with no log.
@@ -187,6 +187,10 @@ view() {
   sleep 1.5
 }
 
+# held <tag>: who has the keyboard in this frame, for a grey title bar.
+held() {
+  echo "\$1: keyboards \$("\$hc" -j devices 2>/dev/null | "\$jq" -c '[.keyboards[].name]') active pid \$("\$hc" -j activewindow 2>/dev/null | "\$jq" -r '.pid // "none"')" >> "\$m-trail.txt"
+}
 # walk <name> <log> <in> <out>
 walk() {
   local n=\$1 log=\$2 in=\$3 out=\$4
@@ -224,6 +228,7 @@ done
 "\$hc" dispatch "hl.dsp.focus({ window = 'pid:\$epid' })" > /dev/null 2>&1
 sleep 4; until_settled
 shoot "\$m-electron-start.png"
+held electron-start
 if $mac_fs_logged; then
   walk electron "\$m-electron.log" 'window enter-full-screen' 'window leave-full-screen'
 else
@@ -240,6 +245,7 @@ until_window $mac_fs_native_id 90
 "\$hc" dispatch "hl.dsp.focus({ window = 'class:$mac_fs_native_id' })" > /dev/null 2>&1
 sleep 2; until_settled
 shoot "\$m-native-start.png"
+held native-start
 walk native "\$m-native.log" 'did enter full screen' 'did exit full screen'
 for _ in \$(seq 1 20); do pgrep -f "$mac_fs_native_id" > /dev/null || break; sleep 0.5; done
 pgrep -f "$mac_fs_native_id" > /dev/null && echo "quit: running" >> "\$m-native.txt" || echo "quit: gone" >> "\$m-native.txt"
@@ -250,7 +256,7 @@ pkill -f "\$(cat "$mac_fs_prefix-electron-bin.txt")" 2>/dev/null || true
 pkill -f "$mac_fs_native_id" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/mac-fs-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_mac_fullscreen_assert() {

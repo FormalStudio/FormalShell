@@ -115,6 +115,7 @@ pub fn snapshot(state: &proto::State) -> Snapshot {
             workspace_id: WorkspaceId::new(w.workspace_id.as_str()),
             special: w.overlay.is_some(),
             xdg_tag: w.tag.clone(),
+            mac_tagged: false,
             is_focused: w.focused,
             is_floating: w.floating,
             is_urgent: w.urgent,
@@ -269,7 +270,7 @@ pub fn method(command: &Command) -> Option<Call> {
         Command::Theme(theme) => Call::with(method::THEME_SET, theme),
         Command::Exit => Call::bare(method::SESSION_EXIT),
         Command::Zen { .. } | Command::Unzen { .. } | Command::ZenRelease | Command::RefreshWindows | Command::InputSettled => return None,
-        Command::MacKeys(_) | Command::MacFocus(..) => return None,
+        Command::MacKeys(_) | Command::MacFocus(..) | Command::MacApp(_) | Command::TagMac(_) => return None,
     })
 }
 
