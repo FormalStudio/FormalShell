@@ -39,7 +39,10 @@
 # since the session has to publish its sockets somewhere the drive scripts
 # can reach; the shell's single-instance lock keys its socket on
 # WAYLAND_DISPLAY for exactly that reason.
-set -euo pipefail
+set -Eeuo pipefail
+# errexit ends the run without a word, in this file and in every leg it
+# sources, so name the command that ended it.
+trap 'echo "SMOKE_FAIL: ${BASH_SOURCE[0]}:$LINENO: $BASH_COMMAND exited $?" >&2' ERR
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 cd "$script_dir/.."
 

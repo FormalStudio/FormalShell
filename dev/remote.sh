@@ -256,14 +256,23 @@ remote_ssh() {
 }
 
 # remote_ssh with the command in a scope of its own (dev/scoped-run.sh), so
-# an interrupted run takes its whole tree down with it.
+# an interrupted run takes its whole tree down with it. Both streams pass
+# through as they come and are kept, so a failure ends on its last lines
+# even when a caller only shows the tail of a long run.
 remote_run() {
-  local unit="fs-run-$$-$RANDOM" pid status=0
-  remote_ssh "exec dev/scoped-run.sh $unit $(printf '%q' "$*")" <&0 &
+  local unit="fs-run-$$-$RANDOM" pid status=0 log
+  log=$(mktemp)
+  remote_ssh "exec dev/scoped-run.sh $unit $(printf '%q' "$*")" <&0 > >(tee -a "$log") 2> >(tee -a "$log" >&2) &
   pid=$!
-  trap 'kill "$pid" 2>/dev/null; ssh "${ssh_opts[@]}" "$target" "systemctl --user stop $unit.scope" >/dev/null 2>&1; exit 143' INT TERM HUP
+  trap 'kill "$pid" 2>/dev/null; ssh "${ssh_opts[@]}" "$target" "systemctl --user stop $unit.scope" >/dev/null 2>&1; rm -f "$log"; exit 143' INT TERM HUP
   wait "$pid" || status=$?
   trap - INT TERM HUP
+  if [ "$status" -ne 0 ]; then
+    sleep 0.2
+    echo "$rig: the remote command exited $status, its last lines:" >&2
+    if [ -s "$log" ]; then tail -n 20 "$log" | sed 's/^/  /' >&2; else echo "  (it printed nothing)" >&2; fi
+  fi
+  rm -f "$log"
   return "$status"
 }
 
