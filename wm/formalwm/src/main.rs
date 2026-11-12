@@ -24,9 +24,7 @@ use shojiwm_rs::prelude::*;
 use engine::{Engine, Signals, enter};
 
 fn setup() {
-    // Black under everything, so the session arrives out of the greeter's
-    // black, a locked start included.
-    COMPOSITOR.output.set_clear_color(hex("#000000"));
+    session::black_desk();
     let dir = session::settings_dir();
     // A session has to start whatever the file says; the mistake is logged
     // and the next reload reports it to the shell.

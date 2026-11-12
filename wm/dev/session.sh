@@ -92,4 +92,5 @@ key Super+Return 1.5; windows | jq -c '.windows | length'
 step "close them all"
 for _ in 1 2 3 4 5; do key Super+q 0.6; done
 windows | jq -c '.windows | length'; shot 17-empty
+echo "the bare desk, after the reloads: $(px mean "$SHOJI_RUN_DIR/17-empty.png" 100 100 200 200)"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx" | cut -c1-300 | tail -15

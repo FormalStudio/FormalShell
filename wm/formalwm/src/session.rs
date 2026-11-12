@@ -240,6 +240,12 @@ fn device_name(name: &str) -> String {
         .collect()
 }
 
+/// Black under everything, so the session arrives out of the greeter's
+/// black, a locked start included.
+pub fn black_desk() {
+    COMPOSITOR.output.set_clear_color(hex("#000000"));
+}
+
 pub fn setup() {
     COMPOSITOR.output.configure(|context| {
         let settings = engine::settings();
@@ -573,9 +579,13 @@ impl Engine {
                 self.sync_outputs();
                 self.commit();
                 self.broadcast(event::CONFIG_RELOADED, json!({}));
-                // The compositor drops the cursor override when it swaps a
-                // config; this runs after it has.
-                set_timeout(1.0, || enter(|engine| engine.apply_cursor()));
+                // The compositor goes back to its own clear colour and
+                // drops the cursor override when it swaps a config; this
+                // runs after it has.
+                set_timeout(1.0, || {
+                    black_desk();
+                    enter(|engine| engine.apply_cursor());
+                });
                 Ok(())
             }
         }

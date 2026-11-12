@@ -543,7 +543,18 @@ fn two_outputs_and_the_touchpad() {
     escape(None);
     assert_eq!(escapes(), []);
 
-    assert_eq!(session.state.clear_color, [0.0, 0.0, 0.0, 1.0]);
+    // Black under everything, and again after a reload, on which the
+    // compositor goes back to its own colour.
+    let black = [0.0, 0.0, 0.0, 1.0];
+    assert_eq!(session.state.clear_color, black);
+    session.state.reload_decoration_runtime();
+    for _ in 0..40 {
+        session.roundtrip();
+        if session.state.clear_color == black {
+            break;
+        }
+    }
+    assert_eq!(session.state.clear_color, black);
 
     // `directScanout` false: the core is told to composite every frame.
     let configs = &session.state.runtime_output_configs;
