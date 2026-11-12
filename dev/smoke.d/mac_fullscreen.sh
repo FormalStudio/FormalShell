@@ -21,7 +21,7 @@
 leg_mac_fullscreen_flag="--mac-fullscreen"
 leg_mac_fullscreen_order=176
 leg_mac_fullscreen_needs="jq wlrctl wtype pil"
-leg_mac_fullscreen_claims="screen=shared hyprland.binds"
+leg_mac_fullscreen_claims="focus screen=shared hyprland.binds"
 leg_mac_fullscreen_env="FS_ATOLL FS_ELECTRON_APP FS_FULLSCREEN_APP"
 
 mac_fs_prefix="$shot_dir/mac-fs"
@@ -276,7 +276,7 @@ leg_mac_fullscreen_assert() {
   c='-'
   $mac_fs_logged && c=1
   for line in "green in: $c full=[12]" "green out: $c full=0" "chord in: ${c/1/2} full=[12]" "chord out: ${c/1/2} full=0" \
-    "menu in: ${c/1/3} full=[12]" "menu out: ${c/1/3} full=0"; do
+    "menu in: ${c/1/3} full=[12]" "menu out: ${c/1/3} full=0" "quit from: ${c/1/4} full=[12]" "quit: gone"; do
     grep -qE "^$line\$" "$m-electron.txt" 2>/dev/null \
       || fail "--mac-fullscreen: electron: wanted \"$line\", got: $(tr '\n' ';' < "$m-electron.txt" 2>/dev/null)"
   done

@@ -64,6 +64,14 @@ local function mac_chord(chord)
   return table.concat(mods, "+"), key
 end
 
+-- Hyprland knows a submap only by its binds, and enters none it has no bind
+-- for: with every recorded bind a SUPER chord gone to the app, `mac` would
+-- not exist and the default map, SUPER + Q closing the window, would stay.
+-- This bind keeps a submap there, does nothing and passes its key on.
+local function mac_anchor()
+  return formalshell_raw.bind("SUPER + SHIFT + CTRL + ALT + F24", function() end, { non_consuming = true })
+end
+
 -- SUPER alone or with SHIFT on a key: the two layers Mac key equivalents use.
 local function mac_handed(mods, key)
   if mods ~= "SUPER" and mods ~= "SHIFT+SUPER" then
@@ -85,6 +93,7 @@ function formalshell_mac_keys(reserved)
     keep[mods .. "+" .. key] = true
   end
   formalshell_raw.define_submap("mac", function()
+    formalshell_mac_binds[#formalshell_mac_binds + 1] = mac_anchor()
     for _, bind in ipairs(formalshell_binds) do
       local mods, key = mac_chord(bind.chord)
       if not mac_handed(mods, key) or keep[mods .. "+" .. key] then
@@ -129,6 +138,7 @@ function formalshell_mac_app(binds)
     taken[mods .. "+" .. key] = true
   end
   formalshell_raw.define_submap("macapp", function()
+    formalshell_mac_app_binds[#formalshell_mac_app_binds + 1] = mac_anchor()
     for _, bind in ipairs(formalshell_binds) do
       local mods, key = mac_chord(bind.chord)
       if not taken[mods .. "+" .. key] then
