@@ -187,6 +187,21 @@ wm_lock_release_control() {
   printf '%s call debug join top 100 200 > /dev/null 2>&1\nsleep 1\n%s call debug joinClear > /dev/null 2>&1\n' "$ipc" "$ipc"
 }
 
+# wm_wheel <dy>: a drive-script line scrolling the pointer DY wheel units.
+# wlrctl names the source finger, which Hyprland's axis request drops, so
+# it reads as a wheel here.
+wm_wheel() {
+  printf '%q pointer scroll %s 0' "$wlrctl_bin" "$1"
+}
+
+# wm_blur_on: drive-script lines that turn the compositor's blur on in the
+# running session: the config rewritten and reloaded, which the shell reads
+# off `configreloaded`.
+wm_blur_on() {
+  printf '%s\n' "sed -i 's/blur = { enabled = false }/blur = { enabled = true }/' $(printf '%q' "$wm_config_path")"
+  printf '%q reload > /dev/null 2>&1\n' "$wmctl_bin"
+}
+
 # The palette role the focused border takes: primary, as wm_border_from_palette
 # wires it.
 wm_border_role=primary

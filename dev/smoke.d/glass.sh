@@ -2,11 +2,9 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --glass: the cards' translucency following the compositor's own blur
 # switch (docs/superpowers/specs/2026-10-30-activity.md section 6). The rig
-# boots Hyprland with `decoration.blur.enabled` false, so `debug dump`
-# reports `blur` false and `surfaceOpacity` 1 whatever the default asks.
-# Then the session's own config is rewritten with blur on and reloaded:
-# the shell reads `getoption` again off `configreloaded` and reports `blur`
-# true and 0.85. Over a flat wallpaper the far side of the mode's cards (bright
+# boots the compositor with blur off, so `debug dump` reports `blur` false
+# and `surfaceOpacity` 1 whatever the default asks. Then wm_blur_on turns
+# it on in the running session and the shell reports `blur` true and 0.85. Over a flat wallpaper the far side of the mode's cards (bright
 # under dark mode, dark under light), the audio panel and a sticky toast are
 # photographed in both states, and their cards letting the wallpaper through
 # changes at least 2% of the screen's right half.
@@ -45,8 +43,7 @@ $ipc call panel open audio > /dev/null 2>&1
 until_settled
 $ipc call debug dump > "$glass_dump_opaque" 2>&1
 "$grim_bin" "$glass_opaque_path" > /dev/null 2>&1
-sed -i 's/blur = { enabled = false }/blur = { enabled = true }/' "$cfg"
-"$wmctl_bin" reload > /dev/null 2>&1
+$(wm_blur_on)
 until_jq 10 "$glass_dump_clear" '.theme.blur' call debug dump
 until_settled
 $ipc call debug dump > "$glass_dump_clear" 2>&1

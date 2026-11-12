@@ -4,10 +4,12 @@ cannot do (its `pointer click` presses and releases in one go), and a
 two-finger touchpad scroll, which wlrctl cannot do either (its `pointer
 scroll` carries no axis_source, so Hyprland reads it as a wheel).
 
-    vpointer.py down | up | move DX DY | finger DY | hfinger DX | lift | hlift | wait MS ...
+    vpointer.py down | up | move DX DY | wheel DY | finger DY | hfinger DX | lift | hlift | wait MS ...
 
-`finger DY` is one vertical axis frame of DY pixels with axis_source
-finger, `hfinger DX` the same on the horizontal axis; `lift` is the
+`wheel DY` is one vertical axis frame of DY with no axis_source, which
+ShojiWM hands on as a wheel (wlrctl's `pointer scroll` names finger, which
+only Hyprland drops). `finger DY` is one vertical axis frame of DY pixels
+with axis_source finger, `hfinger DX` the same on the horizontal axis; `lift` is the
 axis_stop a touchpad sends when the fingers leave it, `hlift` the
 horizontal axis's.
 
@@ -71,6 +73,10 @@ def main(steps):
             w.send(pointer, 0, struct.pack("<I", stamp()) + fixed(dx) + fixed(dy))
             w.send(pointer, 4)
             i += 3
+        elif step == "wheel":
+            w.send(pointer, 3, struct.pack("<II", stamp(), AXIS_VERTICAL) + fixed(float(steps[i + 1])))
+            w.send(pointer, 4)
+            i += 2
         elif step in ("finger", "hfinger"):
             # Hyprland's axis request resets the pending event's source, so
             # axis_source has to follow it inside the frame.

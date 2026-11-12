@@ -7,7 +7,7 @@
 # is enough rows to overflow the card whatever the output height does to the
 # cap.
 #
-# wlrctl, not an IPC "scroll" verb: what needs proving is the pointer path
+# wm_wheel, not an IPC "scroll" verb: what needs proving is the pointer path
 # end to end (a real zwlr_virtual_pointer_v1 axis event, into the layer
 # surface, past the cell under it, into the flickable), and a shell-side
 # call would skip exactly the part that was broken. Same line the tooltip
@@ -126,12 +126,12 @@ sleep 2
 "$grim_bin" "$wheel_before_png" > /dev/null 2>&1
 $ipc call menu status > "$wheel_menu_before_path" 2>&1
 $ipc call picker status > "$wheel_picker_before_path" 2>&1
-"$wlrctl_bin" pointer scroll 15 0 >> "$wheel_dispatch_path" 2>&1
+$(wm_wheel 15) >> "$wheel_dispatch_path" 2>&1
 sleep 3
 "$grim_bin" "$wheel_after_png" > /dev/null 2>&1
 $ipc call menu status > "$wheel_menu_after_path" 2>&1
 $ipc call picker status > "$wheel_picker_after_path" 2>&1
-"$wlrctl_bin" pointer scroll 100000 0 >> "$wheel_dispatch_path" 2>&1
+$(wm_wheel 100000) >> "$wheel_dispatch_path" 2>&1
 sleep 2
 $ipc call menu status > "$wheel_menu_end_path" 2>&1
 "$python3_bin" "$wheel_vpointer" finger -50 wait 16 finger -50 wait 100 lift >> "$wheel_dispatch_path" 2>&1
@@ -145,7 +145,7 @@ sleep 0.4
 $ipc call menu status > "$wheel_finger_settled_path" 2>&1
 "$grim_bin" "$wheel_finger_settled_png" > /dev/null 2>&1
 : > "$wheel_notch_end_path"
-"$wlrctl_bin" pointer scroll 15 0 >> "$wheel_dispatch_path" 2>&1
+$(wm_wheel 15) >> "$wheel_dispatch_path" 2>&1
 for _ in 1 2 3 4 5; do
   $ipc call menu status >> "$wheel_notch_end_path" 2>&1
   echo >> "$wheel_notch_end_path"
@@ -166,21 +166,21 @@ flick="\$(for _ in 1 2 3 4 5 6; do printf 'finger 60 wait 8 '; done)finger 60 li
 $ipc call menu status > "$wheel_slow_lift_path" 2>&1
 sleep 0.6
 $ipc call menu status > "$wheel_slow_settled_path" 2>&1
-"$wlrctl_bin" pointer scroll -100000 0 >> "$wheel_dispatch_path" 2>&1
+$(wm_wheel -100000) >> "$wheel_dispatch_path" 2>&1
 sleep 1.5
 "$python3_bin" "$wheel_vpointer" \$flick >> "$wheel_dispatch_path" 2>&1
 echo "\$(date +%s%3N)" > "$wheel_coast_path.lift"
 sample "$wheel_coast_path" 1800
 "$grim_bin" "$wheel_coast_png" > /dev/null 2>&1
-"$wlrctl_bin" pointer scroll -100000 0 >> "$wheel_dispatch_path" 2>&1
+$(wm_wheel -100000) >> "$wheel_dispatch_path" 2>&1
 sleep 1.5
 "$python3_bin" "$wheel_vpointer" \$flick wait 150 finger 1 wait 300 lift >> "$wheel_dispatch_path" 2>&1
 $ipc call menu status > "$wheel_touch_path" 2>&1
 sleep 0.5
 $ipc call menu status > "$wheel_touch_settled_path" 2>&1
-"$wlrctl_bin" pointer scroll 100000 0 >> "$wheel_dispatch_path" 2>&1
+$(wm_wheel 100000) >> "$wheel_dispatch_path" 2>&1
 sleep 1.5
-"$wlrctl_bin" pointer scroll -75 0 >> "$wheel_dispatch_path" 2>&1
+$(wm_wheel -75) >> "$wheel_dispatch_path" 2>&1
 sleep 1.5
 "$python3_bin" "$wheel_vpointer" \$flick >> "$wheel_dispatch_path" 2>&1
 echo "\$(date +%s%3N)" > "$wheel_bounce_path.lift"
@@ -195,7 +195,7 @@ read -r ax ay <<< "\$($ipc call bar room 2>/dev/null | "$jq_bin" -r '.[0].cells[
 echo "audio cell at \$ax \$ay" >> "$wheel_dispatch_path"
 "$wlrctl_bin" pointer move "\$ax" "\$ay" >> "$wheel_dispatch_path" 2>&1
 sleep 1
-"$wlrctl_bin" pointer scroll 10 0 >> "$wheel_dispatch_path" 2>&1
+$(wm_wheel 10) >> "$wheel_dispatch_path" 2>&1
 sleep 2
 "$grim_bin" -c "$wheel_bar_png" > /dev/null 2>&1
 "$wpctl_bin" get-volume @DEFAULT_AUDIO_SINK@ 2>&1 | grep '^Volume:' > "$wheel_volume_after_path"

@@ -50,6 +50,10 @@ wm_base_config() {
     layers: [],
     binds: []
   }' > "$shoji_host_path"
+  # formalwm's blur switch is the shell's own theme.blur, sent to it in
+  # theme.set, so the shell's settings carry the base's blur off unless a
+  # leg pinned it.
+  "$jq_bin" '.theme.blur //= false' "$settings_path" > "$settings_path.new" && mv "$settings_path.new" "$settings_path"
   echo '#!/usr/bin/env bash'
   echo "echo \"\$SHOJI_RUN_DIR\" > $(printf '%q' "$shot_dir/shoji-run-dir")"
   # shoji-run.sh gives the session a runtime dir of its own, where a nested
@@ -112,9 +116,11 @@ wm_key_repeat() {
 # style, so a leg measures against what the shell sent.
 wm_window_gaps() { :; }
 
-# The shipped settings' layer rules, which the base host.json emptied.
+# The shipped settings' layer rules, which the base host.json emptied, and
+# the shell's blur back on.
 wm_shipped_blur() {
   shoji_host 'del(.layers)'
+  "$jq_bin" '.theme.blur = true' "$settings_path" > "$settings_path.new" && mv "$settings_path.new" "$settings_path"
 }
 
 # The shell sends formalwm its palette through theme.set; nothing to wire.
@@ -166,6 +172,18 @@ wm_overview_phase() {
 # protocol allows; a window taking focus releases it.
 wm_lock_release_control() {
   printf '%q --app-id=formalshell-lock-control sh -c "sleep 3" > /dev/null 2>&1 &\nsleep 4\n' "$foot_bin"
+}
+
+# ShojiWM passes wlrctl's finger source on, so the wheel goes through
+# vpointer.py's sourceless axis.
+wm_wheel() {
+  printf '%q %q wheel %s' "$python3_bin" "$PWD/dev/vpointer.py" "$1"
+}
+
+# formalwm's blur switch is the shell's own theme.blur, which the shell
+# reads again when its settings file changes.
+wm_blur_on() {
+  printf '%q %q %q > %q.new && mv %q.new %q\n' "$jq_bin" '.theme.blur = true' "$settings_path" "$settings_path" "$settings_path" "$settings_path"
 }
 
 # The palette role the focused border takes: the shipped style's focused

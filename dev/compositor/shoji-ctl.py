@@ -131,6 +131,8 @@ def monitors(state):
             "scale": o["scale"],
             "transform": row.get("transform", 0),
             "mirrorOf": row.get("mirrorOf") or "none",
+            # Hyprland's order: left, top, right, bottom.
+            "reserved": [o["reserved"][k] for k in ("left", "top", "right", "bottom")] if o.get("reserved") else None,
             "focused": o["name"] == state["focusedOutput"],
             "activeWorkspace": {"id": active["idx"], "name": active["name"]} if active else {"id": -1, "name": ""},
             "disabled": False,
@@ -349,6 +351,11 @@ def evaluate(text):
     if t.get("position") not in (None, f"{right}x0"):
         raise Unsupported(f"hl.monitor position {t['position']} (a made output sits at {right}x0)")
     call("outputs.remove", {"name": t["output"]})
+    # The output goes a moment after the answer, and its name stays taken
+    # until it has.
+    end = time.monotonic() + 5
+    while any(o["name"] == t["output"] for o in call("outputs.get")) and time.monotonic() < end:
+        time.sleep(0.05)
     call("outputs.create", {"name": t["output"], "width": int(mode.group(1)), "height": int(mode.group(2)), "scale": float(t.get("scale", 1))})
     return "ok"
 

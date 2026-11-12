@@ -278,7 +278,10 @@ spans, top, bottom = [], min(groove), max(groove)
 for step, ky in ((-1, top - 1), (1, bottom + 1)):
     while knob_xs(ky):
         xs = knob_xs(ky)
-        spans.append((min(xs) + max(xs)) / 2)
+        # A groove edge row the groove test missed, its fill one run from
+        # the track start, is far wider than the knob ever is.
+        if max(xs) - min(xs) < (end - start) / 4:
+            spans.append((min(xs) + max(xs)) / 2)
         top, bottom = min(top, ky), max(bottom, ky)
         ky += step
 if spans:
