@@ -24,6 +24,7 @@
 # with its entry gone the launcher has no row for it.
 leg_mac_launcher_flag="--mac-launcher"
 leg_mac_launcher_order=175
+leg_mac_launcher_compositors="hyprland shoji"
 leg_mac_launcher_needs="python3 jq wtype"
 leg_mac_launcher_claims="launcher=shared"
 

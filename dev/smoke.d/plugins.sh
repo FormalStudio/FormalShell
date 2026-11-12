@@ -38,6 +38,7 @@
 # file's id and the action.
 leg_plugins_flag="--plugins"
 leg_plugins_order=200
+leg_plugins_compositors="hyprland shoji"
 leg_plugins_needs="jq wlrctl wtype"
 leg_plugins_claims="launcher=shared"
 

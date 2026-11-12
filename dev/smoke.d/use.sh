@@ -43,6 +43,7 @@
 # opens is part of the clicking. The fixture window stays: it is what a stray key lands in.
 leg_use_flag="--use"
 leg_use_order=400
+leg_use_compositors="hyprland shoji"
 leg_use_needs="wlrctl wtype jq notify-send convert"
 leg_use_fixture_window=keep
 leg_use_claims="bar.layout.right"

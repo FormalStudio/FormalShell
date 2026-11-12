@@ -17,6 +17,7 @@
 # (its bottom-right sits below the shorter second's bottom edge).
 leg_hotcorner_flag="--hotcorner"
 leg_hotcorner_order=160
+leg_hotcorner_compositors="hyprland shoji"
 leg_hotcorner_claims="hotCorners outputs=shared"
 leg_hotcorner_needs="jq"
 # Nothing is summoned over the desktop, so this leg keeps the base run's

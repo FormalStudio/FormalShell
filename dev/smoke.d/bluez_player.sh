@@ -26,6 +26,7 @@
 #     then a wheel over the list takes it back to the top.
 leg_bluez_player_flag="--bluez-player"
 leg_bluez_player_order=179
+leg_bluez_player_compositors="hyprland shoji"
 leg_bluez_player_needs="python3 jq grim wtype wlrctl pactl pw_cat"
 leg_bluez_player_claims="bus.system"
 

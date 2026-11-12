@@ -47,6 +47,7 @@
 # front of the host's brightnessctl and ddcutil.
 leg_brightness_flag="--brightness"
 leg_brightness_order=217
+leg_brightness_compositors="hyprland shoji"
 leg_brightness_needs="wtype jq"
 leg_brightness_claims="outputs=shared"
 

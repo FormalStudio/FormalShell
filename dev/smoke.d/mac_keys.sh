@@ -29,7 +29,6 @@
 leg_mac_keys_flag="--mac-keys"
 leg_mac_keys_order=173
 leg_mac_keys_needs="python3 jq foot wtype"
-leg_mac_keys_compositors="hyprland shoji"
 leg_mac_keys_claims="hyprland.binds"
 
 mac_keys_prefix="$shot_dir/mac-keys"

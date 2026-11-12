@@ -63,6 +63,7 @@
 # still has to send it no `motion`.
 leg_fullscreen_flag="--fullscreen"
 leg_fullscreen_order=200
+leg_fullscreen_compositors="hyprland shoji"
 leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace foot"
 leg_fullscreen_fixture_window=keep
 leg_fullscreen_claims="screen=shared bar.layout.center frame=10/20"

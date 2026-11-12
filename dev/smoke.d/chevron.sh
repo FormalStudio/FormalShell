@@ -42,6 +42,7 @@
 # click on the clock shutting it and opening the calendar in its place.
 leg_chevron_flag="--chevron"
 leg_chevron_order=180
+leg_chevron_compositors="hyprland shoji"
 leg_chevron_needs="wlrctl wtype convert jq"
 leg_chevron_claims="bar.layout.right bar.modules panel=shared"
 

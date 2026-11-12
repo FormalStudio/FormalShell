@@ -23,6 +23,7 @@
 # Every move of a selection runs under the stale audit.
 leg_ipad_flag="--ipad"
 leg_ipad_order=263
+leg_ipad_compositors="hyprland shoji"
 leg_ipad_claims="ipad launcher=shared panel=shared"
 leg_ipad_needs="python3 jq wtype grim"
 
