@@ -22,6 +22,7 @@ run() {
     -v "$HOME/fwm-build/fresh/src:/src" -v "$HOME/fwm-build/fresh/target:/target" \
     -v "$HOME/shoji-cache/rustup:/rustup" \
     -e CARGO_HOME=/target/cargo -e RUSTUP_HOME=/rustup -e CARGO_TARGET_DIR=/target -e HOME=/tmp \
+    -e CARGO_BUILD_JOBS=2 \
     -w /src/wm shoji-build cargo "$@" 2>&1 | grep -aE "^(warning|error)|test result|Finished|panicked" \
     || status=${PIPESTATUS[0]}
   echo "cargo $1: exit $status"
