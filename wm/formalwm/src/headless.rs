@@ -395,6 +395,27 @@ fn two_outputs_and_the_touchpad() {
     let rect = slack.rect.as_ref().unwrap();
     assert!(rect.x >= WIDTH as i32, "the window is on the second output");
 
+    // An empty workspace in view: the keyboard leaves the window it was on.
+    let keyboard = |session: &Session| session.state.window_keyboard_focus.is_some();
+    let go = |workspace: &'static str| {
+        ask(|engine| {
+            engine.model.focus_workspace(workspace);
+            engine.commit();
+            Ok(())
+        })
+        .unwrap();
+    };
+    assert!(keyboard(&session), "Slack has the keyboard");
+    go("8");
+    session.roundtrip();
+    assert!(!keyboard(&session), "nothing in view, nobody has it");
+    go("4");
+    session.roundtrip();
+    assert!(
+        keyboard(&session),
+        "back on Slack's workspace, Slack has it"
+    );
+
     assert_eq!(session.state.clear_color, [0.0, 0.0, 0.0, 1.0]);
 
     // `vrr` 2: asked of the core only while a window is fullscreen there.

@@ -241,11 +241,23 @@ impl Engine {
         if want == self.asked_focus || self.hold.data_drag {
             return;
         }
-        self.asked_focus = want.clone();
-        if let Some(win) = want.and_then(|id| self.windows.get(&id))
-            && !win.handle.is_focused().get_untracked()
-        {
-            win.handle.focus();
+        let had = std::mem::replace(&mut self.asked_focus, want.clone());
+        match want {
+            Some(id) => {
+                if let Some(win) = self.windows.get(&id)
+                    && !win.handle.is_focused().get_untracked()
+                {
+                    win.handle.focus();
+                }
+            }
+            // Nothing in view to type into. The compositor keeps the keyboard
+            // on a window as long as it is mapped, in view or not.
+            None => {
+                let asked = had.and_then(|id| self.windows.get(&id).map(|win| win.handle));
+                for window in asked.into_iter().chain(COMPOSITOR.window.focused()) {
+                    window.unfocus();
+                }
+            }
         }
         self.arm_idle_pointer();
     }
