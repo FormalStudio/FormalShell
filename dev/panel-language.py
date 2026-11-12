@@ -91,7 +91,10 @@ if header:
     if line is None:
         say("header", False, "no hairline under the title")
     else:
-        counts = [(y, sum(1 for x in range(x0 + 12, x0 + w // 2) if d(px[x, y], fill) > 120)) for y in range(y0 + 1, line)]
+        # Past the card's 1px top border, which a fractional scale spreads
+        # over a second pixel row.
+        top = y0 + 1 + math.ceil(scale)
+        counts = [(y, sum(1 for x in range(x0 + 12, x0 + w // 2) if d(px[x, y], fill) > 120)) for y in range(top, line)]
         ink = [y for y, n in counts if n]
         if not ink:
             say("header", False, "a hairline but no title ink above it")

@@ -75,8 +75,8 @@ log="$dock_log"
 jq="$jq_bin"
 stub=org.atoll.stub
 foot=formalshell-dock
-read -r W H <<< "\$("$hyprctl_bin" -j monitors | "\$jq" -r '.[0] | "\(.width / .scale | round) \(.height / .scale | round)"')"
-active() { "$hyprctl_bin" -j activewindow | "\$jq" -r .class; }
+read -r W H <<< "\$("$wmctl_bin" -j monitors | "\$jq" -r '.[0] | "\(.width / .scale | round) \(.height / .scale | round)"')"
+active() { "$wmctl_bin" -j activewindow | "\$jq" -r .class; }
 # front <class>: until that window is the active one and the dock has
 # heard, 10s at most. The dock goes when focus moves with the pointer off
 # it, so a pointer moved before the shell's own view of the windows caught
@@ -85,7 +85,7 @@ front() {
   for _ in \$(seq 1 40); do [ "\$(active)" = "\$1" ] && break; sleep 0.25; done
   [ "\$(active)" = "\$1" ] && until_jq 10 "\$m-front.json" "any(.apps[]; .app == \\"\$1\\" and .focused)" call dock status
 }
-layers() { "$hyprctl_bin" -j layers > "\$1" 2>&1; }
+layers() { "$wmctl_bin" -j layers > "\$1" 2>&1; }
 # need <step...>: the step, or the drive over at the first one that failed,
 # named in \$m-gave-up.txt beside the dock's status then. Every later step
 # stands on this one, and a run of waits each at its limit outlasts the
@@ -130,7 +130,7 @@ sleep 1
 call dock status > "\$m-native-edge.json" 2>&1
 park
 
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
 need until_window \$stub 15
 need front \$stub
 need until_jq 10 "\$m-strip.json" '.exists and .strip and any(.apps[]; .app == "org.atoll.stub" and .icon)' call dock status
@@ -172,7 +172,7 @@ shoot "\$m-ruled.png"
 park
 need hidden "\$m-left.json"
 
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:\$foot' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:\$foot' })" > /dev/null 2>&1
 need front \$foot
 need hidden "\$m-before-urgent.json"
 tile urgent=true
@@ -202,7 +202,7 @@ EOF
 pkill -f "$stub --name Stub --log $dock_log" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/dock-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_dock_assert() {

@@ -90,7 +90,7 @@ while :; do
   for _ in \$(seq 1 400); do [ -e "$mac_faults_again" ] && break; sleep 0.25; done
   [ -e "$mac_faults_again" ] || break
   rm -f "$mac_faults_again"
-  "$hyprctl_bin" version > /dev/null 2>&1 || break
+  "$wmctl_bin" version > /dev/null 2>&1 || break
 done
 EOF
 }
@@ -125,16 +125,16 @@ log="$mac_faults_log"
 marks="$mac_faults_marks"
 jq="$jq_bin"
 : > "\$marks"
-submap() { "$hyprctl_bin" submap 2>&1 | head -n 1; }
+submap() { "$wmctl_bin" submap 2>&1 | head -n 1; }
 # in_submap <name> <path>: until Hyprland's submap is that one, 15s at most;
 # the one it ended on in <path>.
 in_submap() {
   for _ in \$(seq 1 60); do [ "\$(submap)" = "\$1" ] && break; sleep 0.25; done
   submap > "\$2"
 }
-active() { "$hyprctl_bin" -j activewindow 2>/dev/null | "\$jq" -r '.class // ""'; }
+active() { "$wmctl_bin" -j activewindow 2>/dev/null | "\$jq" -r '.class // ""'; }
 front() { for _ in \$(seq 1 40); do [ "\$(active)" = "\$1" ] && return 0; sleep 0.25; done; return 1; }
-pid_of() { "$hyprctl_bin" -j clients 2>/dev/null | "\$jq" -r --arg c "\$1" 'first(.[] | select(.class == \$c) | .pid) // empty'; }
+pid_of() { "$wmctl_bin" -j clients 2>/dev/null | "\$jq" -r --arg c "\$1" 'first(.[] | select(.class == \$c) | .pid) // empty'; }
 seen() { sleep 0.6; grep -c "\$1" "\$log" > "\$2" 2>/dev/null || true; }
 mark() { sleep 0.6; grep -c "^\$1\\\$" "\$marks" > "\$2" 2>/dev/null || true; }
 follows() { wc -l < "$mac_faults_follows" 2>/dev/null | tr -d '[:space:]'; }
@@ -146,19 +146,19 @@ end_shell() {
   for _ in \$(seq 1 40); do kill -0 "\$pid" 2>/dev/null || break; sleep 0.25; done
 }
 
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
 until_window org.atoll.stub 15
 spawn_foot formalshell-mac-faults
 until_window formalshell-mac-faults
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.stub' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.stub' })" > /dev/null 2>&1
 front org.atoll.stub
 until_jq 15 "\$m-inside.json" '.macKeys and (.titles | length == 4)' call appmenu status
 in_submap mac "\$m-submap-start.txt"
 
-"$hyprctl_bin" reload > "\$m-reload.txt" 2>&1
+"$wmctl_bin" reload > "\$m-reload.txt" 2>&1
 sleep 1
 in_submap mac "\$m-submap-reload.txt"
-"$hyprctl_bin" -j binds > "\$m-binds-reload.json" 2>&1
+"$wmctl_bin" -j binds > "\$m-binds-reload.json" 2>&1
 status appmenu "\$m-status-reload.json"
 "$wtype_bin" -M logo -M ctrl p -m ctrl -m logo
 mark p "\$m-mark-p-reload.txt"
@@ -186,16 +186,16 @@ front org.atoll.stub
 in_submap mac "\$m-submap-ended-third.txt"
 sleep 0.5
 echo \$(( \$(follows) - before )) > "\$m-follows-before.txt"
-"$hyprctl_bin" reload > "\$m-reload-ended.txt" 2>&1
+"$wmctl_bin" reload > "\$m-reload-ended.txt" 2>&1
 sleep 1
 submap > "\$m-submap-ended-reload.txt"
 "$wtype_bin" -M logo l -m logo
 front formalshell-mac-faults; echo "\$?" > "\$m-left-stub-reload.txt"
 "$wtype_bin" -M logo c -m logo
 mark c "\$m-mark-c-ended-reload.txt"
-"$hyprctl_bin" reload > /dev/null 2>&1
+"$wmctl_bin" reload > /dev/null 2>&1
 sleep 1
-"$hyprctl_bin" reload > /dev/null 2>&1
+"$wmctl_bin" reload > /dev/null 2>&1
 sleep 1
 before=\$(follows)
 "$wtype_bin" -M logo h -m logo
@@ -205,9 +205,9 @@ echo \$(( \$(follows) - before )) > "\$m-follows-after.txt"
 "$wtype_bin" -M logo l -m logo
 front formalshell-mac-faults
 
-stub_address=\$("$hyprctl_bin" -j clients 2>/dev/null | "\$jq" -r 'first(.[] | select(.class == "org.atoll.stub") | .address) // empty')
-"$hyprctl_bin" eval 'formalshell_mac_keys({ "SUPER + H", "SUPER + L" })' > /dev/null 2>&1
-"$hyprctl_bin" eval "formalshell_mac_focus(true, \"address:\$stub_address\")" > "\$m-late.txt" 2>&1
+stub_address=\$("$wmctl_bin" -j clients 2>/dev/null | "\$jq" -r 'first(.[] | select(.class == "org.atoll.stub") | .address) // empty')
+"$wmctl_bin" eval 'formalshell_mac_keys({ "SUPER + H", "SUPER + L" })' > /dev/null 2>&1
+"$wmctl_bin" eval "formalshell_mac_focus(true, \"address:\$stub_address\")" > "\$m-late.txt" 2>&1
 sleep 0.5
 submap > "\$m-submap-late.txt"
 "$wtype_bin" -M logo c -m logo
@@ -219,7 +219,7 @@ in_submap mac "\$m-submap-late-stub.txt"
 front formalshell-mac-faults
 in_submap default "\$m-submap-late-out.txt"
 
-"$hyprctl_bin" dispatch 'hl.dsp.submap("mac")' > /dev/null 2>&1
+"$wmctl_bin" dispatch 'hl.dsp.submap("mac")' > /dev/null 2>&1
 in_submap mac "\$m-submap-forced.txt"
 touch "$mac_faults_again"
 in_submap default "\$m-submap-back.txt"
@@ -246,9 +246,9 @@ call appmenu close > /dev/null 2>&1
 front formalshell-mac-faults
 until_jq 2 "\$m-hung-away.json" '.titles == []' call appmenu status
 shoot "\$m-hung-away.png"
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Other --app-id org.atoll.other --color 8a5a3a --log $mac_faults_other_log]==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Other --app-id org.atoll.other --color 8a5a3a --log $mac_faults_other_log]==])" > /dev/null 2>&1
 until_window org.atoll.other 15
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.other' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.other' })" > /dev/null 2>&1
 front org.atoll.other
 until_jq 10 "\$m-other.json" '.macKeys and (.titles | length == 4) and .titles[0].label == "Other"' call appmenu status
 shoot "\$m-other.png"
@@ -256,14 +256,14 @@ kill -CONT "\$stub_pid"
 kill "\$stub_pid"
 
 pkill -f "foot --app-id=formalshell-mac-faults" 2>/dev/null
-for _ in \$(seq 1 40); do [ "\$("$hyprctl_bin" -j clients | "\$jq" length)" = 1 ] && break; sleep 0.25; done
+for _ in \$(seq 1 40); do [ "\$("$wmctl_bin" -j clients | "\$jq" length)" = 1 ] && break; sleep 0.25; done
 front org.atoll.other
 until_jq 10 "\$m-alone.json" '.macKeys' call appmenu status
 in_submap mac "\$m-submap-alone.txt"
 end_shell
 kill "\$(pid_of org.atoll.other)"
-for _ in \$(seq 1 40); do [ "\$("$hyprctl_bin" -j clients | "\$jq" length)" = 0 ] && break; sleep 0.25; done
-"$hyprctl_bin" -j clients > "\$m-clients-none.json" 2>&1
+for _ in \$(seq 1 40); do [ "\$("$wmctl_bin" -j clients | "\$jq" length)" = 0 ] && break; sleep 0.25; done
+"$wmctl_bin" -j clients > "\$m-clients-none.json" 2>&1
 in_submap default "\$m-submap-none.txt"
 "$wtype_bin" -M logo c -m logo
 mark c "\$m-mark-c-none.txt"
@@ -276,7 +276,7 @@ pkill -CONT -f "$stub --name" 2>/dev/null || true
 pkill -f "$stub --name" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/mac-faults-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_mac_faults_assert() {

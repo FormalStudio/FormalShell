@@ -49,31 +49,31 @@ leg_dock_density_drive() {
 m="$dock_density_prefix"
 log="$dock_density_log"
 held='any(.apps[]; .app == "org.atoll.stub" and .icon)'
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub]==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub]==])" > /dev/null 2>&1
 until_window org.atoll.stub 15
 until_jq 15 "\$m-first.json" ".exists and \$held" call dock status
-"$hyprctl_bin" -j monitors > "\$m-monitors.json" 2>&1
+"$wmctl_bin" -j monitors > "\$m-monitors.json" 2>&1
 first=\$("$jq_bin" -r '.[0].name' "\$m-monitors.json")
 width=\$("$jq_bin" -r '.[0].width' "\$m-monitors.json")
-"$hyprctl_bin" output create headless "$dock_density_second" > "\$log" 2>&1
-"$hyprctl_bin" eval "hl.monitor({ output = \\"$dock_density_second\\", mode = \\"1600x1000@60\\", position = \\"\${width}x0\\", scale = 2 })" >> "\$log" 2>&1
+"$wmctl_bin" output create headless "$dock_density_second" > "\$log" 2>&1
+"$wmctl_bin" eval "hl.monitor({ output = \\"$dock_density_second\\", mode = \\"1600x1000@60\\", position = \\"\${width}x0\\", scale = 2 })" >> "\$log" 2>&1
 sleep 3
-"$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '$dock_density_second' })" >> "\$log" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ monitor = '$dock_density_second' })" >> "\$log" 2>&1
 until_jq 15 "\$m-second.json" ".scale == 2 and \$held" call dock status
 call dock open > /dev/null 2>&1
 until_settled
 "$grim_bin" -o "$dock_density_second" "\$m-second.png" >> "\$log" 2>&1
 call dock close > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '\$first' })" >> "\$log" 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ monitor = '\$first' })" >> "\$log" 2>&1
 until_jq 15 "\$m-back.json" ".scale == $FS_SMOKE_SCALE and \$held" call dock status
-"$hyprctl_bin" output remove "$dock_density_second" >> "\$log" 2>&1
+"$wmctl_bin" output remove "$dock_density_second" >> "\$log" 2>&1
 EOF
   write_script "$shot_dir/dock-density-kill.sh" <<EOF
 #!/usr/bin/env bash
 pkill -f "$stub --name Stub" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/dock-density-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_dock_density_assert() {

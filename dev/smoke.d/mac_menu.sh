@@ -46,7 +46,7 @@ leg_mac_menu_drive() {
 m="$mac_menu_prefix"
 log="$mac_menu_log"
 jq="$jq_bin"
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
 until_window org.atoll.stub 15
 until_jq 15 "\$m-status.json" '.titles | length == 4' call appmenu status
 call appmenu items File > "\$m-file.json" 2>&1
@@ -57,7 +57,7 @@ shoot "\$m-bar.png"
 # Where a title sits, as "x y" in logical pixels.
 if [ "$sidebar" = 1 ]; then
   call sidebar status > "\$m-sidebar.json" 2>&1
-  read -r ox oy <<< "\$("$hyprctl_bin" -j layers | "\$jq" -r "\$layers_jq"'bar_origin')"
+  read -r ox oy <<< "\$("$wmctl_bin" -j layers | "\$jq" -r "\$layers_jq"'bar_origin')"
   title() { "\$jq" -r --argjson ox "\$ox" --argjson oy "\$oy" --arg on "appmenu:\$1" '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' "\$m-sidebar.json" | head -n 1; }
 else
   call bar room > "\$m-room.json" 2>&1
@@ -110,7 +110,7 @@ shut
 if [ "$sidebar" = 1 ]; then
   # Folded to the rail the titles are one button, and its card the whole
   # menu, each title a submenu of it.
-  origin() { read -r ox oy <<< "\$("$hyprctl_bin" -j layers | "\$jq" -r "\$layers_jq"'bar_origin')"; }
+  origin() { read -r ox oy <<< "\$("$wmctl_bin" -j layers | "\$jq" -r "\$layers_jq"'bar_origin')"; }
   call sidebar collapse > /dev/null 2>&1
   until_jq 10 "\$m-sidebar.json" '.collapsed and any(.hits[]; .on == "appmenu:0")' call sidebar status
   until_settled
@@ -135,7 +135,7 @@ until_jq 10 "\$m-foot.json" '.titles == []' call appmenu status
 call debug query "pdf" > "\$m-query-foot.json" 2>&1
 until_settled
 shoot "\$m-foot.png"
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.stub' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.stub' })" > /dev/null 2>&1
 until_jq 10 "\$m-back.json" '.titles | length == 4' call appmenu status
 call debug query "pdf" > "\$m-query-root.json" 2>&1
 
@@ -155,7 +155,7 @@ EOF
 pkill -f "$stub --name Stub --log $mac_menu_log" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/mac-menu-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_mac_menu_assert() {

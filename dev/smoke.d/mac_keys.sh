@@ -55,8 +55,8 @@ log="$mac_keys_log"
 marks="$mac_keys_marks"
 jq="$jq_bin"
 : > "\$marks"
-submap() { "$hyprctl_bin" submap 2>&1 | head -n 1; }
-active() { "$hyprctl_bin" -j activewindow 2>/dev/null | "\$jq" -r '.class // ""'; }
+submap() { "$wmctl_bin" submap 2>&1 | head -n 1; }
+active() { "$wmctl_bin" -j activewindow 2>/dev/null | "\$jq" -r '.class // ""'; }
 # front <class>: until that window is the active one, 10s at most.
 front() { for _ in \$(seq 1 40); do [ "\$(active)" = "\$1" ] && return 0; sleep 0.25; done; return 1; }
 # seen <pattern> <path>: how many of the stub's lines match, once they have
@@ -64,16 +64,16 @@ front() { for _ in \$(seq 1 40); do [ "\$(active)" = "\$1" ] && return 0; sleep 
 seen() { sleep 0.6; grep -c "\$1" "\$log" > "\$2" 2>/dev/null || true; }
 mark() { sleep 0.6; grep -c "^\$1\\\$" "\$marks" > "\$2" 2>/dev/null || true; }
 
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
 until_window org.atoll.stub 15
 spawn_foot formalshell-mac-keys
 until_window formalshell-mac-keys
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.stub' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:org.atoll.stub' })" > /dev/null 2>&1
 front org.atoll.stub
 until_jq 15 "\$m-inside.json" '.macKeys and (.titles | length == 4)' call appmenu status
 submap > "\$m-submap-mac.txt"
-"$hyprctl_bin" -j clients > "\$m-clients.json" 2>&1
-"$hyprctl_bin" -j binds > "\$m-binds.json" 2>&1
+"$wmctl_bin" -j clients > "\$m-clients.json" 2>&1
+"$wmctl_bin" -j binds > "\$m-binds.json" 2>&1
 
 "$wtype_bin" -M logo c -m logo
 seen '^key c down mods=64\$' "\$m-super-c.txt"
@@ -111,7 +111,7 @@ EOF
 pkill -f "$stub --name Stub --log $mac_keys_log" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/mac-keys-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_mac_keys_assert() {

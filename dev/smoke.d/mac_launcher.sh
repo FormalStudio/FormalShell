@@ -129,7 +129,7 @@ logged() { for _ in \$(seq 1 40); do grep -qxF "\$2" "\$1" 2>/dev/null && return
 on_stub='.ids[0] == "apps.org.atoll.stub"'
 activity() { call activity status; }
 
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$python3_bin $stub --name Stub --log \$log]==])" > /dev/null 2>&1
 need until_window org.atoll.stub 15
 
 need row Brittle "\$m-brittle-row.json" '.ids[0] == "apps.org.atoll.brittle"'
@@ -204,7 +204,7 @@ EOF
 pkill -f "$stub --name Stub --log $mac_launcher_log" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/mac-launcher-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_mac_launcher_assert() {

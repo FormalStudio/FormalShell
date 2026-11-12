@@ -98,7 +98,7 @@ marks="$mac_app_marks"
 jq="$jq_bin"
 app="$mac_app_id"
 : > "\$marks"
-active() { "$hyprctl_bin" -j activewindow 2>/dev/null | "\$jq" -r '.class // ""'; }
+active() { "$wmctl_bin" -j activewindow 2>/dev/null | "\$jq" -r '.class // ""'; }
 # front <class>: until that window is the active one, 10s at most.
 front() { for _ in \$(seq 1 40); do [ "\$(active)" = "\$1" ] && return 0; sleep 0.25; done; return 1; }
 # seen <fixed text> <count> <path> [tries]: how many of atoll's lines carry
@@ -132,13 +132,13 @@ column() {
 
 spawn_foot formalshell-mac-app
 until_window formalshell-mac-app
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'ATOLL_LOG=atoll::menu=debug exec $mac_app_atoll run $mac_app_installed > \$log 2>&1']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'ATOLL_LOG=atoll::menu=debug exec $mac_app_atoll run $mac_app_installed > \$log 2>&1']==])" > /dev/null 2>&1
 until_window "\$app" 60
-"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:\$app' })" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.focus({ window = 'class:\$app' })" > /dev/null 2>&1
 front "\$app"
 until_jq 30 "\$m-status.json" '.macKeys and (.titles | length >= 4)' call appmenu status
-"$hyprctl_bin" -j clients > "\$m-clients.json" 2>&1
-"$hyprctl_bin" submap 2>&1 | head -n 1 > "\$m-submap-mac.txt"
+"$wmctl_bin" -j clients > "\$m-clients.json" 2>&1
+"$wmctl_bin" submap 2>&1 | head -n 1 > "\$m-submap-mac.txt"
 call appmenu items Edit > "\$m-edit.json" 2>&1
 call appmenu items Edit/Select > "\$m-select.json" 2>&1
 until_settled
@@ -201,14 +201,14 @@ front "\$app"
 key l
 front formalshell-mac-app; echo "\$?" > "\$m-left-app.txt"
 until_jq 10 "\$m-outside.json" '.macKeys | not' call appmenu status
-"$hyprctl_bin" submap 2>&1 | head -n 1 > "\$m-submap-default.txt"
+"$wmctl_bin" submap 2>&1 | head -n 1 > "\$m-submap-default.txt"
 key c
 mark c "\$m-mark-c-native.txt"
 key h
 front "\$app"; echo "\$?" > "\$m-back-on-app.txt"
 until_jq 10 "\$m-inside-again.json" '.macKeys' call appmenu status
 
-read -r W H <<< "\$("$hyprctl_bin" -j monitors | "\$jq" -r '.[0] | "\(.width / .scale | round) \(.height / .scale | round)"')"
+read -r W H <<< "\$("$wmctl_bin" -j monitors | "\$jq" -r '.[0] | "\(.width / .scale | round) \(.height / .scale | round)"')"
 park \$((W / 2)) \$((H - 1))
 until_jq 10 "\$m-dock.json" '.shown and all(.apps[]; .rect != null)' call dock status
 until_settled
@@ -223,7 +223,7 @@ park \$("\$jq" -r '.menu.rows[] | select(.id == -1000) | .rect | "\(.x + (.width
 until_jq 10 "\$m-dock-menu-shut.json" '.menu == null' call dock status
 # Off the dock and onto the app's own window, which keeps the focus the
 # pointer would otherwise take to whatever lies under it.
-park \$("$hyprctl_bin" -j clients | "\$jq" -r --arg c "\$app" '.[] | select(.class == \$c) | "\(.at[0] + (.size[0] / 2 | floor)) \(.at[1] + (.size[1] / 2 | floor))"' | head -n 1)
+park \$("$wmctl_bin" -j clients | "\$jq" -r --arg c "\$app" '.[] | select(.class == \$c) | "\(.at[0] + (.size[0] / 2 | floor)) \(.at[1] + (.size[1] / 2 | floor))"' | head -n 1)
 until_jq 10 "\$m-dock-gone.json" '.shown | not' call dock status
 
 front "\$app"
@@ -252,7 +252,7 @@ key q
 seen 'key equivalent "Quit' 1 "\$m-key-quit.txt"
 mark q "\$m-mark-q.txt"
 sleep 2
-"$hyprctl_bin" -j clients > "\$m-clients-after.json" 2>&1
+"$wmctl_bin" -j clients > "\$m-clients-after.json" 2>&1
 shoot "\$m-quit.png"
 
 summon "$(basename "$mac_app_bundle" .app)" "\$m-row-uninstall.json" ".ids[0] == \"\$node\""
@@ -273,7 +273,7 @@ EOF
 pkill -f "$mac_app_atoll run $mac_app_installed" 2>/dev/null || true
 EOF
   add_cleanup "bash $shot_dir/mac-app-kill.sh"
-  hypr_exec_once "bash $script"
+  wm_exec_once "bash $script"
 }
 
 leg_mac_app_assert() {
