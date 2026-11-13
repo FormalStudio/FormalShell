@@ -196,6 +196,7 @@ impl Engine {
                 effect: rules::Effect::default(),
                 placed: false,
                 sized: false,
+                asked: None,
                 scope,
             },
         );
@@ -244,6 +245,9 @@ impl Engine {
             });
         let float_rect = rules::float_rect(&effect, area, None);
         let sized = effect.size.is_some();
+        // Electron apps ask to be maximized before they map; Hyprland's
+        // scrolling layout opens them as a column the width of the view.
+        let asked = self.windows.get(&id).and_then(|win| win.asked);
         window.state(&FORCE).set(!floating || sized);
         window.state(&BLUR).set(self.blurs(&effect));
         window
@@ -263,9 +267,13 @@ impl Engine {
                 floating,
                 float_rect,
                 pinned: effect.pin.unwrap_or(false),
-                fullscreen: window.is_fullscreen().get_untracked(),
+                fullscreen: window.is_fullscreen().get_untracked()
+                    || asked == Some(Big::Fullscreen),
             },
         );
+        if asked == Some(Big::Maximized) {
+            self.model.set_big(&id, Some(Big::Maximized));
+        }
         if let Some(win) = self.windows.get_mut(&id) {
             win.effect = effect;
             win.placed = true;
@@ -412,6 +420,16 @@ impl Engine {
 
     fn set_big(&mut self, window: Window, kind: Big, on: bool) {
         let id = window.id();
+        if let Some(win) = self.windows.get_mut(&id)
+            && !win.placed
+        {
+            win.asked = match (on, win.asked) {
+                (true, _) => Some(kind),
+                (false, Some(asked)) if asked == kind => None,
+                (false, asked) => asked,
+            };
+            return;
+        }
         let now = self.model.big_of(&id);
         let changed = match (on, now) {
             (true, now) if now != Some(kind) => self.model.set_big(&id, Some(kind)),

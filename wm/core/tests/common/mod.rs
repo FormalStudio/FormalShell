@@ -71,3 +71,13 @@ pub fn place(model: &Model, id: &str) -> Placed {
 pub fn focused(model: &Model) -> &str {
     model.focused_window().map_or("", String::as_str)
 }
+
+/// Where the window is on screen at rest, its tape's scroll taken off.
+pub fn on_screen(model: &Model, id: &str) -> Rect {
+    let place = place(model, id);
+    let scroll = match (&place.workspace, place.scrolls) {
+        (Some(ws), true) => model.workspace(ws).map_or(0.0, |ws| ws.tape.scroll),
+        _ => 0.0,
+    };
+    place.rect.translate(-scroll, 0.0)
+}
