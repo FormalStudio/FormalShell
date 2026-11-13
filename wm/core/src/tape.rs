@@ -27,12 +27,25 @@ impl Side {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Big {
+    /// To the edges of what the layers leave free.
+    Maximized,
+    /// The whole output, no chrome.
+    Fullscreen,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Column {
     pub width: f64,
     pub windows: Vec<WinId>,
     /// The focused row.
     pub row: usize,
+    /// Hyprland's scrolling layout keeps a maximized or fullscreen tile in
+    /// the tape: its column, alone, widens to the view (or the output) and
+    /// scrolls with the rest, and `restore` is the width it goes back to.
+    pub big: Option<Big>,
+    pub restore: f64,
 }
 
 impl Column {
@@ -41,6 +54,14 @@ impl Column {
             width,
             windows: vec![id],
             row: 0,
+            big: None,
+            restore: width,
+        }
+    }
+
+    fn unbig(&mut self) {
+        if self.big.take().is_some() {
+            self.width = self.restore;
         }
     }
 }
@@ -113,6 +134,7 @@ impl Tape {
         let row = row.min(target.windows.len());
         target.windows.insert(row, id);
         target.row = row;
+        target.unbig();
         self.focus = column;
     }
 
@@ -223,6 +245,7 @@ impl Tape {
         let column = &mut self.columns[target];
         column.windows.push(id);
         column.row = column.windows.len() - 1;
+        column.unbig();
         self.focus = target;
         true
     }
@@ -269,9 +292,55 @@ impl Tape {
             return false;
         };
         let width = clamp_width(width);
-        let changed = (column.width - width).abs() > f64::EPSILON;
+        let changed = column.big.is_some() || (column.width - width).abs() > f64::EPSILON;
+        column.big = None;
         column.width = width;
         changed
+    }
+
+    /// The window's own column made big, or back to the width it had. A
+    /// stacked window first leaves into a column of its own right of its
+    /// stack, as Hyprland's `promote` does. `wide` is the fullscreen
+    /// column's width, the output's over the strip's, so the next column
+    /// starts past the output's edge.
+    pub fn set_big(&mut self, id: &str, big: Option<Big>, wide: f64) -> bool {
+        let Some((mut c, r)) = self.find(id) else {
+            return false;
+        };
+        let Some(kind) = big else {
+            let column = &mut self.columns[c];
+            let was = column.big.is_some();
+            column.unbig();
+            return was;
+        };
+        if self.columns[c].big == Some(kind) {
+            return false;
+        }
+        let restore = match self.columns[c].big {
+            Some(_) => self.columns[c].restore,
+            None => self.columns[c].width,
+        };
+        if self.columns[c].windows.len() > 1 {
+            let source = &mut self.columns[c];
+            let id = source.windows.remove(r);
+            source.row = source.row.min(source.windows.len() - 1);
+            c += 1;
+            self.columns.insert(c, Column::new(id, restore));
+        }
+        let column = &mut self.columns[c];
+        column.restore = restore;
+        column.big = Some(kind);
+        column.width = match kind {
+            Big::Maximized => 1.0,
+            Big::Fullscreen => wide.max(1.0),
+        };
+        column.row = 0;
+        self.focus = c;
+        true
+    }
+
+    pub fn big_of(&self, id: &str) -> Option<Big> {
+        self.find(id).and_then(|(c, _)| self.columns[c].big)
     }
 
     pub fn resize(&mut self, delta: f64) -> bool {
@@ -335,7 +404,8 @@ impl Tape {
             if left < self.scroll {
                 self.scroll = left;
             } else if right > self.scroll + strip_w {
-                self.scroll = right - strip_w;
+                // A column wider than the view shows from its left edge.
+                self.scroll = (right - strip_w).min(left);
             }
         }
         self.clamp_scroll(strip_w);

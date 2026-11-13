@@ -10,6 +10,8 @@ use crate::{
     tape::{Side, Tape, WinId},
 };
 
+pub use crate::tape::Big;
+
 pub type WsId = String;
 
 /// The shell's `space.md`, the band the zen window keeps from the output's
@@ -73,14 +75,6 @@ pub struct Output {
     pub active: WsId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Big {
-    /// To the edges of what the layers leave free.
-    Maximized,
-    /// The whole output, no chrome.
-    Fullscreen,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Workspace {
     pub id: WsId,
@@ -97,6 +91,7 @@ pub struct Workspace {
     pub floats: Vec<WinId>,
     /// The top float has the focus, not the tape.
     pub float_focused: bool,
+    /// A float made big. A tile's is its column's, in the tape.
     pub big: Option<(WinId, Big)>,
     pub zen: Option<WinId>,
 }
@@ -825,12 +820,31 @@ impl Model {
     }
 
     pub fn set_big(&mut self, id: &str, big: Option<Big>) -> bool {
-        let Some(Home::Workspace(workspace)) = self.window(id).map(|w| w.home.clone()) else {
+        let Some(window) = self.window(id) else {
             return false;
         };
+        let (Home::Workspace(workspace), floating) = (window.home.clone(), window.floating) else {
+            return false;
+        };
+        let strip_w = self.strip_w(&workspace);
+        let wide = self
+            .workspace(&workspace)
+            .and_then(|ws| self.output(&ws.output))
+            .map_or(1.0, |o| o.geo.rect.w / strip_w.max(1.0));
         let Some(ws) = self.workspace_mut(&workspace) else {
             return false;
         };
+        if !floating {
+            if !ws.tape.set_big(id, big, wide) {
+                return false;
+            }
+            if big.is_some() {
+                ws.zen = None;
+                ws.float_focused = false;
+            }
+            ws.tape.fit(strip_w);
+            return true;
+        }
         let next = big.map(|big| (id.to_owned(), big));
         if ws.big == next || (big.is_none() && ws.big.as_ref().is_none_or(|(w, _)| w != id)) {
             return false;
@@ -849,11 +863,16 @@ impl Model {
         true
     }
 
-    /// The window fullscreen on the workspace an output shows.
+    /// The window fullscreen on the workspace an output shows: a float, or
+    /// the tape's focused column.
     pub fn fullscreen_on(&self, output: &str) -> Option<&WinId> {
         let workspace = self.workspace(&self.output(output)?.active)?;
-        match &workspace.big {
-            Some((id, Big::Fullscreen)) => Some(id),
+        if let Some((id, Big::Fullscreen)) = &workspace.big {
+            return Some(id);
+        }
+        let column = workspace.tape.columns.get(workspace.tape.focus)?;
+        match column.big {
+            Some(Big::Fullscreen) => column.windows.first(),
             _ => None,
         }
     }
@@ -862,11 +881,13 @@ impl Model {
         let Home::Workspace(workspace) = &self.window(id)?.home else {
             return None;
         };
-        self.workspace(workspace)?
-            .big
-            .as_ref()
-            .filter(|(big, _)| big == id)
-            .map(|(_, kind)| *kind)
+        let ws = self.workspace(workspace)?;
+        ws.tape.big_of(id).or_else(|| {
+            ws.big
+                .as_ref()
+                .filter(|(big, _)| big == id)
+                .map(|(_, kind)| *kind)
+        })
     }
 
     pub fn toggle_big(&mut self, id: &str, kind: Big) -> bool {
@@ -952,10 +973,12 @@ impl Model {
                 .is_some_and(|ws| ws.tape.swap_windows(a, b));
         }
         if let Some(ws) = self.workspace_mut(&ws_a) {
+            ws.tape.set_big(a, None, 1.0);
             ws.tape.replace(a, b.to_owned());
             ws.unmark(a);
         }
         if let Some(ws) = self.workspace_mut(&ws_b) {
+            ws.tape.set_big(b, None, 1.0);
             ws.tape.replace(b, a.to_owned());
             ws.unmark(b);
         }
@@ -995,7 +1018,10 @@ impl Model {
         let Some((index, _)) = source.tape.find(id) else {
             return false;
         };
-        let column = source.tape.columns.remove(index);
+        let mut column = source.tape.columns.remove(index);
+        if column.big.take().is_some() {
+            column.width = column.restore;
+        }
         source.tape.focus = source
             .tape
             .focus
@@ -1306,6 +1332,7 @@ impl Model {
         if on {
             ws.zen = Some(id.clone());
             ws.big = None;
+            ws.tape.set_big(&id, None, 1.0);
             if floating {
                 raise(&mut ws.floats, &id);
                 ws.float_focused = true;
@@ -1475,13 +1502,20 @@ impl Model {
                         output.geo.rect.w
                     };
                     place.rect = rect.translate(shift, 0.0);
-                } else if let Some((big, kind)) = &ws.big
-                    && big == &cell.id
-                {
-                    place.scrolls = false;
-                    (place.rect, place.layer) = match kind {
+                } else if let Some(kind) = ws.tape.columns[cell.column].big {
+                    // In the tape, from the column's left edge: what the
+                    // layers leave, or the output, while it has the focus;
+                    // a column of that height between its gaps otherwise.
+                    let left = ws.tape.column_left(cell.column, strip.w);
+                    let on_top = ws.tape.focus == cell.column && !ws.float_focused;
+                    let (area, layer) = match kind {
                         Big::Maximized => (maximized, Layer::Maximized),
                         Big::Fullscreen => (output.geo.rect, Layer::Fullscreen),
+                    };
+                    (place.rect, place.layer) = if on_top {
+                        (area.translate(left, 0.0), layer)
+                    } else {
+                        (Rect::new(rect.x, area.y, rect.w, area.h), Layer::Tile)
                     };
                 }
                 placed.push(place);

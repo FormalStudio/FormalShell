@@ -216,21 +216,75 @@ fn fullscreen_covers_the_output_and_maximize_what_the_layers_leave() {
     assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("b"));
     let b = place(&model, "b");
     assert_eq!(
-        (b.rect, b.layer),
+        (on_screen(&model, "b"), b.layer),
         (Rect::new(0.0, 0.0, 1920.0, 1080.0), Layer::Fullscreen)
     );
-    assert!(!b.scrolls);
     assert!(model.toggle_big("b", Big::Maximized));
     assert_eq!(model.fullscreen_on("A"), None);
-    assert_eq!(
-        place(&model, "b").rect,
-        Rect::new(0.0, 40.0, 1920.0, 1040.0)
-    );
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 40.0, 1920.0, 1040.0));
     assert!(model.toggle_big("b", Big::Maximized));
     assert_eq!(place(&model, "b").layer, Layer::Tile);
-    model.toggle_big("b", Big::Fullscreen);
-    model.focus_column(Side::Prev);
-    assert_eq!(model.big_of("b"), None, "focusing another column leaves it");
+    assert_eq!(on_screen(&model, "b").w, 948.0, "back to its width");
+}
+
+#[test]
+fn a_big_tile_stays_a_column_of_the_tape() {
+    // Hyprland 0.56's scrolling layout: maximize widens the column to the
+    // view and fullscreen to the output; the tape scrolls past it, the
+    // neighbours stay a bind away and the mark outlives the focus.
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    open(&mut model, "c");
+    model.focus_window("b");
+    assert!(model.toggle_big("b", Big::Maximized));
+    let b = place(&model, "b");
+    assert!(b.scrolls, "it scrolls with the tape");
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 0.0, 1920.0, 1080.0));
+
+    assert!(model.focus_column(Side::Next));
+    assert_eq!(focused(&model), "c");
+    assert_eq!(model.big_of("b"), Some(Big::Maximized), "focus moving on keeps it");
+    assert_eq!(place(&model, "b").layer, Layer::Tile);
+    assert_eq!(on_screen(&model, "c").right(), 1912.0, "fitted by the least scroll");
+    assert_eq!(on_screen(&model, "b").right(), 956.0, "b slid half out of view");
+
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!(place(&model, "b").layer, Layer::Maximized);
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 0.0, 1920.0, 1080.0));
+
+    // Fullscreen over it, and back to the width it had before either.
+    assert!(model.toggle_big("b", Big::Fullscreen));
+    assert!(model.toggle_big("b", Big::Fullscreen));
+    assert_eq!(model.big_of("b"), None);
+    assert_eq!(on_screen(&model, "b").w, 948.0);
+}
+
+#[test]
+fn a_stacked_tile_made_big_leaves_its_stack_first() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    assert!(model.consume_or_expel(Side::Prev));
+    assert!(model.toggle_big("b", Big::Fullscreen));
+    let (a, b) = (place(&model, "a"), place(&model, "b"));
+    assert_eq!((a.column, b.column), (0, 1), "promoted right of its stack");
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 0.0, 1920.0, 1080.0));
+    // Taking another window in ends it.
+    model.focus_window("a");
+    assert!(model.consume_or_expel(Side::Next));
+    assert_eq!(model.big_of("b"), None);
+}
+
+#[test]
+fn a_new_window_opens_beside_a_big_tile_and_leaves_it_big() {
+    let mut model = desk();
+    open(&mut model, "a");
+    assert!(model.toggle_big("a", Big::Maximized));
+    open(&mut model, "b");
+    assert_eq!(model.big_of("a"), Some(Big::Maximized));
+    assert_eq!(focused(&model), "b");
+    assert_eq!(on_screen(&model, "b").right(), 1912.0, "b is fitted into view");
 }
 
 #[test]
@@ -703,7 +757,7 @@ fn gaps_are_measured_to_the_outer_edge_of_a_window_s_border() {
         // A maximised window's border lies inside what the layers leave.
         assert!(model.toggle_big("b", Big::Maximized));
         assert_eq!(
-            place(&model, "b").rect,
+            on_screen(&model, "b"),
             Rect::new(
                 154.0 + border,
                 border,
@@ -825,3 +879,4 @@ fn a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for() {
     assert_eq!(focused(&model), "chat");
     assert!(!model.focus_column(Side::Prev));
 }
+

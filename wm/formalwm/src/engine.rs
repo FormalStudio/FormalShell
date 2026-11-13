@@ -6,7 +6,7 @@ use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 use formalwm_core::{
     color::Rgba,
-    model::{Layer, Model, WorkspaceSpec},
+    model::{Big, Layer, Model, WorkspaceSpec},
     motion::Clocks,
     rules,
     scene::{Scene, Visual},
@@ -25,6 +25,8 @@ pub struct Win {
     pub placed: bool,
     /// A float without a size rule has taken the size its client chose.
     pub sized: bool,
+    /// Maximized or fullscreen as the client asked before it was placed.
+    pub asked: Option<Big>,
     pub scope: Scope,
 }
 
