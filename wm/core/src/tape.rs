@@ -353,6 +353,18 @@ impl Tape {
         true
     }
 
+    /// A fullscreen column's width again for a strip that changed, `wide`
+    /// being the output's width in strips; whether the focus is on a big
+    /// column, which then wants fitting again.
+    pub fn rewiden(&mut self, wide: f64) -> bool {
+        for column in &mut self.columns {
+            if column.big == Some(Big::Fullscreen) {
+                column.width = wide.max(1.0);
+            }
+        }
+        self.columns.get(self.focus).is_some_and(|c| c.big.is_some())
+    }
+
     pub fn big_of(&self, id: &str) -> Option<Big> {
         self.find(id).and_then(|(c, _)| self.columns[c].big)
     }

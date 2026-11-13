@@ -340,6 +340,34 @@ fn a_tile_that_bounds_its_size_sits_in_the_middle_of_its_cell() {
 }
 
 #[test]
+fn a_big_tile_covers_its_output_after_the_output_changes() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    assert!(model.set_big("b", Some(Big::Fullscreen)));
+    model.set_outputs(vec![output("A", 0.0, 3840.0, 2160.0)]);
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 0.0, 3840.0, 2160.0));
+    assert!(model.set_big("b", Some(Big::Maximized)));
+    model.set_outputs(vec![output("A", 0.0, 1920.0, 1080.0)]);
+    let border = Options::default().border;
+    assert_eq!(
+        on_screen(&model, "b"),
+        Rect::new(0.0, 0.0, 1920.0, 1080.0).inset(border)
+    );
+    // Its output unplugged, the workspace moves to a bigger one.
+    let mut model = desk();
+    model.set_outputs(vec![
+        output("A", 0.0, 1920.0, 1080.0),
+        output("B", 1920.0, 3840.0, 2160.0),
+    ]);
+    open(&mut model, "a");
+    open(&mut model, "b");
+    assert!(model.set_big("b", Some(Big::Fullscreen)));
+    model.set_outputs(vec![output("B", 1920.0, 3840.0, 2160.0)]);
+    assert_eq!(on_screen(&model, "b"), Rect::new(1920.0, 0.0, 3840.0, 2160.0));
+}
+
+#[test]
 fn a_window_sent_away_leaves_the_focus_here_unless_followed() {
     let mut model = desk();
     open(&mut model, "a");

@@ -387,6 +387,7 @@ impl Model {
         for index in 0..self.workspaces.len() {
             let strip_w = self.strip_of(&self.workspaces[index].output).w;
             self.workspaces[index].tape.clamp_scroll(strip_w);
+            self.rewiden(index);
         }
         for id in self
             .outputs
@@ -402,8 +403,24 @@ impl Model {
     pub fn set_options(&mut self, options: Options) {
         self.options = options;
         for index in 0..self.workspaces.len() {
+            self.rewiden(index);
             let strip_w = self.strip_of(&self.workspaces[index].output).w;
             self.workspaces[index].tape.fit(strip_w);
+        }
+    }
+
+    /// A big column sized for its output's strip as it is now, and in view
+    /// again if it has the focus: it covers what it did before the strip
+    /// changed.
+    fn rewiden(&mut self, index: usize) {
+        let Some(output) = self.output(&self.workspaces[index].output) else {
+            return;
+        };
+        let strip_w = self.strip_of(&output.geo.name).w;
+        let wide = output.geo.rect.w / strip_w.max(1.0);
+        let tape = &mut self.workspaces[index].tape;
+        if tape.rewiden(wide) {
+            tape.fit(strip_w);
         }
     }
 
