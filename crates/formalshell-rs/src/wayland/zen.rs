@@ -142,17 +142,12 @@ fn slot(windows: &[Window], id: &WindowId, back: Option<(&WindowId, &Spot)>) -> 
     let nobody = WindowId::default();
     let mut columns = columns(windows, &me.workspace_id, back.map_or(&nobody, |(b, _)| b));
     if let Some((b, spot)) = back {
+        // Where it is drawn, centred in zen: the nearest window of a column
+        // beside it goes by its middle, in a stack of its own or not.
+        let rect = windows.iter().find(|w| w.id == *b).and_then(|w| w.rect).unwrap_or_default();
         match locate(&columns, spot) {
-            Located::Stack(c, row) => {
-                let rect = columns[c].get(row).or(columns[c].last()).map_or_else(IRect::default, |(r, _)| *r);
-                columns[c].insert(row, (rect, b));
-            }
-            Located::Column(at) => {
-                // Where it is drawn, centred in zen: the nearest window of
-                // a column beside it goes by its middle.
-                let rect = windows.iter().find(|w| w.id == *b).and_then(|w| w.rect).unwrap_or_default();
-                columns.insert(at, vec![(rect, b)]);
-            }
+            Located::Stack(c, row) => columns[c].insert(row, (rect, b)),
+            Located::Column(at) => columns.insert(at, vec![(rect, b)]),
         }
     }
     let Some((column, row)) = columns.iter().enumerate().find_map(|(c, col)| col.iter().position(|(_, w)| *w == id).map(|r| (c, r))) else {
@@ -651,6 +646,28 @@ mod tests {
         let sent = zen.enter(&snap(stack(window("b", 500, 0, 800, false)), "b", 0), RECT).unwrap();
         assert!(matches!(&sent[..], [Command::Zen { keys: k, .. }] if k.left.as_ref().is_some_and(|l| l.as_str() == "mid")), "{:?}", shown(&sent));
         let sent = zen.changed(&snap(stack(window("b", 300, 50, 700, true)), "b", 1), 0, RECT);
+        assert!(sent.is_empty(), "b's keys stay as they were: {:?}", shown(&sent));
+        assert_eq!(zen.on.as_ref().and_then(|z| z.keys.left.clone()), Some("mid".into()));
+    }
+
+    #[test]
+    fn a_stacked_zen_window_goes_by_its_own_middle_too() {
+        // b between a and c, with top, mid and low stacked left of them: H
+        // goes to mid, on entering and once b floats centred.
+        let tape = |b: Window| {
+            vec![
+                window("top", 0, 0, 260, false),
+                window("mid", 0, 270, 260, false),
+                window("low", 0, 540, 260, false),
+                window("a", 500, 0, 260, false),
+                b,
+                window("c", 500, 540, 260, false),
+            ]
+        };
+        let mut zen = ZenState::default();
+        let sent = zen.enter(&snap(tape(window("b", 500, 270, 260, false)), "b", 0), RECT).unwrap();
+        assert!(matches!(&sent[..], [Command::Zen { keys: k, .. }] if k.left.as_ref().is_some_and(|l| l.as_str() == "mid")), "{:?}", shown(&sent));
+        let sent = zen.changed(&snap(tape(window("b", 300, 50, 700, true)), "b", 1), 0, RECT);
         assert!(sent.is_empty(), "b's keys stay as they were: {:?}", shown(&sent));
         assert_eq!(zen.on.as_ref().and_then(|z| z.keys.left.clone()), Some("mid".into()));
     }
