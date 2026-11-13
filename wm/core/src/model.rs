@@ -134,6 +134,16 @@ impl Workspace {
     }
 
     /// Forgets the zen and big marks of a window that is leaving.
+    /// The tape's focused column when it is big and on top: no zen window
+    /// and no float has the focus.
+    fn active_big(&self) -> Option<(usize, Big)> {
+        if self.zen.is_some() || self.float_focused {
+            return None;
+        }
+        let column = self.tape.columns.get(self.tape.focus)?;
+        column.big.map(|big| (self.tape.focus, big))
+    }
+
     fn unmark(&mut self, id: &str) {
         if self.big.as_ref().is_some_and(|(big, _)| big == id) {
             self.big = None;
@@ -930,15 +940,14 @@ impl Model {
     }
 
     /// The window fullscreen on the workspace an output shows: a float, or
-    /// the tape's focused column.
+    /// the tape's focused column while it is on top.
     pub fn fullscreen_on(&self, output: &str) -> Option<&WinId> {
         let workspace = self.workspace(&self.output(output)?.active)?;
         if let Some((id, Big::Fullscreen)) = &workspace.big {
             return Some(id);
         }
-        let column = workspace.tape.columns.get(workspace.tape.focus)?;
-        match column.big {
-            Some(Big::Fullscreen) => column.windows.first(),
+        match workspace.active_big()? {
+            (column, Big::Fullscreen) => workspace.tape.columns[column].windows.first(),
             _ => None,
         }
     }
@@ -1621,7 +1630,7 @@ impl Model {
                     // layers leave, or the output, while it has the focus;
                     // a column of that height between its gaps otherwise.
                     let left = ws.tape.column_left(cell.column, strip.w);
-                    let on_top = ws.tape.focus == cell.column && !ws.float_focused;
+                    let on_top = ws.active_big().is_some_and(|(c, _)| c == cell.column);
                     let (area, layer) = match kind {
                         Big::Maximized => (maximized, Layer::Maximized),
                         Big::Fullscreen => (output.geo.rect, Layer::Fullscreen),

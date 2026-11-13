@@ -388,6 +388,26 @@ fn a_swap_keeps_big_state_with_its_window() {
 }
 
 #[test]
+fn a_fullscreen_tile_is_not_the_outputs_while_a_float_has_the_focus() {
+    let mut model = desk();
+    open(&mut model, "a");
+    assert!(model.set_big("a", Some(Big::Fullscreen)));
+    assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("a"));
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            ..Placement::default()
+        },
+    );
+    assert_eq!(place(&model, "a").layer, Layer::Tile);
+    assert_eq!(model.fullscreen_on("A"), None);
+    model.focus_window("a");
+    assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("a"));
+}
+
+#[test]
 fn a_window_sent_away_leaves_the_focus_here_unless_followed() {
     let mut model = desk();
     open(&mut model, "a");
