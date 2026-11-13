@@ -6,7 +6,7 @@ use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 use formalwm_core::{
     color::Rgba,
-    model::{Layer, Model, WorkspaceSpec},
+    model::{Big, Layer, Model, WorkspaceSpec},
     motion::Clocks,
     rules,
     scene::{Scene, Visual},
@@ -28,6 +28,8 @@ pub struct Win {
     /// Out of sight until it draws itself at its float's size; the timer
     /// shows it anyway.
     pub held: Option<TimerHandle>,
+    /// Maximized or fullscreen as the client asked before it was placed.
+    pub asked: Option<Big>,
     pub scope: Scope,
 }
 

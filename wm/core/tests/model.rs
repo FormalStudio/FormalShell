@@ -170,7 +170,8 @@ fn floating_and_back() {
     let b = place(&model, "b");
     assert_eq!(b.layer, Layer::Float);
     assert_eq!((b.column, b.row), (-1, -1));
-    assert_eq!(b.rect, Rect::new(480.0, 216.0, 960.0, 648.0));
+    // Around the middle of the tile it was, [964,8 948x1064].
+    assert_eq!(b.rect, Rect::new(958.0, 216.0, 960.0, 648.0));
     assert_eq!(focused(&model), "b");
     assert!(model.place("b", Rect::new(100.0, 120.0, 640.0, 480.0)));
     assert!(model.set_floating("b", Some(false)));
@@ -178,7 +179,16 @@ fn floating_and_back() {
     assert!(model.set_floating("b", Some(true)));
     assert_eq!(
         place(&model, "b").rect,
-        Rect::new(100.0, 120.0, 640.0, 480.0)
+        Rect::new(1118.0, 300.0, 640.0, 480.0),
+        "the size it last floated at"
+    );
+    // Wider than the room right of the tile's middle: pushed back inside.
+    assert!(model.place("b", Rect::new(0.0, 0.0, 1400.0, 480.0)));
+    assert!(model.set_floating("b", Some(false)));
+    assert!(model.set_floating("b", Some(true)));
+    assert_eq!(
+        place(&model, "b").rect,
+        Rect::new(520.0, 300.0, 1400.0, 480.0)
     );
     assert!(
         !model.place("a", Rect::new(0.0, 0.0, 10.0, 10.0)),
@@ -187,14 +197,18 @@ fn floating_and_back() {
 }
 
 #[test]
-fn a_column_bind_leaves_a_float_for_the_tiles_and_never_steps_onto_one() {
+fn a_column_bind_never_steps_onto_a_float_nor_off_one() {
+    // Hyprland's `layout focus` asks the scrolling layout for the focused
+    // window's column: a float has none, so the bind does nothing there,
+    // and the layout knows no float to step onto.
     let mut model = desk();
     open(&mut model, "tile");
     open(&mut model, "mac");
     assert!(model.set_floating("mac", Some(true)));
     assert_eq!(focused(&model), "mac");
-    assert!(model.focus_column(Side::Next));
-    assert_eq!(focused(&model), "tile");
+    assert!(!model.focus_column(Side::Next));
+    assert_eq!(focused(&model), "mac");
+    model.focus_window("tile");
     assert!(!model.focus_column(Side::Prev), "one tile and a float");
     assert_eq!(focused(&model), "tile");
     assert!(model.set_floating("mac", Some(false)));
@@ -216,21 +230,263 @@ fn fullscreen_covers_the_output_and_maximize_what_the_layers_leave() {
     assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("b"));
     let b = place(&model, "b");
     assert_eq!(
-        (b.rect, b.layer),
+        (on_screen(&model, "b"), b.layer),
         (Rect::new(0.0, 0.0, 1920.0, 1080.0), Layer::Fullscreen)
     );
-    assert!(!b.scrolls);
     assert!(model.toggle_big("b", Big::Maximized));
     assert_eq!(model.fullscreen_on("A"), None);
-    assert_eq!(
-        place(&model, "b").rect,
-        Rect::new(0.0, 40.0, 1920.0, 1040.0)
-    );
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 40.0, 1920.0, 1040.0));
     assert!(model.toggle_big("b", Big::Maximized));
     assert_eq!(place(&model, "b").layer, Layer::Tile);
-    model.toggle_big("b", Big::Fullscreen);
-    model.focus_column(Side::Prev);
-    assert_eq!(model.big_of("b"), None, "focusing another column leaves it");
+    assert_eq!(on_screen(&model, "b").w, 948.0, "back to its width");
+}
+
+#[test]
+fn a_big_tile_stays_a_column_of_the_tape() {
+    // Hyprland 0.56's scrolling layout: maximize widens the column to the
+    // view and fullscreen to the output; the tape scrolls past it, the
+    // neighbours stay a bind away and the mark outlives the focus.
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    open(&mut model, "c");
+    model.focus_window("b");
+    assert!(model.toggle_big("b", Big::Maximized));
+    let b = place(&model, "b");
+    assert!(b.scrolls, "it scrolls with the tape");
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 0.0, 1920.0, 1080.0));
+
+    assert!(model.focus_column(Side::Next));
+    assert_eq!(focused(&model), "c");
+    assert_eq!(
+        model.big_of("b"),
+        Some(Big::Maximized),
+        "focus moving on keeps it"
+    );
+    assert_eq!(place(&model, "b").layer, Layer::Tile);
+    assert_eq!(
+        on_screen(&model, "c").right(),
+        1912.0,
+        "fitted by the least scroll"
+    );
+    assert_eq!(
+        on_screen(&model, "b").right(),
+        956.0,
+        "b slid half out of view"
+    );
+
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!(place(&model, "b").layer, Layer::Maximized);
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 0.0, 1920.0, 1080.0));
+
+    // Fullscreen over it, and back to the width it had before either.
+    assert!(model.toggle_big("b", Big::Fullscreen));
+    assert!(model.toggle_big("b", Big::Fullscreen));
+    assert_eq!(model.big_of("b"), None);
+    assert_eq!(on_screen(&model, "b").w, 948.0);
+}
+
+#[test]
+fn a_stacked_tile_made_big_leaves_its_stack_first() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    assert!(model.consume_or_expel(Side::Prev));
+    assert!(model.toggle_big("b", Big::Fullscreen));
+    let (a, b) = (place(&model, "a"), place(&model, "b"));
+    assert_eq!((a.column, b.column), (0, 1), "promoted right of its stack");
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 0.0, 1920.0, 1080.0));
+    // Taking another window in ends it.
+    model.focus_window("a");
+    assert!(model.consume_or_expel(Side::Next));
+    assert_eq!(model.big_of("b"), None);
+}
+
+#[test]
+fn a_new_window_opens_beside_a_big_tile_and_leaves_it_big() {
+    let mut model = desk();
+    open(&mut model, "a");
+    assert!(model.toggle_big("a", Big::Maximized));
+    open(&mut model, "b");
+    assert_eq!(model.big_of("a"), Some(Big::Maximized));
+    assert_eq!(focused(&model), "b");
+    assert_eq!(
+        on_screen(&model, "b").right(),
+        1912.0,
+        "b is fitted into view"
+    );
+}
+
+#[test]
+fn a_tile_that_bounds_its_size_sits_in_the_middle_of_its_cell() {
+    let mut model = desk();
+    open(&mut model, "a");
+    let cell = on_screen(&model, "a");
+    model.set_max_size("a", Some((300.0, 200.0)));
+    let held = on_screen(&model, "a");
+    assert_eq!((held.w, held.h), (300.0, 200.0));
+    assert_eq!(held.center(), cell.center());
+    // A bound of 0 leaves that axis free.
+    model.set_max_size("a", Some((300.0, 0.0)));
+    let held = on_screen(&model, "a");
+    assert_eq!((held.w, held.h), (300.0, cell.h));
+    assert!(model.toggle_big("a", Big::Maximized));
+    let big = on_screen(&model, "a");
+    assert_eq!(big.w, 300.0);
+    assert_eq!(big.center().0, 960.0, "in the middle of the maximized area");
+    assert!(model.toggle_big("a", Big::Maximized));
+    model.set_max_size("a", None);
+    assert_eq!(on_screen(&model, "a"), cell);
+}
+
+#[test]
+fn a_big_tile_covers_its_output_after_the_output_changes() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    assert!(model.set_big("b", Some(Big::Fullscreen)));
+    model.set_outputs(vec![output("A", 0.0, 3840.0, 2160.0)]);
+    assert_eq!(on_screen(&model, "b"), Rect::new(0.0, 0.0, 3840.0, 2160.0));
+    assert!(model.set_big("b", Some(Big::Maximized)));
+    model.set_outputs(vec![output("A", 0.0, 1920.0, 1080.0)]);
+    let border = Options::default().border;
+    assert_eq!(
+        on_screen(&model, "b"),
+        Rect::new(0.0, 0.0, 1920.0, 1080.0).inset(border)
+    );
+    // Its output unplugged, the workspace moves to a bigger one.
+    let mut model = desk();
+    model.set_outputs(vec![
+        output("A", 0.0, 1920.0, 1080.0),
+        output("B", 1920.0, 3840.0, 2160.0),
+    ]);
+    open(&mut model, "a");
+    open(&mut model, "b");
+    assert!(model.set_big("b", Some(Big::Fullscreen)));
+    model.set_outputs(vec![output("B", 1920.0, 3840.0, 2160.0)]);
+    assert_eq!(
+        on_screen(&model, "b"),
+        Rect::new(1920.0, 0.0, 3840.0, 2160.0)
+    );
+}
+
+#[test]
+fn a_swap_keeps_big_state_with_its_window() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    assert!(model.set_big("a", Some(Big::Fullscreen)));
+    assert!(model.swap("a", "b"));
+    assert_eq!(model.big_of("a"), Some(Big::Fullscreen));
+    assert_eq!(model.big_of("b"), None);
+    assert_eq!(focused(&model), "a");
+    assert_eq!(on_screen(&model, "a"), Rect::new(0.0, 0.0, 1920.0, 1080.0));
+    open(&mut model, "c");
+    assert!(model.set_big("c", Some(Big::Maximized)));
+    assert!(model.swap("a", "c"));
+    assert_eq!(model.big_of("a"), Some(Big::Fullscreen));
+    assert_eq!(model.big_of("c"), Some(Big::Maximized));
+    assert_eq!(model.big_of("b"), None);
+}
+
+#[test]
+fn a_fullscreen_tile_is_not_the_outputs_while_a_float_has_the_focus() {
+    let mut model = desk();
+    open(&mut model, "a");
+    assert!(model.set_big("a", Some(Big::Fullscreen)));
+    assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("a"));
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            ..Placement::default()
+        },
+    );
+    assert_eq!(place(&model, "a").layer, Layer::Tile);
+    assert_eq!(model.fullscreen_on("A"), None);
+    model.focus_window("a");
+    assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("a"));
+}
+
+#[test]
+fn a_tile_dragged_by_an_edge_moves_that_edge_only() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    let inset = 2.0 * Options::default().tile_inset();
+    let column = |model: &formalwm_core::model::Model, id: &str| on_screen(model, id).w + inset;
+    let (a, b) = (on_screen(&model, "a"), on_screen(&model, "b"));
+    // By its right edge: its left edge stays.
+    assert!(model.resize_tile_edge("a", false, column(&model, "a") + 100.0));
+    let now = on_screen(&model, "a");
+    assert_eq!((now.x, now.w), (a.x, a.w + 100.0));
+    model.release_tile_edge("a");
+    // By its left edge: its right edge stays, the view follows.
+    let b_right = on_screen(&model, "b").right();
+    assert!(model.resize_tile_edge("b", true, column(&model, "b") + 50.0));
+    let now = on_screen(&model, "b");
+    assert_eq!((now.right(), now.w), (b_right, b.w + 50.0));
+    model.release_tile_edge("b");
+    assert_eq!(on_screen(&model, "b").right(), b_right, "and after it is let go");
+    assert_eq!(focused(&model), "a", "a drag leaves the focus where it is");
+    // Neither edge goes out of the view.
+    assert!(model.resize_tile_edge("b", false, column(&model, "b") + 900.0));
+    assert!(on_screen(&model, "b").right() <= 1920.0);
+    assert!(model.resize_tile_edge("a", true, column(&model, "a") + 900.0));
+    assert!(on_screen(&model, "a").x >= 0.0);
+}
+
+#[test]
+fn a_left_border_shrunk_at_the_start_of_the_tape_keeps_the_right_edge() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    let inset = 2.0 * Options::default().tile_inset();
+    let a = on_screen(&model, "a");
+    assert!(model.resize_tile_edge("a", true, a.w + inset - 60.0));
+    assert!(model.resize_tile_edge("a", true, a.w + inset - 100.0));
+    let now = on_screen(&model, "a");
+    assert_eq!((now.x, now.right()), (a.x + 100.0, a.right()));
+    // Let go, the view comes back to the start of the tape.
+    model.release_tile_edge("a");
+    let now = on_screen(&model, "a");
+    assert_eq!((now.x, now.w), (a.x, a.w - 100.0));
+}
+
+#[test]
+fn a_lone_tile_dragged_by_a_border_moves_that_edge_and_recentres_on_release() {
+    let mut model = desk();
+    open(&mut model, "a");
+    let inset = 2.0 * Options::default().tile_inset();
+    let a = on_screen(&model, "a");
+    assert!(model.resize_tile_edge("a", false, a.w + inset + 100.0));
+    let now = on_screen(&model, "a");
+    assert_eq!((now.x, now.w), (a.x, a.w + 100.0), "by its right border");
+    assert!(model.resize_tile_edge("a", true, now.w + inset + 40.0));
+    let held = on_screen(&model, "a");
+    assert_eq!((held.right(), held.w), (now.right(), now.w + 40.0), "by its left border");
+    model.release_tile_edge("a");
+    let centred = on_screen(&model, "a");
+    assert_eq!(centred.w, held.w);
+    assert_eq!(centred.x - 0.0, 1920.0 - centred.right(), "centred again");
+}
+
+#[test]
+fn a_tile_moved_away_mid_drag_leaves_no_hold_behind() {
+    let mut model = desk();
+    open(&mut model, "a");
+    let inset = 2.0 * Options::default().tile_inset();
+    let a = on_screen(&model, "a");
+    assert!(model.resize_tile_edge("a", false, a.w + inset + 100.0));
+    assert!(model.move_window("a", "2", None));
+    model.release_tile_edge("a");
+    assert!(model.move_window("a", "1", None));
+    let back = on_screen(&model, "a");
+    assert_eq!(back.x - 0.0, 1920.0 - back.right(), "centred on its old tape");
 }
 
 #[test]
@@ -742,7 +998,7 @@ fn gaps_are_measured_to_the_outer_edge_of_a_window_s_border() {
         // A maximised window's border lies inside what the layers leave.
         assert!(model.toggle_big("b", Big::Maximized));
         assert_eq!(
-            place(&model, "b").rect,
+            on_screen(&model, "b"),
             Rect::new(
                 154.0 + border,
                 border,
@@ -863,4 +1119,126 @@ fn a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for() {
     assert!(model.focus_column(Side::Prev));
     assert_eq!(focused(&model), "chat");
     assert!(!model.focus_column(Side::Prev));
+}
+
+#[test]
+fn a_focused_float_leaves_the_column_binds_alone() {
+    // Hyprland's `layout` messages act on the focused window's column, and
+    // a float has none: focus, swap, widths, consume and fit do nothing.
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            ..Placement::default()
+        },
+    );
+    let tape = model.workspace("1").unwrap().tape.clone();
+    assert!(!model.focus_column(Side::Prev));
+    assert!(!model.focus_column(Side::Next));
+    assert!(!model.swap_column(Side::Prev));
+    assert!(!model.cycle_column_width());
+    assert!(!model.set_column_width(1.0));
+    assert!(!model.resize_column(0.1));
+    assert!(!model.consume_or_expel(Side::Prev));
+    assert!(!model.fit_into_view());
+    assert_eq!(focused(&model), "f");
+    assert_eq!(model.workspace("1").unwrap().tape, tape);
+    // The row binds are Hyprland's `movefocus`, which does leave a float.
+    assert!(model.focus_row(Side::Prev));
+    assert_eq!(focused(&model), "b");
+}
+
+#[test]
+fn a_float_tiled_again_goes_to_the_end_of_the_tape() {
+    let mut model = desk();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    model.focus_window("a");
+    assert!(model.set_floating("a", Some(true)));
+    model.focus_window("b");
+    model.focus_window("a");
+    assert!(model.set_floating("a", Some(false)));
+    assert_eq!(place(&model, "a").column, 2, "the float had the focus");
+    assert!(model.set_floating("c", Some(true)));
+    model.focus_window("b");
+    assert!(model.set_floating("c", Some(false)));
+    assert_eq!(place(&model, "c").column, 1, "right of b, the focused tile");
+    assert_eq!(place(&model, "a").column, 2);
+}
+
+#[test]
+fn a_window_opens_right_of_a_focused_tile_and_at_the_end_else() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    open(&mut model, "c");
+    let column = |model: &formalwm_core::model::Model, id: &str| place(model, id).column;
+    assert_eq!(column(&model, "c"), 1, "right of a, the focused tile");
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            ..Placement::default()
+        },
+    );
+    model.focus_window("c");
+    model.focus_window("f");
+    open(&mut model, "d");
+    assert_eq!(column(&model, "d"), 3, "a float has the focus: at the end");
+    model.focus_window("a");
+    open_with(
+        &mut model,
+        "e",
+        Placement {
+            workspace: Some("2".into()),
+            ..Placement::default()
+        },
+    );
+    open(&mut model, "g");
+    model.focus_window("e");
+    model.focus_window("a");
+    assert!(model.move_to_workspace("a", "2", false));
+    assert_eq!(column(&model, "a"), 2, "sent to a workspace: its end");
+}
+
+#[test]
+fn a_float_sent_to_a_smaller_output_is_fitted_into_it() {
+    // B is 1600x1000 to A's 1920x1080. Hyprland keeps a float's place on
+    // the output and pushes it back inside the work area.
+    let mut model = two_outputs();
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            float_rect: Some(Rect::new(1500.0, 900.0, 400.0, 150.0)),
+            ..Placement::default()
+        },
+    );
+    assert!(model.move_to_workspace("f", "4", false));
+    assert_eq!(
+        on_screen(&model, "f"),
+        Rect::new(1920.0 + 1200.0, 850.0, 400.0, 150.0)
+    );
+    open_with(
+        &mut model,
+        "g",
+        Placement {
+            floating: true,
+            float_rect: Some(Rect::new(100.0, 100.0, 400.0, 150.0)),
+            ..Placement::default()
+        },
+    );
+    assert!(model.move_to_workspace("g", "4", false));
+    assert_eq!(
+        on_screen(&model, "g"),
+        Rect::new(1920.0 + 100.0, 100.0, 400.0, 150.0)
+    );
 }

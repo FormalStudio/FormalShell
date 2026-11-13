@@ -10,6 +10,8 @@ use crate::{
     tape::{Side, Tape, WinId},
 };
 
+pub use crate::tape::Big;
+
 pub type WsId = String;
 
 /// The shell's `space.md`, the band the zen window keeps from the output's
@@ -73,14 +75,6 @@ pub struct Output {
     pub active: WsId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Big {
-    /// To the edges of what the layers leave free.
-    Maximized,
-    /// The whole output, no chrome.
-    Fullscreen,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Workspace {
     pub id: WsId,
@@ -97,6 +91,7 @@ pub struct Workspace {
     pub floats: Vec<WinId>,
     /// The top float has the focus, not the tape.
     pub float_focused: bool,
+    /// A float made big. A tile's is its column's, in the tape.
     pub big: Option<(WinId, Big)>,
     pub zen: Option<WinId>,
 }
@@ -139,6 +134,16 @@ impl Workspace {
     }
 
     /// Forgets the zen and big marks of a window that is leaving.
+    /// The tape's focused column when it is big and on top: no zen window
+    /// and no float has the focus.
+    fn active_big(&self) -> Option<(usize, Big)> {
+        if self.zen.is_some() || self.float_focused {
+            return None;
+        }
+        let column = self.tape.columns.get(self.tape.focus)?;
+        column.big.map(|big| (self.tape.focus, big))
+    }
+
     fn unmark(&mut self, id: &str) {
         if self.big.as_ref().is_some_and(|(big, _)| big == id) {
             self.big = None;
@@ -178,6 +183,8 @@ pub struct WindowRec {
     /// Shown on every workspace of its output.
     pub pinned: bool,
     pub urgent: bool,
+    /// The most the client will draw, 0 on an axis it leaves free.
+    pub max_size: Option<(f64, f64)>,
 }
 
 /// Where a new window goes, the window rules already applied.
@@ -390,6 +397,7 @@ impl Model {
         for index in 0..self.workspaces.len() {
             let strip_w = self.strip_of(&self.workspaces[index].output).w;
             self.workspaces[index].tape.clamp_scroll(strip_w);
+            self.rewiden(index);
         }
         for id in self
             .outputs
@@ -405,8 +413,24 @@ impl Model {
     pub fn set_options(&mut self, options: Options) {
         self.options = options;
         for index in 0..self.workspaces.len() {
+            self.rewiden(index);
             let strip_w = self.strip_of(&self.workspaces[index].output).w;
             self.workspaces[index].tape.fit(strip_w);
+        }
+    }
+
+    /// A big column sized for its output's strip as it is now, and in view
+    /// again if it has the focus: it covers what it did before the strip
+    /// changed.
+    fn rewiden(&mut self, index: usize) {
+        let Some(output) = self.output(&self.workspaces[index].output) else {
+            return;
+        };
+        let strip_w = self.strip_of(&output.geo.name).w;
+        let wide = output.geo.rect.w / strip_w.max(1.0);
+        let tape = &mut self.workspaces[index].tape;
+        if tape.rewiden(wide) {
+            tape.fit(strip_w);
         }
     }
 
@@ -566,6 +590,7 @@ impl Model {
             .map(|ws| ws.output.clone())
             .unwrap_or_default();
         let floating = placement.floating || overlay.is_some();
+        let column = self.new_column(&workspace, &new.id);
         let float_rect = placement
             .float_rect
             .unwrap_or_else(|| self.default_float_rect(&output, new.size));
@@ -584,12 +609,13 @@ impl Model {
             float_rect,
             pinned: placement.pinned && floating,
             urgent: false,
+            max_size: None,
         });
         if let Some(name) = overlay {
             self.overlay_mut(&name).windows.push(new.id);
             return;
         }
-        self.attach(&new.id, &workspace, None);
+        self.attach(&new.id, &workspace, column);
         if placement.fullscreen {
             self.set_big(&new.id, Some(Big::Fullscreen));
         }
@@ -614,7 +640,18 @@ impl Model {
     }
 
     /// Puts a window the model already knows on a workspace, as a new column
-    /// (at `column`, or right of the focus) or as its top float.
+    /// (at `column`, clamped to the end, or right of the focus) or as its
+    /// top float.
+    /// Hyprland's scrolling layout puts a new tile right of the focused
+    /// window's column when that is a tile of this tape, and at the end else.
+    fn new_column(&self, workspace: &str, id: &str) -> Option<usize> {
+        self.focused_window()
+            .filter(|f| *f != id)
+            .and_then(|f| self.window(f))
+            .is_none_or(|f| f.floating || f.home != Home::Workspace(workspace.to_owned()))
+            .then_some(usize::MAX)
+    }
+
     fn attach(&mut self, id: &str, workspace: &str, column: Option<usize>) {
         let Some(floating) = self.window(id).map(|w| w.floating) else {
             return;
@@ -788,6 +825,15 @@ impl Model {
         }
     }
 
+    pub fn set_max_size(&mut self, id: &str, max: Option<(f64, f64)>) -> bool {
+        let Some(window) = self.window_mut(id) else {
+            return false;
+        };
+        let changed = window.max_size != max;
+        window.max_size = max;
+        changed
+    }
+
     pub fn set_urgent(&mut self, id: &str, urgent: bool) {
         let focused = self.focused_window().is_some_and(|f| f == id);
         if let Some(window) = self.window_mut(id) {
@@ -796,7 +842,8 @@ impl Model {
     }
 
     /// `floating` absent toggles. A window back in the tape opens a column
-    /// right of the focus; one leaving it takes the float rect it last had.
+    /// right of the focus; one leaving it floats at the size it last had,
+    /// around the middle of where it tiled, as Hyprland floats a tile.
     pub fn set_floating(&mut self, id: &str, floating: Option<bool>) -> bool {
         let Some(window) = self.window(id) else {
             return false;
@@ -808,12 +855,41 @@ impl Model {
         if floating == window.floating {
             return false;
         }
+        let tiled = self
+            .layout()
+            .into_iter()
+            .find(|place| place.id == id)
+            .map(|place| {
+                let scroll = match place.scrolls {
+                    true => self.workspace(&workspace).map_or(0.0, |ws| ws.tape.scroll),
+                    false => 0.0,
+                };
+                place.rect.translate(-scroll, 0.0)
+            });
+        let origin = self
+            .workspace(&workspace)
+            .and_then(|ws| self.output(&ws.output))
+            .map_or(Rect::default(), |o| o.geo.rect);
+        let column = self.new_column(&workspace, id);
         self.detach(id);
         if let Some(window) = self.window_mut(id) {
             window.floating = floating;
             window.pinned &= floating;
+            if let (true, Some(tile)) = (floating, tiled) {
+                let (mut w, mut h) = (window.float_rect.w, window.float_rect.h);
+                // A float the size of its tile would not be seen to float.
+                if (w - tile.w).abs() < 5.0 && (h - tile.h).abs() < 5.0 {
+                    (w, h) = (w + 10.0, h + 10.0);
+                }
+                let (cx, cy) = tile.center();
+                window.float_rect =
+                    Rect::new(cx - w / 2.0 - origin.x, cy - h / 2.0 - origin.y, w, h);
+            }
         }
-        self.attach(id, &workspace, None);
+        self.attach(id, &workspace, column);
+        if floating && tiled.is_some() {
+            self.fit_float(id);
+        }
         true
     }
 
@@ -825,12 +901,31 @@ impl Model {
     }
 
     pub fn set_big(&mut self, id: &str, big: Option<Big>) -> bool {
-        let Some(Home::Workspace(workspace)) = self.window(id).map(|w| w.home.clone()) else {
+        let Some(window) = self.window(id) else {
             return false;
         };
+        let (Home::Workspace(workspace), floating) = (window.home.clone(), window.floating) else {
+            return false;
+        };
+        let strip_w = self.strip_w(&workspace);
+        let wide = self
+            .workspace(&workspace)
+            .and_then(|ws| self.output(&ws.output))
+            .map_or(1.0, |o| o.geo.rect.w / strip_w.max(1.0));
         let Some(ws) = self.workspace_mut(&workspace) else {
             return false;
         };
+        if !floating {
+            if !ws.tape.set_big(id, big, wide) {
+                return false;
+            }
+            if big.is_some() {
+                ws.zen = None;
+                ws.float_focused = false;
+            }
+            ws.tape.fit(strip_w);
+            return true;
+        }
         let next = big.map(|big| (id.to_owned(), big));
         if ws.big == next || (big.is_none() && ws.big.as_ref().is_none_or(|(w, _)| w != id)) {
             return false;
@@ -849,11 +944,15 @@ impl Model {
         true
     }
 
-    /// The window fullscreen on the workspace an output shows.
+    /// The window fullscreen on the workspace an output shows: a float, or
+    /// the tape's focused column while it is on top.
     pub fn fullscreen_on(&self, output: &str) -> Option<&WinId> {
         let workspace = self.workspace(&self.output(output)?.active)?;
-        match &workspace.big {
-            Some((id, Big::Fullscreen)) => Some(id),
+        if let Some((id, Big::Fullscreen)) = &workspace.big {
+            return Some(id);
+        }
+        match workspace.active_big()? {
+            (column, Big::Fullscreen) => workspace.tape.columns[column].windows.first(),
             _ => None,
         }
     }
@@ -862,16 +961,46 @@ impl Model {
         let Home::Workspace(workspace) = &self.window(id)?.home else {
             return None;
         };
-        self.workspace(workspace)?
-            .big
-            .as_ref()
-            .filter(|(big, _)| big == id)
-            .map(|(_, kind)| *kind)
+        let ws = self.workspace(workspace)?;
+        ws.tape.big_of(id).or_else(|| {
+            ws.big
+                .as_ref()
+                .filter(|(big, _)| big == id)
+                .map(|(_, kind)| *kind)
+        })
     }
 
     pub fn toggle_big(&mut self, id: &str, kind: Big) -> bool {
         let next = (self.big_of(id) != Some(kind)).then_some(kind);
         self.set_big(id, next)
+    }
+
+    /// Hyprland's `fitBoxInWorkArea` for a float that moved: at the same
+    /// place on its output, pushed inside what the layers leave, its border
+    /// with it.
+    fn fit_float(&mut self, id: &str) {
+        let Some(geo) = self
+            .output_of(id)
+            .and_then(|o| self.output(&o))
+            .map(|o| o.geo.clone())
+        else {
+            return;
+        };
+        let border = self.options.border;
+        let area = geo.usable.translate(-geo.rect.x, -geo.rect.y);
+        let Some(window) = self.window_mut(id) else {
+            return;
+        };
+        let mut rect = window.float_rect.inset(-border);
+        rect.x = rect.x.max(area.x);
+        rect.y = rect.y.max(area.y);
+        if rect.right() > area.right() {
+            rect.x = area.right() - rect.w;
+        }
+        if rect.bottom() > area.bottom() {
+            rect.y = area.bottom() - rect.h;
+        }
+        window.float_rect = rect.inset(border);
     }
 
     /// A floating window's rect, global logical.
@@ -929,7 +1058,11 @@ impl Model {
             }
             window.pinned &= from_output == to_output;
         }
-        self.attach(id, workspace, None);
+        // At the end of the tape it joins, as Hyprland's move to a workspace.
+        self.attach(id, workspace, Some(usize::MAX));
+        if self.window(id).is_some_and(|w| w.floating && !w.pinned) {
+            self.fit_float(id);
+        }
         if follow {
             self.show_workspace(workspace);
         }
@@ -947,15 +1080,27 @@ impl Model {
             return false;
         };
         if ws_a == ws_b {
-            return self
-                .workspace_mut(&ws_a)
-                .is_some_and(|ws| ws.tape.swap_windows(a, b));
+            let strip_w = self.strip_w(&ws_a);
+            let wide = self
+                .workspace(&ws_a)
+                .and_then(|ws| self.output(&ws.output))
+                .map_or(1.0, |o| o.geo.rect.w / strip_w.max(1.0));
+            return self.workspace_mut(&ws_a).is_some_and(|ws| {
+                let big = ws.tape.big_of(a).is_some() || ws.tape.big_of(b).is_some();
+                let swapped = ws.tape.swap_windows(a, b, wide);
+                if big {
+                    ws.tape.fit(strip_w);
+                }
+                swapped
+            });
         }
         if let Some(ws) = self.workspace_mut(&ws_a) {
+            ws.tape.set_big(a, None, 1.0);
             ws.tape.replace(a, b.to_owned());
             ws.unmark(a);
         }
         if let Some(ws) = self.workspace_mut(&ws_b) {
+            ws.tape.set_big(b, None, 1.0);
             ws.tape.replace(b, a.to_owned());
             ws.unmark(b);
         }
@@ -995,7 +1140,10 @@ impl Model {
         let Some((index, _)) = source.tape.find(id) else {
             return false;
         };
-        let column = source.tape.columns.remove(index);
+        let mut column = source.tape.columns.remove(index);
+        if column.big.take().is_some() {
+            column.width = column.restore;
+        }
         source.tape.focus = source
             .tape
             .focus
@@ -1198,7 +1346,11 @@ impl Model {
 
     // The focused tape.
 
-    fn tape_op(&mut self, op: impl FnOnce(&mut Tape, &Options) -> bool) -> bool {
+    /// Runs a bind on the focused output's tape. Hyprland's layout
+    /// messages act on the focused window's column, and a float has none:
+    /// with a float focused they do nothing, unless `from_float` (the row
+    /// binds, Hyprland's `movefocus`, which leave a float for the tape).
+    fn tape_op(&mut self, from_float: bool, op: impl FnOnce(&mut Tape, &Options) -> bool) -> bool {
         let options = self.options.clone();
         // With no window typed into, a bind on the tape is for the output
         // the pointer is on, and the keyboard goes there with it.
@@ -1209,7 +1361,7 @@ impl Model {
         let Some(ws) = active.and_then(|id| self.workspace_mut(&id)) else {
             return taken;
         };
-        if ws.zen.is_some() {
+        if ws.zen.is_some() || (ws.float_focused && !from_float) {
             return taken;
         }
         let was_floating = std::mem::take(&mut ws.float_focused);
@@ -1225,39 +1377,64 @@ impl Model {
     }
 
     pub fn focus_column(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.focus_column(side))
+        self.tape_op(false, |tape, _| tape.focus_column(side))
     }
 
     pub fn focus_row(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.focus_row(side))
+        self.tape_op(true, |tape, _| tape.focus_row(side))
     }
 
     pub fn swap_column(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.swap_column(side))
+        self.tape_op(false, |tape, _| tape.swap_column(side))
     }
 
     pub fn swap_row(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.swap_row(side))
+        self.tape_op(false, |tape, _| tape.swap_row(side))
     }
 
     pub fn consume_or_expel(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.consume_or_expel(side))
+        self.tape_op(false, |tape, options| {
+            tape.consume_or_expel(side, options.default_width)
+        })
     }
 
     pub fn set_column_width(&mut self, width: f64) -> bool {
-        self.tape_op(|tape, _| tape.set_width(width))
+        self.tape_op(false, |tape, _| tape.set_width(width))
+    }
+
+    /// A tile dragged by an edge to a column `column_px` wide; see
+    /// `Tape::resize_edge`. The focus and the view are not fitted until
+    /// `release_tile_edge`.
+    pub fn resize_tile_edge(&mut self, id: &str, left: bool, column_px: f64) -> bool {
+        let Some(Home::Workspace(workspace)) = self.window(id).map(|w| w.home.clone()) else {
+            return false;
+        };
+        let strip_w = self.strip_w(&workspace).max(1.0);
+        self.workspace_mut(&workspace)
+            .is_some_and(|ws| ws.tape.resize_edge(id, left, column_px / strip_w, strip_w))
+    }
+
+    /// The border drag of `id` let go; see `Tape::release`.
+    pub fn release_tile_edge(&mut self, id: &str) {
+        let Some(Home::Workspace(workspace)) = self.window(id).map(|w| w.home.clone()) else {
+            return;
+        };
+        let strip_w = self.strip_w(&workspace).max(1.0);
+        if let Some(ws) = self.workspace_mut(&workspace) {
+            ws.tape.release(strip_w);
+        }
     }
 
     pub fn resize_column(&mut self, delta: f64) -> bool {
-        self.tape_op(|tape, _| tape.resize(delta))
+        self.tape_op(false, |tape, _| tape.resize(delta))
     }
 
     pub fn cycle_column_width(&mut self) -> bool {
-        self.tape_op(|tape, options| tape.cycle_width(&options.presets))
+        self.tape_op(false, |tape, options| tape.cycle_width(&options.presets))
     }
 
     pub fn fit_into_view(&mut self) -> bool {
-        self.tape_op(|_, _| true)
+        self.tape_op(false, |_, _| true)
     }
 
     /// Drags a tape by `dx`; nothing moves while zen holds it.
@@ -1314,6 +1491,7 @@ impl Model {
         if on {
             ws.zen = Some(id.clone());
             ws.big = None;
+            ws.tape.set_big(&id, None, 1.0);
             if floating {
                 raise(&mut ws.floats, &id);
                 ws.float_focused = true;
@@ -1493,14 +1671,38 @@ impl Model {
                         output.geo.rect.w
                     };
                     place.rect = rect.translate(shift, 0.0);
-                } else if let Some((big, kind)) = &ws.big
-                    && big == &cell.id
-                {
-                    place.scrolls = false;
-                    (place.rect, place.layer) = match kind {
+                } else if let Some(kind) = ws.tape.columns[cell.column].big {
+                    // In the tape, from the column's left edge: what the
+                    // layers leave, or the output, while it has the focus;
+                    // a column of that height between its gaps otherwise.
+                    let left = ws.tape.column_left(cell.column, strip.w);
+                    let on_top = ws.active_big().is_some_and(|(c, _)| c == cell.column);
+                    let (area, layer) = match kind {
                         Big::Maximized => (maximized, Layer::Maximized),
                         Big::Fullscreen => (output.geo.rect, Layer::Fullscreen),
                     };
+                    (place.rect, place.layer) = if on_top {
+                        (area.translate(left, 0.0), layer)
+                    } else {
+                        (Rect::new(rect.x, area.y, rect.w, area.h), Layer::Tile)
+                    };
+                }
+                // Hyprland leaves size limits off tiles and centres a surface
+                // smaller than its box; a tile drawn bigger than the client
+                // would stretch its buffer.
+                if let Some((w, h)) = self.window(&cell.id).and_then(|win| win.max_size) {
+                    let (cx, cy) = place.rect.center();
+                    let w = if w > 0.0 {
+                        place.rect.w.min(w)
+                    } else {
+                        place.rect.w
+                    };
+                    let h = if h > 0.0 {
+                        place.rect.h.min(h)
+                    } else {
+                        place.rect.h
+                    };
+                    place.rect = Rect::new(cx - w / 2.0, cy - h / 2.0, w, h);
                 }
                 placed.push(place);
             }

@@ -487,22 +487,32 @@ impl Session {
     /// The left button pressed and let go where the pointer is.
     fn click(&mut self) {
         for state in [ButtonState::Pressed, ButtonState::Released] {
-            self.now_ms += 10;
-            let event = VirtualButton {
-                device: VirtualDevice {
-                    id: "test-pointer".into(),
-                    name: "test pointer".into(),
-                    keyboard: false,
-                },
-                time: self.now_ms,
-                button: 0x110,
-                state,
-            };
-            self.state
-                .process_input_event(InputEvent::<VirtualInput>::PointerButton { event });
-            self.roundtrip();
+            self.press(state);
         }
         self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+    }
+
+    fn button(&mut self, state: ButtonState) {
+        self.press(state);
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+    }
+
+    fn press(&mut self, state: ButtonState) {
+        self.now_ms += 10;
+        let event = VirtualButton {
+            device: VirtualDevice {
+                id: "test-pointer".into(),
+                name: "test pointer".into(),
+                keyboard: false,
+            },
+            time: self.now_ms,
+            button: 0x110,
+            state,
+        };
+        self.state
+            .process_input_event(InputEvent::<VirtualInput>::PointerButton { event });
         self.roundtrip();
     }
 
@@ -705,6 +715,33 @@ fn settle() {
     .unwrap();
 }
 
+/// A lone tile on one output with its right border pressed and dragged
+/// 100 px out, the button still down.
+fn border_dragged(test: &str) -> Session {
+    let mut session = Session::new(test, HOST, &[test_display("TEST-1")]);
+    let surface = session.open("a");
+    session.draw(&surface, 400, 300);
+    session.state.refresh_window_decorations().unwrap();
+    session.roundtrip();
+    settle();
+    let a = tile_rect("a");
+    session.pointer_to(f64::from(a.x + a.width + 2), f64::from(a.y + a.height / 2));
+    session.button(ButtonState::Pressed);
+    session.pointer_by(100.0, 0.0);
+    assert!(held("1"), "the border press started a resize");
+    session
+}
+
+fn tile_rect(app_id: &str) -> proto::Rect {
+    let seen = state();
+    let window = seen.windows.iter().find(|w| w.app_id == app_id).unwrap();
+    window.rect.unwrap()
+}
+
+fn held(workspace: &'static str) -> bool {
+    ask(move |engine| Ok(engine.model.workspace(workspace).unwrap().tape.held.is_some())).unwrap()
+}
+
 fn scroll(workspace: &'static str) -> (f64, f64) {
     ask(move |engine| {
         let model = engine.model.workspace(workspace).unwrap().tape.scroll;
@@ -847,6 +884,35 @@ fn super_and_the_wheel_take_one_workspace_a_turn() {
     expected.extend(["1", "1", "4"]);
     assert_eq!(seen, expected);
     assert_eq!(state().focused_output, "TEST-2");
+}
+
+#[test]
+fn a_border_drag_whose_grab_is_taken_away_lets_the_view_go() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = border_dragged("border-taken");
+    // What a session lock does to the grab (`take_pointer_from_clients`): it
+    // is unset with the button still down, and no release follows.
+    let pointer = session.state.seat.get_pointer().unwrap();
+    pointer.unset_grab(&mut session.state, SERIAL_COUNTER.next_serial(), 0);
+    assert!(session.until(|| !held("1")), "the hold went with the grab");
+    settle();
+    let a = tile_rect("a");
+    assert!((2 * a.x + a.width - WIDTH as i32).abs() <= 1, "centred again: {a:?}");
+    session.button(ButtonState::Released);
+}
+
+#[test]
+fn a_border_drag_let_go_eases_into_place() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = border_dragged("border-eased");
+    session.button(ButtonState::Released);
+    assert!(session.until(|| !held("1")));
+    let animating = ask(|engine| Ok(engine.scene.animating())).unwrap();
+    assert!(animating, "the recentring is animated, not jumped to");
 }
 
 #[test]

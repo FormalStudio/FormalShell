@@ -27,12 +27,25 @@ impl Side {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Big {
+    /// To the edges of what the layers leave free.
+    Maximized,
+    /// The whole output, no chrome.
+    Fullscreen,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Column {
     pub width: f64,
     pub windows: Vec<WinId>,
     /// The focused row.
     pub row: usize,
+    /// Hyprland's scrolling layout keeps a maximized or fullscreen tile in
+    /// the tape: its column, alone, widens to the view (or the output) and
+    /// scrolls with the rest, and `restore` is the width it goes back to.
+    pub big: Option<Big>,
+    pub restore: f64,
 }
 
 impl Column {
@@ -41,6 +54,14 @@ impl Column {
             width,
             windows: vec![id],
             row: 0,
+            big: None,
+            restore: width,
+        }
+    }
+
+    fn unbig(&mut self) {
+        if self.big.take().is_some() {
+            self.width = self.restore;
         }
     }
 }
@@ -60,6 +81,11 @@ pub struct Tape {
     pub columns: Vec<Column>,
     pub focus: usize,
     pub scroll: f64,
+    /// The tile whose border is being dragged, until it is let go or leaves
+    /// the tape. Meanwhile the view stays where the drag put it, before the
+    /// start of the tape included, and a lone column is not recentred:
+    /// Hyprland's camera does not move while a tile of its tape is dragged.
+    pub held: Option<WinId>,
 }
 
 impl Tape {
@@ -113,6 +139,7 @@ impl Tape {
         let row = row.min(target.windows.len());
         target.windows.insert(row, id);
         target.row = row;
+        target.unbig();
         self.focus = column;
     }
 
@@ -120,6 +147,9 @@ impl Tape {
     /// into its place and takes the focus it had.
     pub fn remove(&mut self, id: &str) -> Option<f64> {
         let (c, r) = self.find(id)?;
+        if self.held.as_deref() == Some(id) {
+            self.held = None;
+        }
         let column = &mut self.columns[c];
         let width = column.width;
         column.windows.remove(r);
@@ -145,13 +175,24 @@ impl Tape {
         true
     }
 
-    /// Walks columns and wraps at the ends of the tape.
+    /// Walks columns and wraps at the ends of the tape. In the column it
+    /// lands on, Hyprland's `findBestNeighbor`: the row last focused there
+    /// if it lies beside the window left, else the topmost that does.
     pub fn focus_column(&mut self, side: Side) -> bool {
         let count = self.columns.len() as isize;
         if count < 2 {
             return false;
         }
+        let from = &self.columns[self.focus];
+        let (row, rows) = (from.row, from.windows.len());
         self.focus = (self.focus as isize + side.step()).rem_euclid(count) as usize;
+        let to = &mut self.columns[self.focus];
+        let len = to.windows.len();
+        // Rows split a column evenly: row j of m spans j/m to (j+1)/m.
+        let beside = |j: usize| j * rows < (row + 1) * len && (j + 1) * rows > row * len;
+        if !beside(to.row) {
+            to.row = (0..len).find(|j| beside(*j)).unwrap_or(0);
+        }
         true
     }
 
@@ -167,13 +208,16 @@ impl Tape {
         true
     }
 
+    /// Hyprland's `swapcol` under its default `wrap_swapcol`: at an end of
+    /// the tape the column trades places with the one at the other end.
     pub fn swap_column(&mut self, side: Side) -> bool {
-        let next = self.focus as isize + side.step();
-        if next < 0 || next >= self.columns.len() as isize {
+        let count = self.columns.len() as isize;
+        if count < 2 {
             return false;
         }
-        self.columns.swap(self.focus, next as usize);
-        self.focus = next as usize;
+        let next = (self.focus as isize + side.step()).rem_euclid(count) as usize;
+        self.columns.swap(self.focus, next);
+        self.focus = next;
         true
     }
 
@@ -190,15 +234,15 @@ impl Tape {
         true
     }
 
-    /// niri's consume-or-expel: a window alone in its column joins the
-    /// neighbouring column, a stacked one leaves into a column of its own on
-    /// that side.
-    pub fn consume_or_expel(&mut self, side: Side) -> bool {
+    /// Hyprland's `consume_or_expel`: a window alone in its column joins
+    /// the neighbouring column, a stacked one leaves into a new column of
+    /// the default `width` on that side.
+    pub fn consume_or_expel(&mut self, side: Side, width: f64) -> bool {
         let Some(column) = self.columns.get(self.focus) else {
             return false;
         };
         if column.windows.len() > 1 {
-            let (width, row) = (column.width, column.row);
+            let row = column.row;
             let id = self.columns[self.focus].windows.remove(row);
             let source = &mut self.columns[self.focus];
             source.row = source.row.min(source.windows.len() - 1);
@@ -223,6 +267,7 @@ impl Tape {
         let column = &mut self.columns[target];
         column.windows.push(id);
         column.row = column.windows.len() - 1;
+        column.unbig();
         self.focus = target;
         true
     }
@@ -246,13 +291,28 @@ impl Tape {
     }
 
     /// Swaps two windows' slots; the focus stays on the slot it was on.
-    pub fn swap_windows(&mut self, a: &str, b: &str) -> bool {
+    /// Trades two windows' places. Maximized and fullscreen belong to the
+    /// window, as the client was told: each goes with its window, `wide`
+    /// sizing a fullscreen one as `set_big` does.
+    pub fn swap_windows(&mut self, a: &str, b: &str, wide: f64) -> bool {
         let (Some((ac, ar)), Some((bc, br))) = (self.find(a), self.find(b)) else {
             return false;
         };
+        let focused = self.focused().cloned();
+        let (big_a, big_b) = (self.columns[ac].big, self.columns[bc].big);
+        self.columns[ac].unbig();
+        self.columns[bc].unbig();
         let id_a = self.columns[ac].windows[ar].clone();
         let id_b = std::mem::replace(&mut self.columns[bc].windows[br], id_a);
         self.columns[ac].windows[ar] = id_b;
+        for (id, big) in [(a, big_a), (b, big_b)] {
+            if big.is_some() {
+                self.set_big(id, big, wide);
+            }
+        }
+        if let Some(id) = focused {
+            self.focus_window(&id);
+        }
         true
     }
 
@@ -269,9 +329,110 @@ impl Tape {
             return false;
         };
         let width = clamp_width(width);
-        let changed = (column.width - width).abs() > f64::EPSILON;
+        let changed = column.big.is_some() || (column.width - width).abs() > f64::EPSILON;
+        column.big = None;
         column.width = width;
         changed
+    }
+
+    /// The window's own column made big, or back to the width it had. A
+    /// stacked window first leaves into a column of its own right of its
+    /// stack, as Hyprland's `promote` does. `wide` is the fullscreen
+    /// column's width, the output's over the strip's, so the next column
+    /// starts past the output's edge.
+    pub fn set_big(&mut self, id: &str, big: Option<Big>, wide: f64) -> bool {
+        let Some((mut c, r)) = self.find(id) else {
+            return false;
+        };
+        let Some(kind) = big else {
+            let column = &mut self.columns[c];
+            let was = column.big.is_some();
+            column.unbig();
+            return was;
+        };
+        if self.columns[c].big == Some(kind) {
+            return false;
+        }
+        let restore = match self.columns[c].big {
+            Some(_) => self.columns[c].restore,
+            None => self.columns[c].width,
+        };
+        if self.columns[c].windows.len() > 1 {
+            let source = &mut self.columns[c];
+            let id = source.windows.remove(r);
+            source.row = source.row.min(source.windows.len() - 1);
+            c += 1;
+            self.columns.insert(c, Column::new(id, restore));
+        }
+        let column = &mut self.columns[c];
+        column.restore = restore;
+        column.big = Some(kind);
+        column.width = match kind {
+            Big::Maximized => 1.0,
+            Big::Fullscreen => wide.max(1.0),
+        };
+        column.row = 0;
+        self.focus = c;
+        true
+    }
+
+    /// A fullscreen column's width again for a strip that changed, `wide`
+    /// being the output's width in strips; whether the focus is on a big
+    /// column, which then wants fitting again.
+    pub fn rewiden(&mut self, wide: f64) -> bool {
+        for column in &mut self.columns {
+            if column.big == Some(Big::Fullscreen) {
+                column.width = wide.max(1.0);
+            }
+        }
+        self.columns
+            .get(self.focus)
+            .is_some_and(|c| c.big.is_some())
+    }
+
+    pub fn big_of(&self, id: &str) -> Option<Big> {
+        self.find(id).and_then(|(c, _)| self.columns[c].big)
+    }
+
+    /// `id`'s column dragged by an edge to `width`, as Hyprland's scrolling
+    /// layout resizes a tile: by the right edge the left edge stays, by the
+    /// left edge the view follows so the right edge stays, and neither edge
+    /// leaves the view.
+    pub fn resize_edge(&mut self, id: &str, left: bool, width: f64, strip_w: f64) -> bool {
+        let Some((c, _)) = self.find(id) else {
+            return false;
+        };
+        if !self.held.is_some() {
+            // The centring of a lone column becomes the view's, so the drag
+            // can keep its edges where they are.
+            if self.columns.len() == 1 {
+                self.scroll -= self.column_left(c, strip_w);
+            }
+            self.held = Some(id.to_owned());
+        }
+        let old = self.columns[c].width;
+        let start = self.column_left(c, strip_w) - self.scroll;
+        let end = start + old * strip_w;
+        let room = if left { start } else { strip_w - end };
+        let delta = (clamp_width(width) - old).min(room / strip_w);
+        if delta.abs() < f64::EPSILON {
+            return false;
+        }
+        let column = &mut self.columns[c];
+        column.big = None;
+        column.width = old + delta;
+        if left {
+            self.scroll += delta * strip_w;
+        }
+        true
+    }
+
+    /// Lets a border drag go: the view is clamped and a lone column centred
+    /// again.
+    pub fn release(&mut self, strip_w: f64) {
+        if self.held.take().is_some() {
+            self.clamp_scroll(strip_w);
+        }
     }
 
     pub fn resize(&mut self, delta: f64) -> bool {
@@ -300,7 +461,7 @@ impl Tape {
 
     /// A column's left edge. A lone column sits centred at the width it has.
     pub fn column_left(&self, index: usize, strip_w: f64) -> f64 {
-        if self.columns.len() == 1 {
+        if self.columns.len() == 1 && !self.held.is_some() {
             return ((1.0 - self.columns[0].width) * strip_w / 2.0).max(0.0);
         }
         self.columns[..index.min(self.columns.len())]
@@ -324,6 +485,9 @@ impl Tape {
     }
 
     pub fn clamp_scroll(&mut self, strip_w: f64) {
+        if self.held.is_some() {
+            return;
+        }
         self.scroll = self.scroll.clamp(0.0, self.max_scroll(strip_w));
     }
 
@@ -335,7 +499,8 @@ impl Tape {
             if left < self.scroll {
                 self.scroll = left;
             } else if right > self.scroll + strip_w {
-                self.scroll = right - strip_w;
+                // A column wider than the view shows from its left edge.
+                self.scroll = (right - strip_w).min(left);
             }
         }
         self.clamp_scroll(strip_w);
@@ -475,7 +640,7 @@ mod tests {
     #[test]
     fn stacked_windows_split_the_column_evenly() {
         let mut tape = tape(&["a", "b"]);
-        assert!(tape.consume_or_expel(Side::Prev));
+        assert!(tape.consume_or_expel(Side::Prev, 0.5));
         assert_eq!(order(&tape), ["a+b"]);
         let cells = tape.cells(Rect::new(0.0, 0.0, W, 600.0), 4.0);
         assert_eq!(cells[0].rect.h, 292.0);
@@ -510,9 +675,41 @@ mod tests {
     }
 
     #[test]
+    fn a_column_walk_lands_on_a_row_beside_the_window_it_left() {
+        let mut tape = tape(&["a", "b", "c", "d"]);
+        tape.focus_window("b");
+        tape.consume_or_expel(Side::Prev, 0.5);
+        tape.focus_window("d");
+        tape.consume_or_expel(Side::Prev, 0.5);
+        assert_eq!(order(&tape), ["a+b", "c+d"]);
+        tape.focus_window("a");
+        // d was focused last in its column, but lies below a.
+        assert!(tape.focus_column(Side::Next));
+        assert_eq!(tape.focused().unwrap(), "c");
+        tape.focus_window("d");
+        tape.focus_window("b");
+        assert!(tape.focus_column(Side::Next));
+        assert_eq!(tape.focused().unwrap(), "d", "last focused and beside b");
+        tape.consume_or_expel(Side::Next, 0.5);
+        tape.focus_window("a");
+        // From the whole height every row is beside: the last focused.
+        tape.focus_window("b");
+        tape.focus_column(Side::Prev);
+        tape.focus_window("c");
+        tape.focus_column(Side::Next);
+        assert_eq!(tape.focused().unwrap(), "d");
+        assert!(tape.focus_column(Side::Prev));
+        assert_eq!(
+            tape.focused().unwrap(),
+            "c",
+            "the full-height d sees both; c was last"
+        );
+    }
+
+    #[test]
     fn rows_do_not_wrap() {
         let mut tape = tape(&["a", "b"]);
-        tape.consume_or_expel(Side::Prev);
+        tape.consume_or_expel(Side::Prev, 0.5);
         assert!(!tape.focus_row(Side::Next));
         assert!(tape.focus_row(Side::Prev));
         assert_eq!(tape.focused().unwrap(), "a");
@@ -528,27 +725,46 @@ mod tests {
         assert_eq!(order(&tape), ["a", "c", "b"]);
         assert_eq!(tape.focused().unwrap(), "c");
         assert!(tape.swap_column(Side::Prev));
-        assert!(!tape.swap_column(Side::Prev));
+        assert_eq!(order(&tape), ["c", "a", "b"]);
     }
 
     #[test]
-    fn expel_leaves_on_the_asked_side_at_the_column_width() {
+    fn a_swap_at_an_end_trades_with_the_other_end() {
         let mut tape = tape(&["a", "b", "c"]);
-        tape.set_width(0.333);
-        tape.consume_or_expel(Side::Prev);
-        assert_eq!(order(&tape), ["a", "b+c"]);
-        assert!(tape.consume_or_expel(Side::Next));
+        assert!(tape.swap_column(Side::Next));
+        assert_eq!(order(&tape), ["c", "b", "a"]);
+        assert_eq!(tape.focused().unwrap(), "c");
+        assert!(tape.swap_column(Side::Prev));
         assert_eq!(order(&tape), ["a", "b", "c"]);
         assert_eq!(tape.focused().unwrap(), "c");
-        tape.consume_or_expel(Side::Prev);
-        assert!(tape.consume_or_expel(Side::Prev));
+        let mut lone = Tape::default();
+        lone.insert("a".into(), 0.5);
+        assert!(!lone.swap_column(Side::Next));
+    }
+
+    #[test]
+    fn expel_leaves_on_the_asked_side_at_the_default_width() {
+        let mut tape = tape(&["a", "b", "c"]);
+        tape.consume_or_expel(Side::Prev, 0.5);
+        assert_eq!(order(&tape), ["a", "b+c"]);
+        tape.set_width(0.667);
+        assert!(tape.consume_or_expel(Side::Next, 0.5));
+        assert_eq!(order(&tape), ["a", "b", "c"]);
+        assert_eq!(tape.focused().unwrap(), "c");
+        assert_eq!(
+            tape.columns[2].width, 0.5,
+            "a new column, as Hyprland's expel makes"
+        );
+        assert_eq!(tape.columns[1].width, 0.667, "the stack keeps its width");
+        tape.consume_or_expel(Side::Prev, 0.5);
+        assert!(tape.consume_or_expel(Side::Prev, 0.5));
         assert_eq!(order(&tape), ["a", "c", "b"]);
     }
 
     #[test]
     fn consume_at_the_edge_does_nothing() {
         let mut tape = tape(&["a", "b"]);
-        assert!(!tape.consume_or_expel(Side::Next));
+        assert!(!tape.consume_or_expel(Side::Next, 0.5));
         assert_eq!(order(&tape), ["a", "b"]);
     }
 
@@ -639,8 +855,8 @@ mod tests {
     #[test]
     fn swapping_two_windows_trades_their_slots() {
         let mut tape = tape(&["a", "b", "c"]);
-        tape.consume_or_expel(Side::Prev);
-        assert!(tape.swap_windows("a", "c"));
+        tape.consume_or_expel(Side::Prev, 0.5);
+        assert!(tape.swap_windows("a", "c", 1.0));
         assert_eq!(order(&tape), ["c", "b+a"]);
     }
 }

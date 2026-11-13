@@ -150,6 +150,10 @@ pub fn setup(signals: Signals) {
             let _ = window.tag().get();
             enter(move |engine| engine.renamed(window, &title, &app_id));
         });
+        scope.effect(move || {
+            let _ = window.size_constraints().get();
+            enter(move |engine| engine.bounded(window));
+        });
         // `vrr` 3 follows what a fullscreen client says it shows.
         scope.effect(move || {
             let _ = window.content_type().get();
@@ -203,6 +207,7 @@ impl Engine {
                 placed: false,
                 sized: false,
                 held: None,
+                asked: None,
                 scope,
             },
         );
@@ -238,6 +243,9 @@ impl Engine {
             });
         let float_rect = rules::float_rect(&effect, area, None);
         let sized = effect.size.is_some();
+        // Electron apps ask to be maximized before they map; Hyprland's
+        // scrolling layout opens them as a column the width of the view.
+        let asked = self.windows.get(&id).and_then(|win| win.asked);
         window.state(&FORCE).set(!floating || sized);
         window.state(&BLUR).set(self.blurs(&effect));
         window
@@ -257,9 +265,14 @@ impl Engine {
                 floating,
                 float_rect,
                 pinned: effect.pin.unwrap_or(false),
-                fullscreen: window.is_fullscreen().get_untracked(),
+                fullscreen: window.is_fullscreen().get_untracked()
+                    || asked == Some(Big::Fullscreen),
             },
         );
+        if asked == Some(Big::Maximized) {
+            self.model.set_big(&id, Some(Big::Maximized));
+        }
+        let _ = self.model.set_max_size(&id, max_size(window));
         if let Some(win) = self.windows.get_mut(&id) {
             win.effect = effect;
             win.placed = true;
@@ -446,6 +459,12 @@ impl Engine {
         self.publish();
     }
 
+    fn bounded(&mut self, window: Window) {
+        if self.model.set_max_size(&window.id(), max_size(window)) {
+            self.commit();
+        }
+    }
+
     /// The compositor keeps the window's last picture for as long as it was
     /// told and plays this on it; the rest of the tape closes up meanwhile.
     fn closing(&mut self, window: Window) {
@@ -530,6 +549,16 @@ impl Engine {
 
     fn set_big(&mut self, window: Window, kind: Big, on: bool) {
         let id = window.id();
+        if let Some(win) = self.windows.get_mut(&id)
+            && !win.placed
+        {
+            win.asked = match (on, win.asked) {
+                (true, _) => Some(kind),
+                (false, Some(asked)) if asked == kind => None,
+                (false, asked) => asked,
+            };
+            return;
+        }
         let now = self.model.big_of(&id);
         let changed = match (on, now) {
             (true, now) if now != Some(kind) => self.model.set_big(&id, Some(kind)),
@@ -540,4 +569,10 @@ impl Engine {
             self.commit();
         }
     }
+}
+
+/// The most the client says it will draw, 0 on an axis it leaves free.
+fn max_size(window: Window) -> Option<(f64, f64)> {
+    let max = window.size_constraints().get_untracked().max?;
+    Some((f64::from(max.width), f64::from(max.height)))
 }
