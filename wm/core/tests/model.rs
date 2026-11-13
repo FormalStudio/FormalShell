@@ -1032,6 +1032,25 @@ fn a_focused_float_leaves_the_column_binds_alone() {
 }
 
 #[test]
+fn a_float_tiled_again_goes_to_the_end_of_the_tape() {
+    let mut model = desk();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    model.focus_window("a");
+    assert!(model.set_floating("a", Some(true)));
+    model.focus_window("b");
+    model.focus_window("a");
+    assert!(model.set_floating("a", Some(false)));
+    assert_eq!(place(&model, "a").column, 2, "the float had the focus");
+    assert!(model.set_floating("c", Some(true)));
+    model.focus_window("b");
+    assert!(model.set_floating("c", Some(false)));
+    assert_eq!(place(&model, "c").column, 1, "right of b, the focused tile");
+    assert_eq!(place(&model, "a").column, 2);
+}
+
+#[test]
 fn a_window_opens_right_of_a_focused_tile_and_at_the_end_else() {
     let mut model = desk();
     open(&mut model, "a");

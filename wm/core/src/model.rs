@@ -590,13 +590,7 @@ impl Model {
             .map(|ws| ws.output.clone())
             .unwrap_or_default();
         let floating = placement.floating || overlay.is_some();
-        // Hyprland's scrolling layout opens the column right of the focused
-        // window's when that is a tile of this tape, and at the end else.
-        let column = self
-            .focused_window()
-            .and_then(|f| self.window(f))
-            .is_none_or(|f| f.floating || f.home != Home::Workspace(workspace.clone()))
-            .then_some(usize::MAX);
+        let column = self.new_column(&workspace, &new.id);
         let float_rect = placement
             .float_rect
             .unwrap_or_else(|| self.default_float_rect(&output, new.size));
@@ -648,6 +642,16 @@ impl Model {
     /// Puts a window the model already knows on a workspace, as a new column
     /// (at `column`, clamped to the end, or right of the focus) or as its
     /// top float.
+    /// Hyprland's scrolling layout puts a new tile right of the focused
+    /// window's column when that is a tile of this tape, and at the end else.
+    fn new_column(&self, workspace: &str, id: &str) -> Option<usize> {
+        self.focused_window()
+            .filter(|f| *f != id)
+            .and_then(|f| self.window(f))
+            .is_none_or(|f| f.floating || f.home != Home::Workspace(workspace.to_owned()))
+            .then_some(usize::MAX)
+    }
+
     fn attach(&mut self, id: &str, workspace: &str, column: Option<usize>) {
         let Some(floating) = self.window(id).map(|w| w.floating) else {
             return;
@@ -866,6 +870,7 @@ impl Model {
             .workspace(&workspace)
             .and_then(|ws| self.output(&ws.output))
             .map_or(Rect::default(), |o| o.geo.rect);
+        let column = self.new_column(&workspace, id);
         self.detach(id);
         if let Some(window) = self.window_mut(id) {
             window.floating = floating;
@@ -881,7 +886,7 @@ impl Model {
                     Rect::new(cx - w / 2.0 - origin.x, cy - h / 2.0 - origin.y, w, h);
             }
         }
-        self.attach(id, &workspace, None);
+        self.attach(id, &workspace, column);
         if floating && tiled.is_some() {
             self.fit_float(id);
         }
