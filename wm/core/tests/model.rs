@@ -318,6 +318,28 @@ fn a_new_window_opens_beside_a_big_tile_and_leaves_it_big() {
 }
 
 #[test]
+fn a_tile_that_bounds_its_size_sits_in_the_middle_of_its_cell() {
+    let mut model = desk();
+    open(&mut model, "a");
+    let cell = on_screen(&model, "a");
+    model.set_max_size("a", Some((300.0, 200.0)));
+    let held = on_screen(&model, "a");
+    assert_eq!((held.w, held.h), (300.0, 200.0));
+    assert_eq!(held.center(), cell.center());
+    // A bound of 0 leaves that axis free.
+    model.set_max_size("a", Some((300.0, 0.0)));
+    let held = on_screen(&model, "a");
+    assert_eq!((held.w, held.h), (300.0, cell.h));
+    assert!(model.toggle_big("a", Big::Maximized));
+    let big = on_screen(&model, "a");
+    assert_eq!(big.w, 300.0);
+    assert_eq!(big.center().0, 960.0, "in the middle of the maximized area");
+    assert!(model.toggle_big("a", Big::Maximized));
+    model.set_max_size("a", None);
+    assert_eq!(on_screen(&model, "a"), cell);
+}
+
+#[test]
 fn a_window_sent_away_leaves_the_focus_here_unless_followed() {
     let mut model = desk();
     open(&mut model, "a");
