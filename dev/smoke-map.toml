@@ -866,9 +866,10 @@ runs = ["--sidebar-join", "--sidebar-join --light"]
 paths = ["crates/formalshell-rs/src/wayland/sidebar.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs"]
 runs = ["--minimap"]
 
-# Zen: the focused window floated and centred, the tape slid away, and back.
+# Zen: the focused window floated and centred, the tape slid away, and back;
+# zen following the focus, the include's ZEN block walking it under Hyprland.
 [[rule]]
-paths = ["crates/formalshell-rs/src/wayland/zen.rs", "crates/formalshell-rs/src/ipc/zen.rs", "crates/formalshell-rs/src/services/compositor/hyprland/lua.rs"]
+paths = ["crates/formalshell-rs/src/wayland/zen.rs", "crates/formalshell-rs/src/ipc/zen.rs", "crates/formalshell-rs/src/services/compositor/hyprland/lua.rs", "crates/formalshell-rs/src/services/compositor/hyprland/mod.rs", "docs/examples/hyprland/formalshell.lua", "wm/core/src/model.rs"]
 runs = ["--zen"]
 
 # Input settling re-reads the windows Hyprland moved without an event.

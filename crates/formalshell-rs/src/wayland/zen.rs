@@ -1,30 +1,43 @@
 //! Zen: the focused window floating and centred on its output, with the
-//! sidebar folded to its rail and, under the scrolling layout, the rest of
-//! the workspace's tape slid off the output. Leaving puts the window back
-//! tiled in the column place it left (or at its old rect if it was
-//! floating already) and lets the tape go.
+//! sidebar folded to its rail while its workspace has the focus and, under
+//! the scrolling layout, the rest of the workspace's tape slid off the
+//! output. Zen follows the focus on its workspace: a tiled window taking it
+//! (a focus bind, a click, the switcher, an activation, a new window, the
+//! zen window closing) takes zen, the window before going back where it
+//! was. A float taking the focus has it over the zen window. Leaving puts
+//! the window back tiled where it left the tape, in its stack if it had one
+//! (or at its old rect if it was floating already), and lets the tape go.
 //!
 //! Under a compositor that owns zen (Shoji) the shell only asks for it and
 //! reads each workspace's zen window back, folding the sidebar while the
 //! focused workspace holds one.
 
+use std::time::{Duration, Instant};
+
 use fs_types::{IRect, Window, WindowId, WorkspaceId};
 use serde_json::json;
 
 use super::App;
-use crate::services::compositor::{self, Command};
+use crate::services::compositor::{self, Command, ZenKeys, ZenPlace};
 use crate::surfaces::sidebar;
+
+/// How long zen waits for the focus to reach the window it moved to before
+/// it goes by the focus again.
+const SETTLE: Duration = Duration::from_secs(2);
 
 #[derive(Default)]
 pub struct ZenState {
     on: Option<Zen>,
-    /// While the compositor's zen holds the focused workspace: whether the
-    /// sidebar was open, so leaving opens it again.
+    /// While zen holds the focused workspace: whether the sidebar was open,
+    /// so leaving opens it again.
     folded: Option<bool>,
     /// A workspace whose tape is still held after its zen window closed
     /// there; let go once it is focused, the only workspace a layout
     /// message reaches.
     release: Option<WorkspaceId>,
+    /// The window zen just went to, until the focus is on it: on the way
+    /// the focus passes over the window going back and the tape's.
+    moving: Option<(WindowId, Instant)>,
 }
 
 struct Zen {
@@ -32,10 +45,8 @@ struct Zen {
     workspace: WorkspaceId,
     /// Its rect before, for a window that was floating already.
     floating: Option<IRect>,
-    /// A window of the column it sat before, under a scrolling layout.
-    before: Option<WindowId>,
-    /// The sidebar was open, so leaving opens it again.
-    unfold: bool,
+    /// Where it goes back in a scrolling layout's tape.
+    place: ZenPlace,
 }
 
 /// The zen window's rect on an output's logical box: 60% of its width but
@@ -53,17 +64,68 @@ fn centred(x: i32, y: i32, w: i32, h: i32, margin: f64) -> IRect {
     )
 }
 
-/// The column after `id`'s on its workspace, as one of its windows: the
-/// tiled windows told apart by their x on the tape.
-fn next_column(windows: &[Window], id: &WindowId, workspace: &WorkspaceId) -> Option<WindowId> {
-    let x = windows.iter().find(|w| w.id == *id)?.rect?.x;
-    windows
+/// Where tiled `id` sits in its workspace's tape once `back`, the window
+/// zen leaves (floating now), is back at its place: the place `id` goes
+/// back to in turn, and where each focus move goes from `id`. Columns are
+/// told apart by x, stacked windows by y; a move to a column lands on its
+/// window nearest `id`'s middle.
+fn slot(windows: &[Window], id: &WindowId, back: Option<(&WindowId, &ZenPlace)>) -> (ZenPlace, ZenKeys) {
+    let last = ZenPlace::Column { before: None };
+    let Some(me) = windows.iter().find(|w| w.id == *id && !w.is_floating) else {
+        return (last, ZenKeys::default());
+    };
+    let mut tiled: Vec<(IRect, &WindowId)> = windows
         .iter()
-        .filter(|w| w.workspace_id == *workspace && !w.is_floating && w.id != *id)
-        .filter_map(|w| Some((w.rect?.x, &w.id)))
-        .filter(|(wx, _)| *wx > x)
-        .min_by_key(|(wx, _)| *wx)
-        .map(|(_, id)| id.clone())
+        .filter(|w| w.workspace_id == me.workspace_id && !w.is_floating && back.is_none_or(|(b, _)| w.id != *b))
+        .filter_map(|w| Some((w.rect?, &w.id)))
+        .collect();
+    tiled.sort_by_key(|(r, _)| (r.x, r.y));
+    let mut columns: Vec<Vec<(IRect, &WindowId)>> = Vec::new();
+    for (rect, id) in tiled {
+        match columns.last_mut() {
+            Some(column) if column[0].0.x == rect.x => column.push((rect, id)),
+            _ => columns.push(vec![(rect, id)]),
+        }
+    }
+    if let Some((back, place)) = back {
+        let column_of = |w: &WindowId| columns.iter().position(|c| c.iter().any(|(_, x)| *x == w));
+        let stack = match place {
+            ZenPlace::Stack { mate, below } => column_of(mate).map(|c| (c, below)),
+            ZenPlace::Column { .. } => None,
+        };
+        match (stack, place) {
+            (Some((c, below)), _) => {
+                let row = below.as_ref().and_then(|b| columns[c].iter().position(|(_, x)| *x == b)).unwrap_or(columns[c].len());
+                let rect = columns[c].get(row).or(columns[c].last()).map_or_else(IRect::default, |(r, _)| *r);
+                columns[c].insert(row, (rect, back));
+            }
+            (None, ZenPlace::Column { before: Some(before) }) => {
+                let at = column_of(before).unwrap_or(columns.len());
+                columns.insert(at, vec![(IRect::default(), back)]);
+            }
+            (None, _) => columns.push(vec![(IRect::default(), back)]),
+        }
+    }
+    let Some((column, row)) = columns.iter().enumerate().find_map(|(c, col)| col.iter().position(|(_, w)| *w == id).map(|r| (c, r))) else {
+        return (last, ZenKeys::default());
+    };
+    let mates = &columns[column];
+    let middle = |r: &IRect| r.y + r.h / 2;
+    let centre = middle(&mates[row].0);
+    let nearest = |c: usize| columns[c].iter().min_by_key(|(r, _)| (middle(r) - centre).abs()).map(|(_, w)| (*w).clone());
+    let n = columns.len();
+    let place = if mates.len() > 1 {
+        ZenPlace::Stack { mate: mates[usize::from(row == 0)].1.clone(), below: mates.get(row + 1).map(|(_, w)| (*w).clone()) }
+    } else {
+        ZenPlace::Column { before: columns.get(column + 1).map(|c| c[0].1.clone()) }
+    };
+    let keys = ZenKeys {
+        left: (n > 1).then(|| nearest((column + n - 1) % n)).flatten(),
+        right: (n > 1).then(|| nearest((column + 1) % n)).flatten(),
+        up: row.checked_sub(1).map(|r| mates[r].1.clone()),
+        down: mates.get(row + 1).map(|(_, w)| (*w).clone()),
+    };
+    (place, keys)
 }
 
 impl App {
@@ -103,20 +165,19 @@ impl App {
             return Err("no output".into());
         };
         let columns = snap.workspaces.iter().any(|w| w.id == win.workspace_id && w.columns);
+        let (place, keys) = if columns { slot(&snap.windows, &win.id, None) } else { (ZenPlace::Column { before: None }, ZenKeys::default()) };
         let zen = Zen {
             id: win.id.clone(),
             workspace: win.workspace_id.clone(),
             floating: if win.is_floating { win.rect } else { None },
-            before: if columns && !win.is_floating { next_column(&snap.windows, &win.id, &win.workspace_id) } else { None },
-            unfold: live!(self).bar.sidebar().is_some() && !self.store.state.data.sidebar_collapsed,
+            place,
         };
         let rect = centred(ox, oy, ow, oh, self.store.theme.theme.space.md);
-        compositor::send(Command::Zen { id: zen.id.clone(), rect });
-        if zen.unfold {
-            sidebar::set_collapsed(true);
-        }
+        compositor::send(Command::Zen { id: zen.id.clone(), rect, held: false, keys });
         self.zen.release = None;
+        self.zen.moving = Some((zen.id.clone(), Instant::now()));
         self.zen.on = Some(zen);
+        self.zen_fold();
         Ok(())
     }
 
@@ -131,28 +192,71 @@ impl App {
         let Some(zen) = self.zen.on.take() else {
             return Err("zen is off".into());
         };
+        self.zen.moving = None;
         if self.store.compositor.window(&zen.id).is_some() {
-            compositor::send(Command::Unzen { id: zen.id, floating: zen.floating, before: zen.before });
+            compositor::send(Command::Unzen { id: zen.id, floating: zen.floating, place: zen.place });
         } else {
             self.zen.release = Some(zen.workspace);
             self.zen_release();
         }
-        if zen.unfold {
-            sidebar::set_collapsed(false);
-        }
+        self.zen_fold();
         Ok(())
     }
 
-    /// The zen window closing ends zen, the sidebar opening again.
     pub fn zen_changed(&mut self) {
-        if compositor::kind() == compositor::Kind::Shoji {
-            self.zen_fold();
+        if compositor::kind() != compositor::Kind::Shoji {
+            self.zen_follow();
+            self.zen_release();
+        }
+        self.zen_fold();
+    }
+
+    /// Zen goes with the focus to a tiled window of its workspace, and to
+    /// the one the focus lands on when the zen window closes; with nothing
+    /// tiled taking it then, zen ends.
+    fn zen_follow(&mut self) {
+        let Some(zen) = &self.zen.on else {
             return;
+        };
+        let snap = &self.store.compositor.snapshot;
+        let focused = snap.windows.iter().find(|w| w.id == snap.focused_window_id);
+        if let Some((to, since)) = &self.zen.moving {
+            if focused.is_none_or(|w| w.id != *to) && since.elapsed() < SETTLE {
+                return;
+            }
+            self.zen.moving = None;
         }
-        if self.zen.on.as_ref().is_some_and(|z| self.store.compositor.window(&z.id).is_none()) {
-            let _ = self.zen_exit();
+        let gone = self.store.compositor.window(&zen.id).is_none();
+        let next = focused.filter(|w| w.id != zen.id && !w.is_floating && w.workspace_id == zen.workspace).map(|w| w.id.clone());
+        match next {
+            Some(to) => self.zen_move(to, gone),
+            None if gone => {
+                let _ = self.zen_exit();
+            }
+            None => {}
         }
-        self.zen_release();
+    }
+
+    /// Zen from its window to `to` on the same workspace, the tape held
+    /// throughout; the window before goes back where it was, unless it is
+    /// `gone`.
+    fn zen_move(&mut self, to: WindowId, gone: bool) {
+        let Some((ox, oy, ow, oh)) = self.zen_output() else {
+            return;
+        };
+        let Some(zen) = self.zen.on.take() else {
+            return;
+        };
+        let rect = centred(ox, oy, ow, oh, self.store.theme.theme.space.md);
+        let back = (!gone && zen.floating.is_none()).then_some((&zen.id, &zen.place));
+        let (place, keys) = slot(&self.store.compositor.snapshot.windows, &to, back);
+        if gone {
+            compositor::send(Command::Zen { id: to.clone(), rect, held: true, keys });
+        } else {
+            compositor::send(Command::ZenSwitch { from: zen.id, floating: zen.floating, place: zen.place, to: to.clone(), rect, keys });
+        }
+        self.zen.moving = Some((to.clone(), Instant::now()));
+        self.zen.on = Some(Zen { id: to, workspace: zen.workspace, floating: None, place });
     }
 
     fn zen_release(&mut self) {
@@ -162,10 +266,19 @@ impl App {
         }
     }
 
-    /// The sidebar on its rail while the compositor holds the focused
-    /// workspace in zen, back where it was once it lets go.
+    /// Whether zen holds the focused workspace.
+    fn zen_here(&self) -> bool {
+        if compositor::kind() == compositor::Kind::Shoji {
+            return self.compositor_zen().is_some();
+        }
+        let focused = &self.store.compositor.snapshot.focused_workspace_id;
+        self.zen.on.as_ref().is_some_and(|z| z.workspace == *focused)
+    }
+
+    /// The sidebar on its rail while zen holds the focused workspace, back
+    /// where it was once it does not.
     fn zen_fold(&mut self) {
-        match (self.compositor_zen().is_some(), self.zen.folded) {
+        match (self.zen_here(), self.zen.folded) {
             (true, None) => {
                 let unfold = live!(self).bar.sidebar().is_some() && !self.store.state.data.sidebar_collapsed;
                 if unfold {
@@ -191,7 +304,13 @@ impl App {
             };
         }
         match &self.zen.on {
-            Some(z) => json!({"on": true, "windowId": z.id, "workspace": z.workspace, "before": z.before, "floating": z.floating.is_some()}),
+            Some(z) => {
+                let (before, mate) = match &z.place {
+                    ZenPlace::Column { before } => (before.as_ref(), None),
+                    ZenPlace::Stack { mate, .. } => (None, Some(mate)),
+                };
+                json!({"on": true, "windowId": z.id, "workspace": z.workspace, "before": before, "mate": mate, "floating": z.floating.is_some()})
+            }
             None => json!({"on": false}),
         }
     }
@@ -222,18 +341,86 @@ mod tests {
         }
     }
 
-    #[test]
-    fn next_column_by_x() {
-        let w = |id: &str, x: i32, floating: bool| Window {
+    fn window(id: &str, x: i32, y: i32, h: i32, floating: bool) -> Window {
+        Window {
             id: id.into(),
             workspace_id: "1".into(),
             is_floating: floating,
-            rect: Some(IRect::new(x, 0, 100, 100)),
+            rect: Some(IRect::new(x, y, 100, h)),
             ..Window::default()
-        };
-        let windows = vec![w("a", 0, false), w("b", 500, false), w("c", 900, false), w("d", 600, true)];
-        let next = |id: &str| next_column(&windows, &id.into(), &"1".into());
-        assert_eq!(next("a"), Some("b".into()));
-        assert_eq!(next("c"), None);
+        }
+    }
+
+    fn keys(l: Option<&str>, r: Option<&str>, u: Option<&str>, d: Option<&str>) -> ZenKeys {
+        let id = |s: Option<&str>| s.map(WindowId::from);
+        ZenKeys { left: id(l), right: id(r), up: id(u), down: id(d) }
+    }
+
+    fn column(before: Option<&str>) -> ZenPlace {
+        ZenPlace::Column { before: before.map(WindowId::from) }
+    }
+
+    fn stack(mate: &str, below: Option<&str>) -> ZenPlace {
+        ZenPlace::Stack { mate: mate.into(), below: below.map(WindowId::from) }
+    }
+
+    #[test]
+    fn a_window_goes_back_before_the_column_after_it_and_the_walk_wraps() {
+        let windows = vec![window("a", 0, 0, 800, false), window("b", 500, 0, 800, false), window("c", 900, 0, 800, false), window("d", 600, 0, 800, true)];
+        let at = |id: &str| slot(&windows, &id.into(), None);
+        assert_eq!(at("a"), (column(Some("b")), keys(Some("c"), Some("b"), None, None)));
+        assert_eq!(at("b"), (column(Some("c")), keys(Some("a"), Some("c"), None, None)));
+        assert_eq!(at("c"), (column(None), keys(Some("b"), Some("a"), None, None)));
+        assert_eq!(at("d"), (column(None), ZenKeys::default()), "a float has no place in the tape");
+    }
+
+    #[test]
+    fn the_window_leaving_zen_is_a_column_again_before_its_own_next() {
+        // b is in zen, floating, and goes back before c: from a, b is next
+        // on the right and a's column goes back before b.
+        let windows = vec![window("a", -1800, 0, 800, false), window("c", -1200, 0, 800, false), window("b", 200, 50, 700, true)];
+        let b = WindowId::from("b");
+        let before_c = column(Some("c"));
+        assert_eq!(slot(&windows, &"a".into(), Some((&b, &before_c))), (column(Some("b")), keys(Some("c"), Some("b"), None, None)));
+        assert_eq!(slot(&windows, &"c".into(), Some((&b, &before_c))), (column(None), keys(Some("b"), Some("a"), None, None)));
+        // With none after it, b goes back last.
+        let last = column(None);
+        assert_eq!(slot(&windows, &"c".into(), Some((&b, &last))), (column(Some("b")), keys(Some("a"), Some("b"), None, None)));
+    }
+
+    #[test]
+    fn a_stack_walks_up_and_down_and_a_column_lands_on_its_nearest_window() {
+        let windows = vec![
+            window("a", 0, 0, 800, false),
+            window("top", 500, 0, 390, false),
+            window("bottom", 500, 410, 390, false),
+            window("c", 900, 0, 700, false),
+        ];
+        let at = |id: &str| slot(&windows, &id.into(), None);
+        assert_eq!(at("top"), (stack("bottom", Some("bottom")), keys(Some("a"), Some("c"), None, Some("bottom"))));
+        assert_eq!(at("bottom"), (stack("top", None), keys(Some("a"), Some("c"), Some("top"), None)));
+        assert_eq!(at("c").1.left, Some("top".into()), "c's middle is nearer the top one's");
+        let windows = vec![window("a", 0, 0, 800, false), window("b", 0, 0, 800, false)];
+        assert_eq!(slot(&windows, &"a".into(), None).1, keys(None, None, None, Some("b")), "one column walks no side");
+    }
+
+    #[test]
+    fn a_stacked_window_leaving_zen_goes_back_into_its_stack() {
+        // bottom is in zen, out of its column for now; zen going up to top
+        // puts it back under top, so the walk down from top reaches it.
+        let windows = vec![window("a", -1800, 0, 800, false), window("top", -1200, 0, 800, false), window("bottom", 200, 50, 700, true)];
+        let bottom = WindowId::from("bottom");
+        let under_top = stack("top", None);
+        assert_eq!(slot(&windows, &"top".into(), Some((&bottom, &under_top))), (stack("bottom", Some("bottom")), keys(Some("a"), Some("a"), None, Some("bottom"))));
+        // Over a window of three: mid goes back between top and low.
+        let windows = vec![window("top", 0, 0, 260, false), window("low", 0, 540, 260, false), window("mid", 200, 50, 700, true)];
+        let mid = WindowId::from("mid");
+        let over_low = stack("top", Some("low"));
+        assert_eq!(slot(&windows, &"low".into(), Some((&mid, &over_low))), (stack("top", None), keys(None, None, Some("mid"), None)));
+        // With its stack gone, it comes back as the last column.
+        let windows = vec![window("a", 0, 0, 800, false), window("b", 200, 50, 700, true)];
+        let b = WindowId::from("b");
+        let under_gone = stack("gone", None);
+        assert_eq!(slot(&windows, &"a".into(), Some((&b, &under_gone))), (column(Some("b")), keys(Some("b"), Some("b"), None, None)));
     }
 }

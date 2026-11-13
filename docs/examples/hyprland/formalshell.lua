@@ -195,6 +195,62 @@ hl.on("window.close", function(window)
   end
 end)
 
+-- ZEN
+-- The shell's zen window floats, so the scrolling layout's `focus` messages
+-- and `movefocus` have no column to move from while it is in front. Which
+-- dispatchers move the focus, and to what side, is remembered as the config
+-- makes them; while zen holds, `formalshell_zen_keys` puts a second bind on
+-- each chord that has one, taking the focus to the window the shell names
+-- for that side. The shell sees the focus land there and moves zen to it.
+formalshell_moves = setmetatable({}, { __mode = "k" })
+if not formalshell_raw.layout then
+  formalshell_raw.layout, formalshell_raw.focus = hl.dsp.layout, hl.dsp.focus
+  hl.dsp.layout = function(message, ...)
+    local dispatcher = formalshell_raw.layout(message, ...)
+    local side = type(message) == "string" and message:match("^%s*focus%s+([lrud])")
+    if side then
+      formalshell_moves[dispatcher] = side
+    end
+    return dispatcher
+  end
+  hl.dsp.focus = function(args, ...)
+    local dispatcher = formalshell_raw.focus(args, ...)
+    if type(args) == "table" and type(args.direction) == "string" then
+      formalshell_moves[dispatcher] = args.direction:sub(1, 1):lower()
+    end
+    return dispatcher
+  end
+end
+
+-- `window` the zen window's selector and `targets` a selector per side
+-- (l, r, u, d), or nil to let go. The binds act only while the zen window
+-- is the one in front; a float over it keeps the chords' own meaning.
+function formalshell_zen_keys(window, targets)
+  for _, handle in ipairs(formalshell_zen_binds or {}) do
+    handle:remove()
+  end
+  formalshell_zen_binds = {}
+  local zen = window and hl.get_window(window)
+  if not zen or not targets then
+    return 0
+  end
+  local address = zen.address
+  for _, bind in ipairs(formalshell_binds) do
+    local side = formalshell_moves[bind.action]
+    local target = side and targets[side]
+    if target then
+      local walk = function()
+        local active = hl.get_active_window()
+        if active and active.address == address then
+          hl.dispatch(hl.dsp.focus({ window = target }))
+        end
+      end
+      formalshell_zen_binds[#formalshell_zen_binds + 1] = formalshell_raw.bind(bind.chord, walk, bind.opts)
+    end
+  end
+  return #formalshell_zen_binds
+end
+
 -- Window rounding, the blur behind the shell's surfaces and the frame and
 -- shadow round every window follow the shell's own theme: ThemeEngine
 -- publishes formalshell-chrome.lua, a table with rounding (the cards' radius),

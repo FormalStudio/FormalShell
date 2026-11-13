@@ -4,6 +4,8 @@
 
 use fs_types::{IRect, WindowId, WorkspaceId};
 
+use crate::services::compositor::ZenKeys;
+
 pub const PARK_WORKSPACE: &str = "special:formalshell-console";
 const PARK_NAME: &str = "formalshell-console";
 
@@ -108,31 +110,102 @@ pub fn move_window(id: &WindowId, x: i64, y: i64) -> String {
     format!("hl.dsp.window.move({{ window = {}, x = {x}, y = {y} }})", string(&selector(id)))
 }
 
-/// Under the scrolling layout the tape slides off the output's left edge
-/// and is pinned there with `inhibit_scroll` (0.56.2): a tape narrower than
-/// the output is centred again on every recalculate, and the inhibitor is
-/// the one thing that holds its offset. The window's column is widened to
-/// the whole output first, so the tape is never narrower when it moves,
-/// and the width it had is kept in `formalshell_zen` for the way back.
-/// Then the window floats at `rect`, its column closing up off screen.
-pub fn zen(id: &WindowId, rect: IRect) -> String {
+/// The first half of zen under the scrolling layout: the window's column
+/// widened to the whole output, so the tape is never narrower than the
+/// output when [`zen`] slides it, and the width it had kept in
+/// `formalshell_zen` for the way back. A chunk of its own, so the layout
+/// has scrolled the wider column into view before [`zen`] reads where the
+/// tape ends.
+pub fn zen_widen(id: &WindowId) -> String {
     let window = string(&selector(id));
     format!(
         "local w = hl.get_window({window}) \
-         if w and w.workspace then \
-         if w.workspace.tiled_layout == \"scrolling\" then \
-         if w.layout and w.layout.column then \
+         if w and w.workspace and w.workspace.tiled_layout == \"scrolling\" and w.layout and w.layout.column then \
          formalshell_zen = formalshell_zen or {{}} \
          formalshell_zen[{window}] = w.layout.column.width \
          hl.dispatch(hl.dsp.focus({{ window = {window} }})) \
          hl.dispatch(hl.dsp.layout(\"colresize 1.0\")) \
-         end \
-         local x0, right = w.monitor.x, w.monitor.x \
+         end"
+    )
+}
+
+/// A window stacked in a column put in a column of its own, left of the
+/// column it leaves: floated out of a column it shares, it would leave the
+/// rest of the column where the layout fits it, on the output, and as the
+/// last column it would be the one the layout never scrolls off. A chunk of
+/// its own, ahead of [`zen_widen`], which would otherwise widen the column
+/// the window has just left. It comes back from zen as a column of its own
+/// all the same.
+pub fn zen_expel(id: &WindowId) -> String {
+    let window = string(&selector(id));
+    format!(
+        "local w = hl.get_window({window}) \
+         if w and w.workspace and w.workspace.tiled_layout == \"scrolling\" and not w.floating then \
+         local mates = 0 \
+         for _, c in ipairs(hl.get_workspace_windows(w.workspace.id)) do \
+         if not c.floating and c.at.x == w.at.x then mates = mates + 1 end end \
+         if mates > 1 then \
+         hl.dispatch(hl.dsp.focus({{ window = {window} }})) \
+         hl.dispatch(hl.dsp.layout(\"consume_or_expel prev\")) \
+         end end"
+    )
+}
+
+/// A window back from zen, its column just left of `mate`'s, taken into
+/// that column right above `below` (at its foot with none). A window taken
+/// into a column lands at its foot, so it is swapped up past each window
+/// from the foot to `below`, read before it moves.
+pub fn zen_restack(id: &WindowId, mate: &WindowId, below: Option<&WindowId>) -> String {
+    let window = string(&selector(id));
+    let below = below.map_or_else(|| "nil".to_owned(), |b| format!("hl.get_window({})", string(&selector(b))));
+    format!(
+        "local w, m, b = hl.get_window({window}), hl.get_window({}), {below} \
+         if w and m and not w.floating and not m.floating and w.workspace and m.workspace and w.workspace.id == m.workspace.id then \
+         local column = {{}} \
+         for _, c in ipairs(hl.get_workspace_windows(m.workspace.id)) do \
+         if not c.floating and c.at.x == m.at.x then column[#column + 1] = c end end \
+         table.sort(column, function(p, q) return p.at.y < q.at.y end) \
+         hl.dispatch(hl.dsp.focus({{ window = {window} }})) \
+         hl.dispatch(hl.dsp.layout(\"consume_or_expel next\")) \
+         if b then for i = #column, 1, -1 do \
+         local a = tostring(column[i].address) \
+         hl.dispatch(hl.dsp.window.swap({{ window = {window}, target = \"address:\" .. (a:sub(1, 2) == \"0x\" and a or \"0x\" .. a) }})) \
+         if column[i].address == b.address then break end \
+         end end end",
+        string(&selector(mate))
+    )
+}
+
+/// Under the scrolling layout the tape slides off the output's left edge
+/// and is pinned there with `inhibit_scroll` (0.56.2): a tape narrower than
+/// the output is centred again on every recalculate, and the inhibitor is
+/// the one thing that holds its offset. Then the window floats at `rect`,
+/// its column closing up off screen. With the tape `held` off screen
+/// already, zen moving to a window of it, the tape stays where it is and
+/// only the window's column width is kept for the way back.
+pub fn zen(id: &WindowId, rect: IRect, held: bool) -> String {
+    let window = string(&selector(id));
+    let tape = if held {
+        format!(
+            "if w.layout and w.layout.column then \
+             formalshell_zen = formalshell_zen or {{}} \
+             formalshell_zen[{window}] = w.layout.column.width \
+             end "
+        )
+    } else {
+        "local x0, right = w.monitor.x, w.monitor.x \
          for _, c in ipairs(hl.get_workspace_windows(w.workspace.id)) do \
          if not c.floating and c.at.x + c.size.x > right then right = c.at.x + c.size.x end end \
          hl.dispatch(hl.dsp.layout(\"inhibit_scroll 0\")) \
          if right > x0 then hl.dispatch(hl.dsp.layout(\"move -\" .. (right - x0))) end \
-         hl.dispatch(hl.dsp.layout(\"inhibit_scroll 1\")) \
+         hl.dispatch(hl.dsp.layout(\"inhibit_scroll 1\")) "
+            .to_owned()
+    };
+    format!(
+        "local w = hl.get_window({window}) \
+         if w and w.workspace then \
+         if w.workspace.tiled_layout == \"scrolling\" then \
+         {tape}\
          end \
          hl.dispatch(hl.dsp.window.float({{ window = {window}, action = \"set\" }})) \
          hl.dispatch(hl.dsp.window.resize({{ window = {window}, x = {}, y = {} }})) \
@@ -146,12 +219,13 @@ pub fn zen(id: &WindowId, rect: IRect) -> String {
     )
 }
 
-/// The tape let go, and the window tiled again at the column width it had
-/// (it comes back as a column of the default width), or put back at its
-/// old rect if it was floating before.
-pub fn unzen(id: &WindowId, floating: Option<IRect>) -> String {
+/// The window tiled again at the column width it had (it comes back as a
+/// column of the default width), or put back at its old rect if it was
+/// floating before, and the tape let go unless zen stays `held` on it.
+pub fn unzen(id: &WindowId, floating: Option<IRect>, held: bool) -> String {
     let window = string(&selector(id));
-    let back = format!("hl.dispatch(hl.dsp.focus({{ window = {window} }})) hl.dispatch(hl.dsp.layout(\"inhibit_scroll 0\"))");
+    let release = if held { "" } else { "hl.dispatch(hl.dsp.layout(\"inhibit_scroll 0\"))" };
+    let back = format!("hl.dispatch(hl.dsp.focus({{ window = {window} }})) {release}");
     match floating {
         Some(r) => format!(
             "{back} hl.dispatch(hl.dsp.window.resize({{ window = {window}, x = {}, y = {} }})) \
@@ -171,6 +245,20 @@ pub fn unzen(id: &WindowId, floating: Option<IRect>) -> String {
              end"
         ),
     }
+}
+
+/// The include's `formalshell_zen_keys`: while `id` is the zen window and
+/// in front, each chord the config gave a focus move to a side takes the
+/// focus to the window `keys` names for that side. None lets go of them.
+/// Nothing under a config whose include predates it.
+pub fn zen_keys(id: Option<&WindowId>, keys: &ZenKeys) -> String {
+    let Some(id) = id else {
+        return "if formalshell_zen_keys then formalshell_zen_keys(nil) end".into();
+    };
+    let side = |key: &str, target: &Option<WindowId>| target.as_ref().map(|t| format!("{key} = {}", string(&selector(t))));
+    let sides: Vec<String> =
+        [side("l", &keys.left), side("r", &keys.right), side("u", &keys.up), side("d", &keys.down)].into_iter().flatten().collect();
+    format!("if formalshell_zen_keys then formalshell_zen_keys({}, {{ {} }}) end", string(&selector(id)), sides.join(", "))
 }
 
 /// Lets go of the tape on the focused workspace, the zen window having
@@ -293,6 +381,10 @@ mod tests {
         assert!(col.contains("local to, b = #rest + 1, hl.get_window(\"address:0xcd\") if b"));
         assert!(col.contains("hl.dsp.layout(to > from and \"swapcol r\" or \"swapcol l\")"));
         assert!(move_column(&id("ab"), None).contains("#rest + 1, nil if b"));
+        let back = zen_restack(&id("ab"), &id("cd"), Some(&id("ef")));
+        assert!(back.starts_with("local w, m, b = hl.get_window(\"address:0xab\"), hl.get_window(\"address:0xcd\"), hl.get_window(\"address:0xef\") if"));
+        assert!(back.contains("hl.dsp.layout(\"consume_or_expel next\")"));
+        assert!(zen_restack(&id("ab"), &id("cd"), None).contains("hl.get_window(\"address:0xcd\"), nil if"));
         assert_eq!(move_to_workspace(&id("ab"), 2), "hl.dsp.window.move({ window = \"address:0xab\", workspace = 2, follow = false })");
         assert_eq!(toggle_special(), "hl.dsp.workspace.toggle_special(\"formalshell-console\")");
         assert_eq!(

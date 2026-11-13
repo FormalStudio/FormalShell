@@ -27,7 +27,7 @@ use fs_system::keyboard::{self as layouts, Layout};
 use fs_types::{Backoff, Bind, WindowId};
 
 use self::outputs::RuleOverrides;
-use super::{Command, Diff, OutputsState, Snapshot};
+use super::{Command, Diff, OutputsState, Snapshot, ZenKeys, ZenPlace};
 use crate::runtime::Ctx;
 use crate::services::proc;
 use crate::store;
@@ -292,6 +292,18 @@ async fn eval(lua: &str) {
     report("eval", Ok(eval_answer(lua).await));
 }
 
+/// A window tiled again after zen moved to its place in the tape: its
+/// column walked there, and into its stack when it had one.
+async fn zen_place(id: &WindowId, place: &ZenPlace) {
+    match place {
+        ZenPlace::Column { before } => eval(&lua::move_column(id, before.as_ref())).await,
+        ZenPlace::Stack { mate, below } => {
+            eval(&lua::move_column(id, Some(mate))).await;
+            eval(&lua::zen_restack(id, mate, below.as_ref())).await;
+        }
+    }
+}
+
 async fn eval_answer(lua: &str) -> String {
     let done = proc::capture_err(&proc::argv(&["hyprctl", "eval", lua]), HYPRCTL_TIMEOUT).await;
     // What a chunk raised comes back on stdout, under a failing exit.
@@ -403,16 +415,32 @@ async fn commands(
                 // webcam overlay waits on this rect to start recording.
                 let _ = dirty.try_send(());
             }
-            Command::Zen { id, rect } => {
-                eval(&lua::zen(&id, rect)).await;
+            Command::Zen { id, rect, held, keys } => {
+                eval(&lua::zen_expel(&id)).await;
+                if !held {
+                    eval(&lua::zen_widen(&id)).await;
+                }
+                eval(&lua::zen(&id, rect, held)).await;
+                eval(&lua::zen_keys(Some(&id), &keys)).await;
                 let _ = dirty.try_send(());
             }
-            Command::Unzen { id, floating, before } => {
-                eval(&lua::unzen(&id, floating)).await;
-                if let Some(before) = before {
-                    eval(&lua::move_column(&id, Some(&before))).await;
+            Command::Unzen { id, floating, place } => {
+                eval(&lua::zen_keys(None, &ZenKeys::default())).await;
+                eval(&lua::unzen(&id, floating, false)).await;
+                if floating.is_none() {
+                    zen_place(&id, &place).await;
                 }
                 dispatch(&lua::focus_window(&id)).await;
+                let _ = dirty.try_send(());
+            }
+            Command::ZenSwitch { from, floating, place, to, rect, keys } => {
+                eval(&lua::unzen(&from, floating, true)).await;
+                if floating.is_none() {
+                    zen_place(&from, &place).await;
+                }
+                eval(&lua::zen_expel(&to)).await;
+                eval(&lua::zen(&to, rect, true)).await;
+                eval(&lua::zen_keys(Some(&to), &keys)).await;
                 let _ = dirty.try_send(());
             }
             Command::ZenRelease => eval(&lua::zen_release()).await,

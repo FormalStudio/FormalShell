@@ -273,7 +273,7 @@ pub fn method(command: &Command) -> Option<Call> {
         Command::Cursor { hidden } => Call::with(method::CURSOR_HIDE, proto::CursorHide { hidden: *hidden }),
         Command::Theme(theme) => Call::with(method::THEME_SET, theme),
         Command::Exit => Call::bare(method::SESSION_EXIT),
-        Command::Zen { .. } | Command::Unzen { .. } | Command::ZenRelease | Command::RefreshWindows | Command::InputSettled => return None,
+        Command::Zen { .. } | Command::Unzen { .. } | Command::ZenSwitch { .. } | Command::ZenRelease | Command::RefreshWindows | Command::InputSettled => return None,
         Command::MacKeys(_) | Command::MacFocus(..) | Command::MacApp(_) | Command::TagMac(_) => return None,
     })
 }

@@ -222,6 +222,26 @@ pub fn is_parked(s: &Snapshot, id: &WindowId) -> bool {
     }
 }
 
+/// The window a focus move to each side reaches from the zen window: its
+/// column's neighbours (wrapping, as the column binds do) and the windows
+/// stacked above and below it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ZenKeys {
+    pub left: Option<WindowId>,
+    pub right: Option<WindowId>,
+    pub up: Option<WindowId>,
+    pub down: Option<WindowId>,
+}
+
+/// Where a window leaving zen goes back in a scrolling tape: a column of
+/// its own before the column `before` is in (last with none), or into
+/// `mate`'s column right above `below` (at its foot with none).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ZenPlace {
+    Column { before: Option<WindowId> },
+    Stack { mate: WindowId, below: Option<WindowId> },
+}
+
 /// The writes, queued from any thread and run in order on the service
 /// thread against the backend's own latest model.
 pub enum Command {
@@ -252,14 +272,17 @@ pub enum Command {
     ParkWindow(WindowId),
     UnparkWindow(WindowId),
     /// `id` floated at `rect` (logical, absolute) and focused, the rest of
-    /// a scrolling workspace's tape slid off the output and held there. The
-    /// three zen writes are the shell's own zen; a compositor that owns zen
-    /// takes [`Command::ZenMode`] instead.
-    Zen { id: WindowId, rect: IRect },
+    /// a scrolling workspace's tape slid off the output and held there, or
+    /// left there when it is `held` already. `keys` are where the focus
+    /// binds take it from there. The zen writes are the shell's own zen; a
+    /// compositor that owns zen takes [`Command::ZenMode`] instead.
+    Zen { id: WindowId, rect: IRect, held: bool, keys: ZenKeys },
+    /// Zen moved on from `from` to `to` with the tape held: `from` put back
+    /// as [`Command::Unzen`] puts it, `to` floated at `rect` and focused.
+    ZenSwitch { from: WindowId, floating: Option<IRect>, place: ZenPlace, to: WindowId, rect: IRect, keys: ZenKeys },
     /// The tape let go, `id` put back at `floating` where it was floating
-    /// before, tiled otherwise with its column moved before `before`'s. It
-    /// keeps focus.
-    Unzen { id: WindowId, floating: Option<IRect>, before: Option<WindowId> },
+    /// before, tiled otherwise at `place`. It keeps focus.
+    Unzen { id: WindowId, floating: Option<IRect>, place: ZenPlace },
     /// The focused workspace's tape let go, its zen window having closed.
     ZenRelease,
     /// Zen on the focused window, for a compositor that owns it: on, off,

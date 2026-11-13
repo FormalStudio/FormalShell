@@ -240,7 +240,7 @@ fn follows_the_state_sends_commands_in_order_and_recovers_from_a_restart() {
 
     let sent = proto::Theme { colors: proto::Colors { primary: "#648db8".into(), ..Default::default() }, chrome: proto::Chrome { rounding: 6, ..Default::default() } };
     rig.send(Command::Theme(Box::new(sent.clone())));
-    rig.send(Command::Zen { id: WindowId::new("tl-a"), rect: fs_types::IRect::new(0, 0, 10, 10) });
+    rig.send(Command::Zen { id: WindowId::new("tl-a"), rect: fs_types::IRect::new(0, 0, 10, 10), held: false, keys: Default::default() });
     rig.send(Command::FocusWindow(WindowId::new("tl-a")));
     rig.send(Command::SetOutputScale("Virtual-1".into(), 1.5));
     wait_for("the writes", || fake.methods().iter().filter(|m| *m == "outputs.get").count() >= 2);
