@@ -79,7 +79,7 @@ impl Engine {
                 (3, true, Some(workspace)) if !self.overview.open => (Mode::Tape(workspace), 0.0),
                 (3, false, _) => (Mode::Stack, self.scene.stack_of(&output)),
                 (fingers, false, _) if fingers >= 4 => {
-                    (Mode::Overview, self.overview.progress.value)
+                    (Mode::Overview, self.overview.progress.on(&output))
                 }
                 _ => (Mode::Idle, 0.0),
             };

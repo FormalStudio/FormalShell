@@ -69,14 +69,29 @@ impl Engine {
             return;
         }
         self.cursor.ticked = None;
-        self.cursor.clock = Some(create_poll_for_each_output(1.0, |handle, _| {
+        self.cursor.clock = Some(create_poll_for_each_output(1.0, |handle, output| {
             let now = handle.now_ms();
-            enter(move |engine| engine.cursor_tick(now));
+            let output = output.to_owned();
+            enter(move |engine| engine.cursor_tick(&output, now));
         }));
     }
 
-    fn cursor_tick(&mut self, now: f64) {
-        // The outputs' clocks interleave; one that is behind adds nothing.
+    /// On the frames of the output the pointer is over: the outputs' clocks
+    /// run at their own rates and phases, and the shape's speed is read off
+    /// the time between samples.
+    fn cursor_tick(&mut self, output: &str, now: f64) {
+        let (x, y) = self.cursor.at;
+        let under = self
+            .model
+            .outputs
+            .iter()
+            .find(|o| o.geo.rect.contains(x, y))
+            .map(|o| o.geo.name.as_str());
+        if under.is_some_and(|under| under != output) {
+            return;
+        }
+        // Crossing to another output changes clocks; one that is behind adds
+        // nothing.
         if self.cursor.ticked.is_some_and(|last| now <= last) {
             return;
         }

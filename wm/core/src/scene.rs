@@ -67,6 +67,8 @@ pub struct Visual {
 pub struct Scene {
     actors: BTreeMap<WinId, Actor>,
     scroll: BTreeMap<WsId, Spring>,
+    /// The output each workspace is on, whose frames step its scroll.
+    homes: BTreeMap<WsId, String>,
     stack: BTreeMap<String, Spring>,
     families: Families,
     enabled: bool,
@@ -83,6 +85,7 @@ impl Scene {
         Self {
             actors: BTreeMap::new(),
             scroll: BTreeMap::new(),
+            homes: BTreeMap::new(),
             stack: BTreeMap::new(),
             families: motion.families,
             enabled: motion.enabled,
@@ -157,6 +160,11 @@ impl Scene {
         }
         self.scroll
             .retain(|id, _| model.workspaces.iter().any(|ws| &ws.id == id));
+        self.homes = model
+            .workspaces
+            .iter()
+            .map(|ws| (ws.id.clone(), ws.output.clone()))
+            .collect();
         for output in &model.outputs {
             let target = model.stack_index(&output.active).unwrap_or(0) as f64;
             self.stack
@@ -344,12 +352,36 @@ impl Scene {
             spring.step_in(spatial, dt, UNIT);
         }
         for actor in self.actors.values_mut() {
-            for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
+            Self::step_actor(actor, spatial, dt);
+        }
+    }
+
+    /// `step` for what `output` draws: its stack, the scroll of its
+    /// workspaces and the windows placed on it. Each output steps on its own
+    /// frames, so what it shows follows the curve at its own frame times.
+    pub fn step_on(&mut self, output: &str, dt: f64) {
+        let spatial = self.spatial();
+        for (ws, spring) in &mut self.scroll {
+            if self.homes.get(ws).is_some_and(|home| home == output) {
                 spring.step(spatial, dt);
             }
-            actor.pop.step_in(spatial, dt, UNIT);
-            actor.presence.step(dt);
         }
+        if let Some(spring) = self.stack.get_mut(output) {
+            spring.step_in(spatial, dt, UNIT);
+        }
+        for actor in self.actors.values_mut() {
+            if actor.place.output == output {
+                Self::step_actor(actor, spatial, dt);
+            }
+        }
+    }
+
+    fn step_actor(actor: &mut Actor, spatial: SpringParams, dt: f64) {
+        for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
+            spring.step(spatial, dt);
+        }
+        actor.pop.step_in(spatial, dt, UNIT);
+        actor.presence.step(dt);
     }
 
     fn settled(&self, actor: &Actor) -> bool {

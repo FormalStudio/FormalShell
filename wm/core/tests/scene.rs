@@ -1,7 +1,14 @@
 mod common;
 
+use std::collections::BTreeMap;
+
 use common::*;
-use formalwm_core::{geom::Rect, model::Placement, scene::Scene};
+use formalwm_core::{
+    geom::Rect,
+    model::Placement,
+    motion::{Clocks, Spring, SpringParams},
+    scene::Scene,
+};
 use fs_wm_proto::Motion;
 
 const FRAME: f64 = 1.0 / 120.0;
@@ -276,4 +283,79 @@ fn a_dropped_window_rides_to_its_place_from_where_the_hand_left_it() {
     }
     assert_eq!(scene.visual("a").unwrap().rect, rest);
     assert!(!scene.animating());
+}
+
+/// Two outputs refreshing at 144 and 120 Hz, out of phase, each frame
+/// prepared two of its own periods ahead as the compositor's render-ahead
+/// does: in the order the frames are prepared, `(output, frame time ms)`.
+fn interleaved_frames(count: usize) -> Vec<(&'static str, f64)> {
+    let mut frames: Vec<(f64, &'static str, f64)> = Vec::new();
+    for (output, hz, phase) in [("A", 144.0, 1.3), ("B", 120.0, 5.9)] {
+        let period = 1000.0 / hz;
+        for n in 0..count {
+            let at = 1000.0 + phase + n as f64 * period;
+            frames.push((at - 2.0 * period, output, at));
+        }
+    }
+    frames.sort_by(|left, right| left.0.total_cmp(&right.0));
+    frames
+        .into_iter()
+        .map(|(_, output, at)| (output, at))
+        .collect()
+}
+
+#[test]
+fn each_output_steps_on_its_own_frames() {
+    let mut model = two_outputs();
+    let mut scene = Scene::default();
+    open(&mut model, "a");
+    model.focus_workspace("2");
+    open(&mut model, "b");
+    model.focus_workspace("8");
+    open(&mut model, "c");
+    model.focus_workspace("4");
+    scene.sync(&model);
+    settle(&mut scene);
+
+    model.focus_workspace("1");
+    model.focus_workspace("8");
+    scene.sync(&model);
+    let params = SpringParams::from_family(&Motion::default().families.spatial);
+    let mut ideal: BTreeMap<&str, (Spring, Option<f64>)> = ["A", "B"]
+        .into_iter()
+        .map(|output| {
+            let target = model
+                .stack_index(&model.output(output).unwrap().active)
+                .unwrap() as f64;
+            let mut spring = Spring::at(scene.stack_of(output));
+            spring.target = target;
+            (output, (spring, None))
+        })
+        .collect();
+    assert!(ideal.values().all(|(spring, _)| !spring.resting()));
+
+    let mut clocks = Clocks::default();
+    let mut frames = 0;
+    for (output, at) in interleaved_frames(400) {
+        let Some(dt) = clocks.advance(output, at) else {
+            continue;
+        };
+        scene.step_on(output, dt);
+        // The same spring alone, stepped from this output's last frame time
+        // to this one: the curve sampled where this output shows it.
+        let (spring, last) = ideal.get_mut(output).unwrap();
+        if let Some(last) = *last {
+            spring.step_in(params, (at - last) / 1000.0, 0.001);
+        }
+        *last = Some(at);
+        assert!(
+            (scene.stack_of(output) - spring.value).abs() < 1e-9,
+            "{output} at {at:.2} ms shows {} where its own clock has {}",
+            scene.stack_of(output),
+            spring.value
+        );
+        frames += 1;
+    }
+    assert!(frames > 100);
+    assert!(!scene.animating(), "both landed");
 }

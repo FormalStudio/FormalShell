@@ -42,7 +42,7 @@ pub fn frame(engine: &Engine, frame: &[Visual]) {
             .collect();
         let line = json!({
             "t": t,
-            "overview": engine.overview.progress.value,
+            "overview": engine.overview.progress.value(),
             "windows": windows,
         });
         let _ = writeln!(file, "{line}");
