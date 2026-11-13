@@ -84,7 +84,10 @@ impl Bezier {
                     Self::axis(self.x1, self.x2, t),
                 )
             })
-            .fold((1.0, 1.0), |best, turn| if turn.0 > best.0 { turn } else { best })
+            .fold(
+                (1.0, 1.0),
+                |best, turn| if turn.0 > best.0 { turn } else { best },
+            )
     }
 }
 
@@ -414,7 +417,10 @@ mod tests {
             }
             let (value, at) = bezier.peak();
             assert!((value - peak).abs() < 1e-6, "{curve:?}: {value} vs {peak}");
-            assert!((at - peak_at).abs() < 1e-3, "{curve:?}: at {at} vs {peak_at}");
+            assert!(
+                (at - peak_at).abs() < 1e-3,
+                "{curve:?}: at {at} vs {peak_at}"
+            );
         }
     }
 

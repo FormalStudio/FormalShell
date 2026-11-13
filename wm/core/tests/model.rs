@@ -1493,7 +1493,11 @@ fn picture(rect: Rect) -> Placement {
 fn a_picture_in_picture_is_over_every_layer_on_every_workspace_of_its_output() {
     let mut model = two_outputs();
     open(&mut model, "a");
-    open_with(&mut model, "pip", picture(Rect::new(1424.0, 794.0, 480.0, 270.0)));
+    open_with(
+        &mut model,
+        "pip",
+        picture(Rect::new(1424.0, 794.0, 480.0, 270.0)),
+    );
     assert_eq!(focused(&model), "a", "it arrives without the keyboard");
     assert!(model.window("pip").unwrap().pinned, "a picture is pinned");
 
@@ -1552,7 +1556,11 @@ fn a_picture_in_picture_is_over_every_layer_on_every_workspace_of_its_output() {
 #[test]
 fn a_picture_alone_on_a_workspace_has_the_keyboard_and_gives_it_up_to_a_tile() {
     let mut model = desk();
-    open_with(&mut model, "pip", picture(Rect::new(16.0, 16.0, 480.0, 270.0)));
+    open_with(
+        &mut model,
+        "pip",
+        picture(Rect::new(16.0, 16.0, 480.0, 270.0)),
+    );
     assert_eq!(focused(&model), "pip", "nothing else could take it");
     open(&mut model, "a");
     assert_eq!(focused(&model), "a");
@@ -1575,7 +1583,11 @@ fn a_picture_alone_on_a_workspace_has_the_keyboard_and_gives_it_up_to_a_tile() {
 #[test]
 fn a_picture_stays_one_across_outputs_and_stops_being_one_when_it_tiles() {
     let mut model = two_outputs();
-    open_with(&mut model, "pip", picture(Rect::new(16.0, 16.0, 480.0, 270.0)));
+    open_with(
+        &mut model,
+        "pip",
+        picture(Rect::new(16.0, 16.0, 480.0, 270.0)),
+    );
     assert!(model.move_to_workspace("pip", "4", false));
     let pip = place(&model, "pip");
     assert_eq!((pip.output.as_str(), pip.layer), ("B", Layer::Pip));

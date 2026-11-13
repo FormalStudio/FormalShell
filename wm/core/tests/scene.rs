@@ -336,12 +336,19 @@ fn a_new_tile_taking_zen_holds_its_workspace_with_the_zen_window_before_in_front
     let layout = model.layout();
     let c = layout.iter().find(|p| p.id == "c").unwrap();
     assert_eq!(c.layer, Layer::Zen, "c takes zen as it opens");
-    assert!(c.tiled() && !c.scrolls, "and counts as a tile though it does not scroll");
+    assert!(
+        c.tiled() && !c.scrolls,
+        "and counts as a tile though it does not scroll"
+    );
 
     let mut without = model.clone();
     without.close("c");
     let b = without.layout().into_iter().find(|p| p.id == "b").unwrap();
-    assert_eq!((b.layer, b.rect), (Layer::Zen, zen), "without c, b keeps zen");
+    assert_eq!(
+        (b.layer, b.rect),
+        (Layer::Zen, zen),
+        "without c, b keeps zen"
+    );
     scene.sync(&without);
     settle(&mut scene);
     assert_eq!(drawn(&scene, "b"), zen, "b stays in front while c waits");
@@ -490,7 +497,10 @@ fn a_picture_does_not_ride_the_stack_and_flies_on_its_own_spring() {
         peak = peak.min(drawn(&scene, "pip").x);
     }
     assert_eq!(drawn(&scene, "pip"), to);
-    assert!(peak < 16.0 && peak > 16.0 - 1408.0 * 0.02, "overshoot {peak}");
+    assert!(
+        peak < 16.0 && peak > 16.0 - 1408.0 * 0.02,
+        "overshoot {peak}"
+    );
 }
 
 #[test]
@@ -544,7 +554,11 @@ fn a_flung_picture_leaves_at_the_speed_of_the_hand() {
     let (flung, eased) = (drawn(&scene, "pip"), drawn(&slow, "pip"));
     // One 120 Hz frame at 3000 px/s is 25 px more than the spring covers
     // from rest.
-    assert!((eased.x - flung.x - 25.0).abs() < 3.0, "{}", eased.x - flung.x);
+    assert!(
+        (eased.x - flung.x - 25.0).abs() < 3.0,
+        "{}",
+        eased.x - flung.x
+    );
     assert!(flung.y - hand.y > eased.y - hand.y);
     settle(&mut scene);
     assert_eq!(drawn(&scene, "pip"), to);
@@ -1098,7 +1112,10 @@ fn a_window_that_grows_from_an_edge_it_keeps_has_no_flow() {
         assert!((visual.rect.x - rest.x).abs() < 0.01, "its left edge moved");
         assert_eq!(visual.flow.own.velocity, (0.0, 0.0));
     }
-    assert!(widest_step > 10.0, "it never grew ({widest_step} px a frame)");
+    assert!(
+        widest_step > 10.0,
+        "it never grew ({widest_step} px a frame)"
+    );
 }
 
 #[test]

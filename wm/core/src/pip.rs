@@ -55,7 +55,10 @@ pub enum Side {
 pub enum Rest {
     Corner(Corner),
     /// Behind a side edge, at this share of the way down the work area.
-    Stash { side: Side, down: f64 },
+    Stash {
+        side: Side,
+        down: f64,
+    },
 }
 
 /// What a window says about itself when it opens.
@@ -331,7 +334,13 @@ pub struct Pinched {
 /// `start` scaled by `scale` about `focus`, the point the fingers hold, which
 /// has since moved by `pan`. The point of the picture under the fingers
 /// stays under them, and the aspect ratio is kept.
-pub fn pinch(start: Rect, scale: f64, focus: (f64, f64), pan: (f64, f64), limits: Limits) -> Pinched {
+pub fn pinch(
+    start: Rect,
+    scale: f64,
+    focus: (f64, f64),
+    pan: (f64, f64),
+    limits: Limits,
+) -> Pinched {
     let wanted = start.w * scale.max(0.0);
     let at = |width: f64| {
         let by = width / start.w.max(1.0);
@@ -653,7 +662,10 @@ mod tests {
         let centre = start.center();
 
         let small = pinch(start, 0.25, centre, (0.0, 0.0), limits);
-        assert_eq!(small.rect.w, limits.min, "the client is held at the minimum");
+        assert_eq!(
+            small.rect.w, limits.min,
+            "the client is held at the minimum"
+        );
         assert!(small.drawn.w < limits.min && small.drawn.w > 120.0 * 1.0);
         assert!((small.drawn.w / small.drawn.h - limits.aspect).abs() < 1e-9);
         assert_eq!(small.drawn.center(), centre, "still about the fingers");
@@ -664,7 +676,10 @@ mod tests {
             .map(|scale| pinch(start, *scale, centre, (0.0, 0.0), limits).drawn.w)
             .collect();
         assert!(pulls.windows(2).all(|pair| pair[1] < pair[0]));
-        let steps: Vec<f64> = pulls[1..].windows(2).map(|pair| pair[0] - pair[1]).collect();
+        let steps: Vec<f64> = pulls[1..]
+            .windows(2)
+            .map(|pair| pair[0] - pair[1])
+            .collect();
         assert!(steps.windows(2).all(|pair| pair[1] < pair[0]), "{steps:?}");
         assert!(*pulls.last().unwrap() > limits.min * (1.0 - RUBBER_REACH));
 
@@ -708,9 +723,14 @@ mod tests {
         // Let go at 3000 px/s toward the target: it arrives sooner and
         // overshoots further, still a small share of the way.
         let (flung, flung_past) = ride(1408.0, -3000.0);
-        println!("pip spring, 1408 px at 3000 px/s: settles {flung:.3} s, overshoot {flung_past:.2} px");
+        println!(
+            "pip spring, 1408 px at 3000 px/s: settles {flung:.3} s, overshoot {flung_past:.2} px"
+        );
         assert!(flung <= settled);
-        assert!(flung_past > past && flung_past / 1408.0 < 0.06, "{flung_past}");
+        assert!(
+            flung_past > past && flung_past / 1408.0 < 0.06,
+            "{flung_past}"
+        );
 
         // A rubber band 60 px past a limit coming back.
         let (band, band_past) = ride(60.0, 0.0);
