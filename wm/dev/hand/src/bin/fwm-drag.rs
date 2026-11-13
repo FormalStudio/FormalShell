@@ -174,7 +174,8 @@ impl Dispatch<xdg_surface::XdgSurface, bool> for Source {
         let (Some(shm), Some(surface)) = (&source.shm, surface) else {
             return;
         };
-        let mark = (!*child && (source.min != (0, 0) || source.max != (0, 0))).then_some(0xffc0_6040);
+        let mark =
+            (!*child && (source.min != (0, 0) || source.max != (0, 0))).then_some(0xffc0_6040);
         match fwm_hand::marked(shm, queue, size, color, mark) {
             Ok(buffer) => {
                 surface.attach(Some(&buffer), 0, 0);
@@ -430,7 +431,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         // Mapped first, so the dialog has a parent the compositor knows.
         events.roundtrip(&mut source)?;
         let surface = compositor.create_surface(&queue, ());
-        let child = shell.get_xdg_surface(&surface, &queue, CHILD).get_toplevel(&queue, CHILD);
+        let child = shell
+            .get_xdg_surface(&surface, &queue, CHILD)
+            .get_toplevel(&queue, CHILD);
         child.set_parent(Some(&toplevel));
         child.set_app_id(format!("{}-child", app_id_for_child));
         child.set_title(format!("{} child", title_for_child));

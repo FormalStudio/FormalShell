@@ -430,7 +430,11 @@ fn a_tile_dragged_by_an_edge_moves_that_edge_only() {
     let now = on_screen(&model, "b");
     assert_eq!((now.right(), now.w), (b_right, b.w + 50.0));
     model.release_tile_edge("b");
-    assert_eq!(on_screen(&model, "b").right(), b_right, "and after it is let go");
+    assert_eq!(
+        on_screen(&model, "b").right(),
+        b_right,
+        "and after it is let go"
+    );
     assert_eq!(focused(&model), "a", "a drag leaves the focus where it is");
     // Neither edge goes out of the view.
     assert!(model.resize_tile_edge("b", false, column(&model, "b") + 900.0));
@@ -468,7 +472,11 @@ fn a_lone_tile_dragged_by_a_border_moves_that_edge_and_recentres_on_release() {
     assert_eq!((now.x, now.w), (a.x, a.w + 100.0), "by its right border");
     assert!(model.resize_tile_edge("a", true, now.w + inset + 40.0));
     let held = on_screen(&model, "a");
-    assert_eq!((held.right(), held.w), (now.right(), now.w + 40.0), "by its left border");
+    assert_eq!(
+        (held.right(), held.w),
+        (now.right(), now.w + 40.0),
+        "by its left border"
+    );
     model.release_tile_edge("a");
     let centred = on_screen(&model, "a");
     assert_eq!(centred.w, held.w);
@@ -486,7 +494,11 @@ fn a_tile_moved_away_mid_drag_leaves_no_hold_behind() {
     model.release_tile_edge("a");
     assert!(model.move_window("a", "1", None));
     let back = on_screen(&model, "a");
-    assert_eq!(back.x - 0.0, 1920.0 - back.right(), "centred on its old tape");
+    assert_eq!(
+        back.x - 0.0,
+        1920.0 - back.right(),
+        "centred on its old tape"
+    );
 }
 
 #[test]

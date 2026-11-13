@@ -739,7 +739,16 @@ fn tile_rect(app_id: &str) -> proto::Rect {
 }
 
 fn held(workspace: &'static str) -> bool {
-    ask(move |engine| Ok(engine.model.workspace(workspace).unwrap().tape.held.is_some())).unwrap()
+    ask(move |engine| {
+        Ok(engine
+            .model
+            .workspace(workspace)
+            .unwrap()
+            .tape
+            .held
+            .is_some())
+    })
+    .unwrap()
 }
 
 fn scroll(workspace: &'static str) -> (f64, f64) {
@@ -899,7 +908,10 @@ fn a_border_drag_whose_grab_is_taken_away_lets_the_view_go() {
     assert!(session.until(|| !held("1")), "the hold went with the grab");
     settle();
     let a = tile_rect("a");
-    assert!((2 * a.x + a.width - WIDTH as i32).abs() <= 1, "centred again: {a:?}");
+    assert!(
+        (2 * a.x + a.width - WIDTH as i32).abs() <= 1,
+        "centred again: {a:?}"
+    );
     session.button(ButtonState::Released);
 }
 
