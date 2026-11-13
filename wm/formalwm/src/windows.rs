@@ -144,6 +144,10 @@ pub fn setup(signals: Signals) {
             let _ = window.tag().get();
             enter(move |engine| engine.renamed(window, &title, &app_id));
         });
+        scope.effect(move || {
+            let _ = window.size_constraints().get();
+            enter(move |engine| engine.bounded(window));
+        });
         // `vrr` 3 follows what a fullscreen client says it shows.
         scope.effect(move || {
             let _ = window.content_type().get();
@@ -274,6 +278,7 @@ impl Engine {
         if asked == Some(Big::Maximized) {
             self.model.set_big(&id, Some(Big::Maximized));
         }
+        let _ = self.model.set_max_size(&id, max_size(window));
         if let Some(win) = self.windows.get_mut(&id) {
             win.effect = effect;
             win.placed = true;
@@ -334,6 +339,12 @@ impl Engine {
             self.model.set_app_id(&id, app_id);
         }
         self.publish();
+    }
+
+    fn bounded(&mut self, window: Window) {
+        if self.model.set_max_size(&window.id(), max_size(window)) {
+            self.commit();
+        }
     }
 
     /// The compositor keeps the window's last picture for as long as it was
@@ -440,4 +451,10 @@ impl Engine {
             self.commit();
         }
     }
+}
+
+/// The most the client says it will draw, 0 on an axis it leaves free.
+fn max_size(window: Window) -> Option<(f64, f64)> {
+    let max = window.size_constraints().get_untracked().max?;
+    Some((f64::from(max.width), f64::from(max.height)))
 }

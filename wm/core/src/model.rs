@@ -173,6 +173,8 @@ pub struct WindowRec {
     /// Shown on every workspace of its output.
     pub pinned: bool,
     pub urgent: bool,
+    /// The most the client will draw, 0 on an axis it leaves free.
+    pub max_size: Option<(f64, f64)>,
 }
 
 /// Where a new window goes, the window rules already applied.
@@ -586,6 +588,7 @@ impl Model {
             float_rect,
             pinned: placement.pinned && floating,
             urgent: false,
+            max_size: None,
         });
         if let Some(name) = overlay {
             self.overlay_mut(&name).windows.push(new.id);
@@ -789,6 +792,15 @@ impl Model {
         if let Some(window) = self.window_mut(id) {
             window.app_id = app_id.to_owned();
         }
+    }
+
+    pub fn set_max_size(&mut self, id: &str, max: Option<(f64, f64)>) -> bool {
+        let Some(window) = self.window_mut(id) else {
+            return false;
+        };
+        let changed = window.max_size != max;
+        window.max_size = max;
+        changed
     }
 
     pub fn set_urgent(&mut self, id: &str, urgent: bool) {
@@ -1592,6 +1604,23 @@ impl Model {
                     } else {
                         (Rect::new(rect.x, area.y, rect.w, area.h), Layer::Tile)
                     };
+                }
+                // Hyprland leaves size limits off tiles and centres a surface
+                // smaller than its box; a tile drawn bigger than the client
+                // would stretch its buffer.
+                if let Some((w, h)) = self.window(&cell.id).and_then(|win| win.max_size) {
+                    let (cx, cy) = place.rect.center();
+                    let w = if w > 0.0 {
+                        place.rect.w.min(w)
+                    } else {
+                        place.rect.w
+                    };
+                    let h = if h > 0.0 {
+                        place.rect.h.min(h)
+                    } else {
+                        place.rect.h
+                    };
+                    place.rect = Rect::new(cx - w / 2.0, cy - h / 2.0, w, h);
                 }
                 placed.push(place);
             }
