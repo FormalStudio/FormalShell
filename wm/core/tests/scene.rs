@@ -924,3 +924,72 @@ fn a_window_opened_in_zen_leaves_the_zen_window_in_front_until_it_draws() {
     assert_eq!(drawn(&scene, "c"), zen, "c takes zen once drawn");
     assert!(!scene.visual("b").unwrap().visible);
 }
+
+#[test]
+fn a_window_opened_in_zen_beside_a_right_neighbour_leaves_zen_where_it_was() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b", "d"] {
+        open(&mut model, id);
+    }
+    model.focus_window("b");
+    model.set_zen(None, None);
+    scene.sync(&model);
+    settle(&mut scene);
+    let zen = model.zen_rect("A");
+    assert_eq!(drawn(&scene, "b"), zen);
+
+    open_waiting(&mut model, &mut scene, "c");
+    let mut without = model.clone();
+    without.close("c");
+    assert_eq!(
+        without.workspace("1").unwrap().zen.as_deref(),
+        Some("d"),
+        "closing c would hand zen to d"
+    );
+    scene.sync(&model);
+    for _ in 0..40 {
+        scene.step(FRAME);
+        assert_eq!(drawn(&scene, "b"), zen, "b stays in front while c waits");
+    }
+
+    arrive(&mut model, &mut scene, "c");
+    scene.sync(&model);
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "c"), zen, "c takes zen once drawn");
+}
+
+#[test]
+fn a_window_opened_while_a_float_is_in_zen_leaves_the_float_in_front() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b"] {
+        open(&mut model, id);
+    }
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            ..Default::default()
+        },
+    );
+    model.set_zen(Some("f"), Some(true));
+    scene.sync(&model);
+    settle(&mut scene);
+    let zen = model.zen_rect("A");
+    assert_eq!(drawn(&scene, "f"), zen);
+
+    open_waiting(&mut model, &mut scene, "c");
+    assert_eq!(model.workspace("1").unwrap().zen.as_deref(), Some("c"));
+    scene.sync(&model);
+    for _ in 0..40 {
+        scene.step(FRAME);
+        assert_eq!(drawn(&scene, "f"), zen, "f stays in front while c waits");
+    }
+
+    arrive(&mut model, &mut scene, "c");
+    scene.sync(&model);
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "c"), zen, "c takes zen once drawn");
+}

@@ -81,6 +81,9 @@ pub struct Scene {
     waiting: BTreeSet<WinId>,
     /// Waited-for tiles that have just drawn: they start at their place.
     landing: BTreeSet<WinId>,
+    /// The drawn window each workspace last showed in zen. A tile that
+    /// takes zen as it opens leaves it there until it draws.
+    zen_shown: BTreeMap<WsId, WinId>,
     families: Families,
     enabled: bool,
 }
@@ -100,6 +103,7 @@ impl Scene {
             stack: BTreeMap::new(),
             waiting: BTreeSet::new(),
             landing: BTreeSet::new(),
+            zen_shown: BTreeMap::new(),
             families: motion.families,
             enabled: motion.enabled,
         }
@@ -179,6 +183,16 @@ impl Scene {
                     .insert(place.id.clone());
             }
         }
+        let waits_in = |ws: &WsId, id: &WinId| waits_on.get(ws).is_some_and(|w| w.contains(id));
+        self.zen_shown
+            .retain(|ws, _| model.workspace(ws).is_some_and(|ws| ws.zen.is_some()));
+        for ws in &model.workspaces {
+            if let Some(zen) = &ws.zen
+                && !waits_in(&ws.id, zen)
+            {
+                self.zen_shown.insert(ws.id.clone(), zen.clone());
+            }
+        }
         // The layout the rest of a waiting tile's workspace heads for, and
         // its scroll: the model's, with the waiting tiles at no width.
         let mut scrolls: BTreeMap<WsId, f64> = BTreeMap::new();
@@ -226,24 +240,34 @@ impl Scene {
                     scrolls.insert(ws_id.clone(), tape.scroll);
                 }
             }
-            // A waiting tile that took zen as it opened leaves it, in the
-            // meantime, where its closing would: on the window the focus
-            // falls back to.
-            let took_zen = |ws: &Workspace| {
-                ws.zen
-                    .as_ref()
-                    .is_some_and(|zen| waits_on.get(&ws.id).is_some_and(|w| w.contains(zen)))
-            };
-            if model.workspaces.iter().any(took_zen) {
-                let mut closed = model.clone();
-                for id in waits_on.values().flatten() {
-                    closed.close(id);
+            // A waiting tile that took zen leaves it, in the meantime, on
+            // the window zen was drawn on, or where its closing would put
+            // it once that window has left the workspace.
+            let took_zen =
+                |ws: &Workspace| ws.zen.as_ref().is_some_and(|zen| waits_in(&ws.id, zen));
+            let mut closed: Option<Model> = None;
+            for ws in without.workspaces.iter_mut() {
+                if !model.workspace(&ws.id).is_some_and(took_zen) {
+                    continue;
                 }
-                for ws in without.workspaces.iter_mut() {
-                    if model.workspace(&ws.id).is_some_and(took_zen) {
-                        ws.zen = closed.workspace(&ws.id).and_then(|ws| ws.zen.clone());
-                    }
-                }
+                let shown = self.zen_shown.get(&ws.id).filter(|zen| {
+                    layout
+                        .iter()
+                        .any(|place| &place.id == *zen && place.workspace.as_ref() == Some(&ws.id))
+                });
+                ws.zen = match shown {
+                    Some(zen) => Some(zen.clone()),
+                    None => closed
+                        .get_or_insert_with(|| {
+                            let mut closed = model.clone();
+                            for id in waits_on.values().flatten() {
+                                closed.close(id);
+                            }
+                            closed
+                        })
+                        .workspace(&ws.id)
+                        .and_then(|ws| ws.zen.clone()),
+                };
             }
             without
                 .layout()

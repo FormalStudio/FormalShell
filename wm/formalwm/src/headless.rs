@@ -3454,10 +3454,12 @@ fn a_window_opened_in_zen_waits_to_draw_before_it_takes_the_centre() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut session = Session::new("wait-zen", HOST, &[test_display("TEST-1")]);
-    for app in ["a", "files"] {
+    for app in ["a", "files", "d"] {
         let surface = session.open(app);
         session.draw(&surface, 400, 300);
     }
+    // Super+H to files, so late opens between it and d; Super+Z.
+    session.chord(&[125, 35]);
     session.chord(&[125, 44]);
     settle();
     let centre = shown("files");
@@ -3470,6 +3472,7 @@ fn a_window_opened_in_zen_waits_to_draw_before_it_takes_the_centre() {
         centre,
         "files stays in front while late waits"
     );
+    assert_ne!(shown("d"), centre, "d stays off to the side");
 
     let told = session.configured(&late_top);
     session.draw(&late, told.0, told.1);
