@@ -6,8 +6,11 @@
 //! `at X Y` jumps there, `glide X Y MS` travels there in a straight line
 //! over MS milliseconds, `by DX DY` moves that far as a mouse does (the
 //! only motion a confinement holds), `press` and `release` take a button (`left`,
-//! `right`, `middle`; left when the next word is not one), `wait MS` holds
-//! still. Positions are logical pixels of the layout, 1024x768 unless
+//! `right`, `middle`; left when the next word is not one), `wheel N` turns
+//! the wheel N notches (a fraction is a high-resolution wheel's part of
+//! one; `wheel` words in a row go out together, as such a wheel's parts of
+//! a notch arrive), `fingers DY MS` scrolls DY on a touchpad over MS milliseconds and
+//! lifts, `wait MS` holds still. Positions are logical pixels of the layout, 1024x768 unless
 //! `--size WxH` comes first.
 
 use std::{
@@ -149,6 +152,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let notches = number(&mut words, "wheel")?;
                 pointer.axis_source(AxisSource::Wheel);
                 pointer.axis_discrete(now(), Axis::VerticalScroll, notches * 15.0, notches as i32);
+                pointer.frame();
+                if words.peek().map(String::as_str) == Some("wheel") {
+                    continue;
+                }
+            }
+            "fingers" => {
+                let dy = number(&mut words, "fingers")?;
+                let ms = number(&mut words, "fingers")?;
+                let steps = (ms / STEP.as_millis() as f64).ceil().max(1.0) as u32;
+                for _ in 0..steps {
+                    pointer.axis_source(AxisSource::Finger);
+                    pointer.axis(now(), Axis::VerticalScroll, dy / f64::from(steps));
+                    pointer.frame();
+                    events.roundtrip(&mut hand)?;
+                    sleep(STEP);
+                }
+                pointer.axis_source(AxisSource::Finger);
+                pointer.axis_stop(now(), Axis::VerticalScroll);
                 pointer.frame();
             }
             "wait" => {

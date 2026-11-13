@@ -21,7 +21,10 @@ use serde_json::{Value, json};
 use shojiwm_lib::{
     config::{RuntimeHdrConfig, RuntimeHdrMode, RuntimeOutputMode},
     state::ShojiWM,
-    virtual_input::{VirtualButton, VirtualDevice, VirtualInput, VirtualKey, VirtualMotion},
+    virtual_input::{
+        AxisFrame, VirtualAxis, VirtualButton, VirtualDevice, VirtualInput, VirtualKey,
+        VirtualMotion,
+    },
 };
 use shojiwm_rs::{
     COMPOSITOR, ConfigBuilder, RuntimeBoot,
@@ -29,7 +32,7 @@ use shojiwm_rs::{
     ssd::{GestureSwipeEventSnapshot, GestureSwipePhaseSnapshot as Phase},
 };
 use smithay::{
-    backend::input::{ButtonState, InputEvent, KeyState},
+    backend::input::{Axis, AxisSource, ButtonState, InputEvent, KeyState},
     input::keyboard::Keycode,
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{calloop::EventLoop, wayland_server::Display},
@@ -241,22 +244,55 @@ impl Session {
         let pressed = keys.iter().map(|key| (*key, KeyState::Pressed));
         let released = keys.iter().rev().map(|key| (*key, KeyState::Released));
         for (key, state) in pressed.chain(released) {
-            self.now_ms += 10;
-            let event = VirtualKey {
-                device: VirtualDevice {
-                    id: "test-keyboard".into(),
-                    name: "test keyboard".into(),
-                    keyboard: true,
-                },
-                time: self.now_ms,
-                keycode: Keycode::new(key + 8),
-                state,
-                count: 1,
-            };
-            self.state
-                .process_input_event(InputEvent::<VirtualInput>::Keyboard { event });
-            self.roundtrip();
+            self.key(key, state);
         }
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+    }
+
+    /// One key by its evdev code, held down until it is let go.
+    fn key(&mut self, key: u32, state: KeyState) {
+        self.now_ms += 10;
+        let event = VirtualKey {
+            device: VirtualDevice {
+                id: "test-keyboard".into(),
+                name: "test keyboard".into(),
+                keyboard: true,
+            },
+            time: self.now_ms,
+            keycode: Keycode::new(key + 8),
+            state,
+            count: 1,
+        };
+        self.state
+            .process_input_event(InputEvent::<VirtualInput>::Keyboard { event });
+        self.roundtrip();
+    }
+
+    /// One scroll down by this much: wheel notches, toward the user, or a
+    /// touchpad's travel in pixels.
+    fn scroll_by(&mut self, source: AxisSource, amount: f64) {
+        self.now_ms += 10;
+        let mut frame = AxisFrame {
+            time_msec: self.now_ms as u32,
+            source: Some(source),
+            ..AxisFrame::default()
+        };
+        match source {
+            AxisSource::Wheel => frame.add_discrete(Axis::Vertical, amount * 15.0, amount as i32),
+            _ => frame.add(Axis::Vertical, amount),
+        }
+        let event = VirtualAxis {
+            device: VirtualDevice {
+                id: "test-pointer".into(),
+                name: "test pointer".into(),
+                keyboard: false,
+            },
+            time: self.now_ms,
+            frame,
+        };
+        self.state
+            .process_input_event(InputEvent::<VirtualInput>::PointerAxis { event });
         self.state.refresh_window_decorations().unwrap();
         self.roundtrip();
     }
@@ -648,6 +684,64 @@ fn a_workspace_bind_onto_another_output_takes_the_pointer_there() {
     session.chord(&[SUPER, EIGHT]);
     assert_eq!(state().focused_workspace_id, "8");
     assert_eq!(session.pointer(), (1100.0, 100.0));
+}
+
+#[test]
+fn super_and_the_wheel_take_one_workspace_a_turn() {
+    const SUPER: u32 = 125;
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new(
+        "wheel",
+        HOST,
+        &[test_display("TEST-1"), test_display("TEST-2")],
+    );
+    for app in ["one", "two", "three"] {
+        session.open(app);
+    }
+    ask(|engine| {
+        let ids: Vec<String> = engine.model.windows.iter().map(|w| w.id.clone()).collect();
+        engine.model.move_to_workspace(&ids[1], "2", false);
+        engine.model.move_to_workspace(&ids[2], "3", false);
+        engine.commit();
+        Ok(())
+    })
+    .unwrap();
+    session.pointer_to(100.0, 100.0);
+    // Hyprland's binds:scroll_event_delay: the scrolls of the 300 ms after
+    // one the binds took go to the window.
+    let delay = || std::thread::sleep(Duration::from_millis(320));
+    let mut seen = Vec::new();
+    let mut turn = |session: &mut Session, source, amount| {
+        session.scroll_by(source, amount);
+        seen.push(state().focused_workspace_id);
+    };
+    session.key(SUPER, KeyState::Pressed);
+    turn(&mut session, AxisSource::Wheel, 1.0);
+    turn(&mut session, AxisSource::Wheel, 1.0);
+    delay();
+    turn(&mut session, AxisSource::Wheel, 1.0);
+    delay();
+    // A high-resolution wheel's notch, in eighths: one workspace, the
+    // portable's.
+    for _ in 0..8 {
+        turn(&mut session, AxisSource::Wheel, 0.125);
+    }
+    delay();
+    // Two fingers bind nothing, and start the delay as a wheel does.
+    turn(&mut session, AxisSource::Finger, 40.0);
+    turn(&mut session, AxisSource::Wheel, 1.0);
+    delay();
+    turn(&mut session, AxisSource::Wheel, -1.0);
+    session.key(SUPER, KeyState::Released);
+    assert_eq!(
+        seen,
+        [
+            "2", "2", "3", "4", "4", "4", "4", "4", "4", "4", "4", "4", "4", "3"
+        ]
+    );
+    assert_eq!(state().focused_output, "TEST-1");
 }
 
 #[test]
