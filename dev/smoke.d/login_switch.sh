@@ -20,10 +20,12 @@
 # CRTC between the two) before running the rig's session again, in which the
 # drive finds the shell unlocked and photographs it.
 #
-# A stand-in for gnome-keyring-daemon's control socket
-# (`$XDG_RUNTIME_DIR/keyring/control`, fs_auth::keyring) answers the
-# shell's unlock 2s late: the compositor is only asked to end once it has,
-# so the first session's shell logs the keyring unlocked before it goes.
+# A stand-in for gnome-keyring-daemon's control socket, in the run's own
+# dir and handed to the shell as GNOME_KEYRING_CONTROL (fs_auth::keyring),
+# so a daemon the slot runs at `$XDG_RUNTIME_DIR/keyring` is never asked.
+# It answers the shell's unlock 2s late: the compositor is only asked to
+# end once it has, so the first session's shell logs the keyring unlocked
+# before it goes.
 # --login-stuck's never takes the connection, its backlog full, so the
 # shell's connect blocks for good.
 #
@@ -60,7 +62,7 @@ login_switch_wrong_marker="$shot_dir/login-switch-wrong-marker.txt"
 login_switch_stuck_json="$shot_dir/login-switch-stuck.json"
 login_switch_starting_json="$shot_dir/login-switch-starting.json"
 login_switch_stuck_txt="$shot_dir/login-switch-stuck.txt"
-login_switch_keyring_dir="$login_switch_host_runtime/keyring"
+login_switch_keyring_dir="$shot_dir/keyring"
 login_switch_keyring_txt="$shot_dir/login-switch-keyring.txt"
 login_switch_keyring_pid=""
 login_switch_links="wayland-1 shojiwm-wayland-1.sock"
@@ -101,10 +103,7 @@ login_switch_fixture() {
       fi
     done
   fi
-  if [ -e "$login_switch_keyring_dir" ]; then
-    echo "SMOKE_FAIL: $login_switch_keyring_dir is taken, a keyring daemon runs for this slot" >&2
-    exit 1
-  fi
+  shell_env="${shell_env:+$shell_env }GNOME_KEYRING_CONTROL=$login_switch_keyring_dir"
   mkdir -m 700 "$login_switch_keyring_dir"
   python3 -I - "$login_switch_keyring_dir/control" "$rig_password" "$login_switch_keyring_txt" "${1:-answer}" > "$shot_dir/login-switch-keyring.log" 2>&1 <<'PY' &
 import socket, struct, sys, time
