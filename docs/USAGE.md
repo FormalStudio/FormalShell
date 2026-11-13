@@ -4352,6 +4352,7 @@ fs debug motionScale 1000  # run every animation at a tenth speed (percent, 1 to
 fs debug motionScale 100   # back to normal
 fs debug join top 10 20    # publish a fake join on an edge at x and width
 fs debug joinClear
+fs debug gpuLose          # lose the GPU device at the next picture upload; the shell goes on on the CPU
 ```
 
 `debug dump`'s `theme` block also reports `layout`, `barStyle` and `morph`

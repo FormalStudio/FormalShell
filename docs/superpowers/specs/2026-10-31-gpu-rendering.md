@@ -38,7 +38,13 @@ draw (`NVRM: Xid 69`, class ce97, `DRAW_VERTEX_ARRAY_BEGIN_END_B`, count
 
 A lost device sends every surface back to the CPU on its next present,
 and nothing touches the device again: vello_hybrid panics on a render
-on a lost device.
+on a lost device. wgpu learns of a loss in whichever call meets it first
+(an eviction's submit, an upload, a render), so the paint stops uploading
+the moment it is known, the atlas writer maps no buffer, a panic inside
+vello_hybrid gives the GPU path up instead of the shell, and a present
+that learns of it hands nothing to the compositor. `debug gpuLose` loses
+the device at the next picture upload; `dev/smoke.sh --gpu-lost
+--launcher-modes` on g815 runs the launcher through it.
 
 The device opens on a thread of its own (`gpu-start`): every surface draws
 on the CPU until it is up and moves across on its next present. The

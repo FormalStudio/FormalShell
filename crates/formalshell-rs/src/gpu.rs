@@ -64,6 +64,16 @@ thread_local! {
 static LOST: AtomicBool = AtomicBool::new(false);
 static FAILED: Mutex<Option<String>> = Mutex::new(None);
 
+/// Armed by `debug gpuLose`: the device is lost at the next picture upload.
+static LOSE: AtomicBool = AtomicBool::new(false);
+
+/// False when the shell is not drawing on the GPU.
+pub fn lose_at_next_upload() -> bool {
+    let up = active();
+    LOSE.store(up, Ordering::Relaxed);
+    up
+}
+
 fn fail(reason: String) {
     crate::trace::render_fallback(&reason);
     FAILED.lock().unwrap().get_or_insert(reason);
@@ -183,8 +193,30 @@ fn report_failures(device: &wgpu::Device) {
     device.set_device_lost_callback(|reason, message| fail(format!("the GPU device was lost ({reason:?}): {message}")));
 }
 
-/// vello_hybrid's render of `scene` into `view`, unless the device is lost
-/// (by now: `paint` may have submitted, which is where a loss is learnt).
+/// `f`, a call into vello_hybrid, unless the device is lost. vello_hybrid
+/// allocates through wgpu calls that panic on a lost device
+/// (`create_buffer_init`, `write_buffer_with(..).expect`), and a loss is
+/// learnt in whichever call meets it first, so one inside `f` is caught
+/// here and gives the GPU path up. None when it did not run or the device
+/// was lost while it did.
+fn guarded<T>(what: &str, f: impl FnOnce() -> T) -> Option<T> {
+    if LOST.load(Ordering::Relaxed) {
+        return None;
+    }
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(_) if LOST.load(Ordering::Relaxed) => None,
+        Ok(done) => Some(done),
+        Err(panic) => {
+            let message = panic.downcast_ref::<&str>().copied().or(panic.downcast_ref::<String>().map(String::as_str)).unwrap_or("no message");
+            fail(format!("vello_hybrid panicked in {what}: {message}"));
+            None
+        }
+    }
+}
+
+/// vello_hybrid's render of `scene` into `view`. False when the device is
+/// lost, before it (`paint` may have submitted, which is where a loss is
+/// learnt) or in it.
 #[allow(clippy::too_many_arguments)]
 fn render(
     renderer: &mut vello_hybrid::Renderer,
@@ -196,14 +228,16 @@ fn render(
     view: &wgpu::TextureView,
     bindings: &vello_hybrid::TextureBindings,
 ) -> bool {
-    if LOST.load(Ordering::Relaxed) {
-        return false;
-    }
     let size = vello_hybrid::RenderSize { width: TILE as u32, height: TILE as u32 };
-    if let Err(e) = renderer.render(scene, resources, device, queue, encoder, &size, view, bindings) {
-        eprintln!("formalshell: render: vello_hybrid: {e}");
+    match guarded("a render", || renderer.render(scene, resources, device, queue, encoder, &size, view, bindings)) {
+        None => false,
+        Some(drawn) => {
+            if let Err(e) = drawn {
+                eprintln!("formalshell: render: vello_hybrid: {e}");
+            }
+            true
+        }
     }
-    true
 }
 
 /// Picks the backend for this run, once, before any surface is made. The
@@ -314,7 +348,7 @@ pub struct Gpu {
     fade: Option<Fade>,
     blend: Option<Fade>,
     /// Where the fade and blend passes draw before their pixels are copied
-    /// into a dmabuf, grown to the largest buffer asked for.
+    /// into a dmabuf, grown to the widest and tallest buffer asked for.
     scratch: Option<wgpu::Texture>,
     wl_queue: EventQueue<Wl>,
     wl: Wl,
@@ -674,7 +708,12 @@ impl Gpu {
     }
 
     /// The picture's place on the GPU, uploaded on its first use.
+    /// None once the device is lost, so a paint that learns of it (an
+    /// eviction's submit) uploads nothing more.
     fn place(&mut self, pixmap: &Arc<Pixmap>) -> Option<&Placed> {
+        if LOST.load(Ordering::Relaxed) {
+            return None;
+        }
         let key = Arc::as_ptr(pixmap) as usize;
         let frame = self.frame;
         if !self.images.contains_key(&key) {
@@ -684,8 +723,11 @@ impl Gpu {
             }
             let bytes = usize::from(w) * usize::from(h) * 4;
             let big = w > BIG || h > BIG;
-            if !big && self.atlas_bytes + bytes > ATLAS_BUDGET {
+            if !big && (self.atlas_bytes + bytes > ATLAS_BUDGET || LOSE.load(Ordering::Relaxed)) {
                 self.evict(bytes);
+                if LOST.load(Ordering::Relaxed) {
+                    return None;
+                }
             }
             let placed = if big {
                 let size = wgpu::Extent3d { width: u32::from(w), height: u32::from(h), depth_or_array_layers: 1 };
@@ -712,7 +754,7 @@ impl Gpu {
                 Placed::Own(id)
             } else {
                 let encoder = self.uploads.get_or_insert_with(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell uploads") }));
-                let id = self.renderer.upload_image(&mut self.resources, &self.device, &self.queue, encoder, &Pixels(pixmap));
+                let id = guarded("an upload", || self.renderer.upload_image(&mut self.resources, &self.device, &self.queue, encoder, &Pixels(pixmap)))?;
                 self.atlas_bytes += bytes;
                 Placed::Atlas(id)
             };
@@ -739,6 +781,15 @@ impl Gpu {
             }
         }
         self.queue.submit([encoder.finish()]);
+        if LOSE.swap(false, Ordering::Relaxed) {
+            // As a driver fault loses it: the device invalid and the lost
+            // callback run before the submit returns.
+            self.device.destroy();
+            let _ = self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(5)) });
+        }
+        if LOST.load(Ordering::Relaxed) {
+            return;
+        }
         // Pictures with textures of their own go when nothing drew them
         // for a while, so a closed wallpaper picker frees its memory.
         let frame = self.frame;
@@ -827,18 +878,25 @@ impl vello_hybrid::AtlasWriter for Pixels<'_> {
     /// Through the encoder rather than `queue.write_texture`, which runs
     /// ahead of every command buffer: an atlas grown in the same encoder
     /// copies its old layers over after, and would overwrite the upload.
-    fn write_to_atlas_layer(&self, device: &wgpu::Device, _: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, atlas: &wgpu::Texture, layer: u32, offset: [u32; 2], width: u32, height: u32) {
+    /// The staging buffer is filled by `queue.write_buffer`, not mapped at
+    /// creation: wgpu panics mapping a buffer made on a lost device.
+    fn write_to_atlas_layer(&self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, atlas: &wgpu::Texture, layer: u32, offset: [u32; 2], width: u32, height: u32) {
+        if LOST.load(Ordering::Relaxed) {
+            return;
+        }
         let row = 4 * width as usize;
         let stride = row.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize);
         let mut padded = vec![0; stride * height as usize];
         for (src, dst) in self.0.data_as_u8_slice().chunks_exact(row).zip(padded.chunks_exact_mut(stride)) {
             dst[..row].copy_from_slice(src);
         }
-        let staging = wgpu::util::DeviceExt::create_buffer_init(device, &wgpu::util::BufferInitDescriptor {
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("formalshell upload"),
-            contents: &padded,
-            usage: wgpu::BufferUsages::COPY_SRC,
+            size: padded.len() as u64,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
+        queue.write_buffer(&staging, 0, &padded);
         encoder.copy_buffer_to_texture(
             wgpu::TexelCopyBufferInfo { buffer: &staging, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(stride as u32), rows_per_image: Some(height) } },
             wgpu::TexelCopyTextureInfo { texture: atlas, mip_level: 0, origin: wgpu::Origin3d { x: offset[0], y: offset[1], z: layer }, aspect: wgpu::TextureAspect::All },
@@ -1367,18 +1425,22 @@ impl Buffer {
     /// queue family, so the ownership transfers go in command buffers of
     /// their own, around the work: the acquire puts the image back in the
     /// layout wgpu last left it in, which is where its own tracking starts
-    /// from.
+    /// from. False once the device is lost, wherever that is learnt, so the
+    /// buffer is never attached after it.
     fn hand_over(&self, g: &mut Gpu, encoder: wgpu::CommandEncoder, layout: vk::ImageLayout) -> bool {
         let acquire = self.held.take().map(|was| g.ownership(self.image, false, was));
         let release = g.ownership(self.image, true, layout);
         self.held.set(Some(layout));
         let index = g.queue.submit(acquire.into_iter().chain([encoder.finish(), release]));
+        if LOST.load(Ordering::Relaxed) {
+            return false;
+        }
         if let Some(fence) = &g.fence {
             match fence.signal(&g.queue).and_then(|()| fence.attach(&self.fd)) {
                 Ok(()) => {
                     // Frees what finished; never blocks.
                     let _ = g.device.poll(wgpu::PollType::Poll);
-                    return true;
+                    return !LOST.load(Ordering::Relaxed);
                 }
                 Err(e) => {
                     eprintln!("formalshell: render: {e}; waiting on the GPU instead");
@@ -1392,7 +1454,7 @@ impl Buffer {
 
     fn wait(&self, g: &Gpu, index: wgpu::SubmissionIndex) -> bool {
         match g.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: Some(std::time::Duration::from_secs(1)) }) {
-            Ok(_) => true,
+            Ok(_) => !LOST.load(Ordering::Relaxed),
             Err(e) => {
                 fail(format!("waiting on the GPU: {e}"));
                 false
@@ -1401,18 +1463,21 @@ impl Buffer {
     }
 }
 
-/// The render target the fade and blend passes draw into, at least `size`.
+/// The render target the fade and blend passes draw into, at least `size`
+/// and as wide and as tall as any buffer before it, so outputs of other
+/// shapes share it rather than each making it again.
 /// The dmabufs are pitch-linear, which NVIDIA's 3D engine faults on as a
 /// colour target (Xid 69 on the draw, the device lost), so they are only
 /// ever copied into.
 fn scratch<'a>(slot: &'a mut Option<wgpu::Texture>, device: &wgpu::Device, size: wgpu::Extent3d) -> &'a wgpu::Texture {
-    if slot.as_ref().is_some_and(|t| t.width() < size.width || t.height() < size.height) {
+    let (w, h) = slot.as_ref().map_or((0, 0), |t| (t.width(), t.height()));
+    if w < size.width || h < size.height {
         *slot = None;
     }
     slot.get_or_insert_with(|| {
         device.create_texture(&wgpu::TextureDescriptor {
             label: Some("formalshell scratch"),
-            size: wgpu::Extent3d { width: size.width, height: size.height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d { width: w.max(size.width), height: h.max(size.height), depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -1621,6 +1686,15 @@ impl Fade {
 
 #[cfg(test)]
 mod tests {
+    use super::{Arc, Backend, IRect, Ordering, Pixmap};
+    use crate::render::Raster;
+    use smithay_client_toolkit::reexports::client::globals::{GlobalListContents, registry_queue_init};
+    use smithay_client_toolkit::reexports::client::protocol::wl_registry;
+    use smithay_client_toolkit::reexports::client::{Connection, Dispatch, QueueHandle};
+    use std::time::{Duration, Instant};
+    use vello_cpu::kurbo::Rect;
+    use vello_cpu::peniko::ImageSampler;
+
     /// Run where lavapipe is installed: `just check gpu` on the rig.
     #[test]
     #[ignore = "needs the Vulkan loader and lavapipe"]
@@ -1643,15 +1717,23 @@ mod tests {
         assert!(unsafe { super::one_driver("libvulkan_nothing.so") }.is_err());
     }
 
+    /// The shell's loss state back to a device that never failed, for a
+    /// test after one that lost its own.
+    fn reset() {
+        super::LOST.store(false, Ordering::Relaxed);
+        *super::FAILED.lock().unwrap() = None;
+    }
+
     /// A device lost under a running shell (NVIDIA's, opening the launcher
     /// on g815): vello_hybrid panics on a render on it, the shell's render
-    /// skips it and `with` hands out no device after it.
+    /// skips it once the loss is known and gives the GPU up when the render
+    /// is where it is learnt, and an atlas upload on it does not panic.
     #[test]
     #[ignore = "needs the Vulkan loader and lavapipe"]
     fn a_lost_device_is_never_rendered_on() {
         use futures_lite::future::block_on;
-        use std::sync::atomic::Ordering;
-        use vello_cpu::kurbo::Rect;
+        use vello_hybrid::AtlasWriter;
+        reset();
         // SAFETY: lavapipe's own library.
         let instance = unsafe { super::one_driver("libvulkan_lvp.so") }.unwrap();
         let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).unwrap();
@@ -1660,16 +1742,20 @@ mod tests {
         let side = super::TILE as u32;
         let target = vello_hybrid::RenderTargetConfig { format: wgpu::TextureFormat::Rgba8Unorm, width: side, height: side };
         let (mut renderer, mut resources) = vello_hybrid::Renderer::new_with(&device, &target, vello_hybrid::RenderSettings::default());
-        let tile = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d { width: side, height: side, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
+        let texture = |usage| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d { width: side, height: side, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage,
+                view_formats: &[],
+            })
+        };
+        let tile = texture(wgpu::TextureUsages::RENDER_ATTACHMENT);
+        let atlas = texture(wgpu::TextureUsages::COPY_DST);
         let view = tile.create_view(&wgpu::TextureViewDescriptor::default());
         let bindings = vello_hybrid::TextureBindings::new();
         let mut scene = vello_hybrid::Scene::new(side as u16, side as u16);
@@ -1683,17 +1769,94 @@ mod tests {
         assert!(draw(&mut renderer, &mut resources));
         assert!(!super::LOST.load(Ordering::Relaxed));
 
+        // Destroyed and not yet polled: lost, and nothing has learnt it.
         device.destroy();
-        let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(5)) });
+        let pixmap = Arc::new(Pixmap::new(16, 16));
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        super::Pixels(&pixmap).write_to_atlas_layer(&device, &queue, &mut encoder, &atlas, 0, [0, 0], 16, 16);
+        assert!(!super::LOST.load(Ordering::Relaxed));
+        assert!(!draw(&mut renderer, &mut resources), "a render on a lost device went on");
+        assert!(super::LOST.load(Ordering::Relaxed));
+        assert!(super::FAILED.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("vello_hybrid panicked in a render")));
+
+        reset();
+        let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(Duration::from_secs(5)) });
         assert!(super::LOST.load(Ordering::Relaxed), "the lost callback never ran");
         assert!(super::FAILED.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("the GPU device was lost")));
         assert!(!draw(&mut renderer, &mut resources));
-        assert!(super::with(|_| ()).is_none());
 
-        // What the check keeps the shell from.
+        // What the guard keeps the shell from.
         let size = vello_hybrid::RenderSize { width: side, height: side };
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         let unguarded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| renderer.render(&scene, &mut resources, &device, &queue, &mut encoder, &size, &view, &bindings)));
         assert!(unguarded.is_err(), "vello_hybrid rendered on a lost device without panicking");
+    }
+
+    struct Globals;
+
+    impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Globals {
+        fn event(_: &mut Self, _: &wl_registry::WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
+    }
+
+    /// The shell's own device, in the slot every surface draws through,
+    /// lost in the middle of a paint with its pictures still to upload and
+    /// the atlas over budget: nothing panics, the frame is never handed to
+    /// the compositor, and every later call finds no GPU. Run inside a
+    /// compositor offering linux-dmabuf v4 on a Vulkan device (the rig's
+    /// headless labwc parent).
+    #[test]
+    #[ignore = "needs a Wayland compositor with linux-dmabuf v4 on a Vulkan device"]
+    fn a_loss_mid_paint_hands_nothing_over() {
+        reset();
+        let conn = Connection::connect_to_env().expect("a compositor on WAYLAND_DISPLAY");
+        let (globals, _queue) = registry_queue_init::<Globals>(&conn).expect("wl_registry");
+        super::resolve(Backend::Gpu, &conn, &globals);
+        let start = Instant::now();
+        while !super::active() {
+            assert!(start.elapsed() < Duration::from_secs(30), "no GPU: {:?}", super::status().reason);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let side = 2 * super::TILE as u32;
+        let whole = IRect::new(0, 0, side as i32, side as i32);
+        let mut canvas = super::Canvas::new(side, side).expect("a canvas");
+        let buffer = super::Buffer::new(side, side).expect("a dmabuf");
+        let picture = |n: u16, v: u8| {
+            let mut p = Pixmap::new(n, n);
+            p.data_as_u8_slice_mut().fill(v);
+            Arc::new(p)
+        };
+        let paint = |f: &mut super::Frame, p: &Arc<Pixmap>| {
+            f.set_image(p.clone(), ImageSampler::default());
+            f.fill_rect(&Rect::new(0.0, 0.0, 96.0, 96.0));
+        };
+        let kept = picture(64, 0x80);
+        for tile in super::tiles(whole) {
+            canvas.draw(tile, |f| paint(f, &kept));
+        }
+        assert!(buffer.fill(&mut canvas, &[whole], 256), "{:?}", super::status().reason);
+        assert!(buffer.fill(&mut canvas, &[whole], 128), "{:?}", super::status().reason);
+
+        let (small, big) = (picture(64, 0x40), picture(super::BIG + 1, 0x20));
+        for tile in super::tiles(whole) {
+            canvas.draw(tile, |f| {
+                // The next small picture evicts first.
+                f.gpu.atlas_bytes = f.gpu.atlas_bytes.max(super::ATLAS_BUDGET);
+                f.gpu.device.destroy();
+                let _ = f.gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(Duration::from_secs(5)) });
+                paint(f, &small);
+                paint(f, &big);
+            });
+        }
+        assert!(super::LOST.load(Ordering::Relaxed), "the lost callback never ran");
+        assert!(!buffer.fill(&mut canvas, &[whole], 256), "a frame drawn on a lost device was handed over");
+        assert!(!buffer.fill(&mut canvas, &[whole], 128), "a fade on a lost device was handed over");
+        assert!(buffer.read().is_none());
+        assert!(!super::active());
+        assert!(super::GPU.with(|g| g.borrow().is_none()), "the lost device is still held");
+        assert!(super::Canvas::new(side, side).is_none());
+        assert!(super::Buffer::new(side, side).is_none());
+        let status = super::status();
+        assert_eq!(status.backend, "cpu");
+        assert!(status.reason.is_some_and(|r| r.starts_with("the GPU device was lost")));
     }
 }
