@@ -5,6 +5,7 @@ use formalwm_core::{
     chord::{Key, Mods},
     model::Big,
     settings::{BindGroup, Settings},
+    tape::WinId,
 };
 use fs_wm_proto as proto;
 use shojiwm_rs::{prelude::*, runtime_key_binding::RuntimeKeyBindingEntry};
@@ -197,6 +198,7 @@ impl Engine {
 
     pub fn run(&mut self, action: &Action) {
         let focused = self.model.focused_window().cloned();
+        let before = focused.clone();
         let output = self.model.focused_output.clone();
         let changed = match action {
             Action::Spawn(argv) => {
@@ -266,24 +268,50 @@ impl Engine {
         if changed {
             self.commit();
         }
-        // Hyprland's workspace dispatcher puts the pointer on the output it
-        // moves the focus to, so the next hover or wheel turn is there: in the
-        // middle of the window last focused on the workspace
-        // (binds:workspace_center_on 1), of the output when it has none.
-        if matches!(action, Action::Workspace(_)) && self.model.focused_output != output {
-            let window = self.model.focused_window().and_then(|id| {
-                let layout = self.model.layout();
-                let place = layout.iter().find(|place| &place.id == id)?;
-                Some(self.model.shown_rect(place))
-            });
-            let output = self.model.output(&self.model.focused_output);
-            if let Some(rect) = window.or_else(|| output.map(|output| output.geo.rect)) {
-                let (x, y) = rect.center();
-                COMPOSITOR
-                    .cursor
-                    .set_position(CursorPosition::Global { x, y });
-            }
+        self.pointer_follows(action, before.as_ref(), &output);
+    }
+
+    /// The pointer follows a focus the keyboard moved, as Hyprland's
+    /// dispatchers warp it (`cursor:no_warps` off): into the middle of the
+    /// window that has the focus now, unless it is already over it. A
+    /// workspace bind onto another output with no window there takes it to
+    /// the middle of that output (binds:workspace_center_on 1). Closing a
+    /// window leaves the pointer where it is.
+    fn pointer_follows(&self, action: &Action, before: Option<&WinId>, output: &str) {
+        let refocused = self.model.focused_window() != before;
+        let crossed = self.model.focused_output != output;
+        let follows = match action {
+            Action::Close | Action::MoveWindow | Action::ResizeWindow => false,
+            Action::SwapColumn(_) | Action::SwapWindow(_) | Action::ConsumeOrExpel(_) => true,
+            _ => refocused || crossed,
+        };
+        if !follows {
+            return;
         }
+        let window = self.model.focused_window().and_then(|id| {
+            let layout = self.model.layout();
+            let place = layout.iter().find(|place| &place.id == id)?;
+            Some(self.model.shown_rect(place))
+        });
+        let target = match window {
+            Some(rect) => rect,
+            None if crossed => match self.model.output(&self.model.focused_output) {
+                Some(output) => output.geo.rect,
+                None => return,
+            },
+            None => return,
+        };
+        if COMPOSITOR
+            .cursor
+            .get_position()
+            .is_some_and(|at| target.contains(at.x, at.y))
+        {
+            return;
+        }
+        let (x, y) = target.center();
+        COMPOSITOR
+            .cursor
+            .set_position(CursorPosition::Global { x, y });
     }
 
     /// The client is asked; the model follows when the compositor reports

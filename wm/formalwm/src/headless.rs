@@ -906,6 +906,44 @@ fn a_workspace_bind_onto_another_output_takes_the_pointer_there() {
         (at.0 - left.0).abs() <= 1.0 && (at.1 - left.1).abs() <= 1.0,
         "the pointer at {at:?}, the left window's middle at {left:?}"
     );
+
+    // A focus bind takes the pointer into the middle of the window it
+    // focuses, as Hyprland's movefocus does.
+    const H: u32 = 35;
+    const L: u32 = 38;
+    session.chord(&[SUPER, L]);
+    let seen = state();
+    let focused = seen
+        .windows
+        .iter()
+        .find(|w| w.focused)
+        .map(|w| w.app_id.clone());
+    assert_eq!(focused.as_deref(), Some("right"));
+    let rect = seen.windows.iter().find(|w| w.app_id == "right").unwrap();
+    let rect = rect.rect.as_ref().unwrap();
+    let right = (
+        f64::from(rect.x) + f64::from(rect.width) / 2.0,
+        f64::from(rect.y) + f64::from(rect.height) / 2.0,
+    );
+    let at = session.pointer();
+    assert!(
+        (at.0 - right.0).abs() <= 1.0 && (at.1 - right.1).abs() <= 1.0,
+        "the pointer at {at:?}, the right window's middle at {right:?}"
+    );
+
+    // Already over the window the focus goes to, the pointer stays put.
+    let rect = seen.windows.iter().find(|w| w.app_id == "left").unwrap();
+    let rect = rect.rect.as_ref().unwrap();
+    let inside = (f64::from(rect.x) + 10.0, f64::from(rect.y) + 10.0);
+    session.pointer_to(inside.0, inside.1);
+    session.chord(&[SUPER, H]);
+    let focused = state()
+        .windows
+        .into_iter()
+        .find(|w| w.focused)
+        .map(|w| w.app_id);
+    assert_eq!(focused.as_deref(), Some("left"));
+    assert_eq!(session.pointer(), inside);
 }
 
 #[test]
