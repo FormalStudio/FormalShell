@@ -1,6 +1,7 @@
-//! The engine on a compositor with no backend, two outputs and a real
+//! The engine on a compositor with no backend, its outputs and a real
 //! client connected to it, for what the rig has no hardware for: a host's
-//! workspaces on their outputs, the touchpad's swipes and the lid.
+//! workspaces on their outputs, the g815's three displays matched by what
+//! their EDIDs say, the touchpad's swipes and the lid.
 //!
 //! The session is ShojiWM's own test harness
 //! (`src/shojiwm_rs/tests/common/mod.rs`), MIT, Copyright (c) 2026 bea4dev.
@@ -10,6 +11,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     os::{fd::AsFd, unix::net::UnixStream},
     rc::Rc,
+    sync::Mutex,
     time::Duration,
 };
 
@@ -71,29 +73,56 @@ struct Session {
     files: Vec<File>,
 }
 
-fn output(name: &str, x: i32) -> Output {
+/// The tests share the process's environment, so they take turns.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// A connected display: its connector, what its EDID says (make, model,
+/// serial), its size and refresh in mHz.
+struct Screen {
+    name: &'static str,
+    identity: [&'static str; 3],
+    size: (i32, i32),
+    refresh: i32,
+}
+
+fn test_display(name: &'static str) -> Screen {
+    Screen {
+        name,
+        identity: ["test", "test", ""],
+        size: (WIDTH as i32, HEIGHT as i32),
+        refresh: 60_000,
+    }
+}
+
+fn output(display: &Screen) -> Output {
+    let [make, model, serial] = display.identity;
     let output = Output::new(
-        name.into(),
+        display.name.into(),
         PhysicalProperties {
             size: (0, 0).into(),
             subpixel: Subpixel::Unknown,
-            make: "test".into(),
-            model: "test".into(),
-            serial_number: String::new(),
+            make: make.into(),
+            model: model.into(),
+            serial_number: serial.into(),
         },
     );
     let mode = Mode {
-        size: (WIDTH as i32, HEIGHT as i32).into(),
-        refresh: 60_000,
+        size: display.size.into(),
+        refresh: display.refresh,
     };
-    output.change_current_state(Some(mode), None, None, Some((x, 0).into()));
+    output.change_current_state(Some(mode), None, None, None);
     output.set_preferred(mode);
     output
 }
 
 impl Session {
-    fn new() -> Self {
-        let root = std::env::temp_dir().join(format!("formalwm-headless-{}", std::process::id()));
+    /// `displays` connect in order, each right of the one before until the
+    /// settings place it.
+    fn new(test: &str, host: &str, displays: &[Screen]) -> Self {
+        let root = std::env::temp_dir().join(format!(
+            "formalwm-headless-{}-{test}",
+            std::process::id()
+        ));
         let (runtime, config) = (root.join("run"), root.join("config/formalwm"));
         std::fs::create_dir_all(&runtime).unwrap();
         std::fs::create_dir_all(&config).unwrap();
@@ -102,9 +131,9 @@ impl Session {
             include_str!("../../example/settings.json"),
         )
         .unwrap();
-        std::fs::write(config.join("host.json"), HOST).unwrap();
-        // SAFETY: the one test of this binary sets these before any thread
-        // reads them.
+        std::fs::write(config.join("host.json"), host).unwrap();
+        // SAFETY: each test sets these under `ONE_AT_A_TIME`, before its
+        // compositor's thread reads them.
         unsafe {
             std::env::set_var("XDG_RUNTIME_DIR", &runtime);
             std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
@@ -117,10 +146,13 @@ impl Session {
             .asset_root(crate::layers::install_assets());
         let boot = RuntimeBoot::new(Box::new(config), &CommonArgs::parse(&[], &[]));
         let mut state = ShojiWM::new(&mut event_loop, display, &boot);
-        for (name, x) in [("TEST-1", 0), ("TEST-2", WIDTH as i32)] {
-            let output = output(name, x);
+        let mut x = 0;
+        for display in displays {
+            let output = output(display);
+            output.change_current_state(None, None, None, Some((x, 0).into()));
             state.create_output_global(&output);
             state.space.map_output(&output, (x, 0));
+            x += display.size.0;
         }
         state.enable_initial_decoration_runtime();
         state.sync_runtime_display_state();
@@ -589,11 +621,14 @@ fn scroll(workspace: &'static str) -> (f64, f64) {
     .unwrap()
 }
 
-/// One test: the engine is one per thread and reads the process's
-/// environment.
 #[test]
 fn two_outputs_and_the_touchpad() {
-    let mut session = Session::new();
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new(
+        "two",
+        HOST,
+        &[test_display("TEST-1"), test_display("TEST-2")],
+    );
 
     // The host's workspaces on their outputs, each showing its default.
     let seen = state();
@@ -1174,8 +1209,7 @@ fn two_outputs_and_the_touchpad() {
     // `bind.escape`: the shell's command runs and the Escape is the
     // focused client's all the same.
     const ESCAPE: u32 = 1;
-    let mark =
-        std::env::temp_dir().join(format!("formalwm-headless-{}/escaped", std::process::id()));
+    let mark = std::path::PathBuf::from(std::env::var("XDG_RUNTIME_DIR").unwrap()).join("escaped");
     let argv = vec!["touch".to_owned(), mark.display().to_string()];
     ask(move |engine| {
         engine.escapes.insert("card".into(), argv);
@@ -1329,4 +1363,163 @@ fn two_outputs_and_the_touchpad() {
     session.roundtrip();
     let lid = COMPOSITOR.input.lid_switch().get_untracked();
     assert_eq!(lid.map(|lid| lid.closed), Some(false));
+}
+
+/// The g815 on its own host file: its three displays matched by what their
+/// EDIDs say, connected in the order its tty connects them, each laid out,
+/// scaled and holding its workspaces as host.lua has them under Hyprland.
+#[test]
+fn the_g815s_three_displays() {
+    const SUPER: u32 = 125;
+    const SHIFT: u32 = 42;
+    let key = |number: u32| number + 1;
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let display = |name, identity, size, refresh| Screen {
+        name,
+        identity,
+        size,
+        refresh,
+    };
+    let mut session = Session::new(
+        "g815",
+        include_str!("../../example/hosts/g815/host.json"),
+        &[
+            display(
+                "HDMI-A-1",
+                ["ASUSTek COMPUTER INC", "PA278CGV", "T1LMQS063802"],
+                (2560, 1440),
+                143_996,
+            ),
+            display("eDP-1", ["BOE", "NE180QDM-NZC", ""], (2560, 1600), 240_000),
+            display(
+                "DP-3",
+                ["ASUSTek COMPUTER INC", "MB16QHG", "RCLMTF037964"],
+                (2560, 1600),
+                119_963,
+            ),
+        ],
+    );
+
+    // Positions and scales, in logical pixels: the portable's bottom lines
+    // up with the desk's, the panel right of it.
+    let seen = state();
+    let placed = |seen: &proto::State, name: &str| {
+        seen.outputs
+            .iter()
+            .find(|output| output.name == name)
+            .map(|o| (o.x, o.y, o.width, o.height, o.scale))
+            .unwrap()
+    };
+    let desk = (2560, 0, 2560, 1440, 1.0);
+    let portable = (5120, 440, 1600, 1000, 1.6);
+    assert_eq!(placed(&seen, "HDMI-A-1"), desk);
+    assert_eq!(placed(&seen, "DP-3"), portable);
+    assert_eq!(placed(&seen, "eDP-1"), (6720, 0, 2048, 1280, 1.25));
+    let config = |session: &Session, name: &str| {
+        session.state.runtime_output_configs.get(name).cloned().unwrap()
+    };
+    for name in ["HDMI-A-1", "DP-3", "eDP-1"] {
+        assert_eq!(config(&session, name).direct_scanout, Some(false), "{name}");
+    }
+    // The entry each matched, by its VRR policy: 2 on the desk, 3 on the
+    // panel, none on the portable.
+    let vrr = ask(|engine| {
+        Ok(COMPOSITOR
+            .output
+            .state()
+            .get_untracked()
+            .into_values()
+            .map(|output| {
+                let facts = formalwm_core::settings::OutputFacts {
+                    name: &output.name,
+                    description: output.description.as_deref().unwrap_or_default(),
+                    make: output.make.as_deref().unwrap_or_default(),
+                    model: output.model.as_deref().unwrap_or_default(),
+                    serial: output.serial.as_deref().unwrap_or_default(),
+                };
+                let vrr = engine.settings.output_for(&facts).map(|entry| entry.vrr);
+                (output.name.clone(), vrr)
+            })
+            .collect::<std::collections::BTreeMap<_, _>>())
+    })
+    .unwrap();
+    assert_eq!(vrr["HDMI-A-1"], Some(2));
+    assert_eq!(vrr["DP-3"], Some(0));
+    assert_eq!(vrr["eDP-1"], Some(3));
+
+    // 4 and 8 on the portable, the rest on the desk, each showing its default.
+    assert_eq!(stack(&seen, "HDMI-A-1"), ["1", "2", "3", "5", "6", "7", "9"]);
+    assert_eq!(stack(&seen, "DP-3"), ["4", "8"]);
+    let active = |seen: &proto::State, output: &str| {
+        seen.workspaces
+            .iter()
+            .find(|ws| ws.output == output && ws.active)
+            .map(|ws| ws.id.clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(active(&seen, "HDMI-A-1"), "1");
+    assert_eq!(active(&seen, "DP-3"), "4");
+
+    let inside = |rect: &proto::Rect, (x, y, width, height, _): (i32, i32, i32, i32, f64)| {
+        rect.x >= x
+            && rect.y >= y
+            && rect.x + rect.width <= x + width
+            && rect.y + rect.height <= y + height
+    };
+    let window = |app: &str| {
+        let seen = state();
+        let window = seen.windows.iter().find(|w| w.app_id == app).unwrap();
+        (window.workspace_id.clone(), window.rect.clone().unwrap())
+    };
+    let focused = || {
+        let seen = state();
+        (seen.focused_output.clone(), seen.focused_workspace_id.clone())
+    };
+
+    // Super+4 from the desk goes to the portable; the desk keeps 1 in view.
+    session.chord(&[SUPER, key(1)]);
+    assert_eq!(focused(), ("HDMI-A-1".into(), "1".into()));
+    session.chord(&[SUPER, key(4)]);
+    assert_eq!(focused(), ("DP-3".into(), "4".into()));
+    assert_eq!(active(&state(), "HDMI-A-1"), "1");
+    // A window opened there opens on the portable.
+    session.open("foot");
+    let (ws, rect) = window("foot");
+    assert_eq!(ws, "4");
+    assert!(inside(&rect, portable), "{rect:?} on the portable");
+
+    // From the desk, a window whose rule says 4 opens on the portable too.
+    session.chord(&[SUPER, key(1)]);
+    assert_eq!(focused(), ("HDMI-A-1".into(), "1".into()));
+    session.open("discord");
+    let (ws, rect) = window("discord");
+    assert_eq!(ws, "4");
+    assert!(inside(&rect, portable), "{rect:?} on the portable");
+
+    // Super+8 from the desk, and a desk window sent to 8, both reach the
+    // portable.
+    session.chord(&[SUPER, key(1)]);
+    session.chord(&[SUPER, key(8)]);
+    assert_eq!(focused(), ("DP-3".into(), "8".into()));
+    session.chord(&[SUPER, key(2)]);
+    assert_eq!(focused(), ("HDMI-A-1".into(), "2".into()));
+    session.open("ghostty");
+    let (ws, rect) = window("ghostty");
+    assert_eq!(ws, "2");
+    assert!(inside(&rect, desk), "{rect:?} on the desk");
+    session.chord(&[SUPER, SHIFT, key(8)]);
+    let (ws, rect) = window("ghostty");
+    assert_eq!(ws, "8");
+    session.chord(&[SUPER, key(8)]);
+    let (_, rect_after) = window("ghostty");
+    assert!(inside(&rect_after, portable), "{rect:?} then {rect_after:?} on the portable");
+
+    // The lid takes the panel alone.
+    session.state.lid_switch_toggled(true);
+    session.roundtrip();
+    assert_eq!(config(&session, "eDP-1").mode, Some(RuntimeOutputMode::Disabled));
+    let seen = state();
+    assert_eq!(placed(&seen, "HDMI-A-1"), desk);
+    assert_eq!(placed(&seen, "DP-3"), portable);
+    assert_eq!(stack(&seen, "DP-3"), ["4", "8"]);
 }
