@@ -200,6 +200,9 @@ impl Engine {
     /// After the model changed: everything that follows from it.
     pub fn commit(&mut self) {
         self.scene.sync(&self.model);
+        self.overview
+            .progress
+            .set_outputs(self.model.outputs.iter().map(|o| o.geo.name.as_str()));
         self.sync_fullscreen();
         self.focus();
         self.present();
@@ -391,10 +394,6 @@ impl Engine {
         let Some(dt) = self.clocks.advance(output, now) else {
             return;
         };
-        let outputs = &self.model.outputs;
-        self.overview
-            .progress
-            .retain(|name| outputs.iter().any(|o| o.geo.name == name));
         self.scene.step_on(output, dt);
         self.overview.step(output, dt, &self.theme.chrome.motion);
         self.present();

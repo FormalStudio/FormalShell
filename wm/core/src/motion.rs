@@ -245,12 +245,12 @@ impl Clocks {
 
 /// A spring every output draws, one copy per output stepped on that
 /// output's frames, so each shows the one curve at its own frame times.
-/// Holds, targets and flings reach every copy; an output's first copy
-/// starts from where the spring was at the last of them.
+/// Holds, targets and flings reach every copy. An output joins with the
+/// spring as it stands, so it neither replays a settled curve nor holds a
+/// value the others have left.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spread {
-    origin: Spring,
-    /// The copy stepped last.
+    /// The copy stepped or set last.
     latest: Spring,
     copies: BTreeMap<String, Spring>,
 }
@@ -258,7 +258,6 @@ pub struct Spread {
 impl Spread {
     pub fn at(value: f64) -> Self {
         Self {
-            origin: Spring::at(value),
             latest: Spring::at(value),
             copies: BTreeMap::new(),
         }
@@ -266,7 +265,7 @@ impl Spread {
 
     /// Where it is on `output`.
     pub fn on(&self, output: &str) -> f64 {
-        self.copies.get(output).unwrap_or(&self.origin).value
+        self.copies.get(output).unwrap_or(&self.latest).value
     }
 
     /// Where it is on the output that stepped it last.
@@ -279,8 +278,6 @@ impl Spread {
     }
 
     fn each(&mut self, f: impl Fn(&mut Spring)) {
-        self.origin = self.latest;
-        f(&mut self.origin);
         f(&mut self.latest);
         self.copies.values_mut().for_each(f);
     }
@@ -294,23 +291,29 @@ impl Spread {
     }
 
     pub fn jump(&mut self, value: f64) {
-        self.copies.clear();
-        self.origin.jump(value);
-        self.latest.jump(value);
+        self.each(|spring| spring.jump(value));
     }
 
     pub fn resting(&self) -> bool {
         self.latest.resting() && self.copies.values().all(Spring::resting)
     }
 
-    /// Drops the copies of outputs that are gone, which nothing steps.
-    pub fn retain(&mut self, keep: impl Fn(&str) -> bool) {
-        self.copies.retain(|output, _| keep(output));
+    /// The outputs that draw it: one that is gone drops its copy, a new one
+    /// starts from the spring as it stands; the others keep their curves.
+    pub fn set_outputs<'a>(&mut self, outputs: impl IntoIterator<Item = &'a str>) {
+        let outputs: Vec<&str> = outputs.into_iter().collect();
+        self.copies
+            .retain(|output, _| outputs.contains(&output.as_str()));
+        for output in outputs {
+            if !self.copies.contains_key(output) {
+                self.copies.insert(output.to_owned(), self.latest);
+            }
+        }
     }
 
     pub fn step_in(&mut self, output: &str, params: SpringParams, dt: f64, unit: f64) {
-        let origin = self.origin;
-        let copy = self.copies.entry(output.to_owned()).or_insert(origin);
+        let latest = self.latest;
+        let copy = self.copies.entry(output.to_owned()).or_insert(latest);
         copy.step_in(params, dt, unit);
         self.latest = *copy;
     }
@@ -412,11 +415,12 @@ mod tests {
     fn a_spread_spring_follows_one_curve_on_every_output() {
         let params = SpringParams::from_family(&Families::default().spatial);
         let mut spread = Spread::at(0.0);
+        spread.set_outputs(["fast", "slow"]);
         spread.set_target(1.0);
         let mut alone = Spring::at(0.0);
         alone.target = 1.0;
         // The 240 Hz output steps first and often; the 120 Hz one starts
-        // later from where the open began, not from where 240 Hz has got to.
+        // from where the open began, not from where 240 Hz has got to.
         for _ in 0..6 {
             spread.step_in("fast", params, 1.0 / 240.0, 0.001);
         }
@@ -433,6 +437,62 @@ mod tests {
         spread.jump(0.25);
         assert_eq!((spread.on("fast"), spread.on("slow")), (0.25, 0.25));
         assert!(spread.resting());
+    }
+
+    fn settle_on(spread: &mut Spread, output: &str) {
+        let params = SpringParams::from_family(&Families::default().spatial);
+        for _ in 0..1000 {
+            if spread.resting() {
+                return;
+            }
+            spread.step_in(output, params, 1.0 / 144.0, 0.001);
+        }
+        panic!("never came to rest");
+    }
+
+    #[test]
+    fn an_output_connected_to_a_settled_open_spread_draws_it_open() {
+        let mut spread = Spread::at(0.0);
+        spread.set_outputs(["A"]);
+        spread.set_target(1.0);
+        settle_on(&mut spread, "A");
+        spread.set_outputs(["A", "B"]);
+        assert_eq!((spread.on("A"), spread.on("B")), (1.0, 1.0));
+        assert!(spread.resting());
+    }
+
+    #[test]
+    fn an_output_connected_to_a_settled_closed_spread_draws_it_closed() {
+        let mut spread = Spread::at(0.0);
+        spread.set_outputs(["A"]);
+        spread.set_target(1.0);
+        settle_on(&mut spread, "A");
+        spread.set_target(0.0);
+        settle_on(&mut spread, "A");
+        spread.set_outputs(["A", "B"]);
+        assert_eq!((spread.on("A"), spread.on("B")), (0.0, 0.0));
+        assert!(spread.resting());
+    }
+
+    #[test]
+    fn an_output_joining_mid_curve_starts_where_it_stands_and_leaves_the_others() {
+        let params = SpringParams::from_family(&Families::default().spatial);
+        let mut spread = Spread::at(0.0);
+        spread.set_outputs(["A"]);
+        spread.set_target(1.0);
+        for _ in 0..10 {
+            spread.step_in("A", params, 1.0 / 144.0, 0.001);
+        }
+        let at = spread.on("A");
+        spread.set_outputs(["A", "B"]);
+        assert_eq!((spread.on("A"), spread.on("B")), (at, at));
+        spread.set_outputs(["B"]);
+        assert_eq!(spread.on("B"), at);
+        assert_eq!(
+            spread.on("A"),
+            at,
+            "a gone output reads the spring as it stands"
+        );
     }
 
     #[test]
