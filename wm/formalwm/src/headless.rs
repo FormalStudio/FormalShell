@@ -22,7 +22,7 @@ use shojiwm_lib::{
     config::{RuntimeHdrConfig, RuntimeHdrMode, RuntimeOutputMode},
     state::ShojiWM,
     virtual_input::{
-        AxisFrame, VirtualAxis, VirtualButton, VirtualDevice, VirtualInput, VirtualKey,
+        AxisAmount, AxisFrame, VirtualAxis, VirtualButton, VirtualDevice, VirtualInput, VirtualKey,
         VirtualMotion,
     },
 };
@@ -272,9 +272,7 @@ impl Session {
     /// One scroll down by this much: wheel notches, toward the user, or a
     /// touchpad's travel in pixels.
     fn scroll_by(&mut self, source: AxisSource, amount: f64) {
-        self.now_ms += 10;
         let mut frame = AxisFrame {
-            time_msec: self.now_ms as u32,
             source: Some(source),
             ..AxisFrame::default()
         };
@@ -282,6 +280,25 @@ impl Session {
             AxisSource::Wheel => frame.add_discrete(Axis::Vertical, amount * 15.0, amount as i32),
             _ => frame.add(Axis::Vertical, amount),
         }
+        self.axis(frame);
+    }
+
+    /// A wheel that reports only its steps, in 120ths of a notch, the way a
+    /// high-resolution one sends its parts of a notch.
+    fn wheel_steps(&mut self, v120: f64) {
+        self.axis(AxisFrame {
+            source: Some(AxisSource::Wheel),
+            vertical: AxisAmount {
+                value: None,
+                v120: Some(v120),
+            },
+            ..AxisFrame::default()
+        });
+    }
+
+    fn axis(&mut self, mut frame: AxisFrame) {
+        self.now_ms += 10;
+        frame.time_msec = self.now_ms as u32;
         let event = VirtualAxis {
             device: VirtualDevice {
                 id: "test-pointer".into(),
@@ -746,35 +763,49 @@ fn super_and_the_wheel_take_one_workspace_a_turn() {
     // one the binds took go to the window.
     let delay = || std::thread::sleep(Duration::from_millis(320));
     let mut seen = Vec::new();
-    let mut turn = |session: &mut Session, source, amount| {
-        session.scroll_by(source, amount);
+    enum Turn {
+        Wheel(f64),
+        Steps(f64),
+        Fingers(f64),
+    }
+    let mut turn = |session: &mut Session, kind: Turn| {
+        match kind {
+            Turn::Wheel(notches) => session.scroll_by(AxisSource::Wheel, notches),
+            Turn::Steps(v120) => session.wheel_steps(v120),
+            Turn::Fingers(pixels) => session.scroll_by(AxisSource::Finger, pixels),
+        }
         seen.push(state().focused_workspace_id);
     };
     session.key(SUPER, KeyState::Pressed);
-    turn(&mut session, AxisSource::Wheel, 1.0);
-    turn(&mut session, AxisSource::Wheel, 1.0);
+    turn(&mut session, Turn::Wheel(1.0));
+    turn(&mut session, Turn::Wheel(1.0));
     delay();
-    turn(&mut session, AxisSource::Wheel, 1.0);
+    turn(&mut session, Turn::Wheel(1.0));
     delay();
-    // A high-resolution wheel's notch, in eighths: one workspace, the
-    // portable's.
+    // Eighths of a notch as smooth amounts with no steps: one workspace,
+    // the portable's.
     for _ in 0..8 {
-        turn(&mut session, AxisSource::Wheel, 0.125);
+        turn(&mut session, Turn::Wheel(0.125));
+    }
+    delay();
+    // A high-resolution wheel's notch, eight events of 15/120 and no
+    // amount: one workspace, round to the first.
+    for _ in 0..8 {
+        turn(&mut session, Turn::Steps(15.0));
     }
     delay();
     // Two fingers bind nothing, and start the delay as a wheel does.
-    turn(&mut session, AxisSource::Finger, 40.0);
-    turn(&mut session, AxisSource::Wheel, 1.0);
+    turn(&mut session, Turn::Fingers(40.0));
+    turn(&mut session, Turn::Wheel(1.0));
     delay();
-    turn(&mut session, AxisSource::Wheel, -1.0);
+    turn(&mut session, Turn::Wheel(-1.0));
     session.key(SUPER, KeyState::Released);
-    assert_eq!(
-        seen,
-        [
-            "2", "2", "3", "4", "4", "4", "4", "4", "4", "4", "4", "4", "4", "3"
-        ]
-    );
-    assert_eq!(state().focused_output, "TEST-1");
+    let mut expected = vec!["2", "2", "3"];
+    expected.extend(["4"; 8]);
+    expected.extend(["1"; 8]);
+    expected.extend(["1", "1", "4"]);
+    assert_eq!(seen, expected);
+    assert_eq!(state().focused_output, "TEST-2");
 }
 
 #[test]
