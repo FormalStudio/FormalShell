@@ -14,6 +14,7 @@ mod ipc;
 mod layers;
 mod overview;
 mod session;
+mod spawn;
 mod stage;
 mod trace;
 mod windows;

@@ -199,15 +199,19 @@ impl Engine {
         let focused = self.model.focused_window().cloned();
         let changed = match action {
             Action::Spawn(argv) => {
-                COMPOSITOR.process.spawn(Command::exec(argv.clone()));
+                COMPOSITOR.process.spawn(crate::spawn::app(argv.clone()));
                 false
             }
             Action::Shell(line) => {
-                COMPOSITOR.process.spawn(sh(line.clone()));
+                COMPOSITOR
+                    .process
+                    .spawn(crate::spawn::app_shell(line.clone()));
                 false
             }
             Action::Terminal => {
-                COMPOSITOR.process.spawn(sh(self.settings.terminal.clone()));
+                COMPOSITOR
+                    .process
+                    .spawn(crate::spawn::app_shell(self.settings.terminal.clone()));
                 false
             }
             Action::Close => {
