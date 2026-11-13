@@ -914,3 +914,40 @@ fn a_focused_float_leaves_the_column_binds_alone() {
     assert!(model.focus_row(Side::Prev));
     assert_eq!(focused(&model), "b");
 }
+
+#[test]
+fn a_window_opens_right_of_a_focused_tile_and_at_the_end_else() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    open(&mut model, "c");
+    let column = |model: &formalwm_core::model::Model, id: &str| place(model, id).column;
+    assert_eq!(column(&model, "c"), 1, "right of a, the focused tile");
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            ..Placement::default()
+        },
+    );
+    model.focus_window("c");
+    model.focus_window("f");
+    open(&mut model, "d");
+    assert_eq!(column(&model, "d"), 3, "a float has the focus: at the end");
+    model.focus_window("a");
+    open_with(
+        &mut model,
+        "e",
+        Placement {
+            workspace: Some("2".into()),
+            ..Placement::default()
+        },
+    );
+    open(&mut model, "g");
+    model.focus_window("e");
+    model.focus_window("a");
+    assert!(model.move_to_workspace("a", "2", false));
+    assert_eq!(column(&model, "a"), 2, "sent to a workspace: its end");
+}
