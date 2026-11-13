@@ -1,7 +1,8 @@
 //! The dock's contents and whether it exists at all
 //! (docs/superpowers/specs/2026-11-11-mac-apps.md, section 4). The dock is
-//! pointer chrome for Mac apps: under `dock.show: "mac"` it has no surface,
-//! not even its hot edge, until a Mac app runs.
+//! pointer chrome for every app: under `dock.show: "always"` it exists while
+//! anything is pinned or open, and under `"mac"` it has no surface, not even
+//! its hot edge, until a Mac app runs.
 
 use fs_types::WindowId;
 
@@ -9,9 +10,9 @@ use fs_types::WindowId;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Show {
     /// Only while a Mac app runs, with a window or without.
-    #[default]
     Mac,
     /// While anything is pinned or open.
+    #[default]
     Always,
     Never,
 }
@@ -177,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn exists_only_with_a_mac_app_by_default() {
+    fn exists_by_what_dock_show_says() {
         let native = items(&["firefox".to_owned()], &[open("foot", "a", false)], &[]);
         assert!(!exists(Show::Mac, &native));
         assert!(exists(Show::Always, &native));

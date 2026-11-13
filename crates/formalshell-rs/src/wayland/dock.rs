@@ -1,6 +1,6 @@
 //! The dock (docs/superpowers/specs/2026-11-11-mac-apps.md, section 4):
-//! pointer chrome for Mac apps. Under `dock.show: "mac"` it has no surface
-//! at all until a Mac app has a window. Then a one pixel strip lies along
+//! pointer chrome for every app. Under `dock.show: "mac"` it has no surface
+//! at all until a Mac app has a window. Otherwise a one pixel strip lies along
 //! the bottom edge (the top one under a bottom bar), and the pointer
 //! resting on it for `dock.dwell` brings the card out of that edge's line.
 //! The card takes no space and no keyboard. It goes back `HIDE` after the

@@ -349,9 +349,9 @@ pub fn mac_reserved_binds(doc: &(impl Doc + ?Sized)) -> Vec<String> {
     }
 }
 
-/// `dock.show`: `"mac"` only while a Mac app has a window, `"always"`
-/// while anything is pinned or open, `"never"`.
-pub const DOCK_SHOW: Word = Word::new("dock.show", "mac");
+/// `dock.show`: `"always"` while anything is pinned or open, `"mac"` only
+/// while a Mac app has a window, `"never"`.
+pub const DOCK_SHOW: Word = Word::new("dock.show", "always");
 /// How long the pointer rests on the dock's edge before it comes out, ms.
 pub const DOCK_DWELL: Number = Number::new("dock.dwell", 150.0);
 
