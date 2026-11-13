@@ -1066,9 +1066,19 @@ impl Model {
             return false;
         };
         if ws_a == ws_b {
-            return self
-                .workspace_mut(&ws_a)
-                .is_some_and(|ws| ws.tape.swap_windows(a, b));
+            let strip_w = self.strip_w(&ws_a);
+            let wide = self
+                .workspace(&ws_a)
+                .and_then(|ws| self.output(&ws.output))
+                .map_or(1.0, |o| o.geo.rect.w / strip_w.max(1.0));
+            return self.workspace_mut(&ws_a).is_some_and(|ws| {
+                let big = ws.tape.big_of(a).is_some() || ws.tape.big_of(b).is_some();
+                let swapped = ws.tape.swap_windows(a, b, wide);
+                if big {
+                    ws.tape.fit(strip_w);
+                }
+                swapped
+            });
         }
         if let Some(ws) = self.workspace_mut(&ws_a) {
             ws.tape.set_big(a, None, 1.0);

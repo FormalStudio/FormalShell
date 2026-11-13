@@ -368,6 +368,26 @@ fn a_big_tile_covers_its_output_after_the_output_changes() {
 }
 
 #[test]
+fn a_swap_keeps_big_state_with_its_window() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    assert!(model.set_big("a", Some(Big::Fullscreen)));
+    assert!(model.swap("a", "b"));
+    assert_eq!(model.big_of("a"), Some(Big::Fullscreen));
+    assert_eq!(model.big_of("b"), None);
+    assert_eq!(focused(&model), "a");
+    assert_eq!(on_screen(&model, "a"), Rect::new(0.0, 0.0, 1920.0, 1080.0));
+    open(&mut model, "c");
+    assert!(model.set_big("c", Some(Big::Maximized)));
+    assert!(model.swap("a", "c"));
+    assert_eq!(model.big_of("a"), Some(Big::Fullscreen));
+    assert_eq!(model.big_of("c"), Some(Big::Maximized));
+    assert_eq!(model.big_of("b"), None);
+}
+
+#[test]
 fn a_window_sent_away_leaves_the_focus_here_unless_followed() {
     let mut model = desk();
     open(&mut model, "a");

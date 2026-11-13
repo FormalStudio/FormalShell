@@ -283,13 +283,28 @@ impl Tape {
     }
 
     /// Swaps two windows' slots; the focus stays on the slot it was on.
-    pub fn swap_windows(&mut self, a: &str, b: &str) -> bool {
+    /// Trades two windows' places. Maximized and fullscreen belong to the
+    /// window, as the client was told: each goes with its window, `wide`
+    /// sizing a fullscreen one as `set_big` does.
+    pub fn swap_windows(&mut self, a: &str, b: &str, wide: f64) -> bool {
         let (Some((ac, ar)), Some((bc, br))) = (self.find(a), self.find(b)) else {
             return false;
         };
+        let focused = self.focused().cloned();
+        let (big_a, big_b) = (self.columns[ac].big, self.columns[bc].big);
+        self.columns[ac].unbig();
+        self.columns[bc].unbig();
         let id_a = self.columns[ac].windows[ar].clone();
         let id_b = std::mem::replace(&mut self.columns[bc].windows[br], id_a);
         self.columns[ac].windows[ar] = id_b;
+        for (id, big) in [(a, big_a), (b, big_b)] {
+            if big.is_some() {
+                self.set_big(id, big, wide);
+            }
+        }
+        if let Some(id) = focused {
+            self.focus_window(&id);
+        }
         true
     }
 
@@ -362,7 +377,9 @@ impl Tape {
                 column.width = wide.max(1.0);
             }
         }
-        self.columns.get(self.focus).is_some_and(|c| c.big.is_some())
+        self.columns
+            .get(self.focus)
+            .is_some_and(|c| c.big.is_some())
     }
 
     pub fn big_of(&self, id: &str) -> Option<Big> {
@@ -787,7 +804,7 @@ mod tests {
     fn swapping_two_windows_trades_their_slots() {
         let mut tape = tape(&["a", "b", "c"]);
         tape.consume_or_expel(Side::Prev, 0.5);
-        assert!(tape.swap_windows("a", "c"));
+        assert!(tape.swap_windows("a", "c", 1.0));
         assert_eq!(order(&tape), ["c", "b+a"]);
     }
 }
