@@ -44,6 +44,14 @@ step "a window that opens while the float has the focus"
 ipc window.focus "{\"id\": \"$(id_of f)\"}" >/dev/null; sleep 0.5
 win d > "$run/d.out"; sleep 1; tape; focus_app
 
+step "SUPER+V on the focused float tiles it at the end of the tape, SUPER+V floats it again"
+ipc window.focus "{\"id\": \"$(id_of b)\"}" >/dev/null; sleep 0.5
+ipc window.focus "{\"id\": \"$(id_of f)\"}" >/dev/null; sleep 0.5
+key Super+v 1; tape
+expect "f tiles again at the end of the tape" \
+  "$(ipc state.get | jq -r '[.windows[] | select(.floating | not)] | (max_by(.column) | .appId)')" f
+key Super+v 1; tape
+
 step "SUPER+M: the column in the tape, then L and H"
 key Super+h; focus_app
 key Super+m 1; tape; shot 60-maximized
@@ -72,7 +80,7 @@ expect "asks stays maximized beside the new window" \
   "$(ipc state.get | jq -r '.windows[] | select(.appId == "asks") | .rect.height')" "${size#*x}"
 close asks; ipc state.get | jq -r '.windows[] | select(.appId == "foot") | .id' | while read -r id; do ipc window.close "{\"id\": \"$id\"}" >/dev/null; done; sleep 1
 
-step "a window that will not go below 700x500 in a half column"
+step "a window that will not go below 700x500 in a half column: bands on both edges, Hyprland shows only the left"
 win big --min 700x500 > "$run/big.out"; sleep 1.5
 tape; asked big; drawn; shot 63-min-size
 step "a window that will not go above 300x200 in a half column"

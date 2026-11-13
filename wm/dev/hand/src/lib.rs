@@ -24,8 +24,9 @@ where
     marked(shm, queue, size, color, None)
 }
 
-/// `solid` with a band of 40 pixels of `mark` down its right edge, so a
-/// screenshot shows whether the buffer was cut or scaled to its rect.
+/// `solid` with a band of 40 pixels of `mark` down its left and right
+/// edges, so a screenshot shows whether the buffer was scaled to its rect,
+/// cut from its top left, cut around its middle, or let out of it.
 pub fn marked<D>(
     shm: &wl_shm::WlShm,
     queue: &QueueHandle<D>,
@@ -45,7 +46,7 @@ where
     let (fill, band) = (pixel(color), mark.map(pixel));
     let row: Vec<u8> = (0..w)
         .flat_map(|x| match band {
-            Some(band) if x + 40 >= w => band,
+            Some(band) if x < 40 || x + 40 >= w => band,
             _ => fill,
         })
         .collect();
