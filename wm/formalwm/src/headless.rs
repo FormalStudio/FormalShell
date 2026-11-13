@@ -3763,3 +3763,183 @@ fn id_of_app(app_id: &str) -> String {
     })
     .unwrap()
 }
+
+/// What each window is told of its motion: the streak of its own speed,
+/// the stretch about the right middle, and neither under the hand.
+#[test]
+fn a_moving_window_is_told_its_streak_and_its_stretch() {
+    use crate::windows::{RECT, SMEAR, XFORM};
+    use formalwm_core::smear::{Drive, Flow};
+
+    struct Told {
+        visual: formalwm_core::scene::Visual,
+        smear: [f64; 2],
+        scale: (f64, f64),
+        y: f64,
+    }
+    fn told() -> Vec<Told> {
+        ask(|engine| {
+            Ok(engine
+                .scene
+                .frame()
+                .into_iter()
+                .filter_map(|visual| {
+                    let handle = engine.windows.get(&visual.id)?.handle;
+                    let xform = handle.state(&XFORM).get_untracked();
+                    Some(Told {
+                        smear: handle.state(&SMEAR).get_untracked(),
+                        scale: (xform.scale_x, xform.scale_y),
+                        y: handle.state(&RECT).get_untracked().y,
+                        visual,
+                    })
+                })
+                .collect())
+        })
+        .unwrap()
+    }
+    let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
+
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let settings = include_str!("../../example/settings.json").replace(
+        r#""motion": { "blur": 1, "stretch": 0 }"#,
+        r#""motion": { "blur": 1, "stretch": 1 }"#,
+    );
+    let mut session = Session::with_settings("smear", HOST, &[test_display("TEST-1")], &settings);
+    for app in ["here", "there"] {
+        let surface = session.open(app);
+        session.draw(&surface, 400, 300);
+    }
+    session.state.refresh_window_decorations().unwrap();
+    session.roundtrip();
+    ask(|engine| {
+        let there = engine.model.windows[1].id.clone();
+        engine.model.move_to_workspace(&there, "2", false);
+        engine.commit();
+        engine.scene.finish();
+        engine.present();
+        Ok(())
+    })
+    .unwrap();
+    for at in told() {
+        assert_eq!(at.smear, [0.0; 2], "at rest there is no streak");
+        assert_eq!(at.scale, (1.0, 1.0), "at rest there is no stretch");
+    }
+
+    // A workspace switch, stopped at speed: both workspaces ride the stack.
+    let border = ask(|engine| {
+        engine.model.focus_workspace("2");
+        engine.commit();
+        for _ in 0..400 {
+            engine.scene.step_on("TEST-1", 1.0 / 240.0);
+            let fast = engine
+                .scene
+                .frame()
+                .iter()
+                .all(|visual| visual.flow.group.velocity.1.abs() > 3000.0);
+            if fast {
+                break;
+            }
+        }
+        engine.present();
+        Ok(engine.signals.look.get_untracked().border)
+    })
+    .unwrap();
+    let moving = told();
+    assert_eq!(moving.len(), 2);
+    let motion = ask(|engine| Ok(engine.settings.motion)).unwrap();
+    for at in &moving {
+        let flow = at.visual.flow;
+        assert!(
+            flow.group.velocity.1.abs() > 3000.0,
+            "the stack is at speed"
+        );
+        assert_eq!(flow.own, Drive::default());
+        let (x, y) = motion.streak(flow.velocity());
+        assert!(y.abs() > 1.0);
+        assert_eq!(at.smear, [x, y], "the streak of its speed on the screen");
+        // The stack's stretch is about the output's middle: the windows
+        // keep their gaps.
+        let (gx, gy) = motion.stretch(flow.group);
+        assert!(gy > 1.0 && gx < 1.0);
+        assert!(near(at.scale.0, gx) && near(at.scale.1, gy));
+        let middle = HEIGHT / 2.0;
+        let top = middle + (at.visual.rect.y - middle) * gy;
+        assert!(near(at.y, top - border * gy), "{} {}", at.y, top);
+    }
+    assert_eq!(moving[0].smear, moving[1].smear, "they move as one");
+
+    // A window's own way stretches it about its own middle.
+    ask(|engine| {
+        let mut visual = engine.scene.frame().remove(0);
+        let rect = visual.rect;
+        visual.flow = Flow {
+            group: Drive::default(),
+            own: Drive {
+                velocity: (6000.0, 0.0),
+                accel: (0.0, 0.0),
+            },
+        };
+        let own = engine.stretched(&visual);
+        assert!(own.w > rect.w && own.h < rect.h);
+        assert!((own.x + own.w / 2.0 - (rect.x + rect.w / 2.0)).abs() < 1e-6);
+        assert!((own.y + own.h / 2.0 - (rect.y + rect.h / 2.0)).abs() < 1e-6);
+        Ok(())
+    })
+    .unwrap();
+
+    // Under the overview the streak is as small as the window is drawn.
+    let zoom = ask(|engine| {
+        engine.set_overview(Some(true));
+        engine.overview.progress.jump(1.0);
+        engine.present();
+        Ok(engine.lens("TEST-1").ok_or("no lens")?.0.zoom)
+    })
+    .unwrap();
+    assert!(zoom < 1.0);
+    for (small, full) in told().iter().zip(&moving) {
+        assert!(near(small.smear[1], full.smear[1] * zoom));
+    }
+    ask(|engine| {
+        engine.set_overview(Some(false));
+        engine.overview.progress.jump(0.0);
+        engine.present();
+        Ok(())
+    })
+    .unwrap();
+
+    // In the hand a window follows the pointer, which is no spring.
+    let held = moving[0].visual.id.clone();
+    ask(|engine| {
+        engine.drag = Some(crate::drag::Drag {
+            id: held.clone(),
+            size: moving[0].visual.size,
+            grip: (0.5, 0.5),
+            at: (WIDTH / 2.0, HEIGHT / 2.0),
+        });
+        engine.present();
+        engine.drag = None;
+        Ok(())
+    })
+    .unwrap();
+    for at in told() {
+        if at.visual.id == held {
+            assert_eq!(at.smear, [0.0; 2], "no streak under the hand");
+            assert_eq!(at.scale, (1.0, 1.0), "no stretch under the hand");
+        } else {
+            assert_ne!(at.smear, [0.0; 2]);
+        }
+    }
+
+    settle();
+    ask(|engine| {
+        engine.present();
+        Ok(())
+    })
+    .unwrap();
+    for at in told() {
+        assert_eq!(at.smear, [0.0; 2]);
+        assert_eq!(at.scale, (1.0, 1.0));
+    }
+}

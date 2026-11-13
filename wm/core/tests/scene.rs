@@ -1075,6 +1075,33 @@ fn a_windows_flow_is_the_speed_it_is_drawn_at() {
 }
 
 #[test]
+fn a_window_that_grows_from_an_edge_it_keeps_has_no_flow() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    let float = Placement {
+        floating: true,
+        float_rect: Some(Rect::new(200.0, 100.0, 1400.0, 300.0)),
+        ..Placement::default()
+    };
+    open_with(&mut model, "f", float);
+    scene.sync(&model);
+    settle(&mut scene);
+    let rest = scene.visual("f").unwrap().rect;
+    // From a tenth of its width, its left and top edges where they are.
+    scene.carry("f", Rect::new(rest.x, rest.y, rest.w / 10.0, rest.h));
+    let mut widest_step = 0.0_f64;
+    for _ in 0..600 {
+        let before = scene.visual("f").unwrap().rect;
+        scene.step(FRAME);
+        let visual = scene.visual("f").unwrap();
+        widest_step = widest_step.max(visual.rect.w - before.w);
+        assert!((visual.rect.x - rest.x).abs() < 0.01, "its left edge moved");
+        assert_eq!(visual.flow.own.velocity, (0.0, 0.0));
+    }
+    assert!(widest_step > 10.0, "it never grew ({widest_step} px a frame)");
+}
+
+#[test]
 fn a_tape_under_the_fingers_has_no_flow_until_they_let_go() {
     let mut model = desk();
     let mut scene = Scene::default();

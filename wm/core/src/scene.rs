@@ -195,14 +195,20 @@ impl Scene {
             group.accel.1 = -stack.accel(spatial) * height;
         }
         let place = Self::place_params(actor, spatial);
-        // Its middle: half of what its far edge does.
-        let middle = |at: &Spring, size: &Spring| {
-            (
-                at.velocity + size.velocity / 2.0,
-                at.accel(place) + size.accel(place) / 2.0,
-            )
+        // How it travels along one axis: with the slower of its two edges,
+        // and not at all while they part or close on each other. A window
+        // that grows from an edge it keeps stands still.
+        let travel = |at: &Spring, size: &Spring| {
+            let (near, far) = (at.velocity, at.velocity + size.velocity);
+            if near * far <= 0.0 {
+                (0.0, 0.0)
+            } else if near.abs() <= far.abs() {
+                (near, at.accel(place))
+            } else {
+                (far, at.accel(place) + size.accel(place))
+            }
         };
-        let (x, y) = (middle(&actor.dx, &actor.dw), middle(&actor.dy, &actor.dh));
+        let (x, y) = (travel(&actor.dx, &actor.dw), travel(&actor.dy, &actor.dh));
         Flow {
             group,
             own: Drive {

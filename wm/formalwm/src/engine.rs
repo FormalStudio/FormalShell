@@ -412,7 +412,7 @@ impl Engine {
     /// whole tape or stack stretches it about the middle of the output, so
     /// its windows keep their gaps; a window's own way stretches it about
     /// its own middle.
-    fn stretched(&self, visual: &Visual) -> formalwm_core::geom::Rect {
+    pub(crate) fn stretched(&self, visual: &Visual) -> formalwm_core::geom::Rect {
         let motion = self.settings.motion;
         let (ox, oy) = motion.stretch(visual.flow.own);
         let (gx, gy) = motion.stretch(visual.flow.group);
