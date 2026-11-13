@@ -349,13 +349,17 @@ impl Engine {
         let lens = self
             .lens(&visual.output)
             .filter(|_| !matches!(visual.layer, Layer::Overlay | Layer::Pip));
+        let rect = self.stretched(visual);
         let drawn = match lens {
             Some((lens, area)) => lens
-                .map(visual.rect.translate(-area.x, -area.y), visual.lane)
+                .map(rect.translate(-area.x, -area.y), visual.lane)
                 .translate(area.x, area.y),
-            None => visual.rect,
+            None => rect,
         };
         let (sx, sy) = (drawn.w / w.max(1.0), drawn.h / h.max(1.0));
+        let (vx, vy) = self.settings.motion.streak(visual.flow.velocity());
+        let zoom = drawn.w / rect.w.max(1.0);
+        window.state(&windows::SMEAR).set([vx * zoom, vy * zoom]);
         let (mut x, mut y) = (drawn.x - grow * sx, drawn.y - grow * sy);
         if visual.settled && lens.is_none() {
             (x, y) = (x.round(), y.round());
@@ -402,6 +406,25 @@ impl Engine {
         window
             .state(&windows::LIVE)
             .set(visual.visible && !overview && !held);
+    }
+
+    /// The scene's box with the stretch of its motion on it. What moves a
+    /// whole tape or stack stretches it about the middle of the output, so
+    /// its windows keep their gaps; a window's own way stretches it about
+    /// its own middle.
+    fn stretched(&self, visual: &Visual) -> formalwm_core::geom::Rect {
+        let motion = self.settings.motion;
+        let (ox, oy) = motion.stretch(visual.flow.own);
+        let (gx, gy) = motion.stretch(visual.flow.group);
+        let rect = visual.rect;
+        let own = rect.scaled_about((rect.x + rect.w / 2.0, rect.y + rect.h / 2.0), ox, oy);
+        match self.model.output(&visual.output) {
+            Some(output) => {
+                let area = output.geo.rect;
+                own.scaled_about((area.x + area.w / 2.0, area.y + area.h / 2.0), gx, gy)
+            }
+            None => own,
+        }
     }
 
     fn restage(&mut self, frame: &[Visual]) {

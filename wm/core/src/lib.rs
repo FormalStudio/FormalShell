@@ -15,5 +15,6 @@ pub mod pip;
 pub mod rules;
 pub mod scene;
 pub mod settings;
+pub mod smear;
 pub mod tape;
 pub mod view;

@@ -14,6 +14,7 @@ use crate::{
     model::{Layer, Model, Placed, Workspace, WsId},
     motion::{Spring, SpringParams, Tween},
     pip,
+    smear::{Drive, Flow},
     tape::{Tape, WinId},
 };
 
@@ -64,6 +65,8 @@ pub struct Visual {
     pub lane: f64,
     /// At its place with nothing left to play.
     pub settled: bool,
+    /// How fast it crosses the screen this frame, and what moves it.
+    pub flow: Flow,
 }
 
 #[derive(Clone, Debug)]
@@ -164,6 +167,49 @@ impl Scene {
             (rect.w + actor.dw.value).max(1.0),
             (rect.h + actor.dh.value).max(1.0),
         )
+    }
+
+    /// What moves the actor across the screen now: `composed` and `drawn`
+    /// with every spring's speed in place of its value. A spring a hand
+    /// holds has none.
+    fn flow(&self, actor: &Actor) -> Flow {
+        let spatial = self.spatial();
+        let mut group = Drive::default();
+        if actor.place.scrolls
+            && let Some(scroll) = actor
+                .place
+                .workspace
+                .as_ref()
+                .and_then(|workspace| self.scroll.get(workspace))
+        {
+            group.velocity.0 = -scroll.velocity;
+            group.accel.0 = -scroll.accel(spatial);
+        }
+        if !matches!(
+            actor.place.layer,
+            Layer::Pinned | Layer::Pip | Layer::Overlay
+        ) && let Some(stack) = self.stack.get(&actor.place.output)
+        {
+            let height = actor.output_rect.h;
+            group.velocity.1 = -stack.velocity * height;
+            group.accel.1 = -stack.accel(spatial) * height;
+        }
+        let place = Self::place_params(actor, spatial);
+        // Its middle: half of what its far edge does.
+        let middle = |at: &Spring, size: &Spring| {
+            (
+                at.velocity + size.velocity / 2.0,
+                at.accel(place) + size.accel(place) / 2.0,
+            )
+        };
+        let (x, y) = (middle(&actor.dx, &actor.dw), middle(&actor.dy, &actor.dh));
+        Flow {
+            group,
+            own: Drive {
+                velocity: (x.0, y.0),
+                accel: (x.1, y.1),
+            },
+        }
     }
 
     /// Takes the model's new state. Everything already on screen keeps the
@@ -591,13 +637,17 @@ impl Scene {
         }
     }
 
-    fn step_actor(actor: &mut Actor, spatial: SpringParams, dt: f64) {
-        // A picture in picture rides its own spring, whatever the theme's
-        // clocks are.
-        let place = match actor.place.layer {
+    /// The spring an actor's own place rides. A picture in picture has its
+    /// own, whatever the theme's clocks are.
+    fn place_params(actor: &Actor, spatial: SpringParams) -> SpringParams {
+        match actor.place.layer {
             Layer::Pip => pip::SPRING,
             _ => spatial,
-        };
+        }
+    }
+
+    fn step_actor(actor: &mut Actor, spatial: SpringParams, dt: f64) {
+        let place = Self::place_params(actor, spatial);
         for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
             spring.step(place, dt);
         }
@@ -654,6 +704,7 @@ impl Scene {
                 _ => actor.stack_index - self.stack_of(&actor.place.output),
             },
             settled: springs_rest && self.settled(actor),
+            flow: self.flow(actor),
         }
     }
 

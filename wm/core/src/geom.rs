@@ -49,6 +49,16 @@ impl Rect {
         Rect::new(self.x + dx, self.y + dy, self.w, self.h)
     }
 
+    /// Scaled by `sx` and `sy` with `origin` held where it is.
+    pub fn scaled_about(&self, origin: (f64, f64), sx: f64, sy: f64) -> Rect {
+        Rect::new(
+            origin.0 + (self.x - origin.0) * sx,
+            origin.1 + (self.y - origin.1) * sy,
+            self.w * sx,
+            self.h * sy,
+        )
+    }
+
     /// Edges on whole pixels, so neighbours that share an edge still share it.
     pub fn snapped(&self) -> Rect {
         let x = self.x.round();

@@ -37,6 +37,13 @@
       "tilt": { "full": 20, "limit": 3000, "activation": "negativeQuadratic" },
     },
   },
+  // What speed does to a window's picture. `blur` smears it along its way
+  // for as long as a quarter of a 240 Hz frame lasts, at most 12 px, and not
+  // at all below 720 px/s. `stretch` lengthens it along its way by up to 3%
+  // (thinner across, so its area holds) and squashes it by half that as it
+  // brakes. Each is 0 for off, 1 as drawn, up to 2. Neither shows with the
+  // shell's motion off.
+  "motion": { "blur": 1, "stretch": 0 },
   "env": {
     "XCURSOR_THEME": "Bibata-Modern-Classic",
     "XCURSOR_SIZE": "24",

@@ -993,3 +993,126 @@ fn a_window_opened_while_a_float_is_in_zen_leaves_the_float_in_front() {
     settle(&mut scene);
     assert_eq!(drawn(&scene, "c"), zen, "c takes zen once drawn");
 }
+
+/// How far the middle of `id` moves over a short step, against what its
+/// flow says: the mean of the speeds at the step's two ends.
+fn travel_against_flow(scene: &mut Scene, id: &str) -> ((f64, f64), (f64, f64)) {
+    const STEP: f64 = 1.0 / 4800.0;
+    let before = scene.visual(id).unwrap();
+    scene.step(STEP);
+    let after = scene.visual(id).unwrap();
+    let (from, to) = (before.rect.center(), after.rect.center());
+    let (left, right) = (before.flow.velocity(), after.flow.velocity());
+    (
+        ((to.0 - from.0) / STEP, (to.1 - from.1) / STEP),
+        ((left.0 + right.0) / 2.0, (left.1 + right.1) / 2.0),
+    )
+}
+
+fn assert_flow_matches(scene: &mut Scene, id: &str, what: &str) {
+    let mut fastest = 0.0_f64;
+    for _ in 0..600 {
+        let (travel, flow) = travel_against_flow(scene, id);
+        let speed = travel.0.hypot(travel.1);
+        fastest = fastest.max(speed);
+        let off = (travel.0 - flow.0).hypot(travel.1 - flow.1);
+        assert!(
+            off <= 1.0 + speed * 0.002,
+            "{what}: drawn at {travel:?} px/s, flow says {flow:?}"
+        );
+    }
+    assert!(fastest > 1000.0, "{what}: it never moved ({fastest} px/s)");
+}
+
+#[test]
+fn a_windows_flow_is_the_speed_it_is_drawn_at() {
+    // On its tape: a fourth column scrolls the first three.
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    scene.sync(&model);
+    settle(&mut scene);
+    open(&mut model, "d");
+    scene.sync(&model);
+    let flow = scene.visual("c").unwrap().flow;
+    assert_eq!(
+        (flow.group.velocity, flow.own.velocity),
+        ((0.0, 0.0), (0.0, 0.0))
+    );
+    assert_flow_matches(&mut scene, "c", "a tape scroll");
+
+    // On its output's stack: a workspace switch.
+    settle(&mut scene);
+    model.focus_workspace("3");
+    scene.sync(&model);
+    scene.step(FRAME);
+    let flow = scene.visual("c").unwrap().flow;
+    assert!(flow.group.velocity.1 < -1000.0 && flow.group.velocity.0 == 0.0);
+    assert_eq!(flow.own.velocity, (0.0, 0.0));
+    assert_flow_matches(&mut scene, "c", "a workspace switch");
+
+    // On its own springs: a float carried from where a hand left it.
+    let mut model = desk();
+    let mut scene = Scene::default();
+    let float = Placement {
+        floating: true,
+        float_rect: Some(Rect::new(1200.0, 600.0, 400.0, 300.0)),
+        ..Placement::default()
+    };
+    open_with(&mut model, "f", float);
+    scene.sync(&model);
+    settle(&mut scene);
+    scene.carry("f", Rect::new(100.0, 80.0, 400.0, 300.0));
+    scene.fling("f", (900.0, -2500.0));
+    let flow = scene.visual("f").unwrap().flow;
+    assert_eq!(flow.own.velocity, (900.0, -2500.0));
+    assert_eq!(flow.group.velocity, (0.0, 0.0));
+    assert_flow_matches(&mut scene, "f", "a fling");
+    settle(&mut scene);
+    assert_eq!(scene.visual("f").unwrap().flow, Default::default());
+}
+
+#[test]
+fn a_tape_under_the_fingers_has_no_flow_until_they_let_go() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    scene.sync(&model);
+    settle(&mut scene);
+    scene.hold_scroll("1");
+    model.scroll_by("1", -300.0);
+    scene.sync(&model);
+    scene.hold_scroll("1");
+    assert_eq!(scene.visual("b").unwrap().flow, Default::default());
+    scene.release_scroll("1", 2400.0);
+    let flow = scene.visual("b").unwrap().flow;
+    assert_eq!(flow.group.velocity, (-2400.0, 0.0));
+    // The spring pulls back against a fling that leaves its target.
+    assert!(flow.group.accel.0 > 0.0);
+}
+
+#[test]
+fn with_motion_off_nothing_ever_has_a_flow() {
+    let mut model = desk();
+    let mut scene = Scene::new(&Motion {
+        enabled: false,
+        ..Motion::default()
+    });
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+        scene.sync(&model);
+    }
+    model.focus_workspace("4");
+    scene.sync(&model);
+    scene.carry("a", Rect::new(0.0, 0.0, 300.0, 300.0));
+    scene.fling("a", (5000.0, 5000.0));
+    scene.release_scroll("1", 9000.0);
+    scene.release_stack("A", 12.0);
+    for id in ["a", "b", "c"] {
+        assert_eq!(scene.visual(id).unwrap().flow, Default::default(), "{id}");
+    }
+}

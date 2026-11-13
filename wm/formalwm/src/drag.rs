@@ -238,6 +238,7 @@ impl Engine {
                 scale_x: sx,
                 scale_y: sy,
             });
+            window.state(&windows::SMEAR).set([0.0; 2]);
             window.state(&windows::Z).set(DRAG_Z);
             window.state(&windows::OUTPUTS).set(None);
             window.state(&windows::IDLE).set(false);

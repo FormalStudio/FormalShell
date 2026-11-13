@@ -37,6 +37,7 @@ pub fn frame(engine: &Engine, frame: &[Visual]) {
                     "x": visual.rect.x, "y": visual.rect.y,
                     "w": visual.rect.w, "h": visual.rect.h,
                     "o": visual.opacity, "lane": visual.lane,
+                    "v": visual.flow.velocity(),
                 })
             })
             .collect();

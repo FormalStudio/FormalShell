@@ -20,6 +20,8 @@ use crate::engine::{Engine, Signals, Win, enter};
 pub static RECT: WindowStateKey<Rect> =
     WindowStateKey::new("rect", |_| Rect::new(0.0, 0.0, 960.0, 600.0));
 pub static XFORM: WindowStateKey<ManagedTransform> = WindowStateKey::new("xform", |_| REST);
+/// The streak a moving window is blurred along, in logical pixels.
+pub static SMEAR: WindowStateKey<[f64; 2]> = WindowStateKey::new("smear", |_| [0.0; 2]);
 pub static OPACITY: WindowStateKey<f64> = WindowStateKey::new("opacity", |_| 0.0);
 pub static Z: WindowStateKey<i32> = WindowStateKey::new("z", |_| 0);
 pub static OUTPUTS: WindowStateKey<Option<Vec<String>>> = WindowStateKey::new("outputs", |_| None);
@@ -92,6 +94,7 @@ pub fn setup(signals: Signals) {
             .visible_outputs(window.state(&OUTPUTS))
             .opacity(window.state(&OPACITY))
             .transform(window.state(&XFORM))
+            .motion_blur(window.state(&SMEAR))
             .z_index(window.state(&Z))
             .force_rect_size(window.state(&FORCE))
             .tiled(true)

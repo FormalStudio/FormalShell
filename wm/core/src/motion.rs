@@ -148,6 +148,12 @@ impl Spring {
         *self = Self::at(value);
     }
 
+    /// The acceleration the spring gives its value now.
+    pub fn accel(&self, params: SpringParams) -> f64 {
+        let SpringParams { omega, zeta } = params;
+        -omega * omega * (self.value - self.target) - 2.0 * zeta.min(1.0) * omega * self.velocity
+    }
+
     /// Advances by `dt` seconds on the exact solution, so a long frame
     /// cannot blow it up.
     pub fn step(&mut self, params: SpringParams, dt: f64) {

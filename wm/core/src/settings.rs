@@ -17,6 +17,7 @@ use crate::{
     cursor::Dynamic,
     model::{Options, WorkspaceSpec},
     rules::{Anchor, Effect, Length, Matcher, Pattern, Position, Rule},
+    smear::Smear,
 };
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -390,6 +391,7 @@ struct SettingsFile {
     lid_output: Option<String>,
     xwayland_primary: Option<String>,
     opacity: f64,
+    motion: Smear,
     direct_scanout: bool,
     rules: Vec<RuleFile>,
     layers: Vec<LayerFile>,
@@ -409,6 +411,7 @@ impl Default for SettingsFile {
             lid_output: None,
             xwayland_primary: None,
             opacity: 1.0,
+            motion: Smear::default(),
             direct_scanout: true,
             rules: Vec::new(),
             layers: Vec::new(),
@@ -433,6 +436,8 @@ pub struct Settings {
     pub xwayland_primary: Option<String>,
     /// Every window's opacity, so the blur behind has something to show.
     pub opacity: f64,
+    /// What speed does to a window's picture.
+    pub motion: Smear,
     pub direct_scanout: bool,
     pub rules: Vec<Rule>,
     pub layers: Vec<LayerRule>,
@@ -607,6 +612,7 @@ impl Settings {
             });
         }
         file.cursor.dynamic.check()?;
+        file.motion.check()?;
         Ok(Self {
             workspaces: file.workspaces,
             terminal: file.terminal,
@@ -618,6 +624,7 @@ impl Settings {
             lid_output: file.lid_output,
             xwayland_primary: file.xwayland_primary,
             opacity: file.opacity.clamp(0.0, 1.0),
+            motion: file.motion,
             direct_scanout: file.direct_scanout,
             rules,
             layers,
@@ -1068,6 +1075,51 @@ mod tests {
             ("Alt", true)
         );
         assert_eq!(run(commit), [spawn("commit")]);
+    }
+
+    #[test]
+    fn motion_is_a_blur_and_a_stretch_with_the_stretch_off_until_asked_for() {
+        use crate::smear::Smear;
+        let defaults = Settings::default().motion;
+        assert_eq!(
+            defaults,
+            Smear {
+                blur: 1.0,
+                stretch: 0.0
+            }
+        );
+        let set = Settings::parse(r#"{ "motion": { "blur": 0, "stretch": 1.5 } }"#, None).unwrap();
+        assert_eq!(
+            set.motion,
+            Smear {
+                blur: 0.0,
+                stretch: 1.5
+            }
+        );
+        // One key leaves the other as it was, and a host can turn one off.
+        let host = Settings::parse(
+            r#"{ "motion": { "stretch": 1 } }"#,
+            Some(r#"{ "motion": { "blur": 0 } }"#),
+        )
+        .unwrap();
+        assert_eq!(
+            host.motion,
+            Smear {
+                blur: 0.0,
+                stretch: 1.0
+            }
+        );
+        for bad in [
+            r#"{ "blur": 2.5 }"#,
+            r#"{ "stretch": -0.1 }"#,
+            r#"{ "shutter": 1 }"#,
+        ] {
+            let error = Settings::parse(&format!(r#"{{ "motion": {bad} }}"#), None).unwrap_err();
+            assert!(
+                error.contains("motion") || error.contains("shutter"),
+                "{bad} gave {error:?}"
+            );
+        }
     }
 
     #[test]
