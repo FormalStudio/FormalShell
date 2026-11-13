@@ -77,6 +77,9 @@ pub struct Snapshot {
     /// Windows on screen over the focused workspace though they belong to
     /// another (the console's overlay while it shows).
     pub overlaid: Vec<WindowId>,
+    /// The `seq` of the last shell zen write the backend has carried out:
+    /// a snapshot carrying it was read after that write finished.
+    pub zen_done: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -275,14 +278,20 @@ pub enum Command {
     /// a scrolling workspace's tape slid off the output and held there, or
     /// left there when it is `held` already. `keys` are where the focus
     /// binds take it from there. The zen writes are the shell's own zen; a
-    /// compositor that owns zen takes [`Command::ZenMode`] instead.
-    Zen { id: WindowId, rect: IRect, held: bool, keys: ZenKeys },
+    /// compositor that owns zen takes [`Command::ZenMode`] instead. Once
+    /// done, snapshots carry `seq` as [`Snapshot::zen_done`].
+    Zen { id: WindowId, rect: IRect, held: bool, keys: ZenKeys, seq: u64 },
     /// Zen moved on from `from` to `to` with the tape held: `from` put back
-    /// as [`Command::Unzen`] puts it, `to` floated at `rect` and focused.
-    ZenSwitch { from: WindowId, floating: Option<IRect>, place: ZenPlace, to: WindowId, rect: IRect, keys: ZenKeys },
+    /// as [`Command::Unzen`] puts it, `to` floated at `rect` and focused,
+    /// `seq` reported as for [`Command::Zen`].
+    ZenSwitch { from: WindowId, floating: Option<IRect>, place: Option<ZenPlace>, to: WindowId, rect: IRect, keys: ZenKeys, seq: u64 },
+    /// Where the focus binds go from zen window `id` now, its neighbours
+    /// having changed or the config having dropped the binds on a reload.
+    ZenKeys { id: WindowId, keys: ZenKeys },
     /// The tape let go, `id` put back at `floating` where it was floating
-    /// before, tiled otherwise at `place`. It keeps focus.
-    Unzen { id: WindowId, floating: Option<IRect>, place: ZenPlace },
+    /// before, tiled otherwise, at `place` in a scrolling layout's tape. It
+    /// keeps focus.
+    Unzen { id: WindowId, floating: Option<IRect>, place: Option<ZenPlace> },
     /// The focused workspace's tape let go, its zen window having closed.
     ZenRelease,
     /// Zen on the focused window, for a compositor that owns it: on, off,

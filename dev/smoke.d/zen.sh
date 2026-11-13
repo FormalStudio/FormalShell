@@ -19,14 +19,18 @@
 # is under b in their column again. Then zen on b
 # and b closed under it: zen stays on, on the window that took the focus,
 # centred, the sidebar still folded; off once more, that window is on the
-# output and the sidebar open. The on, right and closed frames are pulled.
+# output and the sidebar open. Then d and e opened after c, zen on c, and
+# its neighbours changing under it while it keeps the focus: d closed,
+# SUPER+L goes to e; c moved to workspace 2, SUPER+H goes to a; the config
+# reloaded, SUPER+L goes to e again. The on, right and closed frames are
+# pulled.
 leg_zen_flag="--zen"
 leg_zen_order=239
 leg_zen_compositors="hyprland shoji"
 leg_zen_needs="jq foot wtype"
 leg_zen_claims="layout=sidebar frame=none"
 
-zen_steps="before on right left switcher off stack up down restacked closed after"
+zen_steps="before on right left switcher off stack up down restacked closed after four past-closed past-moved past-reload end"
 zen_monitors="$shot_dir/zen-monitors.json"
 zen_on_png="$shot_dir/zen-on.png"
 zen_right_png="$shot_dir/zen-right.png"
@@ -54,6 +58,8 @@ leg_zen_drive() {
     echo 'hl.bind("SUPER + J", hl.dsp.focus({ direction = "d" }))'
     echo 'hl.bind("SUPER + K", hl.dsp.focus({ direction = "u" }))'
     echo 'hl.bind("SUPER + comma", hl.dsp.layout("consume_or_expel prev"))'
+    # In the config as well as set live, so the reload keeps the tape.
+    echo 'hl.config({ general = { layout = "scrolling" }, scrolling = { column_width = 0.4 } })'
   else
     wm_bind SUPER+H focus-column left
     wm_bind SUPER+L focus-column right
@@ -77,14 +83,15 @@ for _ in \$(seq 1 60); do
   sleep 0.25
 done
 "$wmctl_bin" eval 'hl.config({ general = { layout = "scrolling" }, scrolling = { column_width = 0.4 } })' > /dev/null 2>&1
-for n in a b c; do
-  "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-zen-\$n sh -c 'sleep 300']==])" > /dev/null 2>&1
+spawn() {
+  "$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-zen-\$1 sh -c 'sleep 300']==])" > /dev/null 2>&1
   for _ in \$(seq 1 40); do
-    "$wmctl_bin" -j clients | "$jq_bin" -e --arg c "formalshell-zen-\$n" 'any(.[]; .class == \$c)' > /dev/null 2>&1 && break
+    "$wmctl_bin" -j clients | "$jq_bin" -e --arg c "formalshell-zen-\$1" 'any(.[]; .class == \$c)' > /dev/null 2>&1 && break
     sleep 0.1
   done
   sleep 0.4
-done
+}
+for n in a b c; do spawn \$n; done
 focus b
 "$wmctl_bin" dispatch 'hl.dsp.layout("colresize 0.6")' > /dev/null 2>&1
 sleep 1
@@ -117,6 +124,21 @@ record closed
 "$grim_bin" "$zen_closed_png" > /dev/null 2>&1
 $ipc call zen exit > /dev/null 2>&1
 record after
+focus c; sleep 0.6; spawn d; focus d; sleep 0.6; spawn e
+focus c; sleep 1
+$ipc call zen enter > /dev/null 2>&1
+record four
+"$wmctl_bin" dispatch 'hl.dsp.window.close({ window = "class:formalshell-zen-d" })' > /dev/null 2>&1
+sleep 1.6
+super l; record past-closed
+"$wmctl_bin" dispatch 'hl.dsp.window.move({ window = "class:formalshell-zen-c", workspace = 2, follow = false })' > /dev/null 2>&1
+sleep 1.6
+super h; record past-moved
+"$wmctl_bin" reload > /dev/null 2>&1
+sleep 2
+super l; record past-reload
+$ipc call zen exit > /dev/null 2>&1
+record end
 EOS
   wm_exec_once "bash $script"
 }
@@ -233,6 +255,16 @@ leg_zen_assert() {
   f=$(zen_client after "$n")
   echo "zen after: $n $("$jq_bin" -c '{at, size}' <<< "$f")"
   zen_on_output "$f" "$mon" || fail "zen: the tape stayed off the output after the last exit"
+
+  # Neighbours changing under the zen window: the focus binds go by the
+  # tape as it is, and come back after a reload.
+  zen_holds four c "$mon" a d e
+  zen_holds past-closed e "$mon" a c
+  zen_holds past-moved a "$mon" e
+  "$jq_bin" -e '.[] | select(.class == "formalshell-zen-c") | .workspace.id == 2' "$(zen_file past-moved clients)" > /dev/null \
+    || fail "zen past-moved: c is not on workspace 2"
+  zen_holds past-reload e "$mon" a
+  "$jq_bin" -e '.on == false' "$(zen_file end status)" > /dev/null || fail "zen: still on after the end"
 
   echo "SMOKE_ZEN_ON $zen_on_png"
   echo "SMOKE_ZEN_RIGHT $zen_right_png"

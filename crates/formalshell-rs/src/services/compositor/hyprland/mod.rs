@@ -79,6 +79,8 @@ struct Backend {
     outputs: Vec<Output>,
     keyboard: Option<Layout>,
     reloading: bool,
+    /// The last zen write carried out, read into each snapshot.
+    zen_done: u64,
 }
 
 type Shared = Rc<RefCell<Backend>>;
@@ -180,6 +182,9 @@ async fn refresher(ctx: Ctx, shared: Shared, dirty: async_channel::Receiver<()>)
 }
 
 async fn refresh_compositor(ctx: &Ctx, shared: &Shared) {
+    // Read before the requests: a zen write that finishes while they run
+    // is in the next snapshot, not this one.
+    let zen_done = shared.borrow().zen_done;
     let read = async {
         let monitors = request("j/monitors").await?;
         let workspaces = request("j/workspaces").await?;
@@ -198,6 +203,7 @@ async fn refresh_compositor(ctx: &Ctx, shared: &Shared) {
         let mut b = shared.borrow_mut();
         let read = model::snapshot(&monitors, &workspaces, &clients, &active, &b.urgent);
         let mut snapshot = read.snapshot;
+        snapshot.zen_done = zen_done;
         b.special_shown = read.special_shown;
         snapshot.windows = model::keep_order(&mut b.order, snapshot.windows);
         let live: HashSet<&WindowId> = snapshot.windows.iter().filter(|w| w.is_urgent).map(|w| &w.id).collect();
@@ -415,34 +421,37 @@ async fn commands(
                 // webcam overlay waits on this rect to start recording.
                 let _ = dirty.try_send(());
             }
-            Command::Zen { id, rect, held, keys } => {
+            Command::Zen { id, rect, held, keys, seq } => {
                 eval(&lua::zen_expel(&id)).await;
                 if !held {
                     eval(&lua::zen_widen(&id)).await;
                 }
                 eval(&lua::zen(&id, rect, held)).await;
                 eval(&lua::zen_keys(Some(&id), &keys)).await;
+                shared.borrow_mut().zen_done = seq;
                 let _ = dirty.try_send(());
             }
             Command::Unzen { id, floating, place } => {
                 eval(&lua::zen_keys(None, &ZenKeys::default())).await;
                 eval(&lua::unzen(&id, floating, false)).await;
-                if floating.is_none() {
+                if let Some(place) = place.filter(|_| floating.is_none()) {
                     zen_place(&id, &place).await;
                 }
                 dispatch(&lua::focus_window(&id)).await;
                 let _ = dirty.try_send(());
             }
-            Command::ZenSwitch { from, floating, place, to, rect, keys } => {
+            Command::ZenSwitch { from, floating, place, to, rect, keys, seq } => {
                 eval(&lua::unzen(&from, floating, true)).await;
-                if floating.is_none() {
+                if let Some(place) = place.filter(|_| floating.is_none()) {
                     zen_place(&from, &place).await;
                 }
                 eval(&lua::zen_expel(&to)).await;
                 eval(&lua::zen(&to, rect, true)).await;
                 eval(&lua::zen_keys(Some(&to), &keys)).await;
+                shared.borrow_mut().zen_done = seq;
                 let _ = dirty.try_send(());
             }
+            Command::ZenKeys { id, keys } => eval(&lua::zen_keys(Some(&id), &keys)).await,
             Command::ZenRelease => eval(&lua::zen_release()).await,
             Command::ParkWindow(id) => park(&ctx, &shared, &id, false).await,
             Command::UnparkWindow(id) => park(&ctx, &shared, &id, true).await,

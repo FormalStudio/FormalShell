@@ -203,6 +203,9 @@ end)
 -- each chord that has one, taking the focus to the window the shell names
 -- for that side. The shell sees the focus land there and moves zen to it.
 formalshell_moves = setmetatable({}, { __mode = "k" })
+-- A reload has dropped the binds these handles name; the shell sends the
+-- targets again once it sees the reload.
+formalshell_zen_binds = {}
 if not formalshell_raw.layout then
   formalshell_raw.layout, formalshell_raw.focus = hl.dsp.layout, hl.dsp.focus
   hl.dsp.layout = function(message, ...)
@@ -227,7 +230,7 @@ end
 -- is the one in front; a float over it keeps the chords' own meaning.
 function formalshell_zen_keys(window, targets)
   for _, handle in ipairs(formalshell_zen_binds or {}) do
-    handle:remove()
+    pcall(handle.remove, handle)
   end
   formalshell_zen_binds = {}
   local zen = window and hl.get_window(window)

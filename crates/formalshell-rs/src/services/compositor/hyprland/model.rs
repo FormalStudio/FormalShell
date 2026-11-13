@@ -206,6 +206,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
         focused_output_name: focused_output,
         parked,
         overlaid,
+        zen_done: 0,
     };
     Read { snapshot, special_shown }
 }
