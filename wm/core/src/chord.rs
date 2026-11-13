@@ -17,9 +17,10 @@ pub enum Key {
     Code(u32),
     /// A Linux button code, `BTN_LEFT` is 272.
     Button(u32),
-    /// Hyprland's `mouse_up`. It names the wheel by the sign of the axis
-    /// it reads, so `mouse_down` is the wheel turned toward the user, the
-    /// way that scrolls a page down, and `mouse_up` away.
+    /// Hyprland's `mouse_up`. It names the wheel by the sign of the vertical
+    /// axis after libinput applies natural scrolling: `mouse_down` is a
+    /// positive value and `mouse_up` a negative one. Without natural
+    /// scrolling, `mouse_down` is the wheel turned toward the user.
     WheelUp,
     WheelDown,
 }
