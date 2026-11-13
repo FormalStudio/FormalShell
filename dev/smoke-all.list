@@ -3,7 +3,8 @@
 # (dev/vm.sh). Every leg, alone or on the leg it rides. Left out: the
 # cameras that write docs/ (shots, screensaver-gif), --r0-measure, which records
 # rather than checks, --installed, which runs a distro image per line, and
-# --mac-app, which needs an atoll build and a Mac bundle in the slot.
+# --mac-app, --mac-electron, --mac-fullscreen and --mac-fullscreen-bar, which
+# need an atoll build and a Mac bundle in the slot.
 
 --activity
 --airplay

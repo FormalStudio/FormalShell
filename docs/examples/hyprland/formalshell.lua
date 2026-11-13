@@ -64,6 +64,14 @@ local function mac_chord(chord)
   return table.concat(mods, "+"), key
 end
 
+-- Hyprland knows a submap only by its binds, and enters none it has no bind
+-- for: with every recorded bind a SUPER chord gone to the app, `mac` would
+-- not exist and the default map, SUPER + Q closing the window, would stay.
+-- This bind keeps a submap there, does nothing and passes its key on.
+local function mac_anchor()
+  return formalshell_raw.bind("SUPER + SHIFT + CTRL + ALT + F24", function() end, { non_consuming = true })
+end
+
 -- SUPER alone or with SHIFT on a key: the two layers Mac key equivalents use.
 local function mac_handed(mods, key)
   if mods ~= "SUPER" and mods ~= "SHIFT+SUPER" then
@@ -85,6 +93,7 @@ function formalshell_mac_keys(reserved)
     keep[mods .. "+" .. key] = true
   end
   formalshell_raw.define_submap("mac", function()
+    formalshell_mac_binds[#formalshell_mac_binds + 1] = mac_anchor()
     for _, bind in ipairs(formalshell_binds) do
       local mods, key = mac_chord(bind.chord)
       if not mac_handed(mods, key) or keep[mods .. "+" .. key] then
@@ -100,10 +109,52 @@ end
 local function mac_follow(window)
   local over = window ~= nil and window.address == formalshell_mac_window
   local current = hl.get_current_submap()
-  if over and current == "" then
+  if over and (current == "" or current == "macapp") then
     hl.dispatch(hl.dsp.submap("mac"))
-  elseif not over and current == "mac" then
+  elseif not over and (current == "mac" or current == "macapp") then
     hl.dispatch(hl.dsp.submap("reset"))
+  end
+end
+
+-- A Mac app stays frontmost with its last window closed, and its key
+-- equivalents still work. While no window has focus and one is, the shell
+-- asks for the submap `macapp`: the `mac` submap's binds, and each of the
+-- app's key equivalents, `binds` ({ chord, action }), bound to the shell,
+-- which chooses that item in the app's menu. No `binds` is out of it.
+function formalshell_mac_app(binds)
+  for _, handle in ipairs(formalshell_mac_app_binds or {}) do
+    handle:remove()
+  end
+  formalshell_mac_app_binds = {}
+  if binds == nil then
+    if hl.get_current_submap() == "macapp" then
+      hl.dispatch(hl.dsp.submap("reset"))
+    end
+    return
+  end
+  local taken = {}
+  for _, b in ipairs(binds) do
+    local mods, key = mac_chord(b.chord)
+    taken[mods .. "+" .. key] = true
+  end
+  formalshell_raw.define_submap("macapp", function()
+    formalshell_mac_app_binds[#formalshell_mac_app_binds + 1] = mac_anchor()
+    for _, bind in ipairs(formalshell_binds) do
+      local mods, key = mac_chord(bind.chord)
+      if not taken[mods .. "+" .. key] then
+        formalshell_mac_app_binds[#formalshell_mac_app_binds + 1] = formalshell_raw.bind(bind.chord, bind.action, bind.opts)
+      end
+    end
+    for _, b in ipairs(binds) do
+      local ok, handle = pcall(formalshell_raw.bind, b.chord, b.action)
+      if ok then
+        formalshell_mac_app_binds[#formalshell_mac_app_binds + 1] = handle
+      end
+    end
+  end)
+  local current = hl.get_current_submap()
+  if hl.get_active_window() == nil and (current == "" or current == "mac") then
+    hl.dispatch(hl.dsp.submap("macapp"))
   end
 end
 
@@ -358,6 +409,19 @@ end
 hl.on("hyprland.start", function()
   hl.exec_cmd([==[sleep 10 && mkdir -p "$XDG_RUNTIME_DIR/formalshell" && touch "$XDG_RUNTIME_DIR/formalshell/arrived-$HYPRLAND_INSTANCE_SIGNATURE" && hyprctl eval 'formalshell_arrived()']==])
 end)
+
+-- An Electron app in atoll's Mac mode draws no frame of its own and cannot
+-- carry atoll's xdg tag; the shell tags its windows `atoll` once its process
+-- registers its menu. A Mac window has no border and the Mac's continuous
+-- corner: 24 px along each edge at power 3, measured off a macOS 27 capture
+-- of a frameless Electron panel (atoll's fixtures/capture.sh electron-panel).
+hl.window_rule({
+  name = "formalshell-mac-electron",
+  match = { tag = "atoll" },
+  border_size = 0,
+  rounding = 24,
+  rounding_power = 3,
+})
 
 -- Steam starts each Proton game under XWayland with a steam_app_<id> class.
 hl.window_rule({

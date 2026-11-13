@@ -10,6 +10,7 @@ use std::cell::{Cell, RefCell};
 use super::{Effect, Nav, Out, Panel, View, Walk};
 use crate::scene::Bitmap;
 use crate::services::tray::{self, Item};
+use crate::surfaces::bar::cell::{Action, TrayClick};
 use crate::store::Topic;
 use crate::ui::{Button, El, Event, On, What, w};
 
@@ -64,10 +65,9 @@ impl Tray {
         match button {
             Button::Left if item.only_menu && item.has_menu => fx.push(Out::Menu(key, None)),
             Button::Right if item.has_menu => fx.push(Out::Menu(key, None)),
-            Button::Left => {
-                fx.service(move |ctx| tray::activate(ctx, key));
-                fx.push(Out::Close);
-            }
+            // Through the shell, which closes the card first and asks an
+            // activation token for the window the item opens.
+            Button::Left => fx.push(Out::Act(Action::Tray { key, click: TrayClick::Activate, offset: 0.0 })),
             Button::Middle => {
                 fx.service(move |ctx| tray::secondary_activate(ctx, key));
                 fx.push(Out::Close);

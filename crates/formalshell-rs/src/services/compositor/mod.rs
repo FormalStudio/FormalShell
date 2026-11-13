@@ -62,6 +62,9 @@ pub struct Snapshot {
     pub workspaces: Vec<Workspace>,
     pub windows: Vec<Window>,
     pub fullscreen_outputs: Vec<String>,
+    /// Each window covering an output, by output: what `fullscreen_outputs`
+    /// counts.
+    pub covers: Vec<(String, WindowId)>,
     /// The covered outputs with no tiled fullscreen window over them: the
     /// cover is a floating window, fullscreen or the size of the output.
     pub floating_outputs: Vec<String>,
@@ -232,6 +235,9 @@ pub enum Command {
     /// from the focused app; none removes the bind. `name` keys the bind.
     EscapeBind { name: &'static str, argv: Option<Vec<String>> },
     FloatWindow(WindowId),
+    /// The compositor's tag `atoll` on a Mac app's window that carries no
+    /// xdg tag, so the config's Mac window rules reach it.
+    TagMac(WindowId),
     ToggleFloating(WindowId),
     ToggleFullscreen(WindowId),
     /// Onto the workspace slot `idx` of `output`, focus staying put.
@@ -278,6 +284,9 @@ pub enum Command {
     /// Whether the window found in front, none for no window, is a Mac
     /// window: into the `mac` submap over it or out of it.
     MacFocus(bool, WindowId),
+    /// Into the `macapp` submap for a frontmost Mac app with no window in
+    /// focus, its menu's key equivalents bound to the shell, or out of it.
+    MacApp(Option<Vec<String>>),
     /// The pointer hidden or shown on every output, the session's arrival
     /// and departure.
     Cursor { hidden: bool },
@@ -331,6 +340,17 @@ pub fn spawn_in(dir: &str, argv: &[String]) {
     let mut wrapped: Vec<String> = ["sh", "-c", r#"cd "$1" && shift && exec "$@""#, "sh", dir].map(String::from).to_vec();
     wrapped.extend_from_slice(argv);
     spawn(&wrapped);
+}
+
+/// The argv of a call to this shell from a bind: the client installed
+/// beside this binary, as the compositor's own PATH may not hold it.
+pub fn ipc_argv(words: &[&str]) -> Vec<String> {
+    let client = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("formalshell-ipc")))
+        .filter(|p| p.exists())
+        .map_or_else(|| "formalshell-ipc".to_owned(), |p| p.to_string_lossy().into_owned());
+    [client, "call".to_owned()].into_iter().chain(words.iter().map(|w| (*w).to_owned())).collect()
 }
 
 pub fn escape_bind(name: &'static str, argv: Option<&[String]>) {

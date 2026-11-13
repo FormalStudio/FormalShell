@@ -104,6 +104,7 @@ pub(super) static LIFECYCLE: &[&dyn Owner] = &[
     &Veil,
     &Caffeinate,
     &HotCorners,
+    &Reveal,
 ];
 
 /// The order keys, pastes and the pointer reach the owners in, which is not
@@ -118,6 +119,7 @@ pub(super) static INPUT: &[&dyn Owner] = &[
     &Saver,
     &Lock,
     &HotCorners,
+    &Reveal,
     &Outgoing,
     &Heads,
     &Polkit,
@@ -1300,10 +1302,8 @@ impl Owner for Dock {
         matches!(topic, Topic::Compositor | Topic::State | Topic::Config | Topic::Activity | Topic::AppIcon | Topic::AppMenu | Topic::Display)
     }
 
-    fn changed(&self, app: &mut App, topic: Topic) {
-        if topic != Topic::AppMenu {
-            app.dock_sync();
-        }
+    fn changed(&self, app: &mut App, _: Topic) {
+        app.dock_sync();
         app.dock_menu_changed();
     }
 
@@ -1743,5 +1743,41 @@ impl Owner for HotCorners {
 
     fn output_gone(&self, app: &mut App, output: &WlOutput) {
         app.hot_corner_output_gone(output);
+    }
+}
+
+/// The line along the bar's edge over a fullscreen Mac window
+/// (`reveal.rs`). Its events are read ahead of every owner, so here they
+/// stop.
+struct Reveal;
+
+impl Owner for Reveal {
+    fn owns(&self, app: &App, surface: &WlSurface) -> Option<Target> {
+        app.reveal_owns(surface).then_some(Target::RevealEdge)
+    }
+
+    fn pointer(&self, _: &mut App, _: &PointerEvent, target: Option<Target>) -> Pointer {
+        if target == Some(Target::RevealEdge) { Pointer::Taken } else { Pointer::Pass }
+    }
+
+    fn configure(&self, app: &mut App, _: &WlSurface, size: (i32, i32)) {
+        app.reveal_configure(size);
+    }
+
+    fn closed(&self, app: &mut App, _: &WlSurface) {
+        app.reveal_closed();
+    }
+
+    /// A card going away with the pointer off the bar starts the hold.
+    fn present(&self, app: &mut App, _: Instant) {
+        app.hold_reveal();
+    }
+
+    fn output_gone(&self, app: &mut App, output: &WlOutput) {
+        app.reveal_output_gone(output);
+    }
+
+    fn report(&self, app: &App, dump: &mut Map<String, Value>) {
+        dump.insert("reveal".into(), app.reveal_report());
     }
 }

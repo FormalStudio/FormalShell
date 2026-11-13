@@ -78,7 +78,7 @@ leg_mac_faults_flag="--mac-faults"
 leg_mac_faults_order=173
 leg_mac_faults_compositors="hyprland shoji"
 leg_mac_faults_needs="python3 jq foot wtype"
-leg_mac_faults_claims="hyprland.binds"
+leg_mac_faults_claims="focus hyprland.binds"
 
 mac_faults_prefix="$shot_dir/mac-faults"
 mac_faults_log="$shot_dir/mac-faults-stub.log"

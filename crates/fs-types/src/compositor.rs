@@ -101,6 +101,10 @@ pub struct Window {
     /// The window's xdg-toplevel-tag, empty for none.
     #[serde(skip)]
     pub xdg_tag: String,
+    /// It carries the compositor's own tag [`MAC_TAG`], which the shell puts
+    /// on a Mac app's window that has no xdg tag to say so.
+    #[serde(skip)]
+    pub mac_tagged: bool,
     pub is_focused: bool,
     pub is_floating: bool,
     pub is_urgent: bool,

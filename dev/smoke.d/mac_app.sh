@@ -35,7 +35,7 @@
 leg_mac_app_flag="--mac-app"
 leg_mac_app_order=174
 leg_mac_app_needs="jq foot wlrctl wtype"
-leg_mac_app_claims="screen=shared launcher=shared hyprland.binds"
+leg_mac_app_claims="focus screen=shared launcher=shared hyprland.binds"
 leg_mac_app_env="FS_ATOLL FS_MAC_APP FS_MAC_APP_ID"
 
 mac_app_prefix="$shot_dir/mac-app"

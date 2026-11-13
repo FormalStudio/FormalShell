@@ -60,6 +60,7 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
         "heldFocusedWindowId": h.held_focused_window_id(),
         "focusedWorkspaceId": c.focused_workspace_id,
         "fullscreenOutputs": c.fullscreen_outputs,
+        "covers": c.covers,
         "floatingOutputs": c.floating_outputs,
         "configLoaded": app.store.config.settings(),
         "agents": {"stateByWindow": badges(&app.store.agents.by_window), "stateByHost": badges(&app.store.agents.by_host)},

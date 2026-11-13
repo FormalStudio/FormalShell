@@ -24,7 +24,7 @@ use zbus::{
 
 use crate::{
     dbusmenu::{Address, MenuEventKind},
-    registrar::{REGISTRAR_NAME, REGISTRAR_PATH, Registrar, Registry},
+    registrar::{BarState, MenuBar, REGISTRAR_NAME, REGISTRAR_PATH, Registrar, Registry},
     types::MenuItem,
 };
 
@@ -40,6 +40,8 @@ pub struct Held {
 pub enum AppMenuEvent {
     /// [`AppMenus::held`] changed.
     Changed,
+    /// [`AppMenus::pids`] changed and the held menu did not.
+    Registrations,
     /// A call on the followed menu failed; it is held as it was.
     Failed(zbus::Error),
 }
@@ -77,6 +79,8 @@ pub struct AppMenus {
 pub struct AppMenuEvents {
     core: Core,
     backlog: VecDeque<Input>,
+    /// The registered processes last reported.
+    pids: Vec<u32>,
 }
 
 struct Core {
@@ -111,6 +115,7 @@ impl AppMenus {
             let _ = registered_tx.try_send(());
         });
         conn.object_server().at(REGISTRAR_PATH, registrar).await?;
+        conn.object_server().at(REGISTRAR_PATH, MenuBar::default()).await?;
         let (asks, asks_rx) = async_channel::unbounded();
         let shared = Arc::new(Shared { conn: conn.clone(), registry, asks, held: Mutex::new(None) });
         let inputs: Inputs = Arc::new(Mutex::new(SelectAll::new()));
@@ -128,7 +133,7 @@ impl AppMenus {
             return Err(zbus::Error::NameTaken);
         }
         let core = Core { shared: shared.clone(), inputs, pid: None, signals: None };
-        Ok((AppMenus { shared }, AppMenuEvents { core, backlog }))
+        Ok((AppMenus { shared }, AppMenuEvents { core, backlog, pids: Vec::new() }))
     }
 
     /// The process whose menu is held from here on, or none.
@@ -150,6 +155,12 @@ impl AppMenus {
         let _ = self.shared.asks.try_send(Ask::Event(id, kind));
     }
 
+    /// The processes that registered a main menu, ascending: every running
+    /// Mac app, whether or not it has a window.
+    pub fn pids(&self) -> Vec<u32> {
+        self.shared.registry.pids()
+    }
+
     /// The main menu the process `pid` registered.
     pub fn registered(&self, pid: u32) -> Option<Address> {
         self.shared.registry.for_pid(pid)
@@ -160,6 +171,11 @@ impl AppMenus {
     pub fn sibling(&self, pid: u32, path: &str) -> Option<Address> {
         let main = self.shared.registry.for_pid(pid)?;
         Some(Address { service: main.service, path: path.to_owned() })
+    }
+
+    /// The menu bar as `org.atoll.MenuBar` reports it.
+    pub async fn set_bar(&self, state: BarState) -> zbus::Result<()> {
+        MenuBar::set(&self.shared.conn, state).await
     }
 
     pub fn connection(&self) -> &Connection {
@@ -175,8 +191,13 @@ impl AppMenuEvents {
                 Some(input) => input,
                 None => poll_fn(|cx| inputs.lock().unwrap().poll_next_unpin(cx)).await?,
             };
-            match drain_while(&inputs, &mut self.backlog, self.core.handle(input)).await {
+            let handled = drain_while(&inputs, &mut self.backlog, self.core.handle(input)).await;
+            let pids = self.core.shared.registry.pids();
+            let moved = pids != self.pids;
+            self.pids = pids;
+            match handled {
                 Ok(true) => return Some(AppMenuEvent::Changed),
+                Ok(false) if moved => return Some(AppMenuEvent::Registrations),
                 Ok(false) => {}
                 Err(err) => return Some(AppMenuEvent::Failed(err)),
             }

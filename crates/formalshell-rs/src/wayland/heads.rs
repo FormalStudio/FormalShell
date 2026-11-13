@@ -357,7 +357,7 @@ impl App {
     }
 
     /// A card or a join hangs off the live bar.
-    fn bar_busy(&self) -> bool {
+    pub(super) fn bar_busy(&self) -> bool {
         self.panel.is_some() || self.outgoing.is_some() || self.tray_menu.is_some() || !self.joins().is_empty()
     }
 

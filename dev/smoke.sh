@@ -39,7 +39,11 @@
 # since the session has to publish its sockets somewhere the drive scripts
 # can reach; the shell's single-instance lock keys its socket on
 # WAYLAND_DISPLAY for exactly that reason.
-set -euo pipefail
+set -Eeuo pipefail
+# errexit ends the run without a word, in this file and in every leg it
+# sources, so name the command that ended it.
+# 141 is a reader closing a pipe early (head), which ends nothing.
+trap 'rc=$?; [ "$rc" = 141 ] || echo "SMOKE_FAIL: ${BASH_SOURCE[0]}:$LINENO: $BASH_COMMAND exited $rc" >&2' ERR
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 cd "$script_dir/.."
 
@@ -365,7 +369,8 @@ done
 # that drives (`none` when it owns nothing; a validate may add to it):
 # `name` alone owns it, `name=value` shares it with every claim
 # of the same name and value. Names are dotted (a settings key, a surface:
-# `launcher`, `screen`, `pointer`), and a name covers every name under it,
+# `launcher`, `screen`, `pointer`, `focus` for the window holding the
+# keyboard), and a name covers every name under it,
 # so `bar.layout=default` and `bar.layout.right` meet. A `session` claim
 # owns the whole run, beside only a leg_<n>_rider that pins a setting and
 # drives nothing. A leg_<n>_vm_only leg needs the real system bus.

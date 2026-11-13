@@ -372,6 +372,12 @@ runs = ["--frame", "--multi-output", "--bar-style corners --frame"]
 paths = ["crates/fs-chrome/src/hot_corners/**", "crates/formalshell-rs/src/wayland/hotcorners.rs"]
 runs = ["--hotcorner", "--hotcorner-relock", "--overview"]
 
+# The bar over a fullscreen Mac window: the line along its edge and the
+# hiding a game keeps. --mac-fullscreen-bar needs an atoll build in the slot.
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/reveal.rs"]
+runs = ["--fullscreen", "--mac-menu"]
+
 [[rule]]
 paths = ["crates/fs-chrome/src/plugins.rs", "crates/formalshell-rs/src/services/plugins.rs", "crates/formalshell-rs/src/ipc/plugins.rs", "crates/formalshell-rs/src/surfaces/panel/plugin.rs", "crates/formalshell-rs/src/surfaces/bar/cells/plugin.rs", "crates/formalshell-rs/src/wayland/plugin_overlay.rs"]
 runs = ["--plugins", "--launcher-overflow"]

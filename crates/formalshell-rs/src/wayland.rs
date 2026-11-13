@@ -33,6 +33,7 @@ mod plugin_overlay;
 mod polkit;
 mod region;
 mod preview;
+mod reveal;
 mod rims;
 mod screensaver;
 mod settle;
@@ -64,6 +65,7 @@ use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers};
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
+use smithay_client_toolkit::activation::ActivationState;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{
     Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface, LayerSurfaceConfigure,
@@ -76,7 +78,7 @@ use crate::ipc;
 use crate::paint::Kit;
 use crate::runtime::{Msg, Runtime};
 use crate::scene::NodeId;
-use crate::services::{barpaint, devices, compositor, notifications, overnight, tray, visualizer};
+use crate::services::{appmenu, barpaint, devices, compositor, notifications, overnight, tray, visualizer};
 use crate::settings;
 use crate::store::{Diff, Moved, Store, Topic};
 use crate::surface::{Backend, PixelSurface, Pixels, Surface};
@@ -206,6 +208,9 @@ enum Target {
     Veil,
     Caffeinate,
     HotCorner,
+    /// The line along the bar's edge that brings the bar up over a
+    /// fullscreen Mac window.
+    RevealEdge,
 }
 
 pub struct App {
@@ -220,6 +225,11 @@ pub struct App {
     /// (the lock's blank, settle) ignores inhibitors, which a playing video
     /// holds; caffeinate's idle takes either version.
     idle_notifier: Option<ExtIdleNotifierV1>,
+    activation: Option<ActivationState>,
+    seat: Option<wl_seat::WlSeat>,
+    /// The last button press's serial and surface, which an activation
+    /// token for what the click opens is asked with.
+    press: Option<(u32, wl_surface::WlSurface)>,
     display: WlDisplay,
     qh: QueueHandle<Self>,
     handle: LoopHandle<'static, App>,
@@ -232,6 +242,7 @@ pub struct App {
     saver: screensaver::Saver,
     pub lock: lock::Lock,
     hot: hotcorners::HotCorners,
+    reveal: reveal::Reveal,
     polkit: Option<polkit::Dialog>,
     plugin_overlay: Option<plugin_overlay::Window>,
     osd: osd::Osd,
@@ -266,6 +277,7 @@ pub struct App {
     join_preview: Option<(Surface, crate::scene::Scene, Vec<NodeId>)>,
     /// The tray item menu, over whatever popout it hangs off.
     pub tray_menu: Option<Popout>,
+    tray_menu_pending: Option<tray_menu::PendingMenu>,
     scrim: Option<(Scrim, PixelSurface)>,
     pointer: Option<wl_pointer::WlPointer>,
     /// The pointing hand over a cell that answers a click,
@@ -333,6 +345,9 @@ impl App {
             shm,
             pixels,
             idle_notifier: globals.bind(qh, 1..=2, crate::surface::Ignore).ok(),
+            activation: ActivationState::bind(globals, qh).ok(),
+            seat: None,
+            press: None,
             display,
             qh: qh.clone(),
             handle,
@@ -346,6 +361,7 @@ impl App {
             saver: screensaver::Saver::default(),
             lock: lock::Lock::bind(globals, qh, prompter),
             hot: Default::default(),
+            reveal: Default::default(),
             polkit: None,
             plugin_overlay: None,
             osd: osd::Osd::default(),
@@ -361,6 +377,7 @@ impl App {
             sidebar_keys: None,
             panel: None,
             tray_menu: None,
+            tray_menu_pending: None,
             outgoing: None,
             panel_dirty: false,
             keyboard: None,
@@ -471,7 +488,7 @@ impl App {
     /// fullscreen state want them: re-created rather than re-anchored, so a
     /// framed window and a strip never share a configure.
     fn place_chrome(&mut self) {
-        let hidden = self.chrome().bar_covered();
+        let hidden = self.bar_hides();
         live!(self).bar.set_hidden(hidden);
         self.sync_agents();
         if hidden {
@@ -494,8 +511,12 @@ impl App {
         let framed = bar.framed();
         let edge = bar.edge();
         let t = bar.thickness();
+        // Over a fullscreen window it sits above it and reserves nothing,
+        // so the window keeps its size.
+        let over = self.reveal.shown;
         let surface = self.compositor.create_surface(&self.qh);
-        let layer = self.layer_shell.create_layer_surface(&self.qh, surface, Layer::Top, Some("formalshell:bar"), Some(output));
+        let level = if over { Layer::Overlay } else { Layer::Top };
+        let layer = self.layer_shell.create_layer_surface(&self.qh, surface, level, Some("formalshell:bar"), Some(output));
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         if framed {
             layer.set_anchor(Anchor::all());
@@ -508,13 +529,13 @@ impl App {
             let (w, h) = if edge.is_vertical() { (across, 0) } else { (0, across) };
             layer.set_anchor(edge_anchor(edge));
             layer.set_size(w as u32, h as u32);
-            layer.set_exclusive_zone(bar.zone());
+            layer.set_exclusive_zone(if over { -1 } else { bar.zone() });
         }
         layer.commit();
         let mut surface = Surface::new("bar", Backend::Gpu, layer, &self.shm, self.store.display.scales.on(output));
         surface.presize(bar.scene.size.w, bar.scene.size.h);
         let mut zones = Vec::new();
-        if framed {
+        if framed && !over {
             let ft = bar.frame_thickness() as i32;
             for e in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
                 let zone = if e == edge { t } else { ft };
@@ -679,15 +700,21 @@ impl App {
         if matches!(topic, None | Some(Topic::State)) {
             self.sync_collapsed();
         }
-        if matches!(topic, None | Some(Topic::Compositor) | Some(Topic::Config)) {
-            if self.chrome().bar_covered() != live!(self).bar.hidden() {
+        if matches!(topic, None | Some(Topic::Compositor | Topic::Config | Topic::AppMenu)) {
+            self.sync_reveal();
+            if self.bar_hides() != live!(self).bar.hidden() {
                 self.place_chrome();
             }
             self.sync_hot_corners();
         }
+        let edge = live!(self).bar.edge();
+        let height = if edge == Edge::Top { live!(self).bar.thickness() as u32 } else { 0 };
+        appmenu::bar(fs_tray::BarState { height, revealed: self.reveal.shown });
         live!(self).bar.update_paint(&mut self.kit, &self.store);
         let win = &mut live!(self);
-        sync_zone(&mut win.bar, win.surface.as_mut());
+        if !self.reveal.shown {
+            sync_zone(&mut win.bar, win.surface.as_mut());
+        }
         self.request_paint();
         live!(self).bar.read(&mut self.kit, &self.store, topic, now);
         // The card hanging off the strip lays out again with it; a topic
@@ -994,10 +1021,10 @@ impl App {
                 if self.store.tray.by_key(&key).is_none() {
                     return;
                 }
-                self.runtime.service(move |ctx| match click {
-                    TrayClick::Secondary => tray::secondary_activate(ctx, key),
-                    _ => tray::activate(ctx, key),
-                });
+                match click {
+                    TrayClick::Secondary => self.runtime.service(move |ctx| tray::secondary_activate(ctx, key)),
+                    _ => self.tray_activate_key(key),
+                }
             }
             Action::AppMenu { id, offset } => {
                 let _ = self.open_app_menu(id, Some(anchor + offset));
@@ -1195,7 +1222,11 @@ impl App {
     /// when no owner took it.
     fn pointer_events(&mut self, events: &[PointerEvent]) {
         'events: for e in events {
+            if let PointerEventKind::Press { serial, .. } = e.kind {
+                self.press = Some((serial, e.surface.clone()));
+            }
             let (e, mut target) = self.over_strip(e, owner::target(self, &e.surface));
+            self.reveal_pointer(&e, target);
             for o in owner::INPUT {
                 match o.pointer(self, &e, target) {
                     owner::Pointer::Pass => {}
@@ -1339,7 +1370,8 @@ impl SeatHandler for App {
         &mut self.seats
     }
 
-    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+        self.seat.get_or_insert(seat);
         self.arm_idle();
         self.arm_settle();
     }

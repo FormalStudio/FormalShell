@@ -263,6 +263,12 @@ impl Tray {
         self.item_call(key, "Activate", &(0i32, 0i32)).await
     }
 
+    /// `ProvideXdgActivationToken(token)`: the token the item's next window
+    /// activation presents, so the compositor lets that window take focus.
+    pub async fn provide_activation_token(&self, key: &str, token: &str) -> zbus::Result<()> {
+        self.item_call(key, "ProvideXdgActivationToken", &(token,)).await
+    }
+
     pub async fn secondary_activate(&self, key: &str) -> zbus::Result<()> {
         self.item_call(key, "SecondaryActivate", &(0i32, 0i32))
             .await

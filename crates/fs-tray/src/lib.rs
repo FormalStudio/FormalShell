@@ -13,7 +13,7 @@ mod watcher;
 
 pub use appmenu::{AppMenuEvent, AppMenuEvents, AppMenus, Held};
 pub use dbusmenu::{Address, MenuEventKind};
-pub use registrar::{REGISTRAR_NAME, REGISTRAR_PATH, Registrar, Registration, Registry};
+pub use registrar::{BarState, REGISTRAR_NAME, REGISTRAR_PATH, Registrar, Registration, Registry};
 pub use tray::{Event, Tray, TrayEvents};
 pub use types::{
     CheckState, IconSource, Item, MenuItem, Pixmap, Status, Toggle, Tooltip,

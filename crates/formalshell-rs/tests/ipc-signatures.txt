@@ -77,6 +77,7 @@ target appmenu
   function close(): string
   function activate(path: string): string
   function run(id: int): string
+  function key(chord: string): string
 target dock
   function status(): string
   function open(): string

@@ -116,6 +116,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
 
     let mut windows = Vec::new();
     let (mut fullscreen, mut floating_on): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    let mut covers = Vec::new();
     let (mut parked, mut overlaid) = (Vec::new(), Vec::new());
     for c in array(clients) {
         let Some(id) = c.get("address").and_then(Value::as_str).and_then(address_id) else { continue };
@@ -139,8 +140,10 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             let borderless = floating && matches!((&rect, output), (Some(r), Some(o)) if fills(r, o));
             if is_fullscreen(&c) && !floating {
                 fullscreen.push(name.clone());
+                covers.push((name.clone(), id.clone()));
             } else if is_fullscreen(&c) || borderless {
                 floating_on.push(name.clone());
+                covers.push((name.clone(), id.clone()));
             }
         }
         windows.push(Window {
@@ -159,6 +162,8 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             // Special workspaces carry a negative id.
             special: workspace.is_some_and(|n| n < 0),
             xdg_tag: string(c.get("xdgTag")),
+            // A dynamic tag is listed with a `*` after it.
+            mac_tagged: c.get("tags").and_then(Value::as_array).is_some_and(|t| t.iter().any(|t| t.as_str().is_some_and(|t| t.trim_end_matches('*') == fs_types::MAC_TAG))),
             id,
         });
     }
@@ -194,6 +199,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
         workspaces: out,
         windows,
         fullscreen_outputs: fullscreen,
+        covers,
         floating_outputs: floating_on,
         focused_window_id: focused_window,
         focused_workspace_id: focused_ws.map(|n| WorkspaceId::new(n.to_string())).unwrap_or_default(),
