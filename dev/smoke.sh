@@ -611,6 +611,19 @@ fi
 # what it dropped. Every name Hyprland imports is still put back as it was
 # at exit, or unset if it was not there, as the backstop.
 host_env_names="DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP QT_QPA_PLATFORMTHEME PATH XDG_DATA_DIRS"
+# The user manager `systemctl --user` reaches: its own runtime dir and the
+# moment it started, empty when none answers. The restore writes only to the
+# manager the snapshot came from; on another (a run whose XDG_RUNTIME_DIR or
+# bus changed, a restarted manager, none at the start) it would unset PATH
+# and WAYLAND_DISPLAY in someone else's session.
+host_manager_id() {
+  local started runtime
+  started=$(systemctl --user show --value -p UserspaceTimestampMonotonic 2>/dev/null) || return 0
+  runtime=$(systemctl --user show-environment 2>/dev/null | sed -n 's/^XDG_RUNTIME_DIR=//p') || return 0
+  [ -n "$started" ] && [ "$started" != 0 ] || return 0
+  printf '%s started=%s\n' "$runtime" "$started"
+}
+host_manager_before=$(host_manager_id)
 host_env_before=$(systemctl --user show-environment 2>/dev/null || true)
 host_wayland_before=$(printf '%s\n' "$host_env_before" | sed -n 's/^WAYLAND_DISPLAY=//p')
 host_env_mid_path="$shot_dir/host-env-mid.txt"
@@ -629,7 +642,12 @@ done
 exec $(printf '%q' "$(command -v systemctl)") "\$@"
 EOF
 restore_host_env() {
-  local name line
+  local name line now
+  now=$(host_manager_id)
+  if [ -z "$host_manager_before" ] || [ "$now" != "$host_manager_before" ]; then
+    echo "smoke: host env not restored: the user manager reached now (${now:-none}) is not the one read at the start (${host_manager_before:-none})" >&2
+    return 0
+  fi
   for name in $host_env_names; do
     line=$(printf '%s\n' "$host_env_before" | grep -m1 "^$name=" || true)
     if [ -n "$line" ]; then
