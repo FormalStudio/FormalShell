@@ -20,7 +20,7 @@
 # slot, as --mac-app does.
 leg_mac_fullscreen_flag="--mac-fullscreen"
 leg_mac_fullscreen_order=176
-leg_mac_fullscreen_needs="jq wlrctl wtype pil"
+leg_mac_fullscreen_needs="jq wlrctl wtype pil gnome-keyring-daemon"
 leg_mac_fullscreen_claims="focus screen=shared hyprland.binds"
 leg_mac_fullscreen_env="FS_ATOLL FS_ELECTRON_APP FS_FULLSCREEN_APP"
 
@@ -218,7 +218,8 @@ walk() {
 }
 
 ebin=\$(cat "\$m-electron-bin.txt")
-"\$hc" dispatch "hl.dsp.exec_cmd([==[sh -c 'ELECTRON_PANEL_WINDOW=1 exec \$ebin --ozone-platform=wayland > \$m-electron.log 2>&1']==])" > /dev/null 2>&1
+electron_keyring
+"\$hc" dispatch "hl.dsp.exec_cmd([==[sh -c 'ELECTRON_PANEL_WINDOW=1 exec \$ebin --ozone-platform=wayland --password-store=basic > \$m-electron.log 2>&1']==])" > /dev/null 2>&1
 epid=
 for _ in \$(seq 1 180); do
   epid=\$(pgrep -o -f "\$ebin")

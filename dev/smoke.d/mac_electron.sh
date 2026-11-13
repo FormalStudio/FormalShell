@@ -16,7 +16,7 @@
 # needs an atoll build and the fixture in the slot, as --mac-app does.
 leg_mac_electron_flag="--mac-electron"
 leg_mac_electron_order=175
-leg_mac_electron_needs="jq wlrctl wtype python3"
+leg_mac_electron_needs="jq wlrctl wtype python3 gnome-keyring-daemon"
 leg_mac_electron_claims="focus screen=shared"
 leg_mac_electron_env="FS_ATOLL FS_ELECTRON_APP"
 
@@ -67,7 +67,8 @@ px = im.load()
 hit = [(x, y) for y in range(im.height) for x in range(im.width) if all(abs(a - b) < 6 for a, b in zip(px[x, y], want))]
 print(round(sum(p[0] for p in hit) / len(hit) / s), round(sum(p[1] for p in hit) / len(hit) / s)) if hit else print("0 0")' "\$@" "${FS_SMOKE_SCALE:-1}"; }
 
-"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'WAYLAND_DEBUG=1 exec \$bin --ozone-platform=wayland > \$log 2>&1']==])" > /dev/null 2>&1
+electron_keyring
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'WAYLAND_DEBUG=1 exec \$bin --ozone-platform=wayland --password-store=basic > \$log 2>&1']==])" > /dev/null 2>&1
 for _ in \$(seq 1 120); do [ "\$(logged ' ready')" -ge 1 ] && break; sleep 0.5; done
 until_jq 30 "\$m-tray.json" '.items | length > 0' call tray status
 # A keyboard for the whole walk, as a seat with a real one has: focus

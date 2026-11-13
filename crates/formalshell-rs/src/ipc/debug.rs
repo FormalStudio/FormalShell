@@ -26,6 +26,7 @@ pub fn target() -> Target<App> {
             Function { name: "query", params: &[("q", Type::String)], ret: Type::String, call: query },
             Function { name: "staleAudit", params: &[("action", Type::String)], ret: Type::String, call: stale_audit },
             Function { name: "skyAt", params: &[("instant", Type::String)], ret: Type::String, call: sky_at },
+            Function { name: "gpuLose", params: &[], ret: Type::String, call: gpu_lose },
             Function { name: "r0Spinner", params: &[("on", Type::Bool)], ret: Type::String, call: r0_spinner },
             Function { name: "r0Panel", params: &[("action", Type::String)], ret: Type::String, call: r0_panel },
             Function { name: "r0Scrim", params: &[("on", Type::Bool)], ret: Type::String, call: r0_scrim },
@@ -123,6 +124,15 @@ fn motion_scale(app: &mut App, args: &[Value]) -> Reply {
         return Err("percent must be 1..5000".into());
     }
     app.apply(crate::store::Diff::Theme(crate::services::theme::Diff::MotionScale(percent as f64 / 100.0)));
+    ok()
+}
+
+/// The GPU device lost at the shell's next picture upload, in the
+/// eviction's submit ahead of it: where NVIDIA's loss under the launcher
+/// was learnt. The shell draws on the CPU from then on. Refused unless the
+/// rig opted the shell in at launch (`FORMALSHELL_SMOKE_GPU_LOSE=1`).
+fn gpu_lose(_: &mut App, _: &[Value]) -> Reply {
+    crate::gpu::lose_at_next_upload()?;
     ok()
 }
 

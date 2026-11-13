@@ -23,10 +23,29 @@ draw outside that path:
 - the wallpaper (`surface.rs` `Backdrop`) is a picture, not a scene. On
   the CPU its crossfade blends two BGRA pictures into shm; on the GPU each
   picture is uploaded once into a BGRA texture in device memory and the
-  crossfade is one full-screen pass into a dmabuf. The service's own copy
+  crossfade is one full-screen pass, copied into a dmabuf. The service's own copy
   stays where it was; the texture is not in the shell's RSS;
 - the compositor-drawn pixel surfaces (scrim, catcher, frame zones, veil)
   are single-pixel buffers and draw nothing.
+
+The linear dmabufs are only ever copied into. The crossfade and a faded
+surface's copy (opacity under 1, the launcher's fade with `motion.morph`
+off) draw into a render target of the shell's own and are copied from
+there: NVIDIA's driver (595.112.07, RTX 5070) takes a linear image as a
+colour target, with the validation layer silent, and then faults on the
+draw (`NVRM: Xid 69`, class ce97, `DRAW_VERTEX_ARRAY_BEGIN_END_B`, count
+3), losing the device. Measured 2026-11-13 under formalwm on g815.
+
+A lost device sends every surface back to the CPU on its next present,
+and nothing touches the device again: vello_hybrid panics on a render
+on a lost device. wgpu learns of a loss in whichever call meets it first
+(an eviction's submit, an upload, a render), so the paint stops uploading
+the moment it is known, the atlas writer maps no buffer, a panic inside
+vello_hybrid gives the GPU path up instead of the shell, and a present
+that learns of it hands nothing to the compositor. `debug gpuLose` loses
+the device at the next picture upload, in a shell launched with
+`FORMALSHELL_SMOKE_GPU_LOSE=1` and refused in any other; `dev/smoke.sh --gpu-lost
+--launcher-modes` on g815 runs the launcher through it.
 
 The device opens on a thread of its own (`gpu-start`): every surface draws
 on the CPU until it is up and moves across on its next present. The

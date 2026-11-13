@@ -24,7 +24,7 @@
 # the fixture in the slot, as --mac-electron does.
 leg_mac_fullscreen_bar_flag="--mac-fullscreen-bar"
 leg_mac_fullscreen_bar_order=176
-leg_mac_fullscreen_bar_needs="jq foot wlrctl wtype"
+leg_mac_fullscreen_bar_needs="jq foot wlrctl wtype gnome-keyring-daemon"
 leg_mac_fullscreen_bar_claims="focus screen=shared bar.position"
 leg_mac_fullscreen_bar_env="FS_ATOLL FS_ELECTRON_APP"
 
@@ -108,7 +108,8 @@ game="class:formalshell-mac-fsbar-game"
 "$wmctl_bin" dispatch "hl.dsp.window.resize({ x = $logical_w, y = $logical_h, window = '\$game' })" > /dev/null 2>&1
 "$wmctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, window = '\$game' })" > /dev/null 2>&1
 until_jq 10 "\$m-over-cover.json" '.fullscreenOutputs | length > 0' call debug dump
-"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'ELECTRON_PANEL_WINDOW=1 exec \$bin --ozone-platform=wayland > \$m-over.log 2>&1']==])" > /dev/null 2>&1
+electron_keyring
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'ELECTRON_PANEL_WINDOW=1 exec \$bin --ozone-platform=wayland --password-store=basic > \$m-over.log 2>&1']==])" > /dev/null 2>&1
 until_jq 60 "\$m-over-clients.json" 'any(.[]; .title == "ElectronPanel - Window")' "$wmctl_bin" -j clients
 over="title:ElectronPanel - Window"
 "$wmctl_bin" dispatch "hl.dsp.window.float({ window = '\$over', action = 'set' })" > /dev/null 2>&1
@@ -122,7 +123,7 @@ kill "\$("$jq_bin" -r .pid "\$m-over-active.json")" 2>/dev/null
 "$wmctl_bin" dispatch 'hl.dsp.window.close({ window = "class:formalshell-mac-fsbar-game" })' > /dev/null 2>&1
 until_jq 10 "\$m-unover-dump.json" '.fullscreenOutputs == [] and .windows == []' call debug dump
 
-"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'ELECTRON_PANEL_OPEN=1 exec \$bin --ozone-platform=wayland > \$log 2>&1']==])" > /dev/null 2>&1
+"$wmctl_bin" dispatch "hl.dsp.exec_cmd([==[sh -c 'ELECTRON_PANEL_OPEN=1 exec \$bin --ozone-platform=wayland --password-store=basic > \$log 2>&1']==])" > /dev/null 2>&1
 "$wtype_bin" -s 170000 -k Shift_L &
 echo \$! > "\$m-keyboard.pid"
 for _ in \$(seq 1 120); do grep -qF ' ready' "\$log" 2>/dev/null && break; sleep 0.5; done

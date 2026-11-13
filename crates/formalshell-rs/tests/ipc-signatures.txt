@@ -6,6 +6,7 @@ target debug
   function query(q: string): string
   function staleAudit(action: string): string
   function skyAt(instant: string): string
+  function gpuLose(): string
   function r0Spinner(on: bool): string
   function r0Panel(action: string): string
   function r0Scrim(on: bool): string
