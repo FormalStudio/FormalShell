@@ -2170,7 +2170,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "shojiwm_lib"
 version = "0.1.0"
-source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=a221830c6f8c0310f6d05d97dc973855a1343979#a221830c6f8c0310f6d05d97dc973855a1343979"
+source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=393fcc70e4e8755002d65f0275013846fc1eeb3f#393fcc70e4e8755002d65f0275013846fc1eeb3f"
 dependencies = [
  "bitflags 2.11.0",
  "bumpalo",
@@ -2209,7 +2209,7 @@ dependencies = [
 [[package]]
 name = "shojiwm_rs"
 version = "0.1.0"
-source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=a221830c6f8c0310f6d05d97dc973855a1343979#a221830c6f8c0310f6d05d97dc973855a1343979"
+source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=393fcc70e4e8755002d65f0275013846fc1eeb3f#393fcc70e4e8755002d65f0275013846fc1eeb3f"
 dependencies = [
  "serde_json",
  "shojiwm_lib",
