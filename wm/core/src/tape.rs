@@ -81,10 +81,10 @@ pub struct Tape {
     pub columns: Vec<Column>,
     pub focus: usize,
     pub scroll: f64,
-    /// The tile whose border is being dragged. Until it is let go the view
-    /// stays where the drag put it, before the start of the tape included,
-    /// and a lone column is not recentred: Hyprland's camera does not move
-    /// while a tile of its tape is dragged.
+    /// The tile whose border is being dragged, until it is let go or leaves
+    /// the tape. Meanwhile the view stays where the drag put it, before the
+    /// start of the tape included, and a lone column is not recentred:
+    /// Hyprland's camera does not move while a tile of its tape is dragged.
     pub held: Option<WinId>,
 }
 
@@ -147,6 +147,9 @@ impl Tape {
     /// into its place and takes the focus it had.
     pub fn remove(&mut self, id: &str) -> Option<f64> {
         let (c, r) = self.find(id)?;
+        if self.held.as_deref() == Some(id) {
+            self.held = None;
+        }
         let column = &mut self.columns[c];
         let width = column.width;
         column.windows.remove(r);
@@ -399,7 +402,7 @@ impl Tape {
         let Some((c, _)) = self.find(id) else {
             return false;
         };
-        if !self.holds() {
+        if !self.held.is_some() {
             // The centring of a lone column becomes the view's, so the drag
             // can keep its edges where they are.
             if self.columns.len() == 1 {
@@ -432,11 +435,6 @@ impl Tape {
         }
     }
 
-    /// A border drag holds the view while its tile is still in this tape.
-    fn holds(&self) -> bool {
-        self.held.as_deref().is_some_and(|id| self.find(id).is_some())
-    }
-
     pub fn resize(&mut self, delta: f64) -> bool {
         let Some(column) = self.columns.get(self.focus) else {
             return false;
@@ -463,7 +461,7 @@ impl Tape {
 
     /// A column's left edge. A lone column sits centred at the width it has.
     pub fn column_left(&self, index: usize, strip_w: f64) -> f64 {
-        if self.columns.len() == 1 && !self.holds() {
+        if self.columns.len() == 1 && !self.held.is_some() {
             return ((1.0 - self.columns[0].width) * strip_w / 2.0).max(0.0);
         }
         self.columns[..index.min(self.columns.len())]
@@ -487,7 +485,7 @@ impl Tape {
     }
 
     pub fn clamp_scroll(&mut self, strip_w: f64) {
-        if self.holds() {
+        if self.held.is_some() {
             return;
         }
         self.scroll = self.scroll.clamp(0.0, self.max_scroll(strip_w));

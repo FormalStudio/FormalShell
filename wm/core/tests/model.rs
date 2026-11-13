@@ -476,6 +476,20 @@ fn a_lone_tile_dragged_by_a_border_moves_that_edge_and_recentres_on_release() {
 }
 
 #[test]
+fn a_tile_moved_away_mid_drag_leaves_no_hold_behind() {
+    let mut model = desk();
+    open(&mut model, "a");
+    let inset = 2.0 * Options::default().tile_inset();
+    let a = on_screen(&model, "a");
+    assert!(model.resize_tile_edge("a", false, a.w + inset + 100.0));
+    assert!(model.move_window("a", "2", None));
+    model.release_tile_edge("a");
+    assert!(model.move_window("a", "1", None));
+    let back = on_screen(&model, "a");
+    assert_eq!(back.x - 0.0, 1920.0 - back.right(), "centred on its old tape");
+}
+
+#[test]
 fn a_window_sent_away_leaves_the_focus_here_unless_followed() {
     let mut model = desk();
     open(&mut model, "a");
