@@ -33,10 +33,10 @@ and fast-forwards main):
 - `fix/wm-lock-pointer`, `fix/wm-lock-popup`, `fix/wm-lock-text-input`,
   `fix/wm-lock-im{,-2,-3}`: core pin bumps for lock isolation.
 
-Not merged:
+Merged after the g815 apply, so not on g815 yet:
 
-- `fix/wm-idle-gpu-start` (pushed at d323698c, also has 698b581c). Two
-  fixes:
+- `fix/wm-idle-gpu-start`, rebased onto main as 2c5023e7 and 4ea54642 and
+  merged at 01:25 WET. Two fixes:
   1. Under `render.backend: auto`, the shell stays on the CPU when the
      compositor's GPU uses NVIDIA's driver. Any NVIDIA Vulkan device starts
      a driver thread that wakes 100 times a second. That thread takes the
@@ -51,12 +51,19 @@ Not merged:
      none, answers. Its shell test passes 4/4; main's version fails 2 of
      them.
   Report: `~/.t3/scratch/2026-11-11-can-we-create-the-hyprland-796785aa/idle-gpu-report.md`.
-  Evidence: `~/build/idle-gpu-runs` of user fstest4 on g815 (16M). A Codex
-  review was started at 01:18 WET; read
-  `~/build/formalshell-review-runs/review-idle-gpu-d323698c.md`, fix its
-  S1s, then merge and bump the pin. Also check it against the
-  `t3/configurable-gpu-rendering` worktree (below), which touches the same
-  choice.
+  Evidence: `~/build/idle-gpu-runs` of user fstest4 on g815 (16M). Codex
+  approved it with no S1 or S2 findings
+  (`~/build/formalshell-review-runs/review-idle-gpu-d323698c.md`). It left
+  two timing nits in `dev/smoke.sh:621` and `:641` (the environment
+  snapshot and the restore target are not pinned to the manager identity);
+  neither was introduced by this branch. The pin bump that ships it to g815
+  waits on the wm input and mac legs (first actions, step 2). Check it
+  against the `t3/configurable-gpu-rendering` worktree, which touches the
+  same choice.
+- `mac-electron` (see below) is also merged and not on g815 yet.
+
+Not merged:
+
 - `mac-electron`: atoll's work. Atoll merged it into main after this
   handoff (merge 1a625e77 on 425d41cf, no conflicts). It passed all 34
   wm/input leg runs plus `--mac-electron` on 526f77af. The next pin bump
@@ -173,7 +180,7 @@ None of these are needed; delete by literal path when done with them.
    - fcitx5 in a text field.
 2. Fix the keyring prompt in the leg walk (open review items), then run the
    wm input and mac legs on current main (1a625e77 or later).
-3. Review `fix/wm-idle-gpu-start`, merge it, and bump the spec. The recipe:
+3. Bump the spec to current main (idle fix and mac-electron). The recipe:
    - fresh clone of dotfiles into `/tmp/formalspec-apply`;
    - edit the two revs in `modules/linux/store.star`;
    - `fspec update formalshell formalwm xdg-desktop-portal-shojiwm`;
