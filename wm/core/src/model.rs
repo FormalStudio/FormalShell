@@ -1267,7 +1267,9 @@ impl Model {
     }
 
     pub fn consume_or_expel(&mut self, side: Side) -> bool {
-        self.tape_op(false, |tape, _| tape.consume_or_expel(side))
+        self.tape_op(false, |tape, options| {
+            tape.consume_or_expel(side, options.default_width)
+        })
     }
 
     pub fn set_column_width(&mut self, width: f64) -> bool {

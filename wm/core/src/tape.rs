@@ -215,15 +215,15 @@ impl Tape {
         true
     }
 
-    /// niri's consume-or-expel: a window alone in its column joins the
-    /// neighbouring column, a stacked one leaves into a column of its own on
-    /// that side.
-    pub fn consume_or_expel(&mut self, side: Side) -> bool {
+    /// Hyprland's `consume_or_expel`: a window alone in its column joins
+    /// the neighbouring column, a stacked one leaves into a new column of
+    /// the default `width` on that side.
+    pub fn consume_or_expel(&mut self, side: Side, width: f64) -> bool {
         let Some(column) = self.columns.get(self.focus) else {
             return false;
         };
         if column.windows.len() > 1 {
-            let (width, row) = (column.width, column.row);
+            let row = column.row;
             let id = self.columns[self.focus].windows.remove(row);
             let source = &mut self.columns[self.focus];
             source.row = source.row.min(source.windows.len() - 1);
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn stacked_windows_split_the_column_evenly() {
         let mut tape = tape(&["a", "b"]);
-        assert!(tape.consume_or_expel(Side::Prev));
+        assert!(tape.consume_or_expel(Side::Prev, 0.5));
         assert_eq!(order(&tape), ["a+b"]);
         let cells = tape.cells(Rect::new(0.0, 0.0, W, 600.0), 4.0);
         assert_eq!(cells[0].rect.h, 292.0);
@@ -585,7 +585,7 @@ mod tests {
     #[test]
     fn rows_do_not_wrap() {
         let mut tape = tape(&["a", "b"]);
-        tape.consume_or_expel(Side::Prev);
+        tape.consume_or_expel(Side::Prev, 0.5);
         assert!(!tape.focus_row(Side::Next));
         assert!(tape.focus_row(Side::Prev));
         assert_eq!(tape.focused().unwrap(), "a");
@@ -619,23 +619,25 @@ mod tests {
     }
 
     #[test]
-    fn expel_leaves_on_the_asked_side_at_the_column_width() {
+    fn expel_leaves_on_the_asked_side_at_the_default_width() {
         let mut tape = tape(&["a", "b", "c"]);
-        tape.set_width(0.333);
-        tape.consume_or_expel(Side::Prev);
+        tape.consume_or_expel(Side::Prev, 0.5);
         assert_eq!(order(&tape), ["a", "b+c"]);
-        assert!(tape.consume_or_expel(Side::Next));
+        tape.set_width(0.667);
+        assert!(tape.consume_or_expel(Side::Next, 0.5));
         assert_eq!(order(&tape), ["a", "b", "c"]);
         assert_eq!(tape.focused().unwrap(), "c");
-        tape.consume_or_expel(Side::Prev);
-        assert!(tape.consume_or_expel(Side::Prev));
+        assert_eq!(tape.columns[2].width, 0.5, "a new column, as Hyprland's expel makes");
+        assert_eq!(tape.columns[1].width, 0.667, "the stack keeps its width");
+        tape.consume_or_expel(Side::Prev, 0.5);
+        assert!(tape.consume_or_expel(Side::Prev, 0.5));
         assert_eq!(order(&tape), ["a", "c", "b"]);
     }
 
     #[test]
     fn consume_at_the_edge_does_nothing() {
         let mut tape = tape(&["a", "b"]);
-        assert!(!tape.consume_or_expel(Side::Next));
+        assert!(!tape.consume_or_expel(Side::Next, 0.5));
         assert_eq!(order(&tape), ["a", "b"]);
     }
 
@@ -726,7 +728,7 @@ mod tests {
     #[test]
     fn swapping_two_windows_trades_their_slots() {
         let mut tape = tape(&["a", "b", "c"]);
-        tape.consume_or_expel(Side::Prev);
+        tape.consume_or_expel(Side::Prev, 0.5);
         assert!(tape.swap_windows("a", "c"));
         assert_eq!(order(&tape), ["c", "b+a"]);
     }
