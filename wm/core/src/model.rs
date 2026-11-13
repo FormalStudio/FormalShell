@@ -1129,19 +1129,27 @@ impl Model {
         self.focus_workspace(&id)
     }
 
-    /// Hyprland's `e+1`: `delta` steps through the focused output's
-    /// workspaces that hold a window, the one in view counted with them,
-    /// round from the last to the first.
+    /// Hyprland's `e+1`: `delta` steps through the workspaces Hyprland
+    /// would have, on every output: those that hold a window and those an
+    /// output shows. They go by number, as Hyprland sorts its ids, with
+    /// the unnumbered ones after (Hyprland numbers those past the named),
+    /// round from the last to the first. One on another output takes the
+    /// focus there.
     pub fn focus_occupied_workspace(&mut self, delta: isize) -> bool {
         let Some(current) = self.focused_workspace().map(|ws| ws.id.clone()) else {
             return false;
         };
-        let occupied: Vec<WsId> = self
-            .stack(&self.focused_output)
-            .into_iter()
-            .filter(|ws| !ws.is_empty() || ws.id == current)
-            .map(|ws| ws.id.clone())
+        let shown: Vec<&WsId> = self.outputs.iter().map(|o| &o.active).collect();
+        let mut existing: Vec<&Workspace> = self
+            .workspaces
+            .iter()
+            .filter(|ws| !ws.is_empty() || shown.contains(&&ws.id))
             .collect();
+        existing.sort_by_key(|ws| match ws.id.parse::<usize>() {
+            Ok(number) => (false, number),
+            Err(_) => (true, ws.id[1..].parse().unwrap_or(usize::MAX)),
+        });
+        let occupied: Vec<WsId> = existing.into_iter().map(|ws| ws.id.clone()).collect();
         let Some(at) = occupied.iter().position(|id| *id == current) else {
             return false;
         };

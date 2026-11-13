@@ -466,6 +466,45 @@ fn the_wheel_walks_the_workspaces_that_hold_a_window_and_wraps() {
 }
 
 #[test]
+fn the_wheel_walks_every_outputs_workspaces_by_number() {
+    // The g815: 4 and 8 on the portable, the panel with one of its own.
+    let mut model = two_outputs();
+    let mut portable = output("B", 1920.0, 1600.0, 1000.0);
+    portable.default_workspace = Some("4".to_owned());
+    model.set_outputs(vec![
+        output("A", 0.0, 1920.0, 1080.0),
+        portable,
+        output("C", 3520.0, 1280.0, 720.0),
+    ]);
+    let panel = model.active_workspace("C").unwrap().id.clone();
+    for (id, ws) in [("a", "1"), ("b", "2"), ("c", "3"), ("d", "8")] {
+        open(&mut model, id);
+        model.move_to_workspace(id, ws, false);
+    }
+    model.focus_workspace("1");
+    let mut seen = Vec::new();
+    for _ in 0..6 {
+        model.focus_occupied_workspace(1);
+        let ws = model.focused_workspace().unwrap();
+        seen.push(format!("{}@{}", ws.id, ws.output));
+    }
+    let panel = format!("{panel}@C");
+    assert_eq!(seen, ["2@A", "3@A", "4@B", "8@B", &panel, "1@A"]);
+    model.focus_occupied_workspace(-1);
+    assert_eq!(
+        model.focused_workspace().unwrap().id,
+        model.active_workspace("C").unwrap().id
+    );
+    // An empty workspace the desk shows is a stop; one it does not is not.
+    model.focus_workspace("6");
+    model.focus_occupied_workspace(1);
+    assert_eq!(model.focused_workspace().unwrap().id, "8");
+    model.focus_occupied_workspace(-1);
+    model.focus_occupied_workspace(-1);
+    assert_eq!(model.focused_workspace().unwrap().id, "3");
+}
+
+#[test]
 fn a_settings_reload_keeps_every_window_where_it_is() {
     let mut model = desk();
     open(&mut model, "a");

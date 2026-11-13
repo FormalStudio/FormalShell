@@ -18,8 +18,8 @@ pub enum WorkspaceRef {
     Previous,
     /// A neighbour in the focused output's stack.
     Relative(isize),
-    /// Hyprland's `e+1`: the next workspace of the output that holds a
-    /// window, round from the last to the first.
+    /// Hyprland's `e+1`: the next workspace, on any output, that holds a
+    /// window or is shown, round from the last to the first.
     Occupied(isize),
 }
 
