@@ -25,7 +25,7 @@ pub fn setup() {
                 if let Some(at) = COMPOSITOR.cursor.get_position() {
                     engine.point_at((at.x, at.y));
                     if button == "MouseLeft" {
-                        engine.pip_pressed((at.x, at.y));
+                        engine.pip_pressed((at.x, at.y), at.window_id.as_deref());
                     }
                 }
                 engine.settle_focus();

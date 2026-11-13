@@ -256,6 +256,60 @@ impl Session {
         self.client.configured[&toplevel.id()]
     }
 
+    /// Every animation run to its end, and the compositor told where that
+    /// leaves the windows, as it is each frame of a session.
+    fn caught_up(&mut self) {
+        ask(|engine| {
+            engine.scene.finish();
+            engine.present();
+            Ok(())
+        })
+        .unwrap();
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+    }
+
+    /// A window that has no title yet when it opens.
+    fn untitled(&mut self, app_id: &str) -> (wl_surface::WlSurface, xdg_toplevel::XdgToplevel) {
+        let qh = self.queue.handle();
+        let compositor: wl_compositor::WlCompositor = self.bind("wl_compositor");
+        let shell: xdg_wm_base::XdgWmBase = self.bind("xdg_wm_base");
+        let surface = compositor.create_surface(&qh, ());
+        let toplevel = shell
+            .get_xdg_surface(&surface, &qh, ())
+            .get_toplevel(&qh, ());
+        toplevel.set_app_id(app_id.into());
+        surface.commit();
+        self.roundtrip();
+        (surface, toplevel)
+    }
+
+    /// A layer of the shell's over the whole of the first output, above
+    /// every window, that leaves the keyboard alone.
+    fn cover(
+        &mut self,
+    ) -> (
+        zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+        wl_surface::WlSurface,
+    ) {
+        let qh = self.queue.handle();
+        let compositor: wl_compositor::WlCompositor = self.bind("wl_compositor");
+        let shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = self.bind("zwlr_layer_shell_v1");
+        let surface = compositor.create_surface(&qh, ());
+        let layer = shell.get_layer_surface(
+            &surface,
+            None,
+            zwlr_layer_shell_v1::Layer::Overlay,
+            "cover".into(),
+            &qh,
+            (),
+        );
+        layer.set_anchor(zwlr_layer_surface_v1::Anchor::all());
+        surface.commit();
+        self.roundtrip();
+        (layer, surface)
+    }
+
     /// A window whose title is not its app id, as a browser's player has.
     fn open_titled(&mut self, app_id: &str, title: &str) -> wl_surface::WlSurface {
         let qh = self.queue.handle();
@@ -2345,7 +2399,7 @@ fn picture_in_picture() {
     session.draw(&term, 400, 300);
     let player = session.open_titled("chromium", "Picture in picture");
     session.draw(&player, 480, 270);
-    settle();
+    session.caught_up();
     let (pip, term_id) = (id_of("Picture in picture"), id_of("term"));
     let seen = look(&pip);
     assert!(
@@ -2379,10 +2433,10 @@ fn picture_in_picture() {
         Ok(())
     })
     .unwrap();
-    settle();
+    session.caught_up();
     let game = session.open("game");
     session.draw(&game, 400, 300);
-    settle();
+    session.caught_up();
     let game_id = id_of("game");
     let seen = look(&pip);
     assert!(!seen.idle && seen.live, "shown on the workspace switched to");
@@ -2394,20 +2448,21 @@ fn picture_in_picture() {
     };
     assert_eq!(home(&pip).as_deref(), Some("2"));
 
-    // Over a fullscreen window, which stays what the compositor treats as
-    // the output's topmost: the bar does not come forward for the picture.
+    // Over a fullscreen window, which stays fullscreen for what that turns
+    // off on its output.
     ask(|engine| {
         engine.toggle_fullscreen(&game_id);
         Ok(())
     })
     .unwrap();
-    session.state.refresh_window_decorations().unwrap();
-    session.roundtrip();
-    // The client takes the size and draws at it: fullscreen as committed.
+    // The request comes back to the engine, its rect goes to the client,
+    // and the client draws at it: fullscreen as committed.
+    for _ in 0..3 {
+        session.roundtrip();
+        session.state.refresh_window_decorations().unwrap();
+    }
     session.draw(&game, WIDTH as i32, HEIGHT as i32);
-    settle();
-    session.state.refresh_window_decorations().unwrap();
-    session.roundtrip();
+    session.caught_up();
     assert_eq!(
         ask(|engine| Ok(engine.model.big_of(&game_id))).unwrap(),
         Some(Big::Fullscreen)
@@ -2422,7 +2477,7 @@ fn picture_in_picture() {
         .find(|output| output.name() == "TEST-1")
         .cloned()
         .unwrap();
-    assert!(session.state.output_has_topmost_fullscreen_window(&first));
+    assert!(session.state.output_has_fullscreen_window_under_pictures(&first));
     let under = |session: &Session, at: (f64, f64)| {
         session
             .state
@@ -2458,8 +2513,8 @@ fn picture_in_picture() {
         session.state.refresh_window_decorations().unwrap();
     }
     session.draw(&game, 400, 300);
-    settle();
-    assert!(!session.state.output_has_topmost_fullscreen_window(&first));
+    session.caught_up();
+    assert!(!session.state.output_has_fullscreen_window_under_pictures(&first));
 
     // The overview leaves it where it is, and out of reach while it is open.
     ask(|engine| {
@@ -2509,7 +2564,7 @@ fn picture_in_picture() {
     session.button(ButtonState::Released);
     session.state.refresh_window_decorations().unwrap();
     session.roundtrip();
-    settle();
+    session.caught_up();
     assert!(on_a_corner(&look(&pip), "TEST-1"));
 
     // Dragged across and let go at rest: the nearest corner, on a spring.
@@ -2528,19 +2583,21 @@ fn picture_in_picture() {
     .unwrap();
     assert_eq!(look(&pip).drawn, caught);
     dragged(&pip, caught, &[((-10.0, -10.0), 400.0)]);
-    settle();
+    session.caught_up();
 
     // Flicked at the edge no output is behind: stashed, a tab left on screen.
     let from = look(&pip).rect;
     dragged(&pip, from, &[((-40.0, 0.0), 16.0), ((-90.0, 0.0), 32.0)]);
-    settle();
+    session.caught_up();
     let seen = look(&pip);
     assert_eq!(seen.rect.right(), formalwm_core::pip::TAB, "all but the tab is off screen");
     assert_ne!(focused().as_deref(), Some("Picture in picture"));
     // A press on the tab brings it back.
+    session.state.refresh_window_decorations().unwrap();
+    session.roundtrip();
     session.pointer_to(10.0, seen.rect.y + 40.0);
     session.click();
-    settle();
+    session.caught_up();
     let seen = look(&pip);
     assert_eq!(seen.rect.x, area.x);
     assert!(on_a_corner(&seen, "TEST-1"));
@@ -2548,7 +2605,7 @@ fn picture_in_picture() {
     // Flicked at the edge another output is behind: it lands on that one.
     let from = seen.rect;
     dragged(&pip, from, &[((60.0, 0.0), 16.0), ((140.0, 0.0), 32.0)]);
-    settle();
+    session.caught_up();
     let seen = look(&pip);
     assert_eq!(seen.output, "TEST-2");
     assert!(on_a_corner(&seen, "TEST-2"));
@@ -2583,7 +2640,7 @@ fn picture_in_picture() {
     // Let go: back to the limit, in a corner.
     session.state.inject_pinch(VirtualPinch::End { cancelled: false });
     session.roundtrip();
-    settle();
+    session.caught_up();
     let seen = look(&pip);
     assert_eq!((seen.rect.w, seen.drawn), (most, seen.rect));
     assert!(on_a_corner(&seen, "TEST-2"));
@@ -2628,7 +2685,7 @@ fn picture_in_picture() {
     assert_eq!((held.x, held.y), (seen.rect.x - 60.0, seen.rect.y - 30.0));
     finger(&mut session, VirtualTouch::Up { id: 0 });
     assert!(!session.state.touch.taken(), "the next touch is the clients' again");
-    settle();
+    session.caught_up();
     let seen = look(&pip);
     assert!(on_a_corner(&seen, "TEST-1") || on_a_corner(&seen, "TEST-2"));
 
@@ -2645,14 +2702,14 @@ fn picture_in_picture() {
     assert_eq!(look(&pip).rect.w, (most / 2.0).round());
     finger(&mut session, VirtualTouch::Up { id: 1 });
     finger(&mut session, VirtualTouch::Up { id: 0 });
-    settle();
+    session.caught_up();
     let seen = look(&pip);
     assert_eq!(seen.rect.w, (most / 2.0).round());
 
     // Firefox's spelling. The next picture opens the size the last was left.
     let second = session.open_titled("firefox", "Picture-in-Picture");
     session.draw(&second, 640, 360);
-    settle();
+    session.caught_up();
     let other = look(&id_of("Picture-in-Picture"));
     assert!(other.pip);
     assert_eq!(other.rect.w, (most / 2.0).round());
@@ -2666,12 +2723,12 @@ fn picture_in_picture() {
     let lid = on == "TEST-2";
     if !lid {
         dragged(&pip, seen.rect, &[((60.0, 0.0), 16.0), ((140.0, 0.0), 32.0)]);
-        settle();
+        session.caught_up();
     }
     assert_eq!(look(&pip).output, "TEST-2");
     session.state.lid_switch_toggled(true);
     assert!(session.until(|| look(&pip).output == "TEST-1"));
-    settle();
+    session.caught_up();
     assert!(on_a_corner(&look(&pip), "TEST-1"));
 
     // What the shell draws is over it: a layer on top takes the press.
@@ -2695,6 +2752,149 @@ fn picture_in_picture() {
     assert!(below.is_some_and(|surface| pictures.contains(&surface)));
 }
 
+/// A rule that tiles a window keeps it a tile whenever it says it is a
+/// picture, and what the shell draws over a picture has the press, the
+/// finger and the pinch that land on it.
+#[test]
+fn the_rules_and_the_shell_come_before_a_picture() {
+    use formalwm_core::model::Layer;
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let settings: String = include_str!("../../example/settings.json")
+        .lines()
+        .filter(|line| !line.contains("[Ii]n[ -][Pp]icture"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let mut session = Session::with_settings("pip-shell", HOST, &[test_display("TEST-1")], &settings);
+    let renamed = |session: &mut Session, top: &xdg_toplevel::XdgToplevel, title: &str| {
+        top.set_title(title.into());
+        for _ in 0..3 {
+            session.roundtrip();
+            session.state.refresh_window_decorations().unwrap();
+        }
+        session.caught_up();
+    };
+
+    // The example tiles Beeper (`"float": false`). Its window is a tile
+    // with the player's title from the start, and with it as a first title
+    // after it opened.
+    let early = session.open_titled("Beeper", "Picture in picture");
+    session.draw(&early, 480, 270);
+    session.caught_up();
+    let seen = look(&id_of("Picture in picture"));
+    assert!(!seen.pip && !seen.floating && !seen.pinned, "titled from the start");
+    let (late, top) = session.untitled("Beeper");
+    session.draw(&late, 480, 270);
+    session.caught_up();
+    renamed(&mut session, &top, "Picture-in-Picture");
+    let seen = look(&id_of("Picture-in-Picture"));
+    assert!(!seen.pip && !seen.floating && !seen.pinned, "titled after it opened");
+    // With no rule against it the late title makes a picture.
+    let (player, top) = session.untitled("late-player");
+    session.draw(&player, 480, 270);
+    session.caught_up();
+    renamed(&mut session, &top, "PICTURE IN PICTURE");
+    let pip = id_of("PICTURE IN PICTURE");
+    let seen = look(&pip);
+    assert!(seen.pip && seen.pinned && seen.layer == Layer::Pip);
+
+    // A fullscreen window under the picture and the shell's bar on top:
+    // the bar is drawn over both, so it has the press.
+    let game = session.open("game");
+    session.draw(&game, 400, 300);
+    let game_id = id_of("game");
+    ask(|engine| {
+        engine.toggle_fullscreen(&game_id);
+        Ok(())
+    })
+    .unwrap();
+    // The request comes back to the engine, its rect goes to the client,
+    // and the client draws at it: fullscreen as committed.
+    for _ in 0..3 {
+        session.roundtrip();
+        session.state.refresh_window_decorations().unwrap();
+    }
+    session.draw(&game, WIDTH as i32, HEIGHT as i32);
+    session.caught_up();
+    let (_, bar) = session.layer();
+    session.draw(&bar, WIDTH as i32, 40);
+    let first = session.state.space.outputs().next().cloned().unwrap();
+    let under = |session: &Session, at: (f64, f64)| {
+        session
+            .state
+            .surface_under(at.into())
+            .map(|(surface, _)| smithay::reexports::wayland_server::Resource::id(&surface).protocol_id())
+    };
+    let seen = look(&pip);
+    assert!(seen.z > look(&game_id).z && seen.above_fullscreen);
+    assert!(session.state.output_has_fullscreen_window_under_pictures(&first));
+    assert!(!session.state.output_has_topmost_fullscreen_window(&first));
+    assert_eq!(under(&session, (30.0, 10.0)), Some(bar.id().protocol_id()));
+    assert_eq!(under(&session, (30.0, 60.0)), Some(game.id().protocol_id()));
+    let centre = seen.rect.center();
+    assert_eq!(under(&session, centre), Some(player.id().protocol_id()));
+
+    // A layer of the shell's over the picture: a finger dragged on it, a
+    // press dragged on it and a pinch over it are the layer's.
+    let (cover, lid) = session.cover();
+    session.draw(&lid, WIDTH as i32, HEIGHT as i32);
+    assert_eq!(under(&session, centre), Some(lid.id().protocol_id()));
+    let finger = |session: &mut Session, touch: VirtualTouch| {
+        session.state.inject_touch(touch);
+        session.roundtrip();
+    };
+    let (x, y) = centre;
+    finger(&mut session, VirtualTouch::Down { id: 0, x, y });
+    finger(&mut session, VirtualTouch::Motion { id: 0, x: x - 6.0, y: y - 4.0 });
+    finger(&mut session, VirtualTouch::Motion { id: 0, x: x - 60.0, y: y - 30.0 });
+    assert!(!session.state.touch.taken(), "the layer keeps its touch");
+    finger(&mut session, VirtualTouch::Up { id: 0 });
+    session.pointer_to(x, y);
+    session.button(ButtonState::Pressed);
+    for _ in 0..4 {
+        session.pointer_by(-30.0, -20.0);
+        session.state.refresh_window_decorations().unwrap();
+        session.roundtrip();
+    }
+    session.button(ButtonState::Released);
+    session.pointer_to(x, y);
+    session.state.inject_pinch(VirtualPinch::Begin { fingers: 2 });
+    session.state.inject_pinch(VirtualPinch::Update {
+        scale: 0.5,
+        dx: 0.0,
+        dy: 0.0,
+    });
+    session.roundtrip();
+    assert!(ask(|engine| Ok(engine.pip.unpinched())).unwrap());
+    session.state.inject_pinch(VirtualPinch::End { cancelled: false });
+    session.roundtrip();
+    session.caught_up();
+    let after = look(&pip);
+    assert_eq!((after.rect, after.drawn), (seen.rect, seen.rect), "it never moved");
+    assert!(ask(|engine| Ok(engine.pip.untouched())).unwrap());
+    cover.destroy();
+    lid.destroy();
+    session.roundtrip();
+    assert_eq!(under(&session, centre), Some(player.id().protocol_id()));
+
+    // Two fingers pinch it, a third comes down beside it, and the device
+    // gives the touch up, the third finger's end told first: the pinch is
+    // over and the picture is let go.
+    finger(&mut session, VirtualTouch::Down { id: 1, x: x - 50.0, y });
+    finger(&mut session, VirtualTouch::Down { id: 2, x: x + 50.0, y });
+    assert!(session.state.touch.taken());
+    finger(&mut session, VirtualTouch::Down { id: 0, x: 100.0, y: 400.0 });
+    finger(&mut session, VirtualTouch::Motion { id: 2, x: x + 30.0, y });
+    assert!(!ask(|engine| Ok(engine.pip.unpinched())).unwrap());
+    assert_ne!(look(&pip).drawn.w, seen.rect.w, "held and pinched");
+    finger(&mut session, VirtualTouch::Cancel);
+    assert!(ask(|engine| Ok(engine.pip.unpinched() && engine.pip.untouched())).unwrap());
+    session.caught_up();
+    let after = look(&pip);
+    assert_eq!(after.drawn, after.rect, "at rest, not held");
+}
+
 /// The example's rule for the player still says where it opens and how big;
 /// it is a picture in picture all the same, and a hand takes it from there.
 #[test]
@@ -2708,7 +2908,7 @@ fn a_rule_places_a_picture_in_picture() {
     session.draw(&term, 400, 300);
     let player = session.open_titled("", "Picture in picture");
     session.draw(&player, 480, 270);
-    settle();
+    session.caught_up();
     let pip = id_of("Picture in picture");
     let seen = look(&pip);
     assert!(seen.pip && seen.pinned && seen.layer == Layer::Pip);
@@ -2720,7 +2920,7 @@ fn a_rule_places_a_picture_in_picture() {
         "the rule's corner and inset"
     );
     dragged(&pip, seen.rect, &[((-300.0, -200.0), 400.0), ((-600.0, -450.0), 800.0)]);
-    settle();
+    session.caught_up();
     let (seen, area) = (look(&pip), picture_area("TEST-1"));
     assert_eq!((seen.rect.x, seen.rect.y), (area.x, area.y));
 }

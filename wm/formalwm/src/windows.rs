@@ -305,7 +305,7 @@ impl Engine {
     /// The rules' sum for the window as it is now. A window the client
     /// marks as a dialog floats unless a rule says otherwise, as under
     /// Hyprland.
-    fn effect(&self, window: Window) -> rules::Effect {
+    pub(crate) fn effect(&self, window: Window) -> rules::Effect {
         let (app_id, title, xwayland) = self.facts(window);
         rules::resolve(
             &self.settings.rules,
@@ -514,8 +514,7 @@ impl Engine {
                 .is_some_and(|record| !record.pip && record.title.is_empty());
             self.model.set_title(&id, title);
             self.model.set_app_id(&id, app_id);
-            let xwayland = window.is_xwayland().get_untracked();
-            if first && formalwm_core::pip::recognise(&crate::pip::hints(window, title, xwayland)) {
+            if first && self.pictured(window) {
                 self.pip_promote(window);
             }
         }

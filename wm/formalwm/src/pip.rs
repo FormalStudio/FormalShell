@@ -83,6 +83,12 @@ impl Pip {
     pub fn untouched(&self) -> bool {
         matches!(self.touch, Touch::Idle)
     }
+
+    /// No pinch has a picture.
+    #[cfg(test)]
+    pub fn unpinched(&self) -> bool {
+        self.pinch.is_none()
+    }
 }
 
 pub fn setup() {
@@ -164,13 +170,17 @@ impl Engine {
         Some(self.scene.visual(id).map_or(rect, |visual| visual.rect))
     }
 
-    /// The picture drawn under a point, the topmost one.
-    fn pip_at(&self, at: (f64, f64)) -> Option<String> {
+    /// The picture a press at a point would land on: `hit` is the window
+    /// the compositor finds there, none where a layer surface of the shell
+    /// covers it.
+    fn pip_at(&self, at: (f64, f64), hit: Option<&str>) -> Option<String> {
+        let hit = hit?;
         self.scene
             .frame()
             .iter()
-            .rev()
-            .find(|visual| visual.layer == Layer::Pip && visual.rect.contains(at.0, at.1))
+            .find(|visual| {
+                visual.id == hit && visual.layer == Layer::Pip && visual.rect.contains(at.0, at.1)
+            })
             .map(|visual| visual.id.clone())
     }
 
@@ -263,9 +273,9 @@ impl Engine {
 
     /// The left button went down. On what a stashed picture leaves on
     /// screen it brings the picture back; on a picture it may become a drag.
-    pub fn pip_pressed(&mut self, at: (f64, f64)) {
+    pub fn pip_pressed(&mut self, at: (f64, f64), hit: Option<&str>) {
         self.pip.press = None;
-        let Some(id) = self.pip_at(at) else {
+        let Some(id) = self.pip_at(at, hit) else {
             return;
         };
         if self.pip_stashed(&id) {
@@ -358,10 +368,15 @@ impl Engine {
         Some(screen.rest(rest, whole(size)))
     }
 
-    /// A window that had no title when it opened turns out to be a picture.
+    /// A window says after it opened that it is a picture. The rules are
+    /// asked again with that said, as they are when a window is placed, so
+    /// a rule that tiles it or keeps it from being one still does, and one
+    /// that sizes or places it does that.
     pub fn pip_promote(&mut self, window: Window) {
         let id = window.id();
-        if !self.windows.get(&id).is_some_and(|win| allowed(&win.effect)) {
+        let effect = self.effect(window);
+        let wanted = effect.pip.unwrap_or(effect.float == Some(true));
+        if !wanted || !allowed(&effect) || window.is_fullscreen().get_untracked() {
             return;
         }
         self.model.set_floating(&id, Some(true));
@@ -376,12 +391,22 @@ impl Engine {
         let width = self
             .pip_screen(&id)
             .map_or(480.0, |screen| (screen.area.w / 4.0).round());
-        if let Some(rect) = self.pip_open(&id, (width, width / aspect)) {
+        let output = self
+            .model
+            .output_of(&id)
+            .and_then(|output| self.model.output(&output))
+            .map(|output| output.geo.rect);
+        let ruled = output.and_then(|output| {
+            rules::float_rect(&effect, (output.w, output.h), Some((width, width / aspect)))
+                .map(|local| local.translate(output.x, output.y))
+        });
+        if let Some(rect) = ruled.or_else(|| self.pip_open(&id, (width, width / aspect))) {
             self.model.place(&id, rect);
         }
         window.state(&crate::windows::FORCE).set(true);
         if let Some(win) = self.windows.get_mut(&id) {
             win.sized = true;
+            win.effect = effect;
         }
         self.commit();
     }
@@ -441,7 +466,7 @@ impl Engine {
             GestureSwipePhaseSnapshot::Begin => {
                 let at = event.position.as_ref().map(|at| (at.x, at.y));
                 if let Some(at) = at
-                    && let Some(id) = self.pip_at(at)
+                    && let Some(id) = self.pip_at(at, event.window_id.as_deref())
                 {
                     self.pinch_begin(id, at);
                 }
@@ -525,21 +550,36 @@ impl Engine {
         let now = event.timestamp as f64;
         let at = event.position.as_ref().map(|at| (at.x, at.y));
         match (event.phase, at) {
-            (TouchPhaseSnapshot::Down, Some(at)) => self.touch_down(event.id, at),
+            (TouchPhaseSnapshot::Down, Some(at)) => {
+                self.touch_down(event.id, at, event.window_id.as_deref())
+            }
             (TouchPhaseSnapshot::Motion, Some(at)) => self.touch_motion(event.id, at, now),
             (TouchPhaseSnapshot::Up, _) => self.touch_up(event.id, now, false),
-            (TouchPhaseSnapshot::Cancel, _) => self.touch_up(event.id, now, true),
+            // The device gave the whole touch up, whichever finger says so.
+            (TouchPhaseSnapshot::Cancel, _) => self.touch_dropped(now),
             _ => {}
         }
         if event.fingers == 0 {
+            self.touch_dropped(now);
             self.pip.touch = Touch::Idle;
             self.pip.points.clear();
         }
     }
 
-    fn touch_down(&mut self, finger: i32, at: (f64, f64)) {
+    /// The touch is over without its fingers lifting: what they held goes
+    /// back to rest.
+    fn touch_dropped(&mut self, now: f64) {
+        match std::mem::replace(&mut self.pip.touch, Touch::Spent) {
+            Touch::Drag { id, .. } => self.pip_settle(&id, (0.0, 0.0)),
+            Touch::Pinch { .. } => self.pinch_end(now, true),
+            Touch::Idle => self.pip.touch = Touch::Idle,
+            Touch::Pending { .. } | Touch::Spent => {}
+        }
+    }
+
+    fn touch_down(&mut self, finger: i32, at: (f64, f64), hit: Option<&str>) {
         self.pip.points.insert(finger, at);
-        let on = self.pip_at(at);
+        let on = self.pip_at(at, hit);
         self.pip.touch = match std::mem::take(&mut self.pip.touch) {
             Touch::Idle => match on {
                 Some(id) if self.overview.open => {
