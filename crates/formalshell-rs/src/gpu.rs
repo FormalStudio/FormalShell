@@ -182,6 +182,9 @@ pub fn resolve(asked: Backend, conn: &Connection, globals: &GlobalList) {
     if asked == Backend::Auto && on_root_bus(&node) {
         return settle(asked, Err(format!("auto: {} is an integrated GPU on the root PCI bus, where the CPU draws for less", node.path)));
     }
+    if asked == Backend::Auto && kernel_driver(&node).as_deref() == Some("nvidia") {
+        return settle(asked, Err(format!("auto: {} is NVIDIA's driver, whose Vulkan device wakes the shell 100 times a second while idle", node.path)));
+    }
     let (tx, opened) = std::sync::mpsc::channel();
     let (ping, source) = match calloop::ping::make_ping() {
         Ok(p) => p,
@@ -877,14 +880,18 @@ fn on_root_bus(node: &Node) -> bool {
     device.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("pci"))
 }
 
+/// The kernel driver bound to `node`'s device, read off sysfs with no
+/// Vulkan driver loaded.
+fn kernel_driver(node: &Node) -> Option<String> {
+    let (major, minor) = node.rdev;
+    let link = std::fs::read_link(format!("/sys/dev/char/{major}:{minor}/device/driver")).ok()?;
+    link.file_name()?.to_str().map(str::to_owned)
+}
+
 /// The driver libraries that can drive `node`, by its kernel driver, in the
 /// order to try them (hasvk covers the Intel generations anv dropped).
 fn drivers(node: &Node) -> &'static [&'static str] {
-    let (major, minor) = node.rdev;
-    let Ok(link) = std::fs::read_link(format!("/sys/dev/char/{major}:{minor}/device/driver")) else {
-        return &[];
-    };
-    match link.file_name().and_then(|n| n.to_str()).unwrap_or("") {
+    match kernel_driver(node).as_deref().unwrap_or("") {
         "i915" | "xe" => &["libvulkan_intel.so", "libvulkan_intel_hasvk.so"],
         "amdgpu" | "radeon" => &["libvulkan_radeon.so"],
         "nouveau" => &["libvulkan_nouveau.so"],

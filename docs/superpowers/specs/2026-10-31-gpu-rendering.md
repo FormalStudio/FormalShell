@@ -46,25 +46,33 @@ MB and 0.8s, against 15 MB and 10ms for Intel's alone).
    port between (Intel's integrated graphics at 00:02.0): the CPU, with no
    Vulkan driver loaded, since a driver once loaded keeps ~7 MB of the
    shell's RSS for the rest of the run.
-3. Otherwise the Vulkan device on that node (`on_node`): a device on
+3. The node's kernel driver. `nvidia`: the CPU, with no Vulkan driver
+   loaded. Any VkDevice on NVIDIA's driver (595.112.07, g815's RTX 5070)
+   keeps three threads of the driver's waking for as long as it is open,
+   one of them on a 10 ms timed wait: about 6,600 wakeups a minute where
+   the idle baseline is 9. A plain `vkCreateDevice` with one queue and no
+   wgpu starts them; nothing the shell asks of the device stops them.
+   Measured 2026-11-13, when formalwm nested on that card offered linear
+   ABGR8888 and the shell took the GPU under it.
+4. Otherwise the Vulkan device on that node (`on_node`): a device on
    another node is never taken, so no frame crosses between GPUs, and a
    software device (lavapipe, llvmpipe) is passed over.
-4. That device's type: discrete, the GPU; integrated (AMD's APUs sit
+5. That device's type: discrete, the GPU; integrated (AMD's APUs sit
    behind a port, so they reach this step), software, virtual or other,
    the CPU.
 
 Integrated GPUs draw on the CPU because of section 4: on both measured, a
 frame costs the shell more CPU time on the GPU than on the CPU, the RSS
 nearly doubles and the slowest launcher open is later. Only a panel's
-first frame is faster. A discrete GPU is not measured: the rig nests on
+first frame is faster. A discrete GPU but NVIDIA's is not measured: the rig nests on
 g815's Intel, and the owner's session on its NVIDIA is not a test target.
 It takes the GPU because it is the compositor's own device there and the
 per-frame overhead is a submit, not raster work the CPU would also do.
 The one discrete host, g815 under Hyprland on its NVIDIA, never gets that
 far: the compositor's feedback carries no linear ABGR8888, and the shell
 exports linear dmabufs only, so it draws on the CPU (read off its log at
-a4ccb4d0). Taking a modifier from the feedback the driver also exports is
-what would put it on the GPU.
+a4ccb4d0), and rule 3 keeps NVIDIA's driver on the CPU under any
+compositor; `gpu` still opens it.
 
 Power state (battery, power-saver) is not read: the integrated hosts are
 on the CPU on mains already, and the quota runs (the power-saver
