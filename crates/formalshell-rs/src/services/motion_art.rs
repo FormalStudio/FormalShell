@@ -254,7 +254,9 @@ async fn frames(ctx: Ctx, key: String, path: String, slots: Vec<(u32, f64)>, pid
     }
     let Some(mut out) = child.stdout.take() else { return };
     let mut buf = vec![0u8; (size * size * 4) as usize];
+    let mut shown = false;
     while out.read_exact(&mut buf).await.is_ok() {
+        shown = true;
         if stop.load(Ordering::Relaxed) {
             break;
         }
@@ -273,7 +275,13 @@ async fn frames(ctx: Ctx, key: String, path: String, slots: Vec<(u32, f64)>, pid
     }
     pid.store(0, Ordering::Relaxed);
     let _ = child.kill();
-    let _ = child.status().await;
+    let status = child.status().await;
+    // An ffmpeg without an h264 decoder (openSUSE's noopenh264 stub) exits
+    // here at once; say so, or the cover just never moves.
+    if !shown && !stop.load(Ordering::Relaxed) {
+        let status = status.map_or_else(|e| e.to_string(), |s| s.to_string());
+        eprintln!("AppleMusicArtService: ffmpeg ended before a frame ({status}): ffmpeg {}", ffmpeg_args(&path, size).join(" "));
+    }
 }
 
 /// One raw frame, decoded at the largest slot's `size`, as each slot draws
