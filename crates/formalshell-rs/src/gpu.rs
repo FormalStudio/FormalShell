@@ -313,6 +313,9 @@ pub struct Gpu {
     uploads: Option<wgpu::CommandEncoder>,
     fade: Option<Fade>,
     blend: Option<Fade>,
+    /// Where the fade and blend passes draw before their pixels are copied
+    /// into a dmabuf, grown to the largest buffer asked for.
+    scratch: Option<wgpu::Texture>,
     wl_queue: EventQueue<Wl>,
     wl: Wl,
 }
@@ -567,6 +570,7 @@ impl Gpu {
             uploads: None,
             fade: None,
             blend: None,
+            scratch: None,
             wl_queue,
             wl,
         };
@@ -590,7 +594,7 @@ impl Gpu {
             .array_layers(1)
             .samples(vk::SampleCountFlags::TYPE_1)
             .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
-            .usage(vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .usage(vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .push_next(&mut external)
@@ -643,7 +647,7 @@ impl Gpu {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUses::COPY_SRC | wgpu::TextureUses::COPY_DST | wgpu::TextureUses::COLOR_TARGET,
+                usage: wgpu::TextureUses::COPY_SRC | wgpu::TextureUses::COPY_DST,
                 memory_flags: wgpu::hal::MemoryFlags::empty(),
                 view_formats: Vec::new(),
             };
@@ -659,7 +663,7 @@ impl Gpu {
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
                     format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
                     view_formats: &[],
                 },
             );
@@ -1267,19 +1271,15 @@ impl Buffer {
             let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell present") });
             let layout = if opacity >= 256 {
                 for r in rects {
-                    let origin = wgpu::Origin3d { x: r.x as u32, y: r.y as u32, z: 0 };
-                    encoder.copy_texture_to_texture(
-                        wgpu::TexelCopyTextureInfo { texture: &canvas.texture, mip_level: 0, origin, aspect: wgpu::TextureAspect::All },
-                        wgpu::TexelCopyTextureInfo { texture: &self.texture, mip_level: 0, origin, aspect: wgpu::TextureAspect::All },
-                        wgpu::Extent3d { width: r.w as u32, height: r.h as u32, depth_or_array_layers: 1 },
-                    );
+                    copy_rect(&mut encoder, &canvas.texture, &self.texture, *r);
                 }
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL
             } else {
                 let fade = g.fade.get_or_insert_with(|| Fade::new(&g.device));
                 g.queue.write_buffer(&fade.uniform, 0, &(f32::from(opacity) / 256.0).to_le_bytes());
                 let group = canvas.fade.get_or_insert_with(|| fade.group(&g.device, &[&canvas.texture]));
-                let view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let scratch = scratch(&mut g.scratch, &g.device, self.texture.size());
+                let view = scratch.create_view(&wgpu::TextureViewDescriptor::default());
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("formalshell fade"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1300,7 +1300,10 @@ impl Buffer {
                     pass.draw(0..3, 0..1);
                 }
                 drop(pass);
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+                for r in rects {
+                    copy_rect(&mut encoder, scratch, &self.texture, *r);
+                }
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL
             };
             self.hand_over(g, encoder, layout)
         })
@@ -1330,7 +1333,9 @@ impl Buffer {
             let blend = g.blend.get_or_insert_with(|| Fade::with(&g.device, "formalshell blend", BLEND_WGSL, 2));
             g.queue.write_buffer(&blend.uniform, 0, &a.clamp(0.0, 1.0).to_le_bytes());
             let group = blend.group(&g.device, &[&from.texture, &to.texture]);
-            let view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let size = self.texture.size();
+            let scratch = scratch(&mut g.scratch, &g.device, size);
+            let view = scratch.create_view(&wgpu::TextureViewDescriptor::default());
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("formalshell blend"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1346,9 +1351,11 @@ impl Buffer {
             });
             pass.set_pipeline(&blend.pipeline);
             pass.set_bind_group(0, &group, &[]);
+            pass.set_scissor_rect(0, 0, size.width, size.height);
             pass.draw(0..3, 0..1);
             drop(pass);
-            self.hand_over(g, encoder, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            copy_rect(&mut encoder, scratch, &self.texture, IRect::new(0, 0, size.width as i32, size.height as i32));
+            self.hand_over(g, encoder, vk::ImageLayout::TRANSFER_DST_OPTIMAL)
         })
         .unwrap_or(false)
     }
@@ -1392,6 +1399,38 @@ impl Buffer {
             }
         }
     }
+}
+
+/// The render target the fade and blend passes draw into, at least `size`.
+/// The dmabufs are pitch-linear, which NVIDIA's 3D engine faults on as a
+/// colour target (Xid 69 on the draw, the device lost), so they are only
+/// ever copied into.
+fn scratch<'a>(slot: &'a mut Option<wgpu::Texture>, device: &wgpu::Device, size: wgpu::Extent3d) -> &'a wgpu::Texture {
+    if slot.as_ref().is_some_and(|t| t.width() < size.width || t.height() < size.height) {
+        *slot = None;
+    }
+    slot.get_or_insert_with(|| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("formalshell scratch"),
+            size: wgpu::Extent3d { width: size.width, height: size.height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        })
+    })
+}
+
+/// `r` of `from` copied to the same place on `to`.
+fn copy_rect(encoder: &mut wgpu::CommandEncoder, from: &wgpu::Texture, to: &wgpu::Texture, r: IRect) {
+    let origin = wgpu::Origin3d { x: r.x as u32, y: r.y as u32, z: 0 };
+    encoder.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo { texture: from, mip_level: 0, origin, aspect: wgpu::TextureAspect::All },
+        wgpu::TexelCopyTextureInfo { texture: to, mip_level: 0, origin, aspect: wgpu::TextureAspect::All },
+        wgpu::Extent3d { width: r.w as u32, height: r.h as u32, depth_or_array_layers: 1 },
+    );
 }
 
 /// `texture` copied into a buffer the CPU can map, its rows padded to

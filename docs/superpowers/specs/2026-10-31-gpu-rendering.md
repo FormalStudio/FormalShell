@@ -23,10 +23,18 @@ draw outside that path:
 - the wallpaper (`surface.rs` `Backdrop`) is a picture, not a scene. On
   the CPU its crossfade blends two BGRA pictures into shm; on the GPU each
   picture is uploaded once into a BGRA texture in device memory and the
-  crossfade is one full-screen pass into a dmabuf. The service's own copy
+  crossfade is one full-screen pass, copied into a dmabuf. The service's own copy
   stays where it was; the texture is not in the shell's RSS;
 - the compositor-drawn pixel surfaces (scrim, catcher, frame zones, veil)
   are single-pixel buffers and draw nothing.
+
+The linear dmabufs are only ever copied into. The crossfade and a faded
+surface's copy (opacity under 1, the launcher's fade with `motion.morph`
+off) draw into a render target of the shell's own and are copied from
+there: NVIDIA's driver (595.112.07, RTX 5070) takes a linear image as a
+colour target, with the validation layer silent, and then faults on the
+draw (`NVRM: Xid 69`, class ce97, `DRAW_VERTEX_ARRAY_BEGIN_END_B`, count
+3), losing the device. Measured 2026-11-13 under formalwm on g815.
 
 A lost device sends every surface back to the CPU on its next present,
 and nothing touches the device again: vello_hybrid panics on a render
