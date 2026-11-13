@@ -364,7 +364,10 @@ fn a_big_tile_covers_its_output_after_the_output_changes() {
     open(&mut model, "b");
     assert!(model.set_big("b", Some(Big::Fullscreen)));
     model.set_outputs(vec![output("B", 1920.0, 3840.0, 2160.0)]);
-    assert_eq!(on_screen(&model, "b"), Rect::new(1920.0, 0.0, 3840.0, 2160.0));
+    assert_eq!(
+        on_screen(&model, "b"),
+        Rect::new(1920.0, 0.0, 3840.0, 2160.0)
+    );
 }
 
 #[test]
@@ -405,6 +408,32 @@ fn a_fullscreen_tile_is_not_the_outputs_while_a_float_has_the_focus() {
     assert_eq!(model.fullscreen_on("A"), None);
     model.focus_window("a");
     assert_eq!(model.fullscreen_on("A").map(String::as_str), Some("a"));
+}
+
+#[test]
+fn a_tile_dragged_by_an_edge_moves_that_edge_only() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    let inset = 2.0 * Options::default().tile_inset();
+    let column = |model: &formalwm_core::model::Model, id: &str| on_screen(model, id).w + inset;
+    let (a, b) = (on_screen(&model, "a"), on_screen(&model, "b"));
+    // By its right edge: its left edge stays.
+    assert!(model.resize_tile_edge("a", false, column(&model, "a") + 100.0));
+    let now = on_screen(&model, "a");
+    assert_eq!((now.x, now.w), (a.x, a.w + 100.0));
+    // By its left edge: its right edge stays, the view follows.
+    let b_right = on_screen(&model, "b").right();
+    assert!(model.resize_tile_edge("b", true, column(&model, "b") + 50.0));
+    let now = on_screen(&model, "b");
+    assert_eq!((now.right(), now.w), (b_right, b.w + 50.0));
+    assert_eq!(focused(&model), "a", "a drag leaves the focus where it is");
+    // Neither edge goes out of the view.
+    assert!(model.resize_tile_edge("b", false, column(&model, "b") + 900.0));
+    assert!(on_screen(&model, "b").right() <= 1920.0);
+    assert!(model.resize_tile_edge("a", true, column(&model, "a") + 900.0));
+    assert!(on_screen(&model, "a").x >= 0.0);
 }
 
 #[test]

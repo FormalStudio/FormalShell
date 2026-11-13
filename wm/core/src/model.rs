@@ -1394,6 +1394,17 @@ impl Model {
         self.tape_op(false, |tape, _| tape.set_width(width))
     }
 
+    /// A tile dragged by an edge to a column `column_px` wide; see
+    /// `Tape::resize_edge`. The focus and the view are not fitted meanwhile.
+    pub fn resize_tile_edge(&mut self, id: &str, left: bool, column_px: f64) -> bool {
+        let Some(Home::Workspace(workspace)) = self.window(id).map(|w| w.home.clone()) else {
+            return false;
+        };
+        let strip_w = self.strip_w(&workspace).max(1.0);
+        self.workspace_mut(&workspace)
+            .is_some_and(|ws| ws.tape.resize_edge(id, left, column_px / strip_w, strip_w))
+    }
+
     pub fn resize_column(&mut self, delta: f64) -> bool {
         self.tape_op(false, |tape, _| tape.resize(delta))
     }

@@ -386,6 +386,32 @@ impl Tape {
         self.find(id).and_then(|(c, _)| self.columns[c].big)
     }
 
+    /// `id`'s column dragged by an edge to `width`, as Hyprland's scrolling
+    /// layout resizes a tile: by the right edge the left edge stays, by the
+    /// left edge the view follows so the right edge stays, and neither edge
+    /// leaves the view.
+    pub fn resize_edge(&mut self, id: &str, left: bool, width: f64, strip_w: f64) -> bool {
+        let Some((c, _)) = self.find(id) else {
+            return false;
+        };
+        let old = self.columns[c].width;
+        let start = self.column_left(c, strip_w) - self.scroll;
+        let end = start + old * strip_w;
+        let room = if left { start } else { strip_w - end };
+        let delta = (clamp_width(width) - old).min(room / strip_w);
+        if delta.abs() < f64::EPSILON {
+            return false;
+        }
+        let column = &mut self.columns[c];
+        column.big = None;
+        column.width = old + delta;
+        if left {
+            self.scroll += delta * strip_w;
+            self.clamp_scroll(strip_w);
+        }
+        true
+    }
+
     pub fn resize(&mut self, delta: f64) -> bool {
         let Some(column) = self.columns.get(self.focus) else {
             return false;

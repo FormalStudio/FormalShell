@@ -395,15 +395,9 @@ impl Engine {
         .inset(border);
         if record.floating {
             self.model.place(&id, rect);
-        } else {
-            // A tile's width is its column's share of the strip.
-            let Some(output) = self.model.output_of(&id) else {
-                return;
-            };
-            let strip = self.model.strip_of(&output).w.max(1.0);
-            self.model.focus_window(&id);
-            self.model
-                .set_column_width((rect.w + 2.0 * self.model.options.tile_inset()) / strip);
+        } else if event.edges.left || event.edges.right {
+            let column = rect.w + 2.0 * self.model.options.tile_inset();
+            self.model.resize_tile_edge(&id, event.edges.left, column);
         }
         self.scene.sync(&self.model);
         self.scene.finish();
