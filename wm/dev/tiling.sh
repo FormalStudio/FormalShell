@@ -10,6 +10,10 @@ run=$SHOJI_RUN_DIR
 close() { ipc window.close "{\"id\": \"$(id_of "$1")\"}" >/dev/null; sleep 1; }
 id_ws() { ipc state.get | jq -r --arg app "$1" '.windows[] | select(.appId == $app) | .workspaceId'; }
 asked() { grep configure "$run/$1.out" | tail -1; }
+fails=0
+expect() {
+  if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1: $2, not $3"; fails=$((fails + 1)); fi
+}
 
 step "three columns, the middle one closes, then the last"
 win a > "$run/a.out"; sleep 1; win b > "$run/b.out"; sleep 1; win c > "$run/c.out"; sleep 1
@@ -55,7 +59,17 @@ key Super+Shift+f 1; tape
 
 step "a window that asks to be maximized before it maps, as T3 Code and Discord do"
 win asks --maximized > "$run/asks.out"; sleep 1.5; tape; asked asks; shot 66-asks-maximized
+# Maximized: the output inset evenly by the border, and the client told that size.
+rect=$(ipc state.get | jq -r '(.outputs[0] | [.width, .height]) as [$w, $h]
+  | .windows[] | select(.appId == "asks") | .rect
+  | "\(.width)x\(.height) \(.x * 2 + .width == $w and .y * 2 + .height == $h and .x <= 10)"')
+expect "asks covers the output but its border" "${rect#* }" true
+expect "asks was told the size it shows" "$(asked asks)" "configure ${rect% *}"
 key Super+Return 1.5; tape; focus_app
+# Off the focus, a maximized column keeps the maximized height.
+size=${rect%% *}
+expect "asks stays maximized beside the new window" \
+  "$(ipc state.get | jq -r '.windows[] | select(.appId == "asks") | .rect.height')" "${size#*x}"
 close asks; ipc state.get | jq -r '.windows[] | select(.appId == "foot") | .id' | while read -r id; do ipc window.close "{\"id\": \"$id\"}" >/dev/null; done; sleep 1
 
 step "a window that will not go below 700x500 in a half column"
@@ -96,4 +110,6 @@ ws125=$(id_ws a)
 tape "$ws125"; asked a; asked b
 
 step "the log"
+echo "$fails failed"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx\|cursor image\|cursor theme" | cut -c1-300 | tail -12
+[ "$fails" = 0 ]
