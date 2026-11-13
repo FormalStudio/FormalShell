@@ -8,11 +8,12 @@ session on g815 and e1504g; Hyprland stays on the session chip.
 
 ## Live and merged
 
-- FormalShell `main` is `9260c60e`. Every branch below is merged into it.
+- FormalShell `main` was `9260c60e` when g815 was pinned; atoll's
+  `mac-electron` merge (1a625e77) followed. Every branch below is merged.
 - ShojiWM `formal` is `7783d5e`.
 - dotfiles `main` is `5b304225`. That commit pins the shell and formalwm at
   `9260c60e` and `xdg-desktop-portal-shojiwm` at `7783d5e`.
-- g815: applied from `5b304225` at 01:0x WET on 2026-11-13 (see "Apply
+- g815: applied from `5b304225` at about 01:15 WET on 2026-11-13 (see "Apply
   result" at the end). Before that it ran `95f01af3` / core `88ac18e`.
   formalwm takes over at the next login, not in the running session.
 - e1504g: offline since 2026-11-11 17:32. It has none of this yet; a waiter
@@ -46,7 +47,11 @@ Not merged:
   Report: `~/.t3/scratch/2026-11-11-can-we-create-the-hyprland-796785aa/idle-gpu-report.md`.
   Its status line says whether the legs finished. Needs a review, then a
   merge and a pin bump.
-- `mac-electron`: atoll's work, not part of this.
+- `mac-electron`: atoll's work. Atoll merged it into main after this
+  handoff (merge 1a625e77 on 425d41cf, no conflicts). It passed all 34
+  wm/input leg runs plus `--mac-electron` on 526f77af. The next pin bump
+  ships its Super+Q to g815: run the wm input and mac legs once on 1a625e77
+  or later before bumping.
 - `t3/configurable-gpu-rendering`: another session's worktree. Check with
   that session before touching `fix/wm-idle-gpu-start`'s GPU choice, since
   both decide where the shell renders.
@@ -62,15 +67,21 @@ nothing on it that main lacks.
 
 ## Open review items
 
-- The Codex re-review of core `8218c2b..7783d5e` was running when this was
-  written. Output:
-  `~/build/formalshell-review-runs/review-shojiwm-7783d5e.md`. Its S1s are
-  the first thing to fix.
+- Codex approved core `8218c2b..7783d5e`, with no S1, S2 or nits
+  (`~/build/formalshell-review-runs/review-shojiwm-7783d5e.md`). It
+  reviewed the Linux red/green tests but did not rerun them.
 - Known and accepted: under the lock, another client that creates or
   destroys an input method can make the locker's input method unavailable
   (Smithay tells the locker's input method it is gone). No input leaks to
   the other client. A fix needs Smithay to support more than one input
   method per seat.
+- Leg harness, from atoll's Electron work: in the g815 slots, a leg that
+  runs Notion or another Chromium app starts gnome-keyring over the session
+  bus. With no unlocked login keyring, its "Authentication required" prompt
+  takes the keyboard, and the next keys miss the app. Fix it in the leg walk
+  the way 4861d423 did for the login legs: per run,
+  `printf '' | gnome-keyring-daemon --replace --unlock --components=secrets -d`,
+  and launch the app with `--password-store=basic`.
 - Earlier reviews' nits that were not acted on are in
   `~/build/formalshell-review-runs/review-*.md`.
 
@@ -149,8 +160,8 @@ None of these are needed; delete by literal path when done with them.
    - a VT switch (Ctrl+Alt+F3 and back);
    - suspend and resume;
    - fcitx5 in a text field.
-2. Read `review-shojiwm-7783d5e.md` and fix any S1 in the core before
-   anything else ships.
+2. Fix the keyring prompt in the leg walk (open review items), then run the
+   wm input and mac legs on current main (1a625e77 or later).
 3. Review `fix/wm-idle-gpu-start`, merge it, and bump the spec. The recipe:
    - fresh clone of dotfiles into `/tmp/formalspec-apply`;
    - edit the two revs in `modules/linux/store.star`;
@@ -171,4 +182,9 @@ None of these are needed; delete by literal path when done with them.
 
 ## Apply result
 
-Filled in after the g815 apply finished.
+The g815 apply from dotfiles `5b304225` finished at about 01:15 WET on
+2026-11-13, and a re-plan shows no changes. The store has
+`a3345354-formalshell-9260c60ecb66` and `8c0ef0e5-formalwm-9260c60ecb66`.
+`formalshell.service` restarted onto the new shell in the running Hyprland
+session (pid 3411), and the service is active. formalwm 9260c60e starts at
+the next login.
