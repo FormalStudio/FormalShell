@@ -339,7 +339,14 @@ impl Engine {
         let drawn = (drawn.width, drawn.height);
         let at_tile =
             told.is_some_and(|(w, h)| (drawn.0 - w).abs() < 1.0 || (drawn.1 - h).abs() < 1.0);
-        if win.sized || !at_tile {
+        // A tile is capped at its max size, so a window fixed in both axes
+        // draws its own size and the tile's alike.
+        let limits = window.size_constraints().get_untracked();
+        let fixed = limits
+            .min
+            .is_some_and(|min| min.width > 0 && min.height > 0)
+            && limits.min == limits.max;
+        if win.sized || !at_tile || fixed {
             return false;
         }
         let scope = win.scope;
