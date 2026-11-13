@@ -800,6 +800,13 @@ fn settle() {
     .unwrap();
 }
 
+/// Turns the loop until the engine has looked at where the compositor put
+/// the keyboard for the focus it asked for, which it does on a timer.
+fn keyboard_settled(session: &mut Session) {
+    let looked = || ask(|engine| Ok(!engine.focus_pending)).unwrap();
+    assert!(session.until(looked), "the engine looked at the keyboard");
+}
+
 /// A lone tile on one output with its right border pressed and dragged
 /// 100 px out, the button still down.
 fn border_dragged(test: &str) -> Session {
@@ -3291,8 +3298,10 @@ fn a_new_tile_that_never_draws_lets_its_workspace_go_on_its_own() {
         }
     }
     let moved = moved.expect("the workspace moved on within 6 s of the commit");
+    // The compositor stamps the commit's turn in whole milliseconds, rounded
+    // down, and the wait counts from that stamp.
     assert!(
-        moved >= Duration::from_secs(2),
+        moved >= Duration::from_millis(1999),
         "not before the wait ran out: {moved:?}"
     );
 }
@@ -3321,6 +3330,7 @@ fn a_swipe_while_a_tile_waits_follows_the_fingers_and_lands_with_the_focus() {
     .unwrap();
     let (late, _late_top) = session.bare("late");
     session.commit(&late);
+    keyboard_settled(&mut session);
     settle();
     let (_, start) = scroll("1");
     assert!(start > 200.0, "room to swipe back: {start}");
@@ -3337,6 +3347,7 @@ fn a_swipe_while_a_tile_waits_follows_the_fingers_and_lands_with_the_focus() {
         last = now;
     }
     session.swipe(Phase::End, 3, (180.0, 0.0), (0.0, 0.0));
+    keyboard_settled(&mut session);
     settle();
     let (focus, model_at, drawn_at) = ask(|engine| {
         let id = engine.model.focused_window().cloned().ok_or("no focus")?;
@@ -3407,6 +3418,7 @@ fn an_activation_or_a_close_before_a_new_tile_draws_leaves_the_view_where_it_was
 
     let (late, late_top) = session.bare("late");
     session.commit(&late);
+    keyboard_settled(&mut session);
     settle();
     assert_eq!((shown("a"), shown("files"), scroll("1")), view);
 
@@ -3417,7 +3429,7 @@ fn an_activation_or_a_close_before_a_new_tile_draws_leaves_the_view_where_it_was
         Ok(())
     })
     .unwrap();
-    session.roundtrip();
+    keyboard_settled(&mut session);
     settle();
     assert_eq!(
         (shown("a"), shown("files"), scroll("1")),
@@ -3430,6 +3442,7 @@ fn an_activation_or_a_close_before_a_new_tile_draws_leaves_the_view_where_it_was
     c_top.destroy();
     c.destroy();
     session.roundtrip();
+    keyboard_settled(&mut session);
     settle();
     assert_eq!(
         (shown("a"), shown("files"), scroll("1")),
