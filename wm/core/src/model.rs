@@ -1216,7 +1216,15 @@ impl Model {
 
     // The focused tape.
 
-    fn tape_op(&mut self, op: impl FnOnce(&mut Tape, &Options) -> bool) -> bool {
+    /// Runs a bind on the focused output's tape. Hyprland's layout
+    /// messages act on the focused window's column, and a float has none:
+    /// with a float focused they do nothing, unless `from_float` (the row
+    /// binds, Hyprland's `movefocus`, which leave a float for the tape).
+    fn tape_op(
+        &mut self,
+        from_float: bool,
+        op: impl FnOnce(&mut Tape, &Options) -> bool,
+    ) -> bool {
         let options = self.options.clone();
         // With no window typed into, a bind on the tape is for the output
         // the pointer is on, and the keyboard goes there with it.
@@ -1227,7 +1235,7 @@ impl Model {
         let Some(ws) = active.and_then(|id| self.workspace_mut(&id)) else {
             return taken;
         };
-        if ws.zen.is_some() {
+        if ws.zen.is_some() || (ws.float_focused && !from_float) {
             return taken;
         }
         let was_floating = std::mem::take(&mut ws.float_focused);
@@ -1243,39 +1251,39 @@ impl Model {
     }
 
     pub fn focus_column(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.focus_column(side))
+        self.tape_op(false, |tape, _| tape.focus_column(side))
     }
 
     pub fn focus_row(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.focus_row(side))
+        self.tape_op(true, |tape, _| tape.focus_row(side))
     }
 
     pub fn swap_column(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.swap_column(side))
+        self.tape_op(false, |tape, _| tape.swap_column(side))
     }
 
     pub fn swap_row(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.swap_row(side))
+        self.tape_op(false, |tape, _| tape.swap_row(side))
     }
 
     pub fn consume_or_expel(&mut self, side: Side) -> bool {
-        self.tape_op(|tape, _| tape.consume_or_expel(side))
+        self.tape_op(false, |tape, _| tape.consume_or_expel(side))
     }
 
     pub fn set_column_width(&mut self, width: f64) -> bool {
-        self.tape_op(|tape, _| tape.set_width(width))
+        self.tape_op(false, |tape, _| tape.set_width(width))
     }
 
     pub fn resize_column(&mut self, delta: f64) -> bool {
-        self.tape_op(|tape, _| tape.resize(delta))
+        self.tape_op(false, |tape, _| tape.resize(delta))
     }
 
     pub fn cycle_column_width(&mut self) -> bool {
-        self.tape_op(|tape, options| tape.cycle_width(&options.presets))
+        self.tape_op(false, |tape, options| tape.cycle_width(&options.presets))
     }
 
     pub fn fit_into_view(&mut self) -> bool {
-        self.tape_op(|_, _| true)
+        self.tape_op(false, |_, _| true)
     }
 
     /// Drags a tape by `dx`; nothing moves while zen holds it.

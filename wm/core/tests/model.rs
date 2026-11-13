@@ -187,14 +187,18 @@ fn floating_and_back() {
 }
 
 #[test]
-fn a_column_bind_leaves_a_float_for_the_tiles_and_never_steps_onto_one() {
+fn a_column_bind_never_steps_onto_a_float_nor_off_one() {
+    // Hyprland's `layout focus` asks the scrolling layout for the focused
+    // window's column: a float has none, so the bind does nothing there,
+    // and the layout knows no float to step onto.
     let mut model = desk();
     open(&mut model, "tile");
     open(&mut model, "mac");
     assert!(model.set_floating("mac", Some(true)));
     assert_eq!(focused(&model), "mac");
-    assert!(model.focus_column(Side::Next));
-    assert_eq!(focused(&model), "tile");
+    assert!(!model.focus_column(Side::Next));
+    assert_eq!(focused(&model), "mac");
+    model.focus_window("tile");
     assert!(!model.focus_column(Side::Prev), "one tile and a float");
     assert_eq!(focused(&model), "tile");
     assert!(model.set_floating("mac", Some(false)));
@@ -880,3 +884,33 @@ fn a_workspace_in_view_under_the_pointer_takes_the_keyboard_when_asked_for() {
     assert!(!model.focus_column(Side::Prev));
 }
 
+#[test]
+fn a_focused_float_leaves_the_column_binds_alone() {
+    // Hyprland's `layout` messages act on the focused window's column, and
+    // a float has none: focus, swap, widths, consume and fit do nothing.
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            ..Placement::default()
+        },
+    );
+    let tape = model.workspace("1").unwrap().tape.clone();
+    assert!(!model.focus_column(Side::Prev));
+    assert!(!model.focus_column(Side::Next));
+    assert!(!model.swap_column(Side::Prev));
+    assert!(!model.cycle_column_width());
+    assert!(!model.set_column_width(1.0));
+    assert!(!model.resize_column(0.1));
+    assert!(!model.consume_or_expel(Side::Prev));
+    assert!(!model.fit_into_view());
+    assert_eq!(focused(&model), "f");
+    assert_eq!(model.workspace("1").unwrap().tape, tape);
+    // The row binds are Hyprland's `movefocus`, which does leave a float.
+    assert!(model.focus_row(Side::Prev));
+    assert_eq!(focused(&model), "b");
+}
