@@ -34,6 +34,9 @@ pub struct Pip {
     tracker: Tracker,
     pinch: Option<Pinch>,
     touch: Touch,
+    /// The left button went down on this picture, here: its client has the
+    /// press until the pointer leaves the slop of a click.
+    press: Option<(String, (f64, f64))>,
     /// The fingers on the screen, by their id.
     points: BTreeMap<i32, (f64, f64)>,
 }
@@ -120,7 +123,7 @@ pub fn hints<'a>(window: Window, title: &'a str, xwayland: bool) -> pip::Hints<'
         xwayland,
         above: x11.is_some_and(|state| state.above),
         sticky: x11.is_some_and(|state| state.sticky),
-        fixed_aspect: x11.is_some_and(|state| state.fixed_aspect),
+        fixed_aspect: x11.is_some_and(|state| state.aspect.is_some()),
     }
 }
 
@@ -243,6 +246,7 @@ impl Engine {
         phase: WindowMovePhaseSnapshot,
         now: f64,
     ) {
+        self.pip.press = None;
         match phase {
             WindowMovePhaseSnapshot::Start => {
                 self.pip.tracker = Tracker::default();
@@ -257,10 +261,56 @@ impl Engine {
         }
     }
 
-    /// A press on what a stashed picture leaves on screen brings it back.
+    /// The left button went down. On what a stashed picture leaves on
+    /// screen it brings the picture back; on a picture it may become a drag.
     pub fn pip_pressed(&mut self, at: (f64, f64)) {
-        if let Some(id) = self.pip_at(at) {
+        self.pip.press = None;
+        let Some(id) = self.pip_at(at) else {
+            return;
+        };
+        if self.pip_stashed(&id) {
             self.pip_unstash(&id);
+        } else if !self.overview.open {
+            self.pip.press = Some((id, at));
+        }
+    }
+
+    /// The button came up, or the press turned into something else.
+    pub fn pip_released(&mut self) {
+        self.pip.press = None;
+    }
+
+    /// The pointer moved. Past the slop with the button still down on a
+    /// picture, the press is a drag: the compositor takes it from the client,
+    /// which is how a player with no title bar to hold is moved by its body.
+    pub fn pip_pointer(&mut self, at: (f64, f64)) {
+        let Some((id, start)) = &self.pip.press else {
+            return;
+        };
+        if apart(at, *start) <= pip::SLOP {
+            return;
+        }
+        let id = id.clone();
+        self.pip.press = None;
+        if self.hold.window_drag || self.overview.open {
+            return;
+        }
+        if let Some(win) = self.windows.get(&id) {
+            win.handle.begin_move();
+        }
+    }
+
+    /// An X11 window says after it opened that it is to stay above the
+    /// rest, which is when a player turns out to be a picture in picture.
+    pub fn pip_noticed(&mut self, window: Window) {
+        let id = window.id();
+        let Some(record) = self.model.window(&id).filter(|record| !record.pip) else {
+            return;
+        };
+        let xwayland = window.is_xwayland().get_untracked();
+        let hints = hints(window, &record.title, xwayland);
+        if hints.above && pip::recognise(&hints) {
+            self.pip_promote(window);
         }
     }
 
@@ -283,7 +333,27 @@ impl Engine {
             Some(width) => limits.size(limits.clamp(width)),
             None => pip::fit(natural, limits),
         };
-        let rest = Rest::Corner(self.pip.corner.unwrap_or(Corner::BottomRight));
+        // The corner the last one was left in, or the next one no picture
+        // of this output rests in.
+        let output = self.model.output_of(id);
+        let taken: Vec<Rest> = self
+            .pip
+            .rests
+            .iter()
+            .filter(|(other, _)| self.model.output_of(other) == output)
+            .map(|(_, rest)| *rest)
+            .collect();
+        let corners = [
+            self.pip.corner.unwrap_or(Corner::BottomRight),
+            Corner::BottomRight,
+            Corner::BottomLeft,
+            Corner::TopRight,
+            Corner::TopLeft,
+        ];
+        let free = corners
+            .iter()
+            .find(|corner| !taken.contains(&Rest::Corner(**corner)));
+        let rest = Rest::Corner(*free.unwrap_or(&corners[0]));
         self.pip.rests.insert(id.to_owned(), rest);
         Some(screen.rest(rest, whole(size)))
     }
@@ -299,9 +369,19 @@ impl Engine {
         if !self.model.set_pip(&id, true) {
             return;
         }
-        let natural = window.position().get_untracked();
-        if let Some(rect) = self.pip_open(&id, (natural.width.max(1.0), natural.height.max(1.0))) {
+        // It was laid out as a tile, so the size it has says nothing: a
+        // quarter of the work area's width, at the shape its hints give.
+        let aspect = window.x11().get_untracked().and_then(|state| state.aspect);
+        let aspect = aspect.unwrap_or(16.0 / 9.0);
+        let width = self
+            .pip_screen(&id)
+            .map_or(480.0, |screen| (screen.area.w / 4.0).round());
+        if let Some(rect) = self.pip_open(&id, (width, width / aspect)) {
             self.model.place(&id, rect);
+        }
+        window.state(&crate::windows::FORCE).set(true);
+        if let Some(win) = self.windows.get_mut(&id) {
+            win.sized = true;
         }
         self.commit();
     }

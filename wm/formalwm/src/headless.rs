@@ -2468,6 +2468,36 @@ fn picture_in_picture() {
     .unwrap();
     session.roundtrip();
 
+    // The pointer on its body: a press is the client's, and past the slop
+    // of a click the compositor takes the picture, since a player has no
+    // title bar to hold.
+    let before = look(&pip).rect;
+    let centre = before.center();
+    session.pointer_to(centre.0, centre.1);
+    session.button(ButtonState::Pressed);
+    session.pointer_by(-4.0, -3.0);
+    session.state.refresh_window_decorations().unwrap();
+    session.roundtrip();
+    assert_eq!(look(&pip).rect, before, "inside the slop it stays the client's press");
+    for _ in 0..4 {
+        session.pointer_by(-30.0, -20.0);
+        session.state.refresh_window_decorations().unwrap();
+        session.roundtrip();
+    }
+    let held = look(&pip).rect;
+    assert!(
+        held.x <= before.x - 60.0 && held.y <= before.y - 40.0,
+        "under the pointer: {held:?} from {before:?}"
+    );
+    // The compositor stamps a move with its own clock, so the hand rests
+    // for longer than the velocity is measured over before it lets go.
+    std::thread::sleep(Duration::from_millis(150));
+    session.button(ButtonState::Released);
+    session.state.refresh_window_decorations().unwrap();
+    session.roundtrip();
+    settle();
+    assert!(on_a_corner(&look(&pip), "TEST-1"));
+
     // Dragged across and let go at rest: the nearest corner, on a spring.
     let from = look(&pip).rect;
     dragged(&pip, from, &[((-200.0, -150.0), 400.0), ((-420.0, -380.0), 800.0)]);
@@ -2612,6 +2642,10 @@ fn picture_in_picture() {
     let other = look(&id_of("Picture-in-Picture"));
     assert!(other.pip);
     assert_eq!(other.rect.w, (most / 2.0).round());
+    assert!(
+        other.output != seen.output || (other.rect.x, other.rect.y) != (seen.rect.x, seen.rect.y),
+        "in a corner the first one is not in"
+    );
 
     // Its output goes: it is in a corner of one that is left.
     let on = seen.output.clone();

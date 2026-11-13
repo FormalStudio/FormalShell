@@ -394,6 +394,8 @@ impl Engine {
 
     fn window_resize(&mut self, window: Window, event: &WindowResizeEventSnapshot) {
         let id = window.id();
+        // A press on its edge is a resize, not a drag of its body.
+        self.pip_released();
         let Some(record) = self.model.window(&id) else {
             return;
         };
@@ -428,6 +430,7 @@ impl Engine {
     fn pointer_moved(&mut self, at: (f64, f64)) {
         self.arm_idle_pointer();
         self.cursor_moved(at);
+        self.pip_pointer(at);
         self.point_at(at);
         if self.hold.data_drag {
             self.hold_at(at, true);

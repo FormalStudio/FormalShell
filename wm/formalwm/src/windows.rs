@@ -159,6 +159,12 @@ pub fn setup(signals: Signals) {
             let _ = window.size_constraints().get();
             enter(move |engine| engine.bounded(window));
         });
+        // An X11 player asks to stay above the rest once it is mapped.
+        scope.effect(move || {
+            if window.x11().get().is_some_and(|state| state.above) {
+                enter(move |engine| engine.pip_noticed(window));
+            }
+        });
         // `vrr` 3 follows what a fullscreen client says it shows.
         scope.effect(move || {
             let _ = window.content_type().get();

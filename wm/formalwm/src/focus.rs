@@ -8,17 +8,25 @@ use crate::engine::{Engine, enter};
 
 pub fn setup() {
     // The press is the client's too.
+    let options = KeyBindOptions::new().non_consuming().on_release();
+    COMPOSITOR
+        .key
+        .bind_with("formalwm:release-left", "MouseLeft", options, || {
+            enter(|engine| engine.pip_released())
+        });
     for (id, button) in [
         ("formalwm:press-left", "MouseLeft"),
         ("formalwm:press-right", "MouseRight"),
         ("formalwm:press-middle", "MouseMiddle"),
     ] {
         let options = KeyBindOptions::new().non_consuming();
-        COMPOSITOR.key.bind_with(id, button, options, || {
-            enter(|engine| {
+        COMPOSITOR.key.bind_with(id, button, options, move || {
+            enter(move |engine| {
                 if let Some(at) = COMPOSITOR.cursor.get_position() {
                     engine.point_at((at.x, at.y));
-                    engine.pip_pressed((at.x, at.y));
+                    if button == "MouseLeft" {
+                        engine.pip_pressed((at.x, at.y));
+                    }
                 }
                 engine.settle_focus();
             })
