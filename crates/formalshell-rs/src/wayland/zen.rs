@@ -147,7 +147,12 @@ fn slot(windows: &[Window], id: &WindowId, back: Option<(&WindowId, &Spot)>) -> 
                 let rect = columns[c].get(row).or(columns[c].last()).map_or_else(IRect::default, |(r, _)| *r);
                 columns[c].insert(row, (rect, b));
             }
-            Located::Column(at) => columns.insert(at, vec![(IRect::default(), b)]),
+            Located::Column(at) => {
+                // Where it is drawn, centred in zen: the nearest window of
+                // a column beside it goes by its middle.
+                let rect = windows.iter().find(|w| w.id == *b).and_then(|w| w.rect).unwrap_or_default();
+                columns.insert(at, vec![(rect, b)]);
+            }
         }
     }
     let Some((column, row)) = columns.iter().enumerate().find_map(|(c, col)| col.iter().position(|(_, w)| *w == id).map(|r| (c, r))) else {
@@ -221,8 +226,7 @@ impl ZenState {
 
     /// A new snapshot, `reloads` the config reloads so far.
     fn changed(&mut self, snap: &Snapshot, reloads: u64, rect: Option<IRect>) -> Vec<Command> {
-        let reloaded = std::mem::replace(&mut self.reloads, reloads) != reloads;
-        let mut out = self.follow(snap, rect, reloaded);
+        let mut out = self.follow(snap, rect, reloads);
         out.extend(self.released(snap));
         out
     }
@@ -231,16 +235,20 @@ impl ZenState {
     /// the one the focus lands on when the zen window closes; with nothing
     /// tiled taking it then, zen ends. Staying put, it keeps its place and
     /// its keys up to date.
-    fn follow(&mut self, snap: &Snapshot, rect: Option<IRect>, reloaded: bool) -> Vec<Command> {
+    fn follow(&mut self, snap: &Snapshot, rect: Option<IRect>, reloads: u64) -> Vec<Command> {
         let Some(zen) = &self.on else {
+            self.reloads = reloads;
             return Vec::new();
         };
+        // A reload while a write is pending stays unseen until it is done:
+        // it may have dropped the binds that write put in.
         if let Some(seq) = self.pending {
             if snap.zen_done < seq {
                 return Vec::new();
             }
             self.pending = None;
         }
+        let reloaded = std::mem::replace(&mut self.reloads, reloads) != reloads;
         let gone = !snap.windows.iter().any(|w| w.id == zen.id);
         let next = snap
             .windows
@@ -618,6 +626,33 @@ mod tests {
         zen.changed(&snap(tape(&["a", "b", "c"], "a"), "b", 1), 0, RECT);
         let sent = zen.changed(&snap(tape(&["a", "c"], ""), "c", 2), 0, RECT);
         assert!(matches!(&sent[..], [Command::Zen { held: true, seq: 3, .. }]), "{:?}", shown(&sent));
+    }
+
+    #[test]
+    fn a_reload_before_a_switch_is_reported_done_sends_the_keys_once_it_is() {
+        let mut zen = ZenState::default();
+        zen.enter(&snap(tape(&["a", "b", "c"], ""), "a", 0), RECT).unwrap();
+        zen.changed(&snap(tape(&["a", "b", "c"], "a"), "a", 1), 0, RECT);
+        zen.changed(&snap(tape(&["a", "b", "c"], "a"), "b", 1), 0, RECT);
+        // The switch has put b's keys in; the reload drops them before the
+        // snapshot that reports the switch done.
+        assert!(zen.changed(&snap(tape(&["a", "b", "c"], "b"), "b", 1), 1, RECT).is_empty());
+        let sent = zen.changed(&snap(tape(&["a", "b", "c"], "b"), "b", 2), 1, RECT);
+        assert!(matches!(&sent[..], [Command::ZenKeys { id, keys: k }] if id.as_str() == "b" && *k == keys(Some("a"), Some("c"), None, None)), "{:?}", shown(&sent));
+        assert!(zen.changed(&snap(tape(&["a", "b", "c"], "b"), "b", 2), 1, RECT).is_empty(), "sent once");
+    }
+
+    #[test]
+    fn a_column_beside_the_zen_window_lands_on_its_window_nearest_the_middle() {
+        // b full height with top, mid and low stacked left of it: H goes
+        // to mid, on entering and once b floats centred.
+        let stack = |b: Window| vec![window("top", 0, 0, 260, false), window("mid", 0, 270, 260, false), window("low", 0, 540, 260, false), b];
+        let mut zen = ZenState::default();
+        let sent = zen.enter(&snap(stack(window("b", 500, 0, 800, false)), "b", 0), RECT).unwrap();
+        assert!(matches!(&sent[..], [Command::Zen { keys: k, .. }] if k.left.as_ref().is_some_and(|l| l.as_str() == "mid")), "{:?}", shown(&sent));
+        let sent = zen.changed(&snap(stack(window("b", 300, 50, 700, true)), "b", 1), 0, RECT);
+        assert!(sent.is_empty(), "b's keys stay as they were: {:?}", shown(&sent));
+        assert_eq!(zen.on.as_ref().and_then(|z| z.keys.left.clone()), Some("mid".into()));
     }
 
     #[test]
