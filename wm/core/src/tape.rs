@@ -189,13 +189,16 @@ impl Tape {
         true
     }
 
+    /// Hyprland's `swapcol` under its default `wrap_swapcol`: at an end of
+    /// the tape the column trades places with the one at the other end.
     pub fn swap_column(&mut self, side: Side) -> bool {
-        let next = self.focus as isize + side.step();
-        if next < 0 || next >= self.columns.len() as isize {
+        let count = self.columns.len() as isize;
+        if count < 2 {
             return false;
         }
-        self.columns.swap(self.focus, next as usize);
-        self.focus = next as usize;
+        let next = (self.focus as isize + side.step()).rem_euclid(count) as usize;
+        self.columns.swap(self.focus, next);
+        self.focus = next;
         true
     }
 
@@ -598,7 +601,21 @@ mod tests {
         assert_eq!(order(&tape), ["a", "c", "b"]);
         assert_eq!(tape.focused().unwrap(), "c");
         assert!(tape.swap_column(Side::Prev));
-        assert!(!tape.swap_column(Side::Prev));
+        assert_eq!(order(&tape), ["c", "a", "b"]);
+    }
+
+    #[test]
+    fn a_swap_at_an_end_trades_with_the_other_end() {
+        let mut tape = tape(&["a", "b", "c"]);
+        assert!(tape.swap_column(Side::Next));
+        assert_eq!(order(&tape), ["c", "b", "a"]);
+        assert_eq!(tape.focused().unwrap(), "c");
+        assert!(tape.swap_column(Side::Prev));
+        assert_eq!(order(&tape), ["a", "b", "c"]);
+        assert_eq!(tape.focused().unwrap(), "c");
+        let mut lone = Tape::default();
+        lone.insert("a".into(), 0.5);
+        assert!(!lone.swap_column(Side::Next));
     }
 
     #[test]
