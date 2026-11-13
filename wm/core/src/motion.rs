@@ -49,6 +49,43 @@ impl Bezier {
         }
         Self::axis(self.y1, self.y2, (low + high) / 2.0)
     }
+
+    /// The curve's highest value past 1 and the time fraction it is reached
+    /// at, or (1, 1) for a curve that never passes 1. The value's turning
+    /// points are the roots of its cubic's derivative in t, and x rises with
+    /// t, so each maps to one time fraction.
+    pub fn peak(&self) -> (f64, f64) {
+        // dy/dt / 3 = (a - 2b + c) t^2 + 2 (b - a) t + a, with the control
+        // points' differences a, b and c.
+        let (a, b, c) = (self.y1, self.y2 - self.y1, 1.0 - self.y2);
+        let (qa, qb, qc) = (a - 2.0 * b + c, 2.0 * (b - a), a);
+        let mut roots = [None, None];
+        if qa.abs() < 1e-12 {
+            if qb.abs() > 1e-12 {
+                roots[0] = Some(-qc / qb);
+            }
+        } else {
+            let disc = qb * qb - 4.0 * qa * qc;
+            if disc >= 0.0 {
+                let root = disc.sqrt();
+                roots = [
+                    Some((-qb + root) / (2.0 * qa)),
+                    Some((-qb - root) / (2.0 * qa)),
+                ];
+            }
+        }
+        roots
+            .into_iter()
+            .flatten()
+            .filter(|t| *t > 0.0 && *t < 1.0)
+            .map(|t| {
+                (
+                    Self::axis(self.y1, self.y2, t),
+                    Self::axis(self.x1, self.x2, t),
+                )
+            })
+            .fold((1.0, 1.0), |best, turn| if turn.0 > best.0 { turn } else { best })
+    }
 }
 
 /// A damped spring's constants.
@@ -66,16 +103,7 @@ impl SpringParams {
     /// damped spring that has arrived by the family's duration.
     pub fn from_family(family: &Family) -> Self {
         let seconds = (family.ms / 1000.0).max(0.001);
-        let bezier = Bezier::new(family.curve);
-        let (mut peak, mut peak_at) = (1.0, 1.0);
-        for step in 1..400 {
-            let x = step as f64 / 400.0;
-            let y = bezier.at(x);
-            if y > peak {
-                peak = y;
-                peak_at = x;
-            }
-        }
+        let (peak, peak_at) = Bezier::new(family.curve).peak();
         let overshoot = peak - 1.0;
         if overshoot < 0.005 {
             // (1 + wt) e^(-wt) = 0.01 at wt = 6.64.
@@ -347,6 +375,41 @@ mod tests {
         assert_eq!(linear.at(0.0), 0.0);
         assert_eq!(linear.at(1.0), 1.0);
         assert!((linear.at(0.4) - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_peak_is_where_sampling_the_curve_finds_it() {
+        let mut curves = vec![
+            [0.22, 1.0, 0.36, 1.0],
+            [0.34, 1.56, 0.64, 1.0],
+            [0.5, 1.8, 0.5, 0.6],
+            [0.2, -0.4, 0.6, 1.3],
+            [0.25, 0.25, 0.75, 0.75],
+        ];
+        let families = Families::default();
+        curves.extend(
+            [
+                families.spatial,
+                families.spatial_fast,
+                families.effects,
+                families.effects_fast,
+            ]
+            .map(|family| family.curve),
+        );
+        for curve in curves {
+            let bezier = Bezier::new(curve);
+            let (mut peak, mut peak_at) = (1.0, 1.0);
+            for step in 1..20_000 {
+                let x = step as f64 / 20_000.0;
+                let y = bezier.at(x);
+                if y > peak {
+                    (peak, peak_at) = (y, x);
+                }
+            }
+            let (value, at) = bezier.peak();
+            assert!((value - peak).abs() < 1e-6, "{curve:?}: {value} vs {peak}");
+            assert!((at - peak_at).abs() < 1e-3, "{curve:?}: at {at} vs {peak_at}");
+        }
     }
 
     #[test]
