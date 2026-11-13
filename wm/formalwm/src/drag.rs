@@ -5,7 +5,10 @@
 use formalwm_core::{color::Rgba, geom::Rect as Box2, model::Layer};
 use shojiwm_rs::{
     prelude::*,
-    ssd::{WindowMoveEventSnapshot, WindowMovePhaseSnapshot, WindowResizeEventSnapshot},
+    ssd::{
+        WindowMoveEventSnapshot, WindowMovePhaseSnapshot, WindowResizeEventSnapshot,
+        WindowResizePhaseSnapshot,
+    },
 };
 
 use crate::{
@@ -398,6 +401,12 @@ impl Engine {
         } else if event.edges.left || event.edges.right {
             let column = rect.w + 2.0 * self.model.options.tile_inset();
             self.model.resize_tile_edge(&id, event.edges.left, column);
+            if matches!(
+                event.phase,
+                WindowResizePhaseSnapshot::End | WindowResizePhaseSnapshot::Cancel
+            ) {
+                self.model.release_tile_edge(&id);
+            }
         }
         self.scene.sync(&self.model);
         self.scene.finish();

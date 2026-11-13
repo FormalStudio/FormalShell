@@ -423,17 +423,56 @@ fn a_tile_dragged_by_an_edge_moves_that_edge_only() {
     assert!(model.resize_tile_edge("a", false, column(&model, "a") + 100.0));
     let now = on_screen(&model, "a");
     assert_eq!((now.x, now.w), (a.x, a.w + 100.0));
+    model.release_tile_edge("a");
     // By its left edge: its right edge stays, the view follows.
     let b_right = on_screen(&model, "b").right();
     assert!(model.resize_tile_edge("b", true, column(&model, "b") + 50.0));
     let now = on_screen(&model, "b");
     assert_eq!((now.right(), now.w), (b_right, b.w + 50.0));
+    model.release_tile_edge("b");
+    assert_eq!(on_screen(&model, "b").right(), b_right, "and after it is let go");
     assert_eq!(focused(&model), "a", "a drag leaves the focus where it is");
     // Neither edge goes out of the view.
     assert!(model.resize_tile_edge("b", false, column(&model, "b") + 900.0));
     assert!(on_screen(&model, "b").right() <= 1920.0);
     assert!(model.resize_tile_edge("a", true, column(&model, "a") + 900.0));
     assert!(on_screen(&model, "a").x >= 0.0);
+}
+
+#[test]
+fn a_left_border_shrunk_at_the_start_of_the_tape_keeps_the_right_edge() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    let inset = 2.0 * Options::default().tile_inset();
+    let a = on_screen(&model, "a");
+    assert!(model.resize_tile_edge("a", true, a.w + inset - 60.0));
+    assert!(model.resize_tile_edge("a", true, a.w + inset - 100.0));
+    let now = on_screen(&model, "a");
+    assert_eq!((now.x, now.right()), (a.x + 100.0, a.right()));
+    // Let go, the view comes back to the start of the tape.
+    model.release_tile_edge("a");
+    let now = on_screen(&model, "a");
+    assert_eq!((now.x, now.w), (a.x, a.w - 100.0));
+}
+
+#[test]
+fn a_lone_tile_dragged_by_a_border_moves_that_edge_and_recentres_on_release() {
+    let mut model = desk();
+    open(&mut model, "a");
+    let inset = 2.0 * Options::default().tile_inset();
+    let a = on_screen(&model, "a");
+    assert!(model.resize_tile_edge("a", false, a.w + inset + 100.0));
+    let now = on_screen(&model, "a");
+    assert_eq!((now.x, now.w), (a.x, a.w + 100.0), "by its right border");
+    assert!(model.resize_tile_edge("a", true, now.w + inset + 40.0));
+    let held = on_screen(&model, "a");
+    assert_eq!((held.right(), held.w), (now.right(), now.w + 40.0), "by its left border");
+    model.release_tile_edge("a");
+    let centred = on_screen(&model, "a");
+    assert_eq!(centred.w, held.w);
+    assert_eq!(centred.x - 0.0, 1920.0 - centred.right(), "centred again");
 }
 
 #[test]

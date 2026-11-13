@@ -1395,7 +1395,8 @@ impl Model {
     }
 
     /// A tile dragged by an edge to a column `column_px` wide; see
-    /// `Tape::resize_edge`. The focus and the view are not fitted meanwhile.
+    /// `Tape::resize_edge`. The focus and the view are not fitted until
+    /// `release_tile_edge`.
     pub fn resize_tile_edge(&mut self, id: &str, left: bool, column_px: f64) -> bool {
         let Some(Home::Workspace(workspace)) = self.window(id).map(|w| w.home.clone()) else {
             return false;
@@ -1403,6 +1404,17 @@ impl Model {
         let strip_w = self.strip_w(&workspace).max(1.0);
         self.workspace_mut(&workspace)
             .is_some_and(|ws| ws.tape.resize_edge(id, left, column_px / strip_w, strip_w))
+    }
+
+    /// The border drag of `id` let go; see `Tape::release`.
+    pub fn release_tile_edge(&mut self, id: &str) {
+        let Some(Home::Workspace(workspace)) = self.window(id).map(|w| w.home.clone()) else {
+            return;
+        };
+        let strip_w = self.strip_w(&workspace).max(1.0);
+        if let Some(ws) = self.workspace_mut(&workspace) {
+            ws.tape.release(strip_w);
+        }
     }
 
     pub fn resize_column(&mut self, delta: f64) -> bool {
