@@ -717,7 +717,7 @@ impl Settings {
             presets: self.layout.presets.clone(),
             gaps_in: chrome.gaps_in as f64,
             gaps_out: chrome.gaps_out as f64,
-            border: chrome.border_size.max(0) as f64,
+            border: chrome.edge.thickness(),
         }
     }
 
@@ -829,6 +829,36 @@ fn merge(base: &mut Value, over: Value) {
 mod tests {
     use super::*;
     use crate::action::WorkspaceRef;
+
+    /// Gaps are measured to the frame formalwm draws, the panel edge, and
+    /// not to Hyprland's `borderSize`.
+    #[test]
+    fn the_layout_border_is_the_edge_formalwm_draws() {
+        let chrome = fs_wm_proto::Chrome {
+            border_size: 5,
+            edge: fs_wm_proto::Edge {
+                width: 1.0,
+                highlight: 1.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(Settings::default().options(&chrome).border, 2.0);
+        let bare = fs_wm_proto::Edge {
+            width: 1.0,
+            highlight: 0.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            Settings::default()
+                .options(&fs_wm_proto::Chrome {
+                    edge: bare,
+                    ..chrome
+                })
+                .border,
+            1.0
+        );
+    }
 
     #[test]
     fn an_empty_file_is_the_defaults() {

@@ -38,8 +38,14 @@ pub struct Win {
 /// What a window's frame is drawn with. A change rebuilds every frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Look {
+    /// The stroke's colour, focused and not.
     pub active: Color,
     pub inactive: Color,
+    pub stroke: f64,
+    /// The lit line inside the stroke: its width, colour, and its alpha at
+    /// the bottom as a share of the top's.
+    pub lit: Option<(f64, Color, f64)>,
+    /// How far the frame reaches out from the window: the model's border.
     pub border: f64,
     pub rounding: f64,
     pub shadow: Option<(BoxShadow, BoxShadow)>,
@@ -169,10 +175,21 @@ pub fn look_of(theme: &proto::Theme) -> Look {
             color(resolve(text)),
         )
     };
+    let edge = &chrome.edge;
+    let stroke = edge.width.max(0.0);
+    let lit = edge.highlight.max(0.0);
     Look {
-        active: color(resolve(&chrome.border_color)),
-        inactive: color(resolve(&theme.colors.border)),
-        border: chrome.border_size.max(0) as f64,
+        active: color(resolve(&edge.active_color)),
+        inactive: color(resolve(&edge.color)),
+        stroke,
+        lit: (lit > 0.0).then(|| {
+            (
+                lit,
+                color(resolve(&edge.highlight_color)),
+                edge.highlight_fade,
+            )
+        }),
+        border: stroke + lit,
         rounding: chrome.rounding.max(0) as f64,
         shadow: chrome.shadow.then(|| {
             (

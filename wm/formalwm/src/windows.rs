@@ -105,7 +105,8 @@ pub fn setup(signals: Signals) {
             return managed.allow_tearing(true).child(ClientWindow::new());
         }
 
-        // Hyprland's `border` leaf: the colours cross over, they do not flip.
+        // Hyprland's `border` leaf: the stroke's colours cross over, they do
+        // not flip.
         let focused = window.is_focused();
         let lit = |focused: bool| if focused { 1.0 } else { 0.0 };
         let mix = Animation::new(lit(focused.get_untracked()));
@@ -120,7 +121,7 @@ pub fn setup(signals: Signals) {
         });
         let mut style = Style::new()
             .border(
-                look.border,
+                look.stroke,
                 derive(move || blend(look.inactive, look.active, mix.get())),
             )
             .border_radius(look.rounding)
@@ -139,6 +140,21 @@ pub fn setup(signals: Signals) {
             ShaderEffect::new(crate::layers::blur()).child(ClientWindow::new())
         } else {
             ClientWindow::new()
+        };
+        // The card's lit line, a ring of its own inside the stroke: the frame
+        // is drawn under the client, so it cannot lie over the window's edge
+        // as it lies over a card's fill.
+        let client = match look.lit {
+            Some((width, color, fade)) => Flex::column()
+                .style(
+                    Style::new()
+                        .border(width, color)
+                        .border_fade(fade)
+                        .border_radius((look.rounding - look.stroke).max(0.0))
+                        .flex_grow(1.0),
+                )
+                .child(client),
+            None => client,
         };
         managed.child(
             WindowBorder::new()

@@ -601,6 +601,9 @@ pub struct Chrome {
     pub shadow_color: String,
     pub shadow_inactive_color: String,
     pub motion: Motion,
+    /// What formalwm frames a window with. `borderSize` and `borderColor`
+    /// are Hyprland's.
+    pub edge: Edge,
 }
 
 impl Default for Chrome {
@@ -619,6 +622,45 @@ impl Default for Chrome {
             shadow_color: "#000000ed".into(),
             shadow_inactive_color: "#000000ed".into(),
             motion: Motion::default(),
+            edge: Edge::default(),
+        }
+    }
+}
+
+/// The shell's panel edge round a window, outside it: the `card` role's
+/// stroke, then the lit line its inset ring draws inside that. A focused
+/// window's stroke takes the `cursor` role's colour, the shell's own mark
+/// of focus. Colours are `#rrggbbaa`, resolved for the mode in force.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Edge {
+    pub width: f64,
+    pub color: String,
+    pub active_color: String,
+    /// The lit line's width; 0 draws none.
+    pub highlight: f64,
+    pub highlight_color: String,
+    /// The lit line's alpha at the bottom as a share of its top's.
+    pub highlight_fade: f64,
+}
+
+impl Edge {
+    /// How far the edge reaches out from the window, on every side.
+    pub fn thickness(&self) -> f64 {
+        self.width.max(0.0) + self.highlight.max(0.0)
+    }
+}
+
+/// The shipped table's dark card.
+impl Default for Edge {
+    fn default() -> Self {
+        Self {
+            width: 1.0,
+            color: "#000000bf".into(),
+            active_color: "#4385be80".into(),
+            highlight: 1.0,
+            highlight_color: "#ffffff1f".into(),
+            highlight_fade: 0.0,
         }
     }
 }
@@ -837,10 +879,19 @@ mod tests {
         let keys: Vec<String> = to_value(Chrome::default()).unwrap().as_object().unwrap().keys().cloned().collect();
         for key in [
             "rounding", "blur", "gapsIn", "gapsOut", "borderSize", "borderColor", "shadow", "shadowRange",
-            "shadowPower", "shadowOffset", "shadowColor", "shadowInactiveColor", "motion",
+            "shadowPower", "shadowOffset", "shadowColor", "shadowInactiveColor", "motion", "edge",
         ] {
             assert!(keys.iter().any(|k| k == key), "{key}");
         }
-        assert_eq!(keys.len(), 13);
+        assert_eq!(keys.len(), 14);
+    }
+
+    #[test]
+    fn a_theme_from_a_shell_without_the_edge_frames_with_the_default() {
+        let chrome: Chrome = from_value(json!({ "rounding": 12, "borderSize": 1 })).unwrap();
+        assert_eq!(chrome.edge, Edge::default());
+        assert_eq!(chrome.edge.thickness(), 2.0);
+        let edge: Edge = from_value(json!({ "width": 1, "highlight": 0 })).unwrap();
+        assert_eq!(edge.thickness(), 1.0);
     }
 }

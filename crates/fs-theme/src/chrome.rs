@@ -27,6 +27,9 @@ pub struct Chrome {
     pub window_inactive: Option<Map<String, Value>>,
     /// `motion.enabled`.
     pub motion: bool,
+    /// The panel edge, resolved for the palette and mode the table was read
+    /// under. Only formalwm draws it.
+    pub edge: fs_wm_proto::Edge,
 }
 
 impl Chrome {
@@ -37,6 +40,7 @@ impl Chrome {
             motion,
             window: style::entry(table, style::Role::Window, Some("rest")).map(Cow::into_owned),
             window_inactive: style::entry(table, style::Role::Window, Some("inactive")).map(Cow::into_owned),
+            edge: fs_wm_proto::Edge::default(),
         }
     }
 }
@@ -211,6 +215,7 @@ pub fn wm_chrome(chrome: &Chrome) -> fs_wm_proto::Chrome {
             enabled: chrome.motion,
             families: fs_wm_proto::Families { spatial_fast, spatial, spatial_slow, effects_fast, effects, effects_slow },
         },
+        edge: chrome.edge.clone(),
     }
 }
 
@@ -257,7 +262,7 @@ mod tests {
 
     fn raw(v: Value) -> Chrome {
         let o = |k: &str| v.get(k).and_then(Value::as_object).cloned();
-        Chrome { rounding: v.get("rounding").cloned(), blur: v.get("blur").cloned(), window: o("window"), window_inactive: o("windowInactive"), motion: true }
+        Chrome { rounding: v.get("rounding").cloned(), blur: v.get("blur").cloned(), window: o("window"), window_inactive: o("windowInactive"), motion: true, edge: Default::default() }
     }
 
     /// The table alone, with the file's own header dropped.

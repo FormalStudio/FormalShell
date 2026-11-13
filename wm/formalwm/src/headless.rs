@@ -3480,3 +3480,200 @@ fn a_window_opened_in_zen_waits_to_draw_before_it_takes_the_centre() {
     assert_eq!(shown("late"), centre, "late takes the centre once drawn");
     assert_ne!(shown("files"), centre);
 }
+
+/// One ring of a window's frame as the compositor paints it.
+#[derive(Debug)]
+struct Ring {
+    color: shojiwm_lib::ssd::Color,
+    width: i32,
+    radius: i32,
+    inner_radius: i32,
+    fade: f32,
+}
+
+/// A window's rings, the outermost first, and the radius its client is cut
+/// at; none for a window drawn with no frame.
+fn rings(session: &Session, id: &str) -> (Vec<Ring>, Option<i32>) {
+    use shojiwm_lib::ssd::paint::PaintProgram;
+    let decoration = session
+        .state
+        .window_decorations
+        .values()
+        .find(|decoration| decoration.snapshot.id == id)
+        .expect("the window is decorated");
+    let mut boxes: Vec<_> = decoration
+        .buffers
+        .iter()
+        .map(|buffer| &buffer.paint)
+        .filter(|paint| matches!(paint.program, PaintProgram::Box { border: true, .. }))
+        .collect();
+    boxes.sort_by_key(|paint| std::cmp::Reverse(paint.geometry.node.w));
+    let rings = boxes
+        .iter()
+        .map(|paint| Ring {
+            color: paint.border_colors[0],
+            width: paint.geometry.border[0],
+            radius: paint.geometry.radius[0],
+            inner_radius: paint.geometry.inner_radius[0],
+            fade: paint.border_fade,
+        })
+        .collect();
+    let cut = decoration
+        .content_clip
+        .as_ref()
+        .filter(|clip| clip.clips_surface)
+        .map(|clip| clip.corner_radii[0]);
+    (rings, cut)
+}
+
+#[test]
+fn a_window_wears_the_panel_edge_and_focus_tints_its_stroke() {
+    use formalwm_core::color::Rgba;
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("edge", HOST, &[test_display("TEST-1")]);
+    let edge = proto::Edge {
+        width: 1.0,
+        color: "#000000bf".into(),
+        active_color: "#4385be80".into(),
+        highlight: 1.0,
+        highlight_color: "#ffffff1f".into(),
+        highlight_fade: 0.0,
+    };
+    let theme = proto::Theme {
+        chrome: proto::Chrome {
+            rounding: 12,
+            edge: edge.clone(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    ask(move |engine| {
+        engine.set_theme(theme);
+        Ok(())
+    })
+    .unwrap();
+    let paint = |text: &str| crate::engine::color(Rgba::parse(text).unwrap());
+    let (stroke, focus, lit) = (
+        paint(&edge.color),
+        paint(&edge.active_color),
+        paint(&edge.highlight_color),
+    );
+    let settled = |session: &mut Session, id: &str, want: shojiwm_lib::ssd::Color| {
+        for _ in 0..200 {
+            session.roundtrip();
+            session.state.refresh_window_decorations().unwrap();
+            if rings(session, id)
+                .0
+                .first()
+                .is_some_and(|ring| ring.color == want)
+            {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
+    };
+
+    let a = session.open("edge-a");
+    session.draw(&a, 400, 300);
+    let b = session.open("edge-b");
+    session.draw(&b, 400, 300);
+    settle();
+    session.caught_up();
+    let (a_id, b_id) = (id_of_app("edge-a"), id_of_app("edge-b"));
+    assert!(
+        settled(&mut session, &b_id, focus),
+        "the focused window's stroke is the focus colour"
+    );
+    assert!(
+        settled(&mut session, &a_id, stroke),
+        "the other's is the card's"
+    );
+
+    // Two rings, the stroke and the lit line inside it, each one pixel, on
+    // one set of arcs: the line's outer edge is the stroke's inner edge, and
+    // the client is cut where the line ends.
+    let (frame, cut) = rings(&session, &b_id);
+    assert_eq!(frame.len(), 2, "{frame:?}");
+    let (outer, inner) = (&frame[0], &frame[1]);
+    assert_eq!((outer.width, outer.radius, outer.fade), (1, 12, 1.0));
+    assert_eq!((inner.color, inner.width, inner.fade), (lit, 1, 0.0));
+    assert_eq!(inner.radius, outer.inner_radius);
+    assert_eq!(cut, Some(inner.inner_radius));
+    assert_eq!(cut, Some(10));
+    // The frame lies outside the window, and gaps are measured to it.
+    assert_eq!(ask(|engine| Ok(engine.model.options.border)).unwrap(), 2.0);
+
+    // Focus moves back: the stroke crosses over rather than flips.
+    ask({
+        let a_id = a_id.clone();
+        move |engine| {
+            engine.model.focus_window(&a_id);
+            engine.commit();
+            Ok(())
+        }
+    })
+    .unwrap();
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    assert_ne!(
+        rings(&session, &a_id).0[0].color,
+        focus,
+        "not there at once"
+    );
+    assert!(settled(&mut session, &a_id, focus));
+    assert!(settled(&mut session, &b_id, stroke));
+
+    // Zen keeps the frame: the window sits on the bare desk like a card.
+    ask({
+        let a_id = a_id.clone();
+        move |engine| {
+            engine.model.set_zen(Some(&a_id), Some(true));
+            engine.commit();
+            Ok(())
+        }
+    })
+    .unwrap();
+    settle();
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    assert_eq!(rings(&session, &a_id).0.len(), 2, "zen keeps its frame");
+    ask({
+        let a_id = a_id.clone();
+        move |engine| {
+            engine.model.set_zen(Some(&a_id), Some(false));
+            engine.model.set_big(&a_id, Some(Big::Fullscreen));
+            engine.commit();
+            Ok(())
+        }
+    })
+    .unwrap();
+    settle();
+    session.roundtrip();
+    session.state.refresh_window_decorations().unwrap();
+    let (frame, _) = rings(&session, &a_id);
+    assert!(
+        frame.is_empty(),
+        "a fullscreen window has no frame: {frame:?}"
+    );
+
+    // A picture in picture wears it too, as any float does.
+    let player = session.open_titled("chromium", "Picture in picture");
+    session.draw(&player, 480, 270);
+    session.caught_up();
+    session.state.refresh_window_decorations().unwrap();
+    assert_eq!(rings(&session, &id_of("Picture in picture")).0.len(), 2);
+}
+
+fn id_of_app(app_id: &str) -> String {
+    let app_id = app_id.to_owned();
+    ask(move |engine| {
+        let found = engine.model.windows.iter().find(|w| w.app_id == app_id);
+        found
+            .map(|w| w.id.clone())
+            .ok_or(format!("no window {app_id}"))
+    })
+    .unwrap()
+}

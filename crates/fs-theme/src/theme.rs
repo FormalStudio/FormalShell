@@ -409,7 +409,31 @@ impl Theme {
     /// the `window` role's two states unresolved, since Hyprland draws them
     /// off a palette role's name rather than a colour, and `motion.enabled`.
     pub fn window_chrome(&self) -> chrome::Chrome {
-        chrome::Chrome::from_table(self.style, Value::from(self.card_radius()), Value::Bool(self.blur_behind), self.motion_enabled)
+        let chrome = chrome::Chrome::from_table(self.style, Value::from(self.card_radius()), Value::Bool(self.blur_behind), self.motion_enabled);
+        chrome::Chrome { edge: self.window_edge(), ..chrome }
+    }
+
+    /// The `card` role's edge for formalwm to frame windows with: its
+    /// border, the inset ring inside that, and the `cursor` role's colour
+    /// for the focused window's stroke. The card's radius is already the
+    /// window rounding.
+    pub fn window_edge(&self) -> fs_wm_proto::Edge {
+        let hex = |c: Rgba| {
+            let [r, g, b, a] = c.to_u8();
+            format!("#{r:02x}{g:02x}{b:02x}{a:02x}")
+        };
+        let card = self.box_style(Role::Card, None);
+        let stroke = card.border.unwrap_or(style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
+        let lit = card.inset_rings.first().cloned().unwrap_or(Ring { spread: 0.0, color: Rgba::TRANSPARENT, fade: None });
+        let focus = self.box_style(Role::Cursor, None).border.map_or(stroke.color, |line| line.color);
+        fs_wm_proto::Edge {
+            width: stroke.width,
+            color: hex(stroke.color),
+            active_color: hex(focus),
+            highlight: lit.spread,
+            highlight_color: hex(lit.color),
+            highlight_fade: lit.fade.unwrap_or(1.0),
+        }
     }
 
     pub fn motion(&self) -> ThemeMotion {
@@ -725,5 +749,25 @@ mod tests {
     #[test]
     fn the_default_palette_is_the_zinc_fallback() {
         assert_eq!(Colors::default().get(ColorRole::Card), Rgba::hex(0x18181b));
+    }
+
+    /// The card's stroke and lit line per mode, as `card.rest` writes them,
+    /// and the cursor's ring colour for the focused window.
+    #[test]
+    fn a_window_takes_the_cards_edge_in_either_mode() {
+        let alpha = |hex: &str| u8::from_str_radix(&hex[7..9], 16).unwrap();
+        let byte = |a: f64| (a * 255.0).round() as u8;
+        for (mode, stroke, lit) in [("dark", 0.75, 0.12), ("light", 0.2, 0.3)] {
+            let t = Theme::resolve(|_| None, &palette::fallback(mode));
+            let edge = t.window_edge();
+            assert_eq!((edge.width, &edge.color[..7], alpha(&edge.color)), (1.0, "#000000", byte(stroke)), "{mode}");
+            assert_eq!((edge.highlight, &edge.highlight_color[..7], alpha(&edge.highlight_color)), (1.0, "#ffffff", byte(lit)), "{mode}");
+            assert_eq!(edge.highlight_fade, 0.0, "{mode}");
+            let ring = t.colors.get(ColorRole::Ring);
+            assert_eq!(edge.active_color, format!("{}{:02x}", ring.to_hex(), byte(0.5)), "{mode}");
+            assert_eq!(edge.thickness(), 2.0);
+            // The shell sends the edge with the rest of the window chrome.
+            assert_eq!(crate::chrome::wm_chrome(&t.window_chrome()).edge, edge);
+        }
     }
 }

@@ -726,7 +726,8 @@ impl Engine {
         let Ok((palette, _)) = blocking(&self.ctx, move || Ok(read_palette(&path))).await else {
             return;
         };
-        let chrome = chrome::wm_chrome(&window_chrome(&inputs.settings));
+        // The live palette, so the edge carries this mode's alphas.
+        let chrome = chrome::wm_chrome(&Theme::resolve(get(&inputs.settings), &palette).window_chrome());
         compositor::send(Command::Theme(Box::new(fs_wm_proto::Theme { colors: matugen::compositor_colors(&palette), chrome })));
     }
 

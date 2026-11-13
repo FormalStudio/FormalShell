@@ -387,7 +387,7 @@ impl Engine {
                 keyboard_layouts: layouts,
                 keyboard_active: active,
                 cursor_hidden: self.cursor_hidden,
-                active_border: Rgba::resolve(&chrome.border_color, &self.theme.colors)
+                active_border: Rgba::resolve(&chrome.edge.active_color, &self.theme.colors)
                     .unwrap_or(Rgba::BLACK)
                     .hex(),
                 blur: chrome.blur,
