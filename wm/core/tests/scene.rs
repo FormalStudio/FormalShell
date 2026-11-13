@@ -26,11 +26,10 @@ fn settle(scene: &mut Scene) -> usize {
 /// Opens a tile its client has not drawn yet, as the engine does: the model
 /// takes it, but its tape keeps the scroll it had until it draws.
 fn open_waiting(model: &mut formalwm_core::model::Model, scene: &mut Scene, id: &str) {
-    let before = model.workspace("1").unwrap().tape.scroll;
+    let before = model.scrolls();
     open(model, id);
-    let now = model.workspace("1").unwrap().tape.scroll;
-    model.scroll_by("1", before - now);
     scene.wait(id);
+    model.keep_scrolls(&before, |id| scene.waits(id));
 }
 
 /// The waited tile has drawn: the view fits to it if it has the focus.
@@ -834,4 +833,66 @@ fn the_newest_waiting_tile_drawing_first_is_shown_while_an_older_one_waits() {
     // d still waits, so no room is made for it between c and e.
     let (b, c) = (drawn(&scene, "b"), drawn(&scene, "c"));
     assert_eq!(e.x - (c.x + c.w), c.x - (b.x + b.w));
+}
+
+#[test]
+fn an_activation_or_a_close_does_not_fit_the_view_to_a_waiting_tile() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "n", "c"] {
+        open(&mut model, id);
+        scene.sync(&model);
+    }
+    // n on the right half, c past it out of view.
+    model.focus_window("a");
+    model.focus_window("n");
+    scene.sync(&model);
+    settle(&mut scene);
+    let (a, n) = (drawn(&scene, "a"), drawn(&scene, "n"));
+    let scroll = scene.scroll_of("1");
+
+    open_waiting(&mut model, &mut scene, "e");
+    scene.sync(&model);
+    settle(&mut scene);
+    assert_eq!(scene.scroll_of("1"), scroll);
+
+    // GTK 4 asks for activation before its first frame: focusing e fits
+    // the model to it, which only its drawing may do.
+    let before = model.scrolls();
+    let mut unkept = model.clone();
+    unkept.focus_window("e");
+    assert_ne!(
+        unkept.workspace("1").unwrap().tape.scroll,
+        scroll,
+        "a fit to e"
+    );
+    model.focus_window("e");
+    model.keep_scrolls(&before, |id| scene.waits(id));
+    scene.sync(&model);
+    settle(&mut scene);
+    assert_eq!(scene.scroll_of("1"), scroll, "an activation keeps the view");
+    assert_eq!((drawn(&scene, "a"), drawn(&scene, "n")), (a, n));
+
+    // c closing refits the tape to its focus, e, the same way.
+    let before = model.scrolls();
+    let mut unkept = model.clone();
+    unkept.close("c");
+    assert_ne!(
+        unkept.workspace("1").unwrap().tape.scroll,
+        scroll,
+        "a fit to e"
+    );
+    model.close("c");
+    model.keep_scrolls(&before, |id| scene.waits(id));
+    scene.sync(&model);
+    settle(&mut scene);
+    assert_eq!(scene.scroll_of("1"), scroll, "a close keeps the view");
+    assert_eq!((drawn(&scene, "a"), drawn(&scene, "n")), (a, n));
+
+    // Once e has drawn, the view fits to it.
+    arrive(&mut model, &mut scene, "e");
+    scene.sync(&model);
+    settle(&mut scene);
+    let e = drawn(&scene, "e");
+    assert!(e.x >= 0.0 && e.x + e.w <= 1920.0, "e in view at {e:?}");
 }

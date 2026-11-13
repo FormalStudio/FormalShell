@@ -1544,6 +1544,31 @@ impl Model {
     }
 
     /// Drags a tape by `dx`; nothing moves while zen holds it.
+    /// Each tape's scroll, for `keep_scrolls`.
+    pub fn scrolls(&self) -> Vec<(WsId, f64)> {
+        self.workspaces
+            .iter()
+            .map(|ws| (ws.id.clone(), ws.tape.scroll))
+            .collect()
+    }
+
+    /// Hyprland lays a window out, and fits the view to it, when it maps. A
+    /// tape whose focused tile `waits` to be drawn gets back the scroll it
+    /// had in `before`, whatever fitted it to that tile since: its opening,
+    /// an activation (GTK 4 asks for one before its first frame), or another
+    /// window of the tape closing.
+    pub fn keep_scrolls(&mut self, before: &[(WsId, f64)], waits: impl Fn(&str) -> bool) {
+        for (workspace, scroll) in before {
+            let Some(tape) = self.workspace(workspace).map(|ws| &ws.tape) else {
+                continue;
+            };
+            if tape.focused().is_some_and(|id| waits(id)) {
+                let now = tape.scroll;
+                self.scroll_by(workspace, scroll - now);
+            }
+        }
+    }
+
     pub fn scroll_by(&mut self, workspace: &str, dx: f64) -> bool {
         let strip_w = self.strip_w(workspace);
         let Some(ws) = self.workspace_mut(workspace) else {

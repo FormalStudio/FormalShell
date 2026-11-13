@@ -3365,3 +3365,85 @@ fn a_swipe_while_a_tile_waits_follows_the_fingers_and_lands_with_the_focus() {
         "in view"
     );
 }
+
+/// The engine's handle of the window with `app_id`.
+fn handle(app_id: &str) -> shojiwm_rs::prelude::Window {
+    let app = app_id.to_owned();
+    ask(move |engine| {
+        engine
+            .windows
+            .values()
+            .find(|win| win.handle.app_id().get_untracked().as_deref() == Some(app.as_str()))
+            .map(|win| win.handle)
+            .ok_or_else(|| "no such window".to_owned())
+    })
+    .unwrap()
+}
+
+#[test]
+fn an_activation_or_a_close_before_a_new_tile_draws_leaves_the_view_where_it_was() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("wait-activate", HOST, &[test_display("TEST-1")]);
+    let mut c_top = None;
+    for app in ["a", "files", "c"] {
+        let (surface, top) = session.open_tagged(app, None);
+        session.draw(&surface, 400, 300);
+        c_top = Some((surface, top));
+    }
+    // Files on the right half, c past it out of view.
+    for app in ["a", "files"] {
+        let window = handle(app);
+        ask(move |engine| {
+            engine.model.focus_window(&window.id());
+            engine.commit();
+            Ok(())
+        })
+        .unwrap();
+    }
+    settle();
+    let view = (shown("a"), shown("files"), scroll("1"));
+
+    let (late, late_top) = session.bare("late");
+    session.commit(&late);
+    settle();
+    assert_eq!((shown("a"), shown("files"), scroll("1")), view);
+
+    // GTK 4 asks for activation right after map, before its first frame.
+    let window = handle("late");
+    ask(move |engine| {
+        engine.activated(window);
+        Ok(())
+    })
+    .unwrap();
+    session.roundtrip();
+    settle();
+    assert_eq!(
+        (shown("a"), shown("files"), scroll("1")),
+        view,
+        "the activation leaves the view"
+    );
+
+    // Another window of the tape closing meanwhile does too.
+    let (c, c_top) = c_top.unwrap();
+    c_top.destroy();
+    c.destroy();
+    session.roundtrip();
+    settle();
+    assert_eq!(
+        (shown("a"), shown("files"), scroll("1")),
+        view,
+        "the close leaves the view"
+    );
+
+    // Drawn, it is laid out and the view fits to it.
+    let told = session.configured(&late_top);
+    session.draw(&late, told.0, told.1);
+    settle();
+    let at = shown("late");
+    assert!(
+        at.x >= 0.0 && at.x + at.w <= WIDTH,
+        "late in view at {at:?}"
+    );
+}

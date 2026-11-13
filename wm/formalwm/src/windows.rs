@@ -276,12 +276,7 @@ impl Engine {
         window
             .state(&CONFINE)
             .set(effect.confine_pointer == Some(true));
-        let scrolls: Vec<(String, f64)> = self
-            .model
-            .workspaces
-            .iter()
-            .map(|ws| (ws.id.clone(), ws.tape.scroll))
-            .collect();
+        let scrolls = self.model.scrolls();
         self.model.open(
             NewWindow {
                 id: id.clone(),
@@ -308,20 +303,8 @@ impl Engine {
             win.sized = !floating || sized;
         }
         if !floating && !drawn {
-            // Hyprland lays a window out, and fits the view to it, when it
-            // maps: until it draws, its tape keeps the scroll it had.
-            let home = self
-                .model
-                .workspaces
-                .iter()
-                .find(|ws| ws.tape.find(&id).is_some())
-                .map(|ws| (ws.id.clone(), ws.tape.scroll));
-            if let Some((ws, now)) = home
-                && let Some(&(_, before)) = scrolls.iter().find(|(id, _)| *id == ws)
-            {
-                self.model.scroll_by(&ws, before - now);
-            }
             self.scene.wait(&id);
+            self.model.keep_scrolls(&scrolls, |id| self.scene.waits(id));
             set_timeout(WAIT_MS, move || enter(move |engine| engine.unwait(window)));
         }
         window.set_close_animation_duration(self.scene.close_ms() as u64);
@@ -627,7 +610,9 @@ impl Engine {
         if self.model.window(id).is_none() {
             return;
         }
+        let scrolls = self.model.scrolls();
         self.model.close(id);
+        self.model.keep_scrolls(&scrolls, |id| self.scene.waits(id));
         if let Some(win) = self.windows.get_mut(id) {
             win.placed = false;
         }
@@ -654,8 +639,10 @@ impl Engine {
     }
 
     /// `focus_on_activate`: a window that asks for attention gets it.
-    fn activated(&mut self, window: Window) {
+    pub(crate) fn activated(&mut self, window: Window) {
+        let scrolls = self.model.scrolls();
         if self.model.focus_window(&window.id()) {
+            self.model.keep_scrolls(&scrolls, |id| self.scene.waits(id));
             self.commit();
         }
     }

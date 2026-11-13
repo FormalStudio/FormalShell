@@ -368,6 +368,11 @@ impl Scene {
         self.waiting.insert(id.to_owned());
     }
 
+    /// Whether a tile's client has yet to draw it.
+    pub fn waits(&self, id: &str) -> bool {
+        self.waiting.contains(id)
+    }
+
     /// Lets a tile's workspace move again without its client having drawn.
     /// Whether it was waiting.
     pub fn unwait(&mut self, id: &str) -> bool {
