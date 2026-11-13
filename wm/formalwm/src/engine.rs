@@ -7,6 +7,7 @@ use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 use formalwm_core::{
     color::Rgba,
     model::{Layer, Model, WorkspaceSpec},
+    motion::Clocks,
     rules,
     scene::{Scene, Visual},
     settings::Settings,
@@ -61,7 +62,7 @@ pub struct Engine {
     pub signals: Signals,
     pub ipc: Option<IpcServer>,
     pub driver: Option<PollHandle>,
-    pub last_tick: Option<f64>,
+    pub clocks: Clocks,
     pub state_pending: bool,
     pub last_state: String,
     pub asked_focus: Option<String>,
@@ -283,7 +284,6 @@ impl Engine {
     pub fn present(&mut self) {
         let frame = self.scene.frame();
         let border = self.signals.look.get_untracked().border;
-        let overview = self.overview.progress.value > 0.0;
         batch(|| {
             for visual in &frame {
                 let Some(win) = self.windows.get(&visual.id) else {
@@ -292,7 +292,7 @@ impl Engine {
                 if self.drag.as_ref().is_some_and(|drag| drag.id == visual.id) {
                     continue;
                 }
-                self.write(win, visual, border, overview);
+                self.write(win, visual, border);
             }
         });
         self.present_drag();
@@ -300,7 +300,7 @@ impl Engine {
         self.restage(&frame);
     }
 
-    fn write(&self, win: &Win, visual: &Visual, border: f64, overview: bool) {
+    fn write(&self, win: &Win, visual: &Visual, border: f64) {
         let window = win.handle;
         // The core's first configure carries the rect's size whatever FORCE
         // says; no size at all is what lets the client pick its own.
@@ -358,6 +358,7 @@ impl Engine {
             None => visual.visible,
         };
         window.state(&windows::IDLE).set(!shown);
+        let overview = self.overview.progress.on(&visual.output) > 0.0;
         window
             .state(&windows::LIVE)
             .set(visual.visible && !overview);
@@ -377,23 +378,25 @@ impl Engine {
         if self.driver.is_some() || !self.animating() {
             return;
         }
-        self.last_tick = None;
-        self.driver = Some(create_poll_for_each_output(1.0, |handle, _| {
+        self.clocks.reset();
+        self.driver = Some(create_poll_for_each_output(1.0, |handle, output| {
             let now = handle.now_ms();
-            enter(move |engine| engine.tick(now));
+            let output = output.to_owned();
+            enter(move |engine| engine.tick(&output, now));
         }));
     }
 
-    fn tick(&mut self, now: f64) {
-        let dt = match self.last_tick {
-            // The outputs' clocks interleave; one that is behind adds nothing.
-            Some(last) if now <= last => return,
-            Some(last) => ((now - last) / 1000.0).min(0.05),
-            None => 0.0,
+    /// `output`'s frame at `now`: what it draws steps on its own clock.
+    fn tick(&mut self, output: &str, now: f64) {
+        let Some(dt) = self.clocks.advance(output, now) else {
+            return;
         };
-        self.last_tick = Some(now);
-        self.scene.step(dt);
-        self.overview.step(dt, &self.theme.chrome.motion);
+        let outputs = &self.model.outputs;
+        self.overview
+            .progress
+            .retain(|name| outputs.iter().any(|o| o.geo.name == name));
+        self.scene.step_on(output, dt);
+        self.overview.step(output, dt, &self.theme.chrome.motion);
         self.present();
         if !self.animating()
             && let Some(driver) = self.driver.take()

@@ -52,7 +52,7 @@ fn setup() {
         signals,
         ipc: None,
         driver: None,
-        last_tick: None,
+        clocks: Default::default(),
         state_pending: false,
         last_state: String::new(),
         asked_focus: None,

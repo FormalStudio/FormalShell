@@ -67,12 +67,12 @@ pub fn setup(signals: Signals) {
 
 pub fn build(engine: &Engine, frame: &[Visual]) -> Stage {
     let mut stage = Stage::default();
-    let progress = engine.overview.progress.value.clamp(0.0, 1.0);
     let background = Rgba::resolve("background", &engine.theme.colors).unwrap_or(Rgba::BLACK);
     let [r, g, b, _] = background.0;
     for output in &engine.model.outputs {
         let name = &output.geo.name;
         let area = output.geo.rect;
+        let progress = engine.overview.progress.on(name).clamp(0.0, 1.0);
         if progress > 0.0 {
             let lens = Lens::new(area.w, area.h, progress);
             let at = engine.scene.stack_of(name);

@@ -6,7 +6,7 @@ use formalwm_core::{
     chord::Mods,
     geom::Rect as Box2,
     model::Home,
-    motion::{Spring, SpringParams, project},
+    motion::{Spread, SpringParams, project},
     overview::Lens,
     tape::Side,
 };
@@ -29,7 +29,8 @@ const BTN_LEFT: u32 = 0x110;
 
 pub struct Overview {
     pub open: bool,
-    pub progress: Spring,
+    /// Drawn on every output, each stepping its own copy.
+    pub progress: Spread,
     /// Fingers have it.
     pub held: bool,
     pub grab: Option<InputGrab>,
@@ -68,7 +69,7 @@ impl Default for Overview {
     fn default() -> Self {
         Self {
             open: false,
-            progress: Spring::at(0.0),
+            progress: Spread::at(0.0),
             held: false,
             grab: None,
             press: None,
@@ -83,25 +84,26 @@ impl Overview {
         self.held || self.progress.resting()
     }
 
-    pub fn step(&mut self, dt: f64, motion: &Motion) {
+    pub fn step(&mut self, output: &str, dt: f64, motion: &Motion) {
         if self.held {
             return;
         }
         if motion.enabled {
             self.progress.step_in(
+                output,
                 SpringParams::from_family(&motion.families.spatial),
                 dt,
                 UNIT,
             );
         } else {
-            self.progress.jump(self.progress.target);
+            self.progress.jump(self.progress.target());
         }
     }
 }
 
 impl Engine {
     pub fn lens(&self, output: &str) -> Option<(Lens, Box2)> {
-        let progress = self.overview.progress.value;
+        let progress = self.overview.progress.on(output);
         if progress <= 0.0 {
             return None;
         }
@@ -113,9 +115,11 @@ impl Engine {
     pub fn set_overview(&mut self, open: Option<bool>) {
         let open = open.unwrap_or(!self.overview.open);
         self.overview.held = false;
-        self.overview.progress.target = if open { 1.0 } else { 0.0 };
+        self.overview
+            .progress
+            .set_target(if open { 1.0 } else { 0.0 });
         if !self.theme.chrome.motion.enabled {
-            self.overview.progress.jump(self.overview.progress.target);
+            self.overview.progress.jump(self.overview.progress.target());
         }
         if open != self.overview.open {
             self.overview.open = open;
@@ -401,7 +405,7 @@ impl Engine {
         };
         let name = &output.geo.name;
         let area = output.geo.rect;
-        let lens = Lens::new(area.w, area.h, self.overview.progress.value);
+        let lens = Lens::new(area.w, area.h, self.overview.progress.on(name));
         let stack_at = self.scene.stack_of(name);
         let (px, py) = (at.0 - area.x, at.1 - area.y);
         let layout = self.model.layout();
@@ -467,11 +471,11 @@ impl Engine {
     pub fn overview_release(&mut self, velocity_y: f64, height: f64) {
         let span = height * 0.5;
         let velocity = -velocity_y / span;
-        let landing = self.overview.progress.value + project(-velocity_y) / span;
+        let landing = self.overview.progress.value() + project(-velocity_y) / span;
         self.overview.held = false;
         self.set_overview(Some(landing > 0.5));
         if self.theme.chrome.motion.enabled {
-            self.overview.progress.velocity = velocity;
+            self.overview.progress.set_velocity(velocity);
         }
         self.kick();
     }

@@ -663,7 +663,7 @@ fn two_outputs_and_the_touchpad() {
     session.swipe(Phase::Update, 4, (0.0, -192.0), (0.0, 0.0));
     let (progress, held, open) = ask(|engine| {
         let overview = &engine.overview;
-        Ok((overview.progress.value, overview.held, overview.open))
+        Ok((overview.progress.value(), overview.held, overview.open))
     })
     .unwrap();
     assert_eq!((progress, held, open), (0.5, true, false));
