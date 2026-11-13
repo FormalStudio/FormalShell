@@ -81,8 +81,9 @@ pub struct Scene {
     waiting: BTreeSet<WinId>,
     /// Waited-for tiles that have just drawn: they start at their place.
     landing: BTreeSet<WinId>,
-    /// The drawn window each workspace last showed in zen. A tile that
-    /// takes zen as it opens leaves it there until it draws.
+    /// The window each workspace last showed in zen: one that has drawn, or
+    /// a tile whose wait timed out first. A tile that takes zen as it opens
+    /// leaves it there until it draws.
     zen_shown: BTreeMap<WsId, WinId>,
     families: Families,
     enabled: bool,
