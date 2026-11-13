@@ -1543,7 +1543,6 @@ impl Model {
         self.tape_op(false, false, |_, _| true)
     }
 
-    /// Drags a tape by `dx`; nothing moves while zen holds it.
     /// Each tape's scroll, for `keep_scrolls`.
     pub fn scrolls(&self) -> Vec<(WsId, f64)> {
         self.workspaces
@@ -1569,6 +1568,7 @@ impl Model {
         }
     }
 
+    /// Drags a tape by `dx`; nothing moves while zen holds it.
     pub fn scroll_by(&mut self, workspace: &str, dx: f64) -> bool {
         let strip_w = self.strip_w(workspace);
         let Some(ws) = self.workspace_mut(workspace) else {

@@ -896,3 +896,31 @@ fn an_activation_or_a_close_does_not_fit_the_view_to_a_waiting_tile() {
     let e = drawn(&scene, "e");
     assert!(e.x >= 0.0 && e.x + e.w <= 1920.0, "e in view at {e:?}");
 }
+
+#[test]
+fn a_window_opened_in_zen_leaves_the_zen_window_in_front_until_it_draws() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b"] {
+        open(&mut model, id);
+    }
+    model.set_zen(None, None);
+    scene.sync(&model);
+    settle(&mut scene);
+    let zen = model.zen_rect("A");
+    assert_eq!(drawn(&scene, "b"), zen);
+
+    open_waiting(&mut model, &mut scene, "c");
+    scene.sync(&model);
+    for _ in 0..40 {
+        scene.step(FRAME);
+        assert_eq!(drawn(&scene, "b"), zen, "b stays in front while c waits");
+    }
+    assert!(scene.visual("b").unwrap().visible);
+
+    arrive(&mut model, &mut scene, "c");
+    scene.sync(&model);
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "c"), zen, "c takes zen once drawn");
+    assert!(!scene.visual("b").unwrap().visible);
+}

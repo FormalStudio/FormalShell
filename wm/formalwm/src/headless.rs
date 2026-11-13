@@ -3447,3 +3447,33 @@ fn an_activation_or_a_close_before_a_new_tile_draws_leaves_the_view_where_it_was
         "late in view at {at:?}"
     );
 }
+
+#[test]
+fn a_window_opened_in_zen_waits_to_draw_before_it_takes_the_centre() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("wait-zen", HOST, &[test_display("TEST-1")]);
+    for app in ["a", "files"] {
+        let surface = session.open(app);
+        session.draw(&surface, 400, 300);
+    }
+    session.chord(&[125, 44]);
+    settle();
+    let centre = shown("files");
+
+    let (late, late_top) = session.bare("late");
+    session.commit(&late);
+    settle();
+    assert_eq!(
+        shown("files"),
+        centre,
+        "files stays in front while late waits"
+    );
+
+    let told = session.configured(&late_top);
+    session.draw(&late, told.0, told.1);
+    settle();
+    assert_eq!(shown("late"), centre, "late takes the centre once drawn");
+    assert_ne!(shown("files"), centre);
+}

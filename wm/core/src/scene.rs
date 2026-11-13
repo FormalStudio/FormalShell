@@ -11,7 +11,7 @@ use fs_wm_proto::{Families, Motion};
 
 use crate::{
     geom::Rect,
-    model::{Layer, Model, Placed, WsId},
+    model::{Layer, Model, Placed, Workspace, WsId},
     motion::{Spring, SpringParams, Tween},
     pip,
     tape::{Tape, WinId},
@@ -170,7 +170,7 @@ impl Scene {
         let mut waits_on: BTreeMap<WsId, BTreeSet<WinId>> = BTreeMap::new();
         for place in &layout {
             if let Some(ws) = place.workspace.as_ref()
-                && place.scrolls
+                && place.tiled()
                 && self.waiting.contains(&place.id)
             {
                 waits_on
@@ -224,6 +224,25 @@ impl Scene {
                         scroll.clamp(0.0, tape.max_scroll(strip_w))
                     };
                     scrolls.insert(ws_id.clone(), tape.scroll);
+                }
+            }
+            // A waiting tile that took zen as it opened leaves it, in the
+            // meantime, where its closing would: on the window the focus
+            // falls back to.
+            let took_zen = |ws: &Workspace| {
+                ws.zen
+                    .as_ref()
+                    .is_some_and(|zen| waits_on.get(&ws.id).is_some_and(|w| w.contains(zen)))
+            };
+            if model.workspaces.iter().any(took_zen) {
+                let mut closed = model.clone();
+                for id in waits_on.values().flatten() {
+                    closed.close(id);
+                }
+                for ws in without.workspaces.iter_mut() {
+                    if model.workspace(&ws.id).is_some_and(took_zen) {
+                        ws.zen = closed.workspace(&ws.id).and_then(|ws| ws.zen.clone());
+                    }
                 }
             }
             without
