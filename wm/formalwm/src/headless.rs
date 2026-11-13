@@ -1573,14 +1573,28 @@ fn two_outputs_and_the_touchpad() {
         { "chord": "SHIFT+Shift_L", "action": "float", "release": true, "passthrough": true }
     ] }"#;
     let binds = Settings::parse(binds, None).unwrap().binds;
-    ask(move |engine| {
+    let last = ask(move |engine| {
         let mut settings = (*engine.settings).clone();
         settings.binds.extend(binds);
         engine.settings = Rc::new(settings);
         engine.bind_keys();
-        Ok(())
+        Ok(engine.settings.bind_groups().len() - 1)
     })
     .unwrap();
+    // `bind_keys` only marks the binds changed: the compositor has them a
+    // turn later, and a key pressed before that meets the old ones.
+    let last = format!("formalwm:{last}");
+    let installed =
+        |session: &Session| session.state.runtime_key_bindings.iter().any(|bind| bind.id == last);
+    assert!(!installed(&session), "not before the compositor's next turn");
+    for _ in 0..50 {
+        if installed(&session) {
+            break;
+        }
+        session.state.refresh_window_decorations().unwrap();
+        session.roundtrip();
+    }
+    assert!(installed(&session), "the new binds are the compositor's before a key is pressed");
     session.chord(&[CTRL]);
     assert!(zen(), "let go alone, the bind runs");
     session.chord(&[CTRL, A]);
