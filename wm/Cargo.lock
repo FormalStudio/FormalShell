@@ -1375,7 +1375,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 [[package]]
 name = "macros"
 version = "0.1.0"
-source = "git+https://github.com/bea4dev/xwayland-satellite.git?rev=d995e79977d63e30e556302a347c6df8b7fd0961#d995e79977d63e30e556302a347c6df8b7fd0961"
+source = "git+https://github.com/FormalSnake/xwayland-satellite.git?rev=db9369493a0cfa862c88061f2ddb576becfd004a#db9369493a0cfa862c88061f2ddb576becfd004a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2170,7 +2170,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "shojiwm_lib"
 version = "0.1.0"
-source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=a4395191447328745a97c78693b73aa1bcac8041#a4395191447328745a97c78693b73aa1bcac8041"
+source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=e5a9aa2be5617e1f611580799aa0f78d8ad68725#e5a9aa2be5617e1f611580799aa0f78d8ad68725"
 dependencies = [
  "bitflags 2.11.0",
  "bumpalo",
@@ -2209,7 +2209,7 @@ dependencies = [
 [[package]]
 name = "shojiwm_rs"
 version = "0.1.0"
-source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=a4395191447328745a97c78693b73aa1bcac8041#a4395191447328745a97c78693b73aa1bcac8041"
+source = "git+https://github.com/FormalSnake/ShojiWM.git?rev=e5a9aa2be5617e1f611580799aa0f78d8ad68725#e5a9aa2be5617e1f611580799aa0f78d8ad68725"
 dependencies = [
  "serde_json",
  "shojiwm_lib",
@@ -3799,7 +3799,7 @@ dependencies = [
 [[package]]
 name = "wl_drm"
 version = "0.1.0"
-source = "git+https://github.com/bea4dev/xwayland-satellite.git?rev=d995e79977d63e30e556302a347c6df8b7fd0961#d995e79977d63e30e556302a347c6df8b7fd0961"
+source = "git+https://github.com/FormalSnake/xwayland-satellite.git?rev=db9369493a0cfa862c88061f2ddb576becfd004a#db9369493a0cfa862c88061f2ddb576becfd004a"
 dependencies = [
  "wayland-client",
  "wayland-scanner",
@@ -3922,7 +3922,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 [[package]]
 name = "xwayland-satellite"
 version = "0.8.2"
-source = "git+https://github.com/bea4dev/xwayland-satellite.git?rev=d995e79977d63e30e556302a347c6df8b7fd0961#d995e79977d63e30e556302a347c6df8b7fd0961"
+source = "git+https://github.com/FormalSnake/xwayland-satellite.git?rev=db9369493a0cfa862c88061f2ddb576becfd004a#db9369493a0cfa862c88061f2ddb576becfd004a"
 dependencies = [
  "ab_glyph",
  "anyhow",

@@ -1,5 +1,7 @@
 //! A window's frame and its way into and out of the model.
 
+use std::{cell::Cell, rc::Rc};
+
 use formalwm_core::{
     geom::Rect as Box2,
     model::{Big, NewWindow, Placement},
@@ -46,6 +48,10 @@ const REST: ManagedTransform = ManagedTransform {
 
 /// Hyprland's `popin`: a closing window shrinks to this.
 const POP_OUT: f64 = 0.9;
+
+/// How long a held window has to draw itself at its float's size before it
+/// is shown at whatever size it has.
+const HOLD_MS: f64 = 300.0;
 
 fn blend(from: Color, to: Color, t: f64) -> Color {
     let channel = |from: u8, to: u8| {
@@ -196,6 +202,7 @@ impl Engine {
                 effect: rules::Effect::default(),
                 placed: false,
                 sized: false,
+                held: None,
                 scope,
             },
         );
@@ -279,42 +286,79 @@ impl Engine {
         )
     }
 
-    /// Decides float or tile again on what the client said by its first
+    /// Applies the rules again to what the client said by its first
     /// buffer, as Hyprland does at map: GTK 3 sets a dialog's fixed size
     /// only after the first configure, so Electron's `showErrorBox` looks
     /// resizable when it is placed. Nothing of the window is drawn yet, so
-    /// it does not jump.
-    fn reclassify(&mut self, window: Window) {
+    /// a changed outcome places it again from the start, with every effect
+    /// a placement takes (float, size, position, workspace, overlay, pin).
+    /// Returns whether a tile became a float.
+    fn reclassify(&mut self, window: Window) -> bool {
         let id = window.id();
         let Some(was) = self.model.window(&id).map(|rec| rec.floating) else {
+            return false;
+        };
+        let effect = self.effect(window);
+        if self.windows.get(&id).is_none_or(|win| win.effect == effect) {
+            return false;
+        }
+        self.model.close(&id);
+        if let Some(win) = self.windows.get_mut(&id) {
+            win.placed = false;
+        }
+        self.place(window);
+        self.scene.land(&id);
+        !was && self.model.window(&id).is_some_and(|rec| rec.floating)
+    }
+
+    /// A tile that became a float by its first buffer may have drawn it
+    /// at the size it was `told` as a tile rather than its own. With no
+    /// size rule that buffer would set the float's size, so the window stays
+    /// out of sight until it draws itself again at a size it picks, asked
+    /// by a configure with no size. A window that drew a size of its own (a
+    /// fixed-size dialog) is shown at it.
+    fn hold(&mut self, window: Window, told: Option<(f64, f64)>) -> bool {
+        let id = window.id();
+        let Some(win) = self.windows.get(&id) else {
+            return false;
+        };
+        let drawn = window.position().get_untracked();
+        let drawn = (drawn.width, drawn.height);
+        let at_tile =
+            told.is_some_and(|(w, h)| (drawn.0 - w).abs() < 1.0 || (drawn.1 - h).abs() < 1.0);
+        if win.sized || !at_tile {
+            return false;
+        }
+        let scope = win.scope;
+        let done = Rc::new(Cell::new(false));
+        scope.effect(move || {
+            if done.get() {
+                return;
+            }
+            let now = window.position().get();
+            if (now.width, now.height) != drawn {
+                done.set(true);
+                enter(move |engine| engine.release(window));
+            }
+        });
+        let timer = set_timeout(HOLD_MS, move || enter(move |engine| engine.release(window)));
+        if let Some(win) = self.windows.get_mut(&id) {
+            win.held = Some(timer);
+        }
+        window.state(&OPACITY).set(0.0);
+        window.state(&LIVE).set(false);
+        true
+    }
+
+    /// A held window has drawn itself at its float's size, or ran out of
+    /// time: it is shown.
+    fn release(&mut self, window: Window) {
+        let id = window.id();
+        let Some(timer) = self.windows.get_mut(&id).and_then(|win| win.held.take()) else {
             return;
         };
-        if self
-            .windows
-            .get(&id)
-            .is_none_or(|win| win.effect.overlay.is_some())
-        {
-            return;
-        }
-        let effect = self.effect(window);
-        let floating = effect.float == Some(true);
-        if floating == was
-            || effect.overlay.is_some()
-            || !self.model.set_floating(&id, Some(floating))
-        {
-            return;
-        }
-        let sized = !floating || effect.size.is_some();
-        self.model.set_pinned(&id, effect.pin.unwrap_or(false));
-        window.state(&FORCE).set(sized);
-        window.state(&BLUR).set(self.blurs(&effect));
-        window
-            .state(&CONFINE)
-            .set(effect.confine_pointer == Some(true));
-        if let Some(win) = self.windows.get_mut(&id) {
-            win.effect = effect;
-            win.sized = sized;
-        }
+        timer.cancel();
+        self.settle(window);
     }
 
     /// Where a float of `size` goes on `output` (global): over the middle of
@@ -345,7 +389,20 @@ impl Engine {
     /// the one it chose, where its rule, its parent or the centre puts it.
     fn first_commit(&mut self, window: Window) {
         self.place(window);
-        self.reclassify(window);
+        let id = window.id();
+        let told = self
+            .model
+            .layout()
+            .into_iter()
+            .find(|placed| placed.id == id)
+            .map(|placed| (placed.rect.w, placed.rect.h));
+        if self.reclassify(window) && self.hold(window, told) {
+            return self.commit();
+        }
+        self.settle(window);
+    }
+
+    fn settle(&mut self, window: Window) {
         let id = window.id();
         let Some(win) = self.windows.get(&id) else {
             return;

@@ -34,6 +34,20 @@ fn manager() -> bool {
 /// Commands that make a unit of their own are left alone.
 const LAUNCHERS: [&str; 3] = ["uwsm", "systemd-run", "app2unit"];
 
+/// `sh -c SCOPED sh <unit> <argv>...`: the app in a scope, or bare when
+/// systemd-run did not get as far as running it (not installed, no manager,
+/// the scope refused). The scope's first process marks a file before it
+/// execs the app, so an app that ran and failed is not started twice. The
+/// shell waits as the app's parent, since systemd-run's exit status alone
+/// cannot tell its own failure from the app's.
+const SCOPED: &str = r#"unit=$1; shift
+mark=${XDG_RUNTIME_DIR:-/tmp}/formalwm-spawn-$$
+systemd-run --user --scope --quiet --collect --slice=app-graphical.slice "--unit=$unit" \
+  -- /bin/sh -c ': > "$0" && exec "$@"' "$mark" "$@"
+status=$?
+if [ -e "$mark" ]; then rm -f "$mark"; exit "$status"; fi
+exec "$@""#;
+
 fn scoped(argv: Vec<String>, manager: bool) -> Vec<String> {
     let program = argv.first().map(|first| name(first)).unwrap_or_default();
     // `sh -c <line>` is named for the line's first word.
@@ -47,18 +61,8 @@ fn scoped(argv: Vec<String>, manager: bool) -> Vec<String> {
         return argv;
     }
     let unit = format!("app-formalwm-{}-{}.scope", escape(&named), suffix());
-    let mut wrapped: Vec<String> = [
-        "systemd-run",
-        "--user",
-        "--scope",
-        "--quiet",
-        "--collect",
-        "--slice=app-graphical.slice",
-    ]
-    .map(String::from)
-    .to_vec();
-    wrapped.push(format!("--unit={unit}"));
-    wrapped.push("--".into());
+    let mut wrapped: Vec<String> = vec!["/bin/sh".into(), "-c".into(), SCOPED.into(), "sh".into()];
+    wrapped.push(unit);
     wrapped.extend(argv);
     wrapped
 }
@@ -97,6 +101,7 @@ fn suffix() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt, process};
 
     fn argv(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| word.to_string()).collect()
@@ -108,38 +113,25 @@ mod tests {
             argv(&["/opt/fspec/current/bin/t3code-desktop", "--x"]),
             true,
         );
-        assert_eq!(
-            &wrapped[..6],
-            argv(&[
-                "systemd-run",
-                "--user",
-                "--scope",
-                "--quiet",
-                "--collect",
-                "--slice=app-graphical.slice"
-            ])
-        );
-        let unit = wrapped[6]
-            .strip_prefix("--unit=app-formalwm-t3code-desktop-")
+        assert_eq!(&wrapped[..4], argv(&["/bin/sh", "-c", SCOPED, "sh"]));
+        let unit = wrapped[4]
+            .strip_prefix("app-formalwm-t3code-desktop-")
             .unwrap();
         assert!(
             unit.ends_with(".scope") && unit.len() == "01234567.scope".len(),
             "{unit}"
         );
         assert_eq!(
-            &wrapped[7..],
-            argv(&["--", "/opt/fspec/current/bin/t3code-desktop", "--x"])
+            &wrapped[5..],
+            argv(&["/opt/fspec/current/bin/t3code-desktop", "--x"])
         );
     }
 
     #[test]
     fn a_shell_line_is_named_for_its_first_word() {
         let wrapped = scoped(argv(&["/bin/sh", "-c", "foot -e htop"]), true);
-        assert!(
-            wrapped[6].starts_with("--unit=app-formalwm-foot-"),
-            "{wrapped:?}"
-        );
-        assert_eq!(&wrapped[8..], argv(&["/bin/sh", "-c", "foot -e htop"]));
+        assert!(wrapped[4].starts_with("app-formalwm-foot-"), "{wrapped:?}");
+        assert_eq!(&wrapped[5..], argv(&["/bin/sh", "-c", "foot -e htop"]));
     }
 
     #[test]
@@ -154,5 +146,62 @@ mod tests {
     fn a_unit_name_holds_only_what_systemd_takes() {
         assert_eq!(escape("Visual Studio Code@1"), "Visual_Studio_Code_1");
         assert_ne!(suffix(), suffix());
+    }
+
+    /// Runs the wrapped app with `systemd_run` (a script body, or none) as
+    /// the only `systemd-run` on `PATH`. Returns how often the app ran and
+    /// the exit status.
+    fn launch(name: &str, systemd_run: Option<&str>) -> (usize, Option<i32>) {
+        let dir = std::env::temp_dir().join(format!("formalwm-spawn-{}-{name}", process::id()));
+        // `rm` and the stand-in systemd-run, if any, and nothing else.
+        let tools = dir.join("tools");
+        fs::create_dir_all(&tools).unwrap();
+        let rm = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+            .map(|path| path.join("rm"))
+            .find(|rm| rm.exists())
+            .unwrap();
+        std::os::unix::fs::symlink(rm, tools.join("rm")).unwrap();
+        if let Some(body) = systemd_run {
+            let path = tools.join("systemd-run");
+            fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let ran = dir.join("ran");
+        let app = format!("echo >> '{}'; exit 3", ran.display());
+        let wrapped = scoped(argv(&["/bin/sh", "-c", &app]), true);
+        let status = process::Command::new(&wrapped[0])
+            .args(&wrapped[1..])
+            .env("PATH", &tools)
+            .env("XDG_RUNTIME_DIR", &dir)
+            .status()
+            .unwrap();
+        let runs = fs::read_to_string(&ran).map_or(0, |ran| ran.lines().count());
+        let marks = fs::read_dir(&dir)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("formalwm-spawn-")
+            })
+            .count();
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(marks, 0, "a mark was left behind");
+        (runs, status.code())
+    }
+
+    #[test]
+    fn an_app_starts_bare_when_its_scope_cannot_be_set_up() {
+        assert_eq!(launch("missing", None), (1, Some(3)));
+        assert_eq!(launch("refused", Some("exit 1")), (1, Some(3)));
+    }
+
+    #[test]
+    fn an_app_that_ran_in_its_scope_is_not_started_again() {
+        // What systemd-run does once the scope exists: exec what follows `--`.
+        let systemd_run = r#"while [ "$1" != -- ]; do shift; done; shift; exec "$@""#;
+        assert_eq!(launch("scoped", Some(systemd_run)), (1, Some(3)));
     }
 }

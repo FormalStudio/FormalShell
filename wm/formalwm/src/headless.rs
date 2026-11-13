@@ -7,6 +7,7 @@
 //! (`src/shojiwm_rs/tests/common/mod.rs`), MIT, Copyright (c) 2026 bea4dev.
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader, Write},
     os::{fd::AsFd, unix::net::UnixStream},
@@ -15,7 +16,7 @@ use std::{
     time::Duration,
 };
 
-use formalwm_core::settings::Settings;
+use formalwm_core::{rules, settings::Settings};
 use fs_wm_proto as proto;
 use serde_json::{Value, json};
 use shojiwm_lib::{
@@ -37,6 +38,7 @@ use smithay::{
 };
 use wayland_client::{
     Connection, Dispatch, EventQueue, Proxy, QueueHandle,
+    backend::ObjectId,
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_registry, wl_seat, wl_shm, wl_shm_pool,
         wl_surface,
@@ -241,6 +243,13 @@ impl Session {
     fn commit(&mut self, surface: &wl_surface::WlSurface) {
         surface.commit();
         self.roundtrip();
+    }
+
+    /// The size the toplevel was last configured to.
+    fn configured(&mut self, toplevel: &xdg_toplevel::XdgToplevel) -> (i32, i32) {
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+        self.client.configured[&toplevel.id()]
     }
 
     fn tag(&mut self, toplevel: &xdg_toplevel::XdgToplevel, tag: &str) {
@@ -510,6 +519,24 @@ struct Client {
     globals: Vec<(String, u32)>,
     /// The evdev codes of the keys pressed on its keyboard.
     keys: Vec<u32>,
+    /// The size each toplevel was last configured to; 0x0 leaves it to
+    /// the client.
+    configured: HashMap<ObjectId, (i32, i32)>,
+}
+
+impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Client {
+    fn event(
+        client: &mut Self,
+        toplevel: &xdg_toplevel::XdgToplevel,
+        event: xdg_toplevel::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_toplevel::Event::Configure { width, height, .. } = event {
+            client.configured.insert(toplevel.id(), (width, height));
+        }
+    }
 }
 
 impl Dispatch<wl_keyboard::WlKeyboard, ()> for Client {
@@ -594,7 +621,6 @@ ignore_events!(
     wl_shm::WlShm,
     wl_shm_pool::WlShmPool,
     wl_buffer::WlBuffer,
-    xdg_toplevel::XdgToplevel,
     XdgToplevelTagManagerV1,
     XdgWmDialogV1,
     XdgDialogV1,
@@ -1651,6 +1677,16 @@ fn classification(session: &mut Session) {
         }
         window.floating
     };
+    let held = |app: &str| {
+        let app = app.to_owned();
+        ask(move |engine| {
+            Ok(engine.windows.values().any(|win| {
+                win.held.is_some()
+                    && win.handle.app_id().get_untracked().as_deref() == Some(app.as_str())
+            }))
+        })
+        .unwrap()
+    };
     // Its size, and its centre against where it should be.
     let at = |app: &str| {
         let rect = row(app).rect.unwrap();
@@ -1720,14 +1756,41 @@ fn classification(session: &mut Session) {
     assert!(floats("cls-adopted"), "a parent by the first buffer floats");
     opened.push((adopted, top));
 
-    // xdg-dialog-v1's modal hint, with no parent.
+    // A resizable child whose parent comes after the first configure has
+    // drawn its first buffer at the tile's size. It is asked again with no
+    // size, out of sight, and shown at the size it picks.
+    let (child, top) = session.bare("cls-late-child");
+    session.commit(&child);
+    let tile = session.configured(&top);
+    assert!(
+        tile.0 > 300 && tile.1 > 300,
+        "a tile is told its size: {tile:?}"
+    );
+    top.set_parent(Some(&main_top));
+    session.draw(&child, tile.0, tile.1);
+    assert!(
+        floats("cls-late-child"),
+        "a parent by the first buffer floats"
+    );
+    assert_eq!(session.configured(&top), (0, 0), "asked for its own size");
+    assert!(held("cls-late-child"), "not shown at the tile's size");
+    session.draw(&child, 300, 200);
+    assert!(!held("cls-late-child"));
+    assert_eq!(
+        at("cls-late-child"),
+        ((300, 200), parent),
+        "at the size it picked, over its parent"
+    );
+    opened.push((child, top));
+
+    // xdg-dialog-v1's modal hint has no effect without a parent.
     let dialogs: XdgWmDialogV1 = session.bind("xdg_wm_dialog_v1");
     let (modal, top) = session.bare("cls-modal");
     let hint = dialogs.get_xdg_dialog(&top, &session.queue.handle(), ());
     hint.set_modal();
     session.commit(&modal);
     session.draw(&modal, 300, 180);
-    assert!(floats("cls-modal"), "a modal dialog floats");
+    assert!(!floats("cls-modal"), "a modal hint without a parent tiles");
     opened.push((modal, top));
 
     // Once drawn, the decision stands: a tile does not jump to a float.
@@ -1752,6 +1815,46 @@ fn classification(session: &mut Session) {
     assert!(!floats("Beeper"), "a rule's float: false over a fixed size");
     opened.push((beeper, top));
 
+    // A rule that matches only once the window floats, by a parent set
+    // after the first configure: its size and workspace apply then.
+    ask(|engine| {
+        std::rc::Rc::make_mut(&mut engine.settings)
+            .rules
+            .push(rules::Rule {
+                matcher: rules::Matcher {
+                    app_id: Some(rules::Pattern::new("ruled-dialog")?),
+                    floating: Some(true),
+                    ..Default::default()
+                },
+                effect: rules::Effect {
+                    workspace: Some(2),
+                    size: Some((rules::Length::Px(500.0), rules::Length::Px(300.0))),
+                    ..Default::default()
+                },
+            });
+        Ok(())
+    })
+    .unwrap();
+    let (ruled, top) = session.bare("ruled-dialog");
+    session.commit(&ruled);
+    let tile = session.configured(&top);
+    top.set_parent(Some(&main_top));
+    session.draw(&ruled, tile.0, tile.1);
+    assert!(row("ruled-dialog").floating);
+    assert_eq!(
+        row("ruled-dialog").workspace_id,
+        "2",
+        "the rule's workspace"
+    );
+    assert_eq!(session.configured(&top), (500, 300), "told the rule's size");
+    assert_eq!(at("ruled-dialog").0, (500, 300), "at the rule's size");
+    opened.push((ruled, top));
+    ask(|engine| {
+        std::rc::Rc::make_mut(&mut engine.settings).rules.pop();
+        Ok(())
+    })
+    .unwrap();
+
     hint.destroy();
     for (_, top) in opened.iter().chain([&(main, main_top)]) {
         top.destroy();
@@ -1761,6 +1864,7 @@ fn classification(session: &mut Session) {
         state()
             .windows
             .iter()
-            .all(|window| !window.app_id.starts_with("cls-") && window.app_id != "Beeper")
+            .all(|window| !window.app_id.starts_with("cls-")
+                && !["Beeper", "ruled-dialog"].contains(&window.app_id.as_str()))
     );
 }

@@ -25,6 +25,9 @@ pub struct Win {
     pub placed: bool,
     /// A float without a size rule has taken the size its client chose.
     pub sized: bool,
+    /// Out of sight until it draws itself at its float's size; the timer
+    /// shows it anyway.
+    pub held: Option<TimerHandle>,
     pub scope: Scope,
 }
 
@@ -346,9 +349,14 @@ impl Engine {
             scale_y: sy,
         });
         window.state(&windows::FULL).set(full);
-        window
-            .state(&windows::OPACITY)
-            .set(visual.opacity * self.opacity_of(&visual.id, full));
+        // A held window is not shown, but stays drawn so its new buffer is
+        // taken in.
+        let held = win.held.is_some();
+        window.state(&windows::OPACITY).set(if held {
+            0.0
+        } else {
+            visual.opacity * self.opacity_of(&visual.id, full)
+        });
         window
             .state(&windows::Z)
             .set(z_of(visual.layer, visual.order));
@@ -364,7 +372,7 @@ impl Engine {
         let overview = self.overview.progress.on(&visual.output) > 0.0;
         window
             .state(&windows::LIVE)
-            .set(visual.visible && !overview);
+            .set(visual.visible && !overview && !held);
     }
 
     fn restage(&mut self, frame: &[Visual]) {
