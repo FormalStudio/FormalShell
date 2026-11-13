@@ -812,13 +812,17 @@ impl Model {
         if floating == window.floating {
             return false;
         }
-        let tiled = self.layout().into_iter().find(|place| place.id == id).map(|place| {
-            let scroll = match place.scrolls {
-                true => self.workspace(&workspace).map_or(0.0, |ws| ws.tape.scroll),
-                false => 0.0,
-            };
-            place.rect.translate(-scroll, 0.0)
-        });
+        let tiled = self
+            .layout()
+            .into_iter()
+            .find(|place| place.id == id)
+            .map(|place| {
+                let scroll = match place.scrolls {
+                    true => self.workspace(&workspace).map_or(0.0, |ws| ws.tape.scroll),
+                    false => 0.0,
+                };
+                place.rect.translate(-scroll, 0.0)
+            });
         let origin = self
             .workspace(&workspace)
             .and_then(|ws| self.output(&ws.output))
@@ -1285,11 +1289,7 @@ impl Model {
     /// messages act on the focused window's column, and a float has none:
     /// with a float focused they do nothing, unless `from_float` (the row
     /// binds, Hyprland's `movefocus`, which leave a float for the tape).
-    fn tape_op(
-        &mut self,
-        from_float: bool,
-        op: impl FnOnce(&mut Tape, &Options) -> bool,
-    ) -> bool {
+    fn tape_op(&mut self, from_float: bool, op: impl FnOnce(&mut Tape, &Options) -> bool) -> bool {
         let options = self.options.clone();
         // With no window typed into, a bind on the tape is for the output
         // the pointer is on, and the keyboard goes there with it.

@@ -186,7 +186,10 @@ fn floating_and_back() {
     assert!(model.place("b", Rect::new(0.0, 0.0, 1400.0, 480.0)));
     assert!(model.set_floating("b", Some(false)));
     assert!(model.set_floating("b", Some(true)));
-    assert_eq!(place(&model, "b").rect, Rect::new(520.0, 300.0, 1400.0, 480.0));
+    assert_eq!(
+        place(&model, "b").rect,
+        Rect::new(520.0, 300.0, 1400.0, 480.0)
+    );
     assert!(
         !model.place("a", Rect::new(0.0, 0.0, 10.0, 10.0)),
         "a is tiled"
@@ -255,10 +258,22 @@ fn a_big_tile_stays_a_column_of_the_tape() {
 
     assert!(model.focus_column(Side::Next));
     assert_eq!(focused(&model), "c");
-    assert_eq!(model.big_of("b"), Some(Big::Maximized), "focus moving on keeps it");
+    assert_eq!(
+        model.big_of("b"),
+        Some(Big::Maximized),
+        "focus moving on keeps it"
+    );
     assert_eq!(place(&model, "b").layer, Layer::Tile);
-    assert_eq!(on_screen(&model, "c").right(), 1912.0, "fitted by the least scroll");
-    assert_eq!(on_screen(&model, "b").right(), 956.0, "b slid half out of view");
+    assert_eq!(
+        on_screen(&model, "c").right(),
+        1912.0,
+        "fitted by the least scroll"
+    );
+    assert_eq!(
+        on_screen(&model, "b").right(),
+        956.0,
+        "b slid half out of view"
+    );
 
     assert!(model.focus_column(Side::Prev));
     assert_eq!(place(&model, "b").layer, Layer::Maximized);
@@ -295,7 +310,11 @@ fn a_new_window_opens_beside_a_big_tile_and_leaves_it_big() {
     open(&mut model, "b");
     assert_eq!(model.big_of("a"), Some(Big::Maximized));
     assert_eq!(focused(&model), "b");
-    assert_eq!(on_screen(&model, "b").right(), 1912.0, "b is fitted into view");
+    assert_eq!(
+        on_screen(&model, "b").right(),
+        1912.0,
+        "b is fitted into view"
+    );
 }
 
 #[test]
@@ -974,7 +993,10 @@ fn a_float_sent_to_a_smaller_output_is_fitted_into_it() {
         },
     );
     assert!(model.move_to_workspace("f", "4", false));
-    assert_eq!(on_screen(&model, "f"), Rect::new(1920.0 + 1200.0, 850.0, 400.0, 150.0));
+    assert_eq!(
+        on_screen(&model, "f"),
+        Rect::new(1920.0 + 1200.0, 850.0, 400.0, 150.0)
+    );
     open_with(
         &mut model,
         "g",
@@ -985,5 +1007,8 @@ fn a_float_sent_to_a_smaller_output_is_fitted_into_it() {
         },
     );
     assert!(model.move_to_workspace("g", "4", false));
-    assert_eq!(on_screen(&model, "g"), Rect::new(1920.0 + 100.0, 100.0, 400.0, 150.0));
+    assert_eq!(
+        on_screen(&model, "g"),
+        Rect::new(1920.0 + 100.0, 100.0, 400.0, 150.0)
+    );
 }

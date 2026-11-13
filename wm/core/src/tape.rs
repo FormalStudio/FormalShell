@@ -618,7 +618,11 @@ mod tests {
         tape.focus_column(Side::Next);
         assert_eq!(tape.focused().unwrap(), "d");
         assert!(tape.focus_column(Side::Prev));
-        assert_eq!(tape.focused().unwrap(), "c", "the full-height d sees both; c was last");
+        assert_eq!(
+            tape.focused().unwrap(),
+            "c",
+            "the full-height d sees both; c was last"
+        );
     }
 
     #[test]
@@ -666,7 +670,10 @@ mod tests {
         assert!(tape.consume_or_expel(Side::Next, 0.5));
         assert_eq!(order(&tape), ["a", "b", "c"]);
         assert_eq!(tape.focused().unwrap(), "c");
-        assert_eq!(tape.columns[2].width, 0.5, "a new column, as Hyprland's expel makes");
+        assert_eq!(
+            tape.columns[2].width, 0.5,
+            "a new column, as Hyprland's expel makes"
+        );
         assert_eq!(tape.columns[1].width, 0.667, "the stack keeps its width");
         tape.consume_or_expel(Side::Prev, 0.5);
         assert!(tape.consume_or_expel(Side::Prev, 0.5));
