@@ -37,16 +37,26 @@ Not merged:
 
 - `fix/wm-idle-gpu-start` (pushed at d323698c, also has 698b581c). Two
   fixes:
-  1. Under `auto`, the shell leaves NVIDIA's driver to the CPU path.
-     NVIDIA's open Vulkan device woke the shell 100 times a second (driver
-     threads named `gpu-start`). The g815 idle leg went from 6749 to 871
-     wakeups.
-  2. `dev/smoke.sh` no longer restores the saved environment into a
-     different user manager than the one it read from. On g815 that would
-     have unset WAYLAND_DISPLAY and PATH on the owner's session.
+  1. Under `render.backend: auto`, the shell stays on the CPU when the
+     compositor's GPU uses NVIDIA's driver. Any NVIDIA Vulkan device starts
+     a driver thread that wakes 100 times a second. That thread takes the
+     name of the shell thread that opened the device, `gpu-start`. Only
+     formalwm offers the dmabuf format that made `auto` pick the GPU, which
+     is why the wakeups showed only there. `render.backend: gpu` still
+     opens the device. g815 legs, as slot user fstest4, wakeups per idle
+     minute: `--idle` 6,884 to 841, `--idle --bluez-rssi` 7,132 to 1,089.
+     Both legs still exit 1 because they look for a Hyprland process.
+  2. `dev/smoke.sh` records which user manager it saved the environment
+     from, and skips the restore with a log line when another manager, or
+     none, answers. Its shell test passes 4/4; main's version fails 2 of
+     them.
   Report: `~/.t3/scratch/2026-11-11-can-we-create-the-hyprland-796785aa/idle-gpu-report.md`.
-  Its status line says whether the legs finished. Needs a review, then a
-  merge and a pin bump.
+  Evidence: `~/build/idle-gpu-runs` of user fstest4 on g815 (16M). A Codex
+  review was started at 01:18 WET; read
+  `~/build/formalshell-review-runs/review-idle-gpu-d323698c.md`, fix its
+  S1s, then merge and bump the pin. Also check it against the
+  `t3/configurable-gpu-rendering` worktree (below), which touches the same
+  choice.
 - `mac-electron`: atoll's work. Atoll merged it into main after this
   handoff (merge 1a625e77 on 425d41cf, no conflicts). It passed all 34
   wm/input leg runs plus `--mac-electron` on 526f77af. The next pin bump
@@ -148,7 +158,8 @@ None of these are needed; delete by literal path when done with them.
 - `~/Developer/ecosystem/FormalShell-wt/idle-gpu`: its agent removes it
   when the branch is pushed. If it is still there, check
   `git -C` it for unpushed work first.
-- g815: `~/build/fwm-proof-runs/`, `~/build/fwm-hw-runs/` (199M).
+- g815: `~/build/fwm-proof-runs/`, `~/build/fwm-hw-runs/` (199M), and
+  fstest4's `~/build/idle-gpu-runs` (16M).
 - fstestmac guest (slot 3): `~/fwm-ship`.
 
 ## First actions for Tuesday
