@@ -16,7 +16,7 @@ use std::{
     time::Duration,
 };
 
-use formalwm_core::{rules, settings::Settings};
+use formalwm_core::{model::Big, rules, settings::Settings};
 use fs_wm_proto as proto;
 use serde_json::{Value, json};
 use shojiwm_lib::{
@@ -1954,6 +1954,20 @@ fn classification(session: &mut Session) {
         })
         .unwrap()
     };
+    let big = |app: &str| {
+        let app = app.to_owned();
+        ask(move |engine| {
+            let id = engine
+                .windows
+                .iter()
+                .find(|(_, win)| {
+                    win.handle.app_id().get_untracked().as_deref() == Some(app.as_str())
+                })
+                .map(|(id, _)| id.clone());
+            Ok(id.and_then(|id| engine.model.big_of(&id)))
+        })
+        .unwrap()
+    };
     // Its size, and its centre against where it should be.
     let at = |app: &str| {
         let rect = row(app).rect.unwrap();
@@ -2049,6 +2063,45 @@ fn classification(session: &mut Session) {
         "at the size it picked, over its parent"
     );
     opened.push((child, top));
+
+    // Fixed in both axes by its first buffer, but that buffer is still the
+    // tile's: it is held until it draws the fixed size.
+    let (stale, top) = session.bare("cls-stale-fixed");
+    session.commit(&stale);
+    let tile = session.configured(&top);
+    top.set_min_size(tile.0, 200);
+    top.set_max_size(tile.0, 200);
+    session.draw(&stale, tile.0, tile.1);
+    assert!(
+        floats("cls-stale-fixed"),
+        "fixed by its first buffer: floats"
+    );
+    assert!(
+        held("cls-stale-fixed"),
+        "a buffer of the tile's size is not its fixed size"
+    );
+    session.draw(&stale, tile.0, 200);
+    assert!(!held("cls-stale-fixed"));
+    assert_eq!(at("cls-stale-fixed").0, (tile.0, 200), "at its fixed size");
+    opened.push((stale, top));
+
+    // A maximize asked before the first configure and taken back before
+    // the first buffer stays taken back when the window floats by it.
+    let (unmaximized, top) = session.bare("cls-unmaximized");
+    top.set_maximized();
+    session.commit(&unmaximized);
+    assert_eq!(big("cls-unmaximized"), Some(Big::Maximized));
+    top.unset_maximized();
+    session.roundtrip();
+    assert_eq!(big("cls-unmaximized"), None);
+    top.set_parent(Some(&main_top));
+    session.draw(&unmaximized, 240, 160);
+    assert!(
+        floats("cls-unmaximized"),
+        "a parent by the first buffer floats"
+    );
+    assert_eq!(big("cls-unmaximized"), None, "not maximized again");
+    opened.push((unmaximized, top));
 
     // xdg-dialog-v1's modal hint has no effect without a parent.
     let dialogs: XdgWmDialogV1 = session.bind("xdg_wm_dialog_v1");

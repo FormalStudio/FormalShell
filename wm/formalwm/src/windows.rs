@@ -245,7 +245,7 @@ impl Engine {
         let sized = effect.size.is_some();
         // Electron apps ask to be maximized before they map; Hyprland's
         // scrolling layout opens them as a column the width of the view.
-        let asked = self.windows.get(&id).and_then(|win| win.asked);
+        let asked = self.windows.get_mut(&id).and_then(|win| win.asked.take());
         window.state(&FORCE).set(!floating || sized);
         window.state(&BLUR).set(self.blurs(&effect));
         window
@@ -315,11 +315,17 @@ impl Engine {
         if self.windows.get(&id).is_none_or(|win| win.effect == effect) {
             return false;
         }
+        // The maximize or fullscreen it has now, not what it asked before
+        // its first placement, which a later request may have taken back.
+        let big = self.model.big_of(&id);
         self.model.close(&id);
         if let Some(win) = self.windows.get_mut(&id) {
             win.placed = false;
         }
         self.place(window);
+        if big.is_some() {
+            self.model.set_big(&id, big);
+        }
         self.scene.land(&id);
         !was && self.model.window(&id).is_some_and(|rec| rec.floating)
     }
@@ -340,12 +346,15 @@ impl Engine {
         let at_tile =
             told.is_some_and(|(w, h)| (drawn.0 - w).abs() < 1.0 || (drawn.1 - h).abs() < 1.0);
         // A tile is capped at its max size, so a window fixed in both axes
-        // draws its own size and the tile's alike.
+        // that drew its fixed size drew its own, whatever the tile's.
         let limits = window.size_constraints().get_untracked();
         let fixed = limits
             .min
-            .is_some_and(|min| min.width > 0 && min.height > 0)
-            && limits.min == limits.max;
+            .filter(|min| min.width > 0 && min.height > 0 && limits.max == Some(*min))
+            .is_some_and(|min| {
+                (drawn.0 - f64::from(min.width)).abs() < 1.0
+                    && (drawn.1 - f64::from(min.height)).abs() < 1.0
+            });
         if win.sized || !at_tile || fixed {
             return false;
         }
