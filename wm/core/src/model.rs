@@ -561,6 +561,13 @@ impl Model {
             .map(|ws| ws.output.clone())
             .unwrap_or_default();
         let floating = placement.floating || overlay.is_some();
+        // Hyprland's scrolling layout opens the column right of the focused
+        // window's when that is a tile of this tape, and at the end else.
+        let column = self
+            .focused_window()
+            .and_then(|f| self.window(f))
+            .is_none_or(|f| f.floating || f.home != Home::Workspace(workspace.clone()))
+            .then_some(usize::MAX);
         let float_rect = placement
             .float_rect
             .unwrap_or_else(|| self.default_float_rect(&output, new.size));
@@ -584,7 +591,7 @@ impl Model {
             self.overlay_mut(&name).windows.push(new.id);
             return;
         }
-        self.attach(&new.id, &workspace, None);
+        self.attach(&new.id, &workspace, column);
         if placement.fullscreen {
             self.set_big(&new.id, Some(Big::Fullscreen));
         }
@@ -609,7 +616,8 @@ impl Model {
     }
 
     /// Puts a window the model already knows on a workspace, as a new column
-    /// (at `column`, or right of the focus) or as its top float.
+    /// (at `column`, clamped to the end, or right of the focus) or as its
+    /// top float.
     fn attach(&mut self, id: &str, workspace: &str, column: Option<usize>) {
         let Some(floating) = self.window(id).map(|w| w.floating) else {
             return;
@@ -950,7 +958,8 @@ impl Model {
             }
             window.pinned &= from_output == to_output;
         }
-        self.attach(id, workspace, None);
+        // At the end of the tape it joins, as Hyprland's move to a workspace.
+        self.attach(id, workspace, Some(usize::MAX));
         if follow {
             self.show_workspace(workspace);
         }
