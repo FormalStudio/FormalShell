@@ -401,15 +401,18 @@ impl Engine {
         } else if event.edges.left || event.edges.right {
             let column = rect.w + 2.0 * self.model.options.tile_inset();
             self.model.resize_tile_edge(&id, event.edges.left, column);
-            if matches!(
-                event.phase,
-                WindowResizePhaseSnapshot::End | WindowResizePhaseSnapshot::Cancel
-            ) {
-                self.model.release_tile_edge(&id);
-            }
         }
+        // What follows the pointer lands at once; what letting go changes,
+        // the view recentred or clamped, eases into place.
         self.scene.sync(&self.model);
         self.scene.finish();
+        if matches!(
+            event.phase,
+            WindowResizePhaseSnapshot::End | WindowResizePhaseSnapshot::Cancel
+        ) {
+            self.model.release_tile_edge(&id);
+            self.scene.sync(&self.model);
+        }
         self.commit();
     }
 

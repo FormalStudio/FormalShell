@@ -674,6 +674,18 @@ fn a_border_drag_whose_grab_is_taken_away_lets_the_view_go() {
 }
 
 #[test]
+fn a_border_drag_let_go_eases_into_place() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = border_dragged("border-eased");
+    session.button(ButtonState::Released);
+    assert!(session.until(|| !held("1")));
+    let animating = ask(|engine| Ok(engine.scene.animating())).unwrap();
+    assert!(animating, "the recentring is animated, not jumped to");
+}
+
+#[test]
 fn two_outputs_and_the_touchpad() {
     let _turn = ONE_AT_A_TIME
         .lock()
