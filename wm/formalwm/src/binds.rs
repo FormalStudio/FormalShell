@@ -11,6 +11,13 @@ use shojiwm_rs::{prelude::*, runtime_key_binding::RuntimeKeyBindingEntry};
 
 use crate::engine::{Engine, enter};
 
+/// A bind's command line. The core's `Command::shell` runs `/bin/sh -lc`, and a
+/// login shell rereads /etc/profile, which resets PATH and drops what the
+/// session added (~/.cargo/bin, ~/.bun/bin). Hyprland runs `/bin/sh -c`.
+pub fn sh(line: impl Into<String>) -> Command {
+    Command::exec(["/bin/sh".to_owned(), "-c".to_owned(), line.into()])
+}
+
 fn options_of(group: &BindGroup) -> KeyBindOptions {
     let mut options = KeyBindOptions::new();
     if group.release {
@@ -196,13 +203,11 @@ impl Engine {
                 false
             }
             Action::Shell(line) => {
-                COMPOSITOR.process.spawn(Command::shell(line.clone()));
+                COMPOSITOR.process.spawn(sh(line.clone()));
                 false
             }
             Action::Terminal => {
-                COMPOSITOR
-                    .process
-                    .spawn(Command::shell(self.settings.terminal.clone()));
+                COMPOSITOR.process.spawn(sh(self.settings.terminal.clone()));
                 false
             }
             Action::Close => {
