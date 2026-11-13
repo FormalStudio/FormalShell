@@ -462,6 +462,7 @@ pw_loopback pw-loopback pipewire-tools
 strace strace strace
 file file file
 git git git-core
+gnome_keyring_daemon gnome-keyring-daemon gnome-keyring
 "
 
 need_bin() {
@@ -1139,6 +1140,14 @@ burst() {
 park() {
   "$wlrctl_bin" pointer move -8000 -8000 > /dev/null 2>&1
   [ $# -lt 2 ] || "$wlrctl_bin" pointer move "$1" "$2" > /dev/null 2>&1
+}
+# electron_keyring: an unlocked keyring on the run's session bus, its
+# sockets in the run's own dir. A Chromium app that finds none starts
+# gnome-keyring over the bus, whose "Authentication required" prompt takes
+# the keyboard from the app. The apps also run with --password-store=basic.
+electron_keyring() {
+  mkdir -p -m 700 "$shot_dir/electron-keyring"
+  printf '' | "$gnome_keyring_daemon_bin" --replace --unlock --components=secrets -d -C "$shot_dir/electron-keyring" > /dev/null 2>&1 || true
 }
 # click [button]: a real click where the pointer is, left by default.
 click() { "$wlrctl_bin" pointer click "${1:-left}" > /dev/null 2>&1; }
