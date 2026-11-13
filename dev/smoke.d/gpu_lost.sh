@@ -7,6 +7,9 @@
 # pictures after that (`--launcher-modes`), whose own frames are then the
 # CPU's. Its own claim: the shell never panics, answers after the loss, and
 # `debug dump`'s render block draws on the CPU with the loss as its reason.
+# The shell takes `debug gpuLose` only with FORMALSHELL_SMOKE_GPU_LOSE=1 on
+# its launch line, which this fixture sets; `--backend` checks a shell
+# without it refuses.
 leg_gpu_lost_flag="--gpu-lost"
 leg_gpu_lost_order=8
 leg_gpu_lost_compositors="hyprland shoji"
@@ -22,6 +25,7 @@ gpu_lost_dump_path="$shot_dir/gpu-lost-dump.json"
 
 leg_gpu_lost_fixture() {
   settings_pin '.render.backend = "gpu"'
+  shell_env="${shell_env:+$shell_env }FORMALSHELL_SMOKE_GPU_LOSE=1"
 }
 
 leg_gpu_lost_drive() {

@@ -43,7 +43,8 @@ on a lost device. wgpu learns of a loss in whichever call meets it first
 the moment it is known, the atlas writer maps no buffer, a panic inside
 vello_hybrid gives the GPU path up instead of the shell, and a present
 that learns of it hands nothing to the compositor. `debug gpuLose` loses
-the device at the next picture upload; `dev/smoke.sh --gpu-lost
+the device at the next picture upload, in a shell launched with
+`FORMALSHELL_SMOKE_GPU_LOSE=1` and refused in any other; `dev/smoke.sh --gpu-lost
 --launcher-modes` on g815 runs the launcher through it.
 
 The device opens on a thread of its own (`gpu-start`): every surface draws

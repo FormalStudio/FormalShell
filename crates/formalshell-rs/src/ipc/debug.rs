@@ -129,11 +129,10 @@ fn motion_scale(app: &mut App, args: &[Value]) -> Reply {
 
 /// The GPU device lost at the shell's next picture upload, in the
 /// eviction's submit ahead of it: where NVIDIA's loss under the launcher
-/// was learnt. The shell draws on the CPU from then on.
+/// was learnt. The shell draws on the CPU from then on. Refused unless the
+/// rig opted the shell in at launch (`FORMALSHELL_SMOKE_GPU_LOSE=1`).
 fn gpu_lose(_: &mut App, _: &[Value]) -> Reply {
-    if !crate::gpu::lose_at_next_upload() {
-        return Err("the shell is not drawing on the GPU".into());
-    }
+    crate::gpu::lose_at_next_upload()?;
     ok()
 }
 

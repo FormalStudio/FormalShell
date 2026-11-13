@@ -67,11 +67,20 @@ static FAILED: Mutex<Option<String>> = Mutex::new(None);
 /// Armed by `debug gpuLose`: the device is lost at the next picture upload.
 static LOSE: AtomicBool = AtomicBool::new(false);
 
-/// False when the shell is not drawing on the GPU.
-pub fn lose_at_next_upload() -> bool {
-    let up = active();
-    LOSE.store(up, Ordering::Relaxed);
-    up
+/// The rig's opt-in to `debug gpuLose`, set on the shell's launch line by
+/// `dev/smoke.sh --gpu-lost`: without it any process of the user could
+/// keep the shell off the GPU until it restarts.
+const LOSE_OPT_IN: &str = "FORMALSHELL_SMOKE_GPU_LOSE";
+
+pub fn lose_at_next_upload() -> Result<(), String> {
+    if std::env::var_os(LOSE_OPT_IN).is_none_or(|v| v != "1") {
+        return Err(format!("debug gpuLose needs {LOSE_OPT_IN}=1 in the shell's environment"));
+    }
+    if !active() {
+        return Err("the shell is not drawing on the GPU".into());
+    }
+    LOSE.store(true, Ordering::Relaxed);
+    Ok(())
 }
 
 fn fail(reason: String) {
@@ -348,8 +357,12 @@ pub struct Gpu {
     fade: Option<Fade>,
     blend: Option<Fade>,
     /// Where the fade and blend passes draw before their pixels are copied
-    /// into a dmabuf, grown to the widest and tallest buffer asked for.
+    /// into a dmabuf, as wide and as tall as the live buffers need.
     scratch: Option<wgpu::Texture>,
+    /// The size of every live [`Buffer`], which the scratch target follows
+    /// down when an output goes or its buffers are made again at another
+    /// size or scale.
+    live: Vec<(u32, u32)>,
     wl_queue: EventQueue<Wl>,
     wl: Wl,
 }
@@ -605,6 +618,7 @@ impl Gpu {
             fade: None,
             blend: None,
             scratch: None,
+            live: Vec::new(),
             wl_queue,
             wl,
         };
@@ -1308,7 +1322,14 @@ pub struct Buffer {
 impl Buffer {
     /// None, and the GPU path given up, when the driver cannot make one.
     pub fn new(w: u32, h: u32) -> Option<Self> {
-        with(|g| g.export(w, h)).and_then(|r| r.map_err(|e| fail(format!("exporting a {w}x{h} dmabuf: {e}"))).ok())
+        let made = with(|g| {
+            let made = g.export(w, h);
+            if made.is_ok() {
+                g.live.push((w, h));
+            }
+            made
+        });
+        made.and_then(|r| r.map_err(|e| fail(format!("exporting a {w}x{h} dmabuf: {e}"))).ok())
     }
 
     pub fn wl_buffer(&self) -> &WlBuffer {
@@ -1336,7 +1357,7 @@ impl Buffer {
                 let fade = g.fade.get_or_insert_with(|| Fade::new(&g.device));
                 g.queue.write_buffer(&fade.uniform, 0, &(f32::from(opacity) / 256.0).to_le_bytes());
                 let group = canvas.fade.get_or_insert_with(|| fade.group(&g.device, &[&canvas.texture]));
-                let scratch = scratch(&mut g.scratch, &g.device, self.texture.size());
+                let scratch = scratch(&mut g.scratch, &g.device, &g.live, self.texture.size());
                 let view = scratch.create_view(&wgpu::TextureViewDescriptor::default());
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("formalshell fade"),
@@ -1392,7 +1413,7 @@ impl Buffer {
             g.queue.write_buffer(&blend.uniform, 0, &a.clamp(0.0, 1.0).to_le_bytes());
             let group = blend.group(&g.device, &[&from.texture, &to.texture]);
             let size = self.texture.size();
-            let scratch = scratch(&mut g.scratch, &g.device, size);
+            let scratch = scratch(&mut g.scratch, &g.device, &g.live, size);
             let view = scratch.create_view(&wgpu::TextureViewDescriptor::default());
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("formalshell blend"),
@@ -1463,17 +1484,23 @@ impl Buffer {
     }
 }
 
+/// The widest and the tallest of `live`, the buffers' sizes.
+fn needed(live: &[(u32, u32)]) -> (u32, u32) {
+    live.iter().fold((0, 0), |(w, h), &(bw, bh)| (w.max(bw), h.max(bh)))
+}
+
 /// The render target the fade and blend passes draw into, at least `size`
-/// and as wide and as tall as any buffer before it, so outputs of other
-/// shapes share it rather than each making it again.
+/// and as wide and as tall as the `live` buffers need, so outputs of other
+/// shapes share one rather than each making it again; a buffer's drop
+/// gives back what no live one needs.
 /// The dmabufs are pitch-linear, which NVIDIA's 3D engine faults on as a
 /// colour target (Xid 69 on the draw, the device lost), so they are only
 /// ever copied into.
-fn scratch<'a>(slot: &'a mut Option<wgpu::Texture>, device: &wgpu::Device, size: wgpu::Extent3d) -> &'a wgpu::Texture {
-    let (w, h) = slot.as_ref().map_or((0, 0), |t| (t.width(), t.height()));
-    if w < size.width || h < size.height {
+fn scratch<'a>(slot: &'a mut Option<wgpu::Texture>, device: &wgpu::Device, live: &[(u32, u32)], size: wgpu::Extent3d) -> &'a wgpu::Texture {
+    if slot.as_ref().is_some_and(|t| t.width() < size.width || t.height() < size.height) {
         *slot = None;
     }
+    let (w, h) = needed(live);
     slot.get_or_insert_with(|| {
         device.create_texture(&wgpu::TextureDescriptor {
             label: Some("formalshell scratch"),
@@ -1563,7 +1590,17 @@ impl Picture {
 impl Drop for Buffer {
     fn drop(&mut self) {
         let id = self.wl_buffer.id();
-        with(|g| g.wl.released.remove(&id));
+        let size = (self.texture.width(), self.texture.height());
+        with(|g| {
+            g.wl.released.remove(&id);
+            if let Some(i) = g.live.iter().position(|&s| s == size) {
+                g.live.swap_remove(i);
+            }
+            let (w, h) = needed(&g.live);
+            if g.scratch.as_ref().is_some_and(|t| t.width() > w || t.height() > h) {
+                g.scratch = None;
+            }
+        });
         self.wl_buffer.destroy();
     }
 }
@@ -1792,6 +1829,14 @@ mod tests {
         assert!(unguarded.is_err(), "vello_hybrid rendered on a lost device without panicking");
     }
 
+    #[test]
+    fn gpu_lose_needs_the_rigs_opt_in() {
+        assert!(std::env::var_os(super::LOSE_OPT_IN).is_none(), "run without {}", super::LOSE_OPT_IN);
+        let refused = super::lose_at_next_upload().unwrap_err();
+        assert!(refused.contains("FORMALSHELL_SMOKE_GPU_LOSE=1"), "{refused}");
+        assert!(!super::LOSE.load(Ordering::Relaxed));
+    }
+
     struct Globals;
 
     impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Globals {
@@ -1835,6 +1880,18 @@ mod tests {
         }
         assert!(buffer.fill(&mut canvas, &[whole], 256), "{:?}", super::status().reason);
         assert!(buffer.fill(&mut canvas, &[whole], 128), "{:?}", super::status().reason);
+
+        // The scratch target follows the live buffers: as wide as one and
+        // as tall as another, and back down when the tall one goes.
+        let scratch = || super::GPU.with(|g| g.borrow().as_ref().and_then(|g| g.scratch.as_ref().map(|t| (t.width(), t.height()))));
+        assert_eq!(scratch(), Some((side, side)));
+        let tall = super::Buffer::new(side / 2, 2 * side).expect("a tall dmabuf");
+        assert!(tall.fill(&mut canvas, &[IRect::new(0, 0, side as i32 / 2, side as i32)], 128));
+        assert_eq!(scratch(), Some((side, 2 * side)));
+        drop(tall);
+        assert_eq!(scratch(), None);
+        assert!(buffer.fill(&mut canvas, &[whole], 128));
+        assert_eq!(scratch(), Some((side, side)));
 
         let (small, big) = (picture(64, 0x40), picture(super::BIG + 1, 0x20));
         for tile in super::tiles(whole) {
