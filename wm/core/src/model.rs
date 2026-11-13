@@ -260,6 +260,17 @@ pub struct Placed {
     pub shown: bool,
 }
 
+impl Placed {
+    /// One of its workspace's tiles: in the tape's columns, its zen window
+    /// among them though that is drawn centred and does not scroll. A new
+    /// tile its client has not drawn yet holds its workspace still, zen
+    /// window or not: the window zen leaves stays in front until the one
+    /// taking zen has something to show. Holds go by this, not `scrolls`.
+    pub fn tiled(&self) -> bool {
+        self.column >= 0
+    }
+}
+
 /// A tiled window lifted out of the tape by a drag.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lifted {

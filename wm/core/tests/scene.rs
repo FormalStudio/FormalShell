@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use common::*;
 use formalwm_core::{
     geom::Rect,
-    model::Placement,
+    model::{Layer, Placement},
     motion::{Clocks, Spring, SpringParams},
     scene::Scene,
 };
@@ -296,6 +296,38 @@ fn zen_hands_over_by_sliding_each_window_from_where_it_is_drawn() {
     assert_eq!(drawn(&scene, "c"), zen);
     assert!(!scene.visual("b").unwrap().visible);
     assert!(scene.visual("c").unwrap().visible);
+}
+
+/// A tile its client has not drawn yet holds its workspace by
+/// `Placed::tiled`, laid out as if it were not there. One taking zen as it
+/// opens is drawn centred and does not scroll, yet it is a tile like any
+/// other: without it, the zen window before it stays in front.
+#[test]
+fn a_new_tile_taking_zen_holds_its_workspace_with_the_zen_window_before_in_front() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b"] {
+        open(&mut model, id);
+    }
+    model.set_zen(None, None);
+    scene.sync(&model);
+    settle(&mut scene);
+    let zen = model.zen_rect("A");
+    assert_eq!(drawn(&scene, "b"), zen);
+
+    open(&mut model, "c");
+    let layout = model.layout();
+    let c = layout.iter().find(|p| p.id == "c").unwrap();
+    assert_eq!(c.layer, Layer::Zen, "c takes zen as it opens");
+    assert!(c.tiled() && !c.scrolls, "and counts as a tile though it does not scroll");
+
+    let mut without = model.clone();
+    without.close("c");
+    let b = without.layout().into_iter().find(|p| p.id == "b").unwrap();
+    assert_eq!((b.layer, b.rect), (Layer::Zen, zen), "without c, b keeps zen");
+    scene.sync(&without);
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "b"), zen, "b stays in front while c waits");
 }
 
 #[test]
