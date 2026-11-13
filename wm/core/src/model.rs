@@ -1094,15 +1094,18 @@ impl Model {
                 swapped
             });
         }
+        let (strip_a, strip_b) = (self.strip_w(&ws_a), self.strip_w(&ws_b));
         if let Some(ws) = self.workspace_mut(&ws_a) {
             ws.tape.set_big(a, None, 1.0);
             ws.tape.replace(a, b.to_owned());
             ws.unmark(a);
+            ws.tape.clamp_scroll(strip_a);
         }
         if let Some(ws) = self.workspace_mut(&ws_b) {
             ws.tape.set_big(b, None, 1.0);
             ws.tape.replace(b, a.to_owned());
             ws.unmark(b);
+            ws.tape.clamp_scroll(strip_b);
         }
         for (id, ws) in [(a, ws_b), (b, ws_a)] {
             if let Some(window) = self.window_mut(id) {
@@ -1140,14 +1143,10 @@ impl Model {
         let Some((index, _)) = source.tape.find(id) else {
             return false;
         };
-        let mut column = source.tape.columns.remove(index);
+        let mut column = source.tape.take_column(index);
         if column.big.take().is_some() {
             column.width = column.restore;
         }
-        source.tape.focus = source
-            .tape
-            .focus
-            .min(source.tape.columns.len().saturating_sub(1));
         for window in &column.windows {
             source.unmark(window);
         }

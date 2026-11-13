@@ -147,9 +147,7 @@ impl Tape {
     /// into its place and takes the focus it had.
     pub fn remove(&mut self, id: &str) -> Option<f64> {
         let (c, r) = self.find(id)?;
-        if self.held.as_deref() == Some(id) {
-            self.held = None;
-        }
+        self.let_go_of(id);
         let column = &mut self.columns[c];
         let width = column.width;
         column.windows.remove(r);
@@ -320,8 +318,30 @@ impl Tape {
         let Some((c, r)) = self.find(old) else {
             return false;
         };
+        self.let_go_of(old);
         self.columns[c].windows[r] = new;
         true
+    }
+
+    /// Takes a whole column out, its tiles' hold with it. The focus stays
+    /// on a column that is still there.
+    pub fn take_column(&mut self, index: usize) -> Column {
+        let column = self.columns.remove(index);
+        if let Some(held) = self.held.clone()
+            && column.windows.contains(&held)
+        {
+            self.let_go_of(&held);
+        }
+        self.focus = self.focus.min(self.columns.len().saturating_sub(1));
+        column
+    }
+
+    /// A border drag's hold ends when its tile leaves the tape, however it
+    /// goes; the caller fits or clamps the view after.
+    fn let_go_of(&mut self, id: &str) {
+        if self.held.as_deref() == Some(id) {
+            self.held = None;
+        }
     }
 
     pub fn set_width(&mut self, width: f64) -> bool {

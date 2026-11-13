@@ -490,6 +490,41 @@ fn a_tile_moved_away_mid_drag_leaves_no_hold_behind() {
 }
 
 #[test]
+fn a_column_moved_or_swapped_away_mid_drag_leaves_no_hold_behind() {
+    let inset = 2.0 * Options::default().tile_inset();
+    let held = |model: &formalwm_core::model::Model| {
+        let tape = &model.workspace("1").unwrap().tape;
+        (tape.held.clone(), tape.scroll)
+    };
+    // a and c on 1, b on 2; a's left border shrunk at the start of the tape.
+    let desk_with_a_held = || {
+        let mut model = desk();
+        open(&mut model, "b");
+        assert!(model.move_window("b", "2", None));
+        open(&mut model, "a");
+        open(&mut model, "c");
+        model.focus_window("a");
+        let a = on_screen(&model, "a");
+        assert!(model.resize_tile_edge("a", true, a.w + inset - 100.0));
+        assert_eq!(held(&model), (Some("a".to_owned()), -100.0));
+        model
+    };
+
+    let mut model = desk_with_a_held();
+    assert!(model.move_column("a", Some("b")));
+    model.release_tile_edge("a");
+    assert!(model.move_column("a", Some("c")));
+    assert_eq!(held(&model), (None, 0.0), "a column moved away and back");
+
+    let mut model = desk_with_a_held();
+    assert!(model.swap("a", "b"));
+    assert_eq!(held(&model), (None, 0.0), "a tile swapped away");
+    model.release_tile_edge("a");
+    assert!(model.swap("a", "b"));
+    assert_eq!(held(&model), (None, 0.0), "and back");
+}
+
+#[test]
 fn a_window_sent_away_leaves_the_focus_here_unless_followed() {
     let mut model = desk();
     open(&mut model, "a");
