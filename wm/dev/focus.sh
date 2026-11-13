@@ -62,6 +62,14 @@ step "the window closing gives both back to one window"
 ipc window.close "{\"id\": \"$(id_of third)\"}" >/dev/null; sleep 1.2
 press a
 
+step "a window that draws 400 ms after its first configure, as GTK 4 apps do, opened right as another is picked: the state keeps it while it waits, and the keyboard goes to it once it draws"
+ipc window.focus "{\"id\": \"$(id_of older)\"}" >/dev/null
+win slow --late 400 > "$run/slow.out"; apps+=(slow); sleep 0.2
+waiting=$(focus_app); echo "while it waits the state says: $waiting"
+sleep 1.2
+press a
+ipc window.close "{\"id\": \"$(id_of slow)\"}" >/dev/null; sleep 1.2
+
 step "to an empty workspace and back"
 key Super+code:11; press a
 key Super+code:10; press a
@@ -77,3 +85,4 @@ press Escape
 step "the log"
 grep -E " (WARN|ERROR) |panicked" "$SHOJI_RUN_LOG" | grep -v "cliphist\|fcitx\|cursor image\|cursor theme" | cut -c1-300 | tail -12
 [ "$disagreed" = 0 ] || { echo "the keyboard and the state disagreed"; exit 1; }
+[ "$waiting" = slow ] || { echo "the state left the window that had yet to draw"; exit 1; }

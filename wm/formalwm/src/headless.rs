@@ -243,6 +243,17 @@ impl Session {
         (surface, toplevel)
     }
 
+    /// `f` run on the engine as one of the compositor's turns: what it asks
+    /// of the compositor is done before anything else happens. A bare `ask`
+    /// leaves that to whatever turn comes next, which a window opening
+    /// right after would then come before.
+    fn turn<R>(&mut self, f: impl FnOnce(&mut crate::engine::Engine) -> Result<R, String>) -> R {
+        let result = ask(f).unwrap();
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+        result
+    }
+
     /// The commit that brings the configure, with nothing drawn.
     fn commit(&mut self, surface: &wl_surface::WlSurface) {
         surface.commit();
@@ -626,12 +637,15 @@ impl Session {
             device: None,
             timestamp: self.now_ms,
         };
-        assert!(
-            self.state
-                .config_runtime
-                .gesture_swipe(&event, self.now_ms)
-                .is_ok()
-        );
+        // Done as the compositor's input does: what the turn asked of it
+        // happens before anything else.
+        let invocation = self
+            .state
+            .config_runtime
+            .gesture_swipe(&event, self.now_ms)
+            .unwrap();
+        self.state
+            .handle_runtime_pointer_move_invocation(invocation);
     }
 
     /// A whole swipe: down, across `total` in two moves, up at `velocity`.
@@ -3316,7 +3330,7 @@ fn a_swipe_while_a_tile_waits_follows_the_fingers_and_lands_with_the_focus() {
         let surface = session.open(app);
         session.draw(&surface, 400, 300);
     }
-    ask(|engine| {
+    session.turn(|engine| {
         let id = engine
             .windows
             .iter()
@@ -3326,27 +3340,27 @@ fn a_swipe_while_a_tile_waits_follows_the_fingers_and_lands_with_the_focus() {
         engine.model.focus_window(&id);
         engine.commit();
         Ok(())
-    })
-    .unwrap();
+    });
     let (late, _late_top) = session.bare("late");
     session.commit(&late);
     keyboard_settled(&mut session);
     settle();
     let (_, start) = scroll("1");
-    assert!(start > 200.0, "room to swipe back: {start}");
+    // Far enough back that late, right of b, leaves the view.
+    assert!(start > 360.0, "room to swipe back: {start}");
 
     session.swipe(Phase::Begin, 3, (0.0, 0.0), (0.0, 0.0));
     let mut last = start;
     for step in 1..=3 {
-        session.swipe(Phase::Update, 3, (f64::from(step) * 60.0, 0.0), (0.0, 0.0));
+        session.swipe(Phase::Update, 3, (f64::from(step) * 120.0, 0.0), (0.0, 0.0));
         let (_, now) = scroll("1");
         assert!(
-            (last - now - 60.0).abs() < 1e-6,
+            (last - now - 120.0).abs() < 1e-6,
             "the view moves with the fingers: {last} to {now}"
         );
         last = now;
     }
-    session.swipe(Phase::End, 3, (180.0, 0.0), (0.0, 0.0));
+    session.swipe(Phase::End, 3, (360.0, 0.0), (0.0, 0.0));
     keyboard_settled(&mut session);
     settle();
     let (focus, model_at, drawn_at) = ask(|engine| {
@@ -3406,12 +3420,11 @@ fn an_activation_or_a_close_before_a_new_tile_draws_leaves_the_view_where_it_was
     // Files on the right half, c past it out of view.
     for app in ["a", "files"] {
         let window = handle(app);
-        ask(move |engine| {
+        session.turn(move |engine| {
             engine.model.focus_window(&window.id());
             engine.commit();
             Ok(())
-        })
-        .unwrap();
+        });
     }
     settle();
     let view = (shown("a"), shown("files"), scroll("1"));
@@ -3459,6 +3472,66 @@ fn an_activation_or_a_close_before_a_new_tile_draws_leaves_the_view_where_it_was
         at.x >= 0.0 && at.x + at.w <= WIDTH,
         "late in view at {at:?}"
     );
+}
+
+/// The app of the window the compositor gives the keyboard to.
+fn keyboard() -> Option<String> {
+    ask(|engine| {
+        let id = engine.meant_for().ok_or("no keyboard")?;
+        let win = engine.windows.get(&id).ok_or("not a window")?;
+        Ok(win.handle.app_id().get_untracked())
+    })
+    .ok()
+    .flatten()
+}
+
+/// The app of the window the state says is focused.
+fn focused_app() -> Option<String> {
+    state()
+        .windows
+        .into_iter()
+        .find(|window| window.focused)
+        .map(|window| window.app_id)
+}
+
+/// As dev/focus.sh has it on the rig: a window picked, and right after it
+/// one that draws late. The state stays on the new one while it waits and
+/// the keyboard goes to it once it draws.
+#[test]
+fn a_new_tile_opened_right_after_a_pick_takes_the_keyboard_when_it_draws() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("wait-keyboard", HOST, &[test_display("TEST-1")]);
+    for app in ["older", "newer"] {
+        let surface = session.open(app);
+        session.draw(&surface, 400, 300);
+    }
+    assert!(session.until(|| keyboard().as_deref() == Some("newer")));
+
+    let older = handle("older");
+    session.turn(move |engine| {
+        engine.model.focus_window(&older.id());
+        engine.commit();
+        Ok(())
+    });
+    let (late, late_top) = session.bare("late");
+    session.commit(&late);
+    keyboard_settled(&mut session);
+    assert_eq!(
+        focused_app().as_deref(),
+        Some("late"),
+        "the state keeps late while it waits"
+    );
+
+    let told = session.configured(&late_top);
+    session.draw(&late, told.0, told.1);
+    assert!(
+        session.until(|| keyboard().as_deref() == Some("late")),
+        "the keyboard goes to late once it draws: {:?}",
+        keyboard()
+    );
+    assert_eq!(focused_app().as_deref(), Some("late"));
 }
 
 #[test]

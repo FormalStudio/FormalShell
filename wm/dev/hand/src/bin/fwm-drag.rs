@@ -12,7 +12,9 @@
 //! the nearest it allows to the size it is asked for, as a toolkit does.
 //! `--child` maps a second, resizable toplevel whose parent is the first, a
 //! transient dialog, and prints `child configure WxH` for it; `--maximized`
-//! asks to be maximized before it maps, as Electron apps do; `--tag` gives it an xdg-toplevel-tag and `--content` a
+//! asks to be maximized before it maps, as Electron apps do; `--late MS`
+//! draws its first frame MS after the first configure, as GTK 4 apps do;
+//! `--tag` gives it an xdg-toplevel-tag and `--content` a
 //! wp-content-type: enough to stand in for the windows the rules name.
 
 use std::{error::Error, fs::File, io::Write};
@@ -58,6 +60,8 @@ struct Source {
     child_size: (u32, u32),
     closed: bool,
     failed: Option<String>,
+    /// Milliseconds the first frame waits after the first configure.
+    late: u64,
 }
 
 /// The side of the drag's icon, in pixels.
@@ -174,6 +178,11 @@ impl Dispatch<xdg_surface::XdgSurface, bool> for Source {
         let (Some(shm), Some(surface)) = (&source.shm, surface) else {
             return;
         };
+        if !*child && source.late > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(std::mem::take(
+                &mut source.late,
+            )));
+        }
         let mark =
             (!*child && (source.min != (0, 0) || source.max != (0, 0))).then_some(0xffc0_6040);
         match fwm_hand::marked(shm, queue, size, color, mark) {
@@ -333,11 +342,11 @@ delegate_noop!(Source: ignore WpContentTypeV1);
 delegate_noop!(Source: ignore wl_data_offer::WlDataOffer);
 
 fn main() -> Result<(), Box<dyn Error>> {
-    const USAGE: &str = "fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed] [--min WxH] [--max WxH] [--child] [--maximized] [--tag TAG] [--content photo|video|game]";
+    const USAGE: &str = "fwm-drag APP_ID [--title TITLE] [--size WxH] [--fixed] [--min WxH] [--max WxH] [--child] [--maximized] [--late MS] [--tag TAG] [--content photo|video|game]";
     let mut args = std::env::args().skip(1);
     let app_id = args.next().ok_or(USAGE)?;
     let (mut title, mut size, mut fixed) = (app_id.clone(), (400, 300), false);
-    let (mut tag, mut content) = (None, None);
+    let (mut tag, mut content, mut late) = (None, None, 0);
     let (mut min, mut max, mut child, mut maximized) = ((0, 0), (0, 0), false, false);
     let dims = |text: Option<String>| -> Result<(u32, u32), Box<dyn Error>> {
         let text = text.ok_or(USAGE)?;
@@ -353,6 +362,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "--child" => child = true,
             "--maximized" => maximized = true,
             "--fixed" => fixed = true,
+            "--late" => late = args.next().ok_or(USAGE)?.parse()?,
             "--tag" => tag = Some(args.next().ok_or(USAGE)?),
             "--content" => {
                 content = Some(match args.next().ok_or(USAGE)?.as_str() {
@@ -377,6 +387,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         min,
         max,
         child_size: (300, 200),
+        late,
         ..Source::default()
     };
     events.roundtrip(&mut source)?;
