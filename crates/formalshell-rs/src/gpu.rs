@@ -162,8 +162,48 @@ fn settle(asked: Backend, tried: Result<Gpu, String>) {
     *STATUS.lock().unwrap() = Some(status);
 }
 
+/// The device, while it is not lost. A lost one is dropped here, unused:
+/// vello_hybrid panics on any render on it (`write_buffer_with` on a lost
+/// device gives None, which it `expect`s).
 fn with<T>(f: impl FnOnce(&mut Gpu) -> T) -> Option<T> {
-    GPU.with(|g| g.borrow_mut().as_mut().map(f))
+    GPU.with(|g| {
+        if LOST.load(Ordering::Relaxed) {
+            // Out of the cell first: what it owns may call back in here as it goes.
+            let gone = g.borrow_mut().take();
+            drop(gone);
+            return None;
+        }
+        g.borrow_mut().as_mut().map(f)
+    })
+}
+
+/// What a lost device or a wgpu error is reported through.
+fn report_failures(device: &wgpu::Device) {
+    device.on_uncaptured_error(Arc::new(|e| eprintln!("formalshell: render: wgpu: {e}")));
+    device.set_device_lost_callback(|reason, message| fail(format!("the GPU device was lost ({reason:?}): {message}")));
+}
+
+/// vello_hybrid's render of `scene` into `view`, unless the device is lost
+/// (by now: `paint` may have submitted, which is where a loss is learnt).
+#[allow(clippy::too_many_arguments)]
+fn render(
+    renderer: &mut vello_hybrid::Renderer,
+    scene: &vello_hybrid::Scene,
+    resources: &mut vello_hybrid::Resources,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+    bindings: &vello_hybrid::TextureBindings,
+) -> bool {
+    if LOST.load(Ordering::Relaxed) {
+        return false;
+    }
+    let size = vello_hybrid::RenderSize { width: TILE as u32, height: TILE as u32 };
+    if let Err(e) = renderer.render(scene, resources, device, queue, encoder, &size, view, bindings) {
+        eprintln!("formalshell: render: vello_hybrid: {e}");
+    }
+    true
 }
 
 /// Picks the backend for this run, once, before any surface is made. The
@@ -474,8 +514,7 @@ impl Device {
             )
         }
         .map_err(|e| format!("wgpu device: {e}"))?;
-        device.on_uncaptured_error(Arc::new(|e| eprintln!("formalshell: render: wgpu: {e}")));
-        device.set_device_lost_callback(|reason, message| fail(format!("the GPU device was lost ({reason:?}): {message}")));
+        report_failures(&device);
 
         let settings = vello_hybrid::RenderSettings {
             memory_settings: vello_hybrid::MemorySettings {
@@ -714,9 +753,8 @@ impl Gpu {
         let mut frame = Frame { gpu: self, paint: Brush::Plain, paint_at: Affine::IDENTITY };
         paint(&mut frame);
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell tile") });
-        let size = vello_hybrid::RenderSize { width: TILE as u32, height: TILE as u32 };
-        if let Err(e) = self.renderer.render(&self.scene, &mut self.resources, &self.device, &self.queue, &mut encoder, &size, &self.tile_view, &self.bindings) {
-            eprintln!("formalshell: render: vello_hybrid: {e}");
+        if !render(&mut self.renderer, &self.scene, &mut self.resources, &self.device, &self.queue, &mut encoder, &self.tile_view, &self.bindings) {
+            return;
         }
         encoder.copy_texture_to_texture(
             self.tile.as_image_copy(),
@@ -1564,5 +1602,59 @@ mod tests {
         assert_eq!(format!("{:?}", adapters[0].get_info()), format!("{:?}", full.get_info()));
         // SAFETY: a name no library carries.
         assert!(unsafe { super::one_driver("libvulkan_nothing.so") }.is_err());
+    }
+
+    /// A device lost under a running shell (NVIDIA's, opening the launcher
+    /// on g815): vello_hybrid panics on a render on it, the shell's render
+    /// skips it and `with` hands out no device after it.
+    #[test]
+    #[ignore = "needs the Vulkan loader and lavapipe"]
+    fn a_lost_device_is_never_rendered_on() {
+        use futures_lite::future::block_on;
+        use std::sync::atomic::Ordering;
+        use vello_cpu::kurbo::Rect;
+        // SAFETY: lavapipe's own library.
+        let instance = unsafe { super::one_driver("libvulkan_lvp.so") }.unwrap();
+        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).unwrap();
+        let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+        super::report_failures(&device);
+        let side = super::TILE as u32;
+        let target = vello_hybrid::RenderTargetConfig { format: wgpu::TextureFormat::Rgba8Unorm, width: side, height: side };
+        let (mut renderer, mut resources) = vello_hybrid::Renderer::new_with(&device, &target, vello_hybrid::RenderSettings::default());
+        let tile = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d { width: side, height: side, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = tile.create_view(&wgpu::TextureViewDescriptor::default());
+        let bindings = vello_hybrid::TextureBindings::new();
+        let mut scene = vello_hybrid::Scene::new(side as u16, side as u16);
+        scene.fill_rect(&Rect::new(0.0, 0.0, 64.0, 64.0));
+        let draw = |renderer: &mut vello_hybrid::Renderer, resources: &mut vello_hybrid::Resources| {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+            let drew = super::render(renderer, &scene, resources, &device, &queue, &mut encoder, &view, &bindings);
+            queue.submit([encoder.finish()]);
+            drew
+        };
+        assert!(draw(&mut renderer, &mut resources));
+        assert!(!super::LOST.load(Ordering::Relaxed));
+
+        device.destroy();
+        let _ = device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(5)) });
+        assert!(super::LOST.load(Ordering::Relaxed), "the lost callback never ran");
+        assert!(super::FAILED.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("the GPU device was lost")));
+        assert!(!draw(&mut renderer, &mut resources));
+        assert!(super::with(|_| ()).is_none());
+
+        // What the check keeps the shell from.
+        let size = vello_hybrid::RenderSize { width: side, height: side };
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let unguarded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| renderer.render(&scene, &mut resources, &device, &queue, &mut encoder, &size, &view, &bindings)));
+        assert!(unguarded.is_err(), "vello_hybrid rendered on a lost device without panicking");
     }
 }

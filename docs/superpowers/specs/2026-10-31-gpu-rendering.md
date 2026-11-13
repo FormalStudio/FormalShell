@@ -28,6 +28,10 @@ draw outside that path:
 - the compositor-drawn pixel surfaces (scrim, catcher, frame zones, veil)
   are single-pixel buffers and draw nothing.
 
+A lost device sends every surface back to the CPU on its next present,
+and nothing touches the device again: vello_hybrid panics on a render
+on a lost device.
+
 The device opens on a thread of its own (`gpu-start`): every surface draws
 on the CPU until it is up and moves across on its next present. The
 driver is opened alone through `VK_LUNARG_direct_driver_loading`, by the
