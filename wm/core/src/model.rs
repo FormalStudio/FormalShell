@@ -799,7 +799,8 @@ impl Model {
     }
 
     /// `floating` absent toggles. A window back in the tape opens a column
-    /// right of the focus; one leaving it takes the float rect it last had.
+    /// right of the focus; one leaving it floats at the size it last had,
+    /// around the middle of where it tiled, as Hyprland floats a tile.
     pub fn set_floating(&mut self, id: &str, floating: Option<bool>) -> bool {
         let Some(window) = self.window(id) else {
             return false;
@@ -811,12 +812,36 @@ impl Model {
         if floating == window.floating {
             return false;
         }
+        let tiled = self.layout().into_iter().find(|place| place.id == id).map(|place| {
+            let scroll = match place.scrolls {
+                true => self.workspace(&workspace).map_or(0.0, |ws| ws.tape.scroll),
+                false => 0.0,
+            };
+            place.rect.translate(-scroll, 0.0)
+        });
+        let origin = self
+            .workspace(&workspace)
+            .and_then(|ws| self.output(&ws.output))
+            .map_or(Rect::default(), |o| o.geo.rect);
         self.detach(id);
         if let Some(window) = self.window_mut(id) {
             window.floating = floating;
             window.pinned &= floating;
+            if let (true, Some(tile)) = (floating, tiled) {
+                let (mut w, mut h) = (window.float_rect.w, window.float_rect.h);
+                // A float the size of its tile would not be seen to float.
+                if (w - tile.w).abs() < 5.0 && (h - tile.h).abs() < 5.0 {
+                    (w, h) = (w + 10.0, h + 10.0);
+                }
+                let (cx, cy) = tile.center();
+                window.float_rect =
+                    Rect::new(cx - w / 2.0 - origin.x, cy - h / 2.0 - origin.y, w, h);
+            }
         }
         self.attach(id, &workspace, None);
+        if floating && tiled.is_some() {
+            self.fit_float(id);
+        }
         true
     }
 
