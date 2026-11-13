@@ -167,13 +167,24 @@ impl Tape {
         true
     }
 
-    /// Walks columns and wraps at the ends of the tape.
+    /// Walks columns and wraps at the ends of the tape. In the column it
+    /// lands on, Hyprland's `findBestNeighbor`: the row last focused there
+    /// if it lies beside the window left, else the topmost that does.
     pub fn focus_column(&mut self, side: Side) -> bool {
         let count = self.columns.len() as isize;
         if count < 2 {
             return false;
         }
+        let from = &self.columns[self.focus];
+        let (row, rows) = (from.row, from.windows.len());
         self.focus = (self.focus as isize + side.step()).rem_euclid(count) as usize;
+        let to = &mut self.columns[self.focus];
+        let len = to.windows.len();
+        // Rows split a column evenly: row j of m spans j/m to (j+1)/m.
+        let beside = |j: usize| j * rows < (row + 1) * len && (j + 1) * rows > row * len;
+        if !beside(to.row) {
+            to.row = (0..len).find(|j| beside(*j)).unwrap_or(0);
+        }
         true
     }
 
@@ -580,6 +591,34 @@ mod tests {
         assert_eq!(tape.focused().unwrap(), "a");
         assert!(tape.focus_column(Side::Prev));
         assert_eq!(tape.focused().unwrap(), "c");
+    }
+
+    #[test]
+    fn a_column_walk_lands_on_a_row_beside_the_window_it_left() {
+        let mut tape = tape(&["a", "b", "c", "d"]);
+        tape.focus_window("b");
+        tape.consume_or_expel(Side::Prev, 0.5);
+        tape.focus_window("d");
+        tape.consume_or_expel(Side::Prev, 0.5);
+        assert_eq!(order(&tape), ["a+b", "c+d"]);
+        tape.focus_window("a");
+        // d was focused last in its column, but lies below a.
+        assert!(tape.focus_column(Side::Next));
+        assert_eq!(tape.focused().unwrap(), "c");
+        tape.focus_window("d");
+        tape.focus_window("b");
+        assert!(tape.focus_column(Side::Next));
+        assert_eq!(tape.focused().unwrap(), "d", "last focused and beside b");
+        tape.consume_or_expel(Side::Next, 0.5);
+        tape.focus_window("a");
+        // From the whole height every row is beside: the last focused.
+        tape.focus_window("b");
+        tape.focus_column(Side::Prev);
+        tape.focus_window("c");
+        tape.focus_column(Side::Next);
+        assert_eq!(tape.focused().unwrap(), "d");
+        assert!(tape.focus_column(Side::Prev));
+        assert_eq!(tape.focused().unwrap(), "c", "the full-height d sees both; c was last");
     }
 
     #[test]
