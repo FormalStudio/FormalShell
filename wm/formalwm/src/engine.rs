@@ -15,7 +15,7 @@ use formalwm_core::{
 use fs_wm_proto as proto;
 use shojiwm_rs::{ipc::IpcServer, prelude::*};
 
-use crate::{drag, gestures, handover, overview, stage, windows};
+use crate::{drag, gestures, handover, overview, pip, stage, windows};
 
 /// One window the compositor has: its handle and what the rules gave it.
 pub struct Win {
@@ -86,6 +86,7 @@ pub struct Engine {
     pub handover: handover::HandOver,
     pub drag: Option<drag::Drag>,
     pub hold: drag::Hold,
+    pub pip: pip::Pip,
 }
 
 type Turn = Box<dyn FnOnce(&mut Engine)>;
@@ -197,6 +198,7 @@ fn z_of(layer: Layer, order: usize) -> i32 {
         Layer::Pinned => 4,
         Layer::Fullscreen => 5,
         Layer::Overlay => 6,
+        Layer::Pip => 7,
     };
     rank * 100_000 + order.min(99_999) as i32
 }
@@ -322,9 +324,12 @@ impl Engine {
         let grow = if full { 0.0 } else { border };
         let (w, h) = visual.size;
         // Under the overview the scene's box goes through its lens.
+        // A picture in picture is the output's and not a workspace's: the
+        // overview leaves it where it is, over the panels.
+        let pip = visual.layer == Layer::Pip;
         let lens = self
             .lens(&visual.output)
-            .filter(|_| visual.layer != Layer::Overlay);
+            .filter(|_| !matches!(visual.layer, Layer::Overlay | Layer::Pip));
         let drawn = match lens {
             Some((lens, area)) => lens
                 .map(visual.rect.translate(-area.x, -area.y), visual.lane)
@@ -362,9 +367,12 @@ impl Engine {
         window
             .state(&windows::Z)
             .set(z_of(visual.layer, visual.order));
+        // A picture shows on the output it is leaving and the one it is
+        // coming to at once.
         window
             .state(&windows::OUTPUTS)
-            .set(Some(vec![visual.output.clone()]));
+            .set((!pip).then(|| vec![visual.output.clone()]));
+        window.state(&windows::PIP).set(pip);
         // The overview shows the workspaces the output is not on as well.
         let shown = match lens {
             Some((_, area)) => visual.opacity > 0.0 && drawn.intersects(&area),

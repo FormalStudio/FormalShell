@@ -277,7 +277,7 @@ impl Engine {
         let Some(record) = self.model.window(&id) else {
             return;
         };
-        let floating = record.floating;
+        let (floating, pip) = (record.floating, record.pip);
         let border = self.signals.look.get_untracked().border;
         let pointer = (event.current_pointer.x, event.current_pointer.y);
         let client = Box2::new(
@@ -292,6 +292,15 @@ impl Engine {
             WindowMovePhaseSnapshot::End | WindowMovePhaseSnapshot::Cancel
         );
         self.hold.window_drag = !ending;
+        // A picture has no hot spots: it rests in the corners they are in.
+        if pip {
+            self.hold_end();
+            self.pip_move(&id, client, pointer, event.phase, event.timestamp as f64);
+            if ending {
+                self.regrab_overview();
+            }
+            return;
+        }
         if ending {
             self.hold_end();
         } else {

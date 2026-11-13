@@ -32,6 +32,10 @@ pub static FULL: WindowStateKey<bool> = WindowStateKey::new("full", |_| false);
 /// the size it wants.
 pub static FORCE: WindowStateKey<bool> = WindowStateKey::new("force", |_| true);
 
+/// A picture in picture: over a fullscreen window without ending what
+/// fullscreen does to the layers.
+pub static PIP: WindowStateKey<bool> = WindowStateKey::new("pip", |_| false);
+
 /// The desk behind this window is blurred.
 pub static BLUR: WindowStateKey<bool> = WindowStateKey::new("blur", |_| false);
 /// Its rule keeps the pointer inside it while it has the keyboard.
@@ -89,6 +93,7 @@ pub fn setup(signals: Signals) {
             .tiled(true)
             .idle(window.state(&IDLE))
             .interactive(window.state(&LIVE))
+            .above_fullscreen(window.state(&PIP))
             .confine_pointer(window.state(&CONFINE));
         // No frame at all, so the client's buffer can go straight to the
         // plane.
@@ -246,6 +251,15 @@ impl Engine {
         // Electron apps ask to be maximized before they map; Hyprland's
         // scrolling layout opens them as a column the width of the view.
         let asked = self.windows.get_mut(&id).and_then(|win| win.asked.take());
+        let fullscreen =
+            window.is_fullscreen().get_untracked() || asked == Some(Big::Fullscreen);
+        // A picture in picture floats and pins unless a rule says otherwise.
+        let pip = !fullscreen
+            && crate::pip::allowed(&effect)
+            && effect
+                .pip
+                .unwrap_or(self.pictured(window) && effect.float == Some(true));
+        let floating = floating || pip;
         window.state(&FORCE).set(!floating || sized);
         window.state(&BLUR).set(self.blurs(&effect));
         window
@@ -265,8 +279,8 @@ impl Engine {
                 floating,
                 float_rect,
                 pinned: effect.pin.unwrap_or(false),
-                fullscreen: window.is_fullscreen().get_untracked()
-                    || asked == Some(Big::Fullscreen),
+                pip,
+                fullscreen,
             },
         );
         if asked == Some(Big::Maximized) {
@@ -294,9 +308,15 @@ impl Engine {
                 title: &title,
                 xwayland,
                 tag: &window.tag().get_untracked().unwrap_or_default(),
-                floating: window.suggests_float().get_untracked(),
+                floating: window.suggests_float().get_untracked() || self.pictured(window),
             },
         )
+    }
+
+    /// Whether the window says of itself that it is a picture in picture.
+    fn pictured(&self, window: Window) -> bool {
+        let (_, title, xwayland) = self.facts(window);
+        formalwm_core::pip::recognise(&crate::pip::hints(window, &title, xwayland))
     }
 
     /// Applies the rules again to what the client said by its first
@@ -456,9 +476,20 @@ impl Engine {
             && natural.height >= 1.0
         {
             let (w, h) = (natural.width.min(output.w), natural.height.min(output.h));
-            let local = rules::float_rect(&effect, (output.w, output.h), Some((w, h)))
-                .unwrap_or_else(|| self.centred(window, output, (w, h)));
-            if self.model.place(&id, local.translate(output.x, output.y)) {
+            let ruled = rules::float_rect(&effect, (output.w, output.h), Some((w, h)))
+                .map(|local| local.translate(output.x, output.y));
+            let picture = || {
+                self.model
+                    .window(&id)
+                    .is_some_and(|window| window.pip)
+                    .then(|| self.pip_open(&id, (w, h)))
+                    .flatten()
+            };
+            let rect = ruled.or_else(picture).unwrap_or_else(|| {
+                self.centred(window, output, (w, h))
+                    .translate(output.x, output.y)
+            });
+            if self.model.place(&id, rect) {
                 self.scene.sync(&self.model);
                 self.scene.land(&id);
             }
@@ -469,8 +500,18 @@ impl Engine {
     fn renamed(&mut self, window: Window, title: &str, app_id: &str) {
         let id = window.id();
         if self.windows.get(&id).is_some_and(|win| win.placed) {
+            // Its first title, when it opened with none, is its say on being
+            // a picture in picture; a later one is a page's.
+            let first = self
+                .model
+                .window(&id)
+                .is_some_and(|record| !record.pip && record.title.is_empty());
             self.model.set_title(&id, title);
             self.model.set_app_id(&id, app_id);
+            let xwayland = window.is_xwayland().get_untracked();
+            if first && formalwm_core::pip::recognise(&crate::pip::hints(window, title, xwayland)) {
+                self.pip_promote(window);
+            }
         }
         self.publish();
     }
@@ -527,6 +568,7 @@ impl Engine {
             self.drag = None;
         }
         self.window_gone(id);
+        self.pip_gone(id);
         if self.model.window(id).is_none() {
             return;
         }

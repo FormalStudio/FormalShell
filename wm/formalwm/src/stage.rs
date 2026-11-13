@@ -112,10 +112,16 @@ pub fn build(engine: &Engine, frame: &[Visual]) -> Stage {
                 under: frame
                     .iter()
                     .filter(on_output)
-                    .filter(|visual| visual.layer != Layer::Overlay)
+                    .filter(|visual| visual.layer < Layer::Overlay)
                     .map(|visual| visual.id.clone())
                     .collect(),
-                over: over.iter().map(|visual| visual.id.clone()).collect(),
+                // A picture in picture is over the overlay, not under its dim.
+                over: frame
+                    .iter()
+                    .filter(on_output)
+                    .filter(|visual| visual.layer >= Layer::Overlay)
+                    .map(|visual| visual.id.clone())
+                    .collect(),
                 alpha: DIM * shown,
             },
         );

@@ -13,6 +13,7 @@ mod headless;
 mod ipc;
 mod layers;
 mod overview;
+mod pip;
 mod session;
 mod spawn;
 mod stage;
@@ -70,12 +71,14 @@ fn setup() {
         handover: Default::default(),
         drag: None,
         hold: Default::default(),
+        pip: Default::default(),
     });
 
     windows::setup(signals);
     stage::setup(signals);
     session::setup();
     gestures::setup();
+    pip::setup();
     focus::setup();
     handover::setup();
     drag::setup();

@@ -521,6 +521,7 @@ impl Engine {
         self.model.set_outputs(geos);
         self.specs = specs;
         self.commit();
+        self.pip_reanchor();
     }
 
     /// The ext-workspace model bars read: one group per output.

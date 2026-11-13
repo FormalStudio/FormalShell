@@ -75,7 +75,10 @@
     {"match": {"appId": "chrome-music.youtube.com__-Default"}, "workspace": 8},
     // Minecraft locks the pointer with an X11 grab and a recentring warp.
     {"match": {"appId": "Minecraft.*"}, "confinePointer": true},
-    // helium's video picture-in-picture: no app id, this title.
+    // A picture in picture floats over every window and workspace of its output without a rule: a window
+    // titled "Picture in picture" (Chromium, Electron, Firefox) or an X11 one above the rest and sticky or
+    // of one aspect ratio. "pip": true makes any window one, "pip": false keeps one out.
+    // helium's video picture-in-picture: no app id, this title. The rule only says where it opens and how big.
     {"match": {"title": "[Pp]icture[ -][Ii]n[ -][Pp]icture"}, "float": true, "pin": true, "size": ["28%", "28%"], "position": {"anchor": "bottom-right", "inset": 16}},
     // Its document picture-in-picture and any other popup it maps floating.
     {"match": {"appId": "helium", "floating": true}, "pin": true, "size": ["28%", "28%"], "position": {"anchor": "bottom-right", "inset": 16}},

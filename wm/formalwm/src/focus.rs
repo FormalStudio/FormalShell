@@ -18,6 +18,7 @@ pub fn setup() {
             enter(|engine| {
                 if let Some(at) = COMPOSITOR.cursor.get_position() {
                     engine.point_at((at.x, at.y));
+                    engine.pip_pressed((at.x, at.y));
                 }
                 engine.settle_focus();
             })
