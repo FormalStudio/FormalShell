@@ -76,9 +76,9 @@ key Super+Shift+code:13 1; ws; focus_app; tape 4
 
 step "SUPER and the wheel walk the workspaces that hold a window, round and round"
 ipc window.moveTo "{\"id\":\"$(id_of four)\",\"idx\":7,\"output\":\"$(ipc state.get | jq -r .focusedOutput)\"}" >/dev/null
-echo "mouse_down, the wheel turned away:"
+echo "mouse_up, the wheel turned away:"
 for turn in 1 2 3 4; do hold Super 500; hand wheel -1; sleep 1; printf '%s ' "$(ws)"; done; echo
-echo "mouse_up, the wheel turned toward the user:"
+echo "mouse_down, the wheel turned toward the user:"
 for turn in 1 2 3 4; do hold Super 500; hand wheel 1; sleep 1; printf '%s ' "$(ws)"; done; echo
 
 step "SUPER+SHIFT+F is fullscreen and back, SUPER+V floats and tiles"

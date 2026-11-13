@@ -669,7 +669,7 @@ impl Engine {
         let Some(output) = &self.settings.xwayland_primary else {
             return;
         };
-        COMPOSITOR.process.spawn(Command::shell(format!(
+        COMPOSITOR.process.spawn(crate::binds::sh(format!(
             "for _ in 1 2 3 4 5 6 7 8 9 10; do xrandr --output '{output}' --primary 2>/dev/null && break; sleep 1; done"
         )));
     }
