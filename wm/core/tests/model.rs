@@ -951,3 +951,32 @@ fn a_window_opens_right_of_a_focused_tile_and_at_the_end_else() {
     assert!(model.move_to_workspace("a", "2", false));
     assert_eq!(column(&model, "a"), 2, "sent to a workspace: its end");
 }
+
+#[test]
+fn a_float_sent_to_a_smaller_output_is_fitted_into_it() {
+    // B is 1600x1000 to A's 1920x1080. Hyprland keeps a float's place on
+    // the output and pushes it back inside the work area.
+    let mut model = two_outputs();
+    open_with(
+        &mut model,
+        "f",
+        Placement {
+            floating: true,
+            float_rect: Some(Rect::new(1500.0, 900.0, 400.0, 150.0)),
+            ..Placement::default()
+        },
+    );
+    assert!(model.move_to_workspace("f", "4", false));
+    assert_eq!(on_screen(&model, "f"), Rect::new(1920.0 + 1200.0, 850.0, 400.0, 150.0));
+    open_with(
+        &mut model,
+        "g",
+        Placement {
+            floating: true,
+            float_rect: Some(Rect::new(100.0, 100.0, 400.0, 150.0)),
+            ..Placement::default()
+        },
+    );
+    assert!(model.move_to_workspace("g", "4", false));
+    assert_eq!(on_screen(&model, "g"), Rect::new(1920.0 + 100.0, 100.0, 400.0, 150.0));
+}

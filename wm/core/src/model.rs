@@ -903,6 +903,34 @@ impl Model {
         self.set_big(id, next)
     }
 
+    /// Hyprland's `fitBoxInWorkArea` for a float that moved: at the same
+    /// place on its output, pushed inside what the layers leave, its border
+    /// with it.
+    fn fit_float(&mut self, id: &str) {
+        let Some(geo) = self
+            .output_of(id)
+            .and_then(|o| self.output(&o))
+            .map(|o| o.geo.clone())
+        else {
+            return;
+        };
+        let border = self.options.border;
+        let area = geo.usable.translate(-geo.rect.x, -geo.rect.y);
+        let Some(window) = self.window_mut(id) else {
+            return;
+        };
+        let mut rect = window.float_rect.inset(-border);
+        rect.x = rect.x.max(area.x);
+        rect.y = rect.y.max(area.y);
+        if rect.right() > area.right() {
+            rect.x = area.right() - rect.w;
+        }
+        if rect.bottom() > area.bottom() {
+            rect.y = area.bottom() - rect.h;
+        }
+        window.float_rect = rect.inset(border);
+    }
+
     /// A floating window's rect, global logical.
     pub fn place(&mut self, id: &str, rect: Rect) -> bool {
         let Some(origin) = self
@@ -960,6 +988,9 @@ impl Model {
         }
         // At the end of the tape it joins, as Hyprland's move to a workspace.
         self.attach(id, workspace, Some(usize::MAX));
+        if self.window(id).is_some_and(|w| w.floating && !w.pinned) {
+            self.fit_float(id);
+        }
         if follow {
             self.show_workspace(workspace);
         }
