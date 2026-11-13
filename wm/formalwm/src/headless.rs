@@ -7,6 +7,7 @@
 //! (`src/shojiwm_rs/tests/common/mod.rs`), MIT, Copyright (c) 2026 bea4dev.
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader, Write},
     os::{fd::AsFd, unix::net::UnixStream},
@@ -15,7 +16,7 @@ use std::{
     time::Duration,
 };
 
-use formalwm_core::settings::Settings;
+use formalwm_core::{rules, settings::Settings};
 use fs_wm_proto as proto;
 use serde_json::{Value, json};
 use shojiwm_lib::{
@@ -40,12 +41,14 @@ use smithay::{
 };
 use wayland_client::{
     Connection, Dispatch, EventQueue, Proxy, QueueHandle,
+    backend::ObjectId,
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_registry, wl_seat, wl_shm, wl_shm_pool,
         wl_surface,
     },
 };
 use wayland_protocols::xdg::{
+    dialog::v1::client::{xdg_dialog_v1::XdgDialogV1, xdg_wm_dialog_v1::XdgWmDialogV1},
     shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base},
     toplevel_tag::v1::client::xdg_toplevel_tag_manager_v1::XdgToplevelTagManagerV1,
 };
@@ -216,6 +219,17 @@ impl Session {
         app_id: &str,
         tag: Option<&str>,
     ) -> (wl_surface::WlSurface, xdg_toplevel::XdgToplevel) {
+        let (surface, toplevel) = self.bare(app_id);
+        if let Some(tag) = tag {
+            self.tag(&toplevel, tag);
+        }
+        surface.commit();
+        self.roundtrip();
+        (surface, toplevel)
+    }
+
+    /// A toplevel before its first commit, for what a client says then.
+    fn bare(&mut self, app_id: &str) -> (wl_surface::WlSurface, xdg_toplevel::XdgToplevel) {
         let qh = self.queue.handle();
         let compositor: wl_compositor::WlCompositor = self.bind("wl_compositor");
         let shell: xdg_wm_base::XdgWmBase = self.bind("xdg_wm_base");
@@ -225,12 +239,20 @@ impl Session {
             .get_toplevel(&qh, ());
         toplevel.set_app_id(app_id.into());
         toplevel.set_title(app_id.into());
-        if let Some(tag) = tag {
-            self.tag(&toplevel, tag);
-        }
+        (surface, toplevel)
+    }
+
+    /// The commit that brings the configure, with nothing drawn.
+    fn commit(&mut self, surface: &wl_surface::WlSurface) {
         surface.commit();
         self.roundtrip();
-        (surface, toplevel)
+    }
+
+    /// The size the toplevel was last configured to.
+    fn configured(&mut self, toplevel: &xdg_toplevel::XdgToplevel) -> (i32, i32) {
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+        self.client.configured[&toplevel.id()]
     }
 
     fn tag(&mut self, toplevel: &xdg_toplevel::XdgToplevel, tag: &str) {
@@ -550,6 +572,24 @@ struct Client {
     globals: Vec<(String, u32)>,
     /// The evdev codes of the keys pressed on its keyboard.
     keys: Vec<u32>,
+    /// The size each toplevel was last configured to; 0x0 leaves it to
+    /// the client.
+    configured: HashMap<ObjectId, (i32, i32)>,
+}
+
+impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Client {
+    fn event(
+        client: &mut Self,
+        toplevel: &xdg_toplevel::XdgToplevel,
+        event: xdg_toplevel::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_toplevel::Event::Configure { width, height, .. } = event {
+            client.configured.insert(toplevel.id(), (width, height));
+        }
+    }
 }
 
 impl Dispatch<wl_keyboard::WlKeyboard, ()> for Client {
@@ -634,8 +674,9 @@ ignore_events!(
     wl_shm::WlShm,
     wl_shm_pool::WlShmPool,
     wl_buffer::WlBuffer,
-    xdg_toplevel::XdgToplevel,
     XdgToplevelTagManagerV1,
+    XdgWmDialogV1,
+    XdgDialogV1,
     wl_seat::WlSeat,
     zwlr_layer_shell_v1::ZwlrLayerShellV1,
     zwlr_layer_surface_v1::ZwlrLayerSurfaceV1
@@ -1525,6 +1566,8 @@ fn two_outputs_and_the_touchpad() {
     ask_for(&mut session, "2");
     assert_eq!((keyed(), said()), (None, String::new()));
 
+    classification(&mut session);
+
     // The lid: the host's lid output is off while it is shut.
     let off = |session: &Session| {
         session
@@ -1797,4 +1840,220 @@ fn the_g815s_three_displays() {
     );
     // The panel's workspace keeps its two windows on the next output over.
     assert_eq!(stack(&seen, "DP-3"), ["4", "8", "d1"]);
+}
+
+/// Float or tile by what the client says by its first buffer, as Hyprland
+/// decides at map; the owner's rules over that. Each window is drawn at the
+/// size it asks for, so a float shows at it.
+fn classification(session: &mut Session) {
+    ask(|engine| {
+        engine.model.focus_workspace("3");
+        engine.commit();
+        Ok(())
+    })
+    .unwrap();
+    let row = |app: &str| {
+        state()
+            .windows
+            .into_iter()
+            .find(|window| window.app_id == app)
+            .unwrap_or_else(|| panic!("{app} is not open"))
+    };
+    let floats = |app: &str| {
+        let window = row(app);
+        if app.starts_with("cls-") {
+            assert_eq!(window.workspace_id, "3", "{app} opens where the focus is");
+        }
+        window.floating
+    };
+    let held = |app: &str| {
+        let app = app.to_owned();
+        ask(move |engine| {
+            Ok(engine.windows.values().any(|win| {
+                win.held.is_some()
+                    && win.handle.app_id().get_untracked().as_deref() == Some(app.as_str())
+            }))
+        })
+        .unwrap()
+    };
+    // Its size, and its centre against where it should be.
+    let at = |app: &str| {
+        let rect = row(app).rect.unwrap();
+        (
+            (rect.width, rect.height),
+            (rect.x + rect.width / 2, rect.y + rect.height / 2),
+        )
+    };
+    let middle = ((WIDTH / 2.0) as i32, (HEIGHT / 2.0) as i32);
+    let mut opened = Vec::new();
+
+    let (main, main_top) = session.bare("cls-main");
+    session.commit(&main);
+    session.draw(&main, 400, 300);
+    assert!(!floats("cls-main"), "a plain window tiles");
+    let parent = at("cls-main").1;
+
+    // xdg_toplevel.set_parent before the first commit: a transient dialog,
+    // a file chooser, a portal's window.
+    let (child, top) = session.bare("cls-child");
+    top.set_parent(Some(&main_top));
+    session.commit(&child);
+    session.draw(&child, 200, 120);
+    assert!(floats("cls-child"), "a window with a parent floats");
+    assert_eq!(
+        at("cls-child"),
+        ((200, 120), parent),
+        "over its parent's middle"
+    );
+    opened.push((child, top));
+
+    // min == max before the first commit.
+    let (fixed, top) = session.bare("cls-fixed");
+    top.set_min_size(320, 240);
+    top.set_max_size(320, 240);
+    session.commit(&fixed);
+    session.draw(&fixed, 320, 240);
+    assert!(floats("cls-fixed"), "a fixed-size window floats");
+    assert_eq!(
+        at("cls-fixed"),
+        ((320, 240), middle),
+        "at its size, centred"
+    );
+    opened.push((fixed, top));
+
+    // GTK 3's message dialog, Electron's showErrorBox among them: no
+    // parent, and min == max only after the first configure.
+    let (late, top) = session.bare("cls-errorbox");
+    session.commit(&late);
+    assert!(!floats("cls-errorbox"), "placed before it said it is fixed");
+    top.set_min_size(560, 249);
+    top.set_max_size(560, 249);
+    session.draw(&late, 560, 249);
+    assert!(floats("cls-errorbox"), "fixed by its first buffer: floats");
+    assert_eq!(
+        at("cls-errorbox"),
+        ((560, 249), middle),
+        "at its size, centred"
+    );
+    opened.push((late, top));
+
+    // A parent set after the first configure counts the same.
+    let (adopted, top) = session.bare("cls-adopted");
+    session.commit(&adopted);
+    top.set_parent(Some(&main_top));
+    session.draw(&adopted, 240, 160);
+    assert!(floats("cls-adopted"), "a parent by the first buffer floats");
+    opened.push((adopted, top));
+
+    // A resizable child whose parent comes after the first configure has
+    // drawn its first buffer at the tile's size. It is asked again with no
+    // size, out of sight, and shown at the size it picks.
+    let (child, top) = session.bare("cls-late-child");
+    session.commit(&child);
+    let tile = session.configured(&top);
+    assert!(
+        tile.0 > 300 && tile.1 > 300,
+        "a tile is told its size: {tile:?}"
+    );
+    top.set_parent(Some(&main_top));
+    session.draw(&child, tile.0, tile.1);
+    assert!(
+        floats("cls-late-child"),
+        "a parent by the first buffer floats"
+    );
+    assert_eq!(session.configured(&top), (0, 0), "asked for its own size");
+    assert!(held("cls-late-child"), "not shown at the tile's size");
+    session.draw(&child, 300, 200);
+    assert!(!held("cls-late-child"));
+    assert_eq!(
+        at("cls-late-child"),
+        ((300, 200), parent),
+        "at the size it picked, over its parent"
+    );
+    opened.push((child, top));
+
+    // xdg-dialog-v1's modal hint has no effect without a parent.
+    let dialogs: XdgWmDialogV1 = session.bind("xdg_wm_dialog_v1");
+    let (modal, top) = session.bare("cls-modal");
+    let hint = dialogs.get_xdg_dialog(&top, &session.queue.handle(), ());
+    hint.set_modal();
+    session.commit(&modal);
+    session.draw(&modal, 300, 180);
+    assert!(!floats("cls-modal"), "a modal hint without a parent tiles");
+    opened.push((modal, top));
+
+    // Once drawn, the decision stands: a tile does not jump to a float.
+    let (shown, top) = session.bare("cls-shown");
+    session.commit(&shown);
+    session.draw(&shown, 400, 300);
+    top.set_min_size(400, 300);
+    top.set_max_size(400, 300);
+    session.draw(&shown, 400, 300);
+    assert!(
+        !floats("cls-shown"),
+        "fixed after its first buffer: still tiled"
+    );
+    opened.push((shown, top));
+
+    // The owner's rule wins: the example's Beeper rule says `float: false`.
+    let (beeper, top) = session.bare("Beeper");
+    session.commit(&beeper);
+    top.set_min_size(500, 400);
+    top.set_max_size(500, 400);
+    session.draw(&beeper, 500, 400);
+    assert!(!floats("Beeper"), "a rule's float: false over a fixed size");
+    opened.push((beeper, top));
+
+    // A rule that matches only once the window floats, by a parent set
+    // after the first configure: its size and workspace apply then.
+    ask(|engine| {
+        std::rc::Rc::make_mut(&mut engine.settings)
+            .rules
+            .push(rules::Rule {
+                matcher: rules::Matcher {
+                    app_id: Some(rules::Pattern::new("ruled-dialog")?),
+                    floating: Some(true),
+                    ..Default::default()
+                },
+                effect: rules::Effect {
+                    workspace: Some(2),
+                    size: Some((rules::Length::Px(500.0), rules::Length::Px(300.0))),
+                    ..Default::default()
+                },
+            });
+        Ok(())
+    })
+    .unwrap();
+    let (ruled, top) = session.bare("ruled-dialog");
+    session.commit(&ruled);
+    let tile = session.configured(&top);
+    top.set_parent(Some(&main_top));
+    session.draw(&ruled, tile.0, tile.1);
+    assert!(row("ruled-dialog").floating);
+    assert_eq!(
+        row("ruled-dialog").workspace_id,
+        "2",
+        "the rule's workspace"
+    );
+    assert_eq!(session.configured(&top), (500, 300), "told the rule's size");
+    assert_eq!(at("ruled-dialog").0, (500, 300), "at the rule's size");
+    opened.push((ruled, top));
+    ask(|engine| {
+        std::rc::Rc::make_mut(&mut engine.settings).rules.pop();
+        Ok(())
+    })
+    .unwrap();
+
+    hint.destroy();
+    for (_, top) in opened.iter().chain([&(main, main_top)]) {
+        top.destroy();
+    }
+    session.roundtrip();
+    assert!(
+        state()
+            .windows
+            .iter()
+            .all(|window| !window.app_id.starts_with("cls-")
+                && !["Beeper", "ruled-dialog"].contains(&window.app_id.as_str()))
+    );
 }

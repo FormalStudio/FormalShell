@@ -190,7 +190,7 @@ pub fn serve() -> Option<IpcServer> {
         if request.argv.is_empty() {
             return Err("spawn: empty argv".to_owned());
         }
-        let command = Command::exec(request.argv);
+        let command = crate::spawn::app(request.argv);
         COMPOSITOR.process.spawn(match request.cwd {
             Some(cwd) => command.cwd(cwd),
             None => command,
