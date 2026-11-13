@@ -3813,22 +3813,21 @@ fn a_moving_window_is_told_its_streak_and_its_stretch() {
     }
     session.state.refresh_window_decorations().unwrap();
     session.roundtrip();
-    ask(|engine| {
+    session.turn(|engine| {
         let there = engine.model.windows[1].id.clone();
         engine.model.move_to_workspace(&there, "2", false);
         engine.commit();
         engine.scene.finish();
         engine.present();
         Ok(())
-    })
-    .unwrap();
+    });
     for at in told() {
         assert_eq!(at.smear, [0.0; 2], "at rest there is no streak");
         assert_eq!(at.scale, (1.0, 1.0), "at rest there is no stretch");
     }
 
     // A workspace switch, stopped at speed: both workspaces ride the stack.
-    let border = ask(|engine| {
+    let border = session.turn(|engine| {
         engine.model.focus_workspace("2");
         engine.commit();
         for _ in 0..400 {
@@ -3844,8 +3843,7 @@ fn a_moving_window_is_told_its_streak_and_its_stretch() {
         }
         engine.present();
         Ok(engine.signals.look.get_untracked().border)
-    })
-    .unwrap();
+    });
     let moving = told();
     assert_eq!(moving.len(), 2);
     let motion = ask(|engine| Ok(engine.settings.motion)).unwrap();
