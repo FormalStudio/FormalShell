@@ -119,10 +119,8 @@ impl Session {
     /// `displays` connect in order, each right of the one before until the
     /// settings place it.
     fn new(test: &str, host: &str, displays: &[Screen]) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "formalwm-headless-{}-{test}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("formalwm-headless-{}-{test}", std::process::id()));
         let (runtime, config) = (root.join("run"), root.join("config/formalwm"));
         std::fs::create_dir_all(&runtime).unwrap();
         std::fs::create_dir_all(&config).unwrap();
@@ -623,7 +621,9 @@ fn scroll(workspace: &'static str) -> (f64, f64) {
 
 #[test]
 fn two_outputs_and_the_touchpad() {
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut session = Session::new(
         "two",
         HOST,
@@ -1373,7 +1373,9 @@ fn the_g815s_three_displays() {
     const SUPER: u32 = 125;
     const SHIFT: u32 = 42;
     let key = |number: u32| number + 1;
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let display = |name, identity, size, refresh| Screen {
         name,
         identity,
@@ -1416,7 +1418,12 @@ fn the_g815s_three_displays() {
     assert_eq!(placed(&seen, "DP-3"), portable);
     assert_eq!(placed(&seen, "eDP-1"), (6720, 0, 2048, 1280, 1.25));
     let config = |session: &Session, name: &str| {
-        session.state.runtime_output_configs.get(name).cloned().unwrap()
+        session
+            .state
+            .runtime_output_configs
+            .get(name)
+            .cloned()
+            .unwrap()
     };
     for name in ["HDMI-A-1", "DP-3", "eDP-1"] {
         assert_eq!(config(&session, name).direct_scanout, Some(false), "{name}");
@@ -1448,7 +1455,10 @@ fn the_g815s_three_displays() {
     assert_eq!(vrr["eDP-1"], Some(3));
 
     // 4 and 8 on the portable, the rest on the desk, each showing its default.
-    assert_eq!(stack(&seen, "HDMI-A-1"), ["1", "2", "3", "5", "6", "7", "9"]);
+    assert_eq!(
+        stack(&seen, "HDMI-A-1"),
+        ["1", "2", "3", "5", "6", "7", "9"]
+    );
     assert_eq!(stack(&seen, "DP-3"), ["4", "8"]);
     let active = |seen: &proto::State, output: &str| {
         seen.workspaces
@@ -1473,7 +1483,10 @@ fn the_g815s_three_displays() {
     };
     let focused = || {
         let seen = state();
-        (seen.focused_output.clone(), seen.focused_workspace_id.clone())
+        (
+            seen.focused_output.clone(),
+            seen.focused_workspace_id.clone(),
+        )
     };
 
     // Super+4 from the desk goes to the portable; the desk keeps 1 in view.
@@ -1512,14 +1525,87 @@ fn the_g815s_three_displays() {
     assert_eq!(ws, "8");
     session.chord(&[SUPER, key(8)]);
     let (_, rect_after) = window("ghostty");
-    assert!(inside(&rect_after, portable), "{rect:?} then {rect_after:?} on the portable");
+    assert!(
+        inside(&rect_after, portable),
+        "{rect:?} then {rect_after:?} on the portable"
+    );
+
+    // VRR as each description-matched entry asks, in what the core is told:
+    // the desk's 2 with any window fullscreen there, the panel's 3 only with
+    // a game or video, the portable never.
+    let vrr = |session: &Session| {
+        ["HDMI-A-1", "DP-3", "eDP-1"].map(|name| config(session, name).vrr.unwrap_or_default())
+    };
+    let toggle = |session: &mut Session| {
+        ask(|engine| {
+            let id = engine.model.focused_window().cloned().ok_or("no focus")?;
+            engine.toggle_fullscreen(&id);
+            Ok(())
+        })
+        .unwrap();
+        session.roundtrip();
+    };
+    assert_eq!(vrr(&session), [false, false, false]);
+    session.chord(&[SUPER, key(1)]);
+    session.open("desk");
+    toggle(&mut session);
+    assert_eq!(
+        vrr(&session),
+        [true, false, false],
+        "fullscreen on the desk"
+    );
+    toggle(&mut session);
+    assert_eq!(vrr(&session), [false, false, false]);
+    session.chord(&[SUPER, key(4)]);
+    toggle(&mut session);
+    assert!(
+        state()
+            .windows
+            .iter()
+            .any(|w| w.fullscreen && w.workspace_id == "4")
+    );
+    assert_eq!(
+        vrr(&session),
+        [false, false, false],
+        "fullscreen on the portable"
+    );
+    toggle(&mut session);
+    let panel = active(&state(), "eDP-1");
+    ask(move |engine| {
+        engine.model.focus_workspace(&panel);
+        engine.commit();
+        Ok(())
+    })
+    .unwrap();
+    session.roundtrip();
+    session.open("panel");
+    toggle(&mut session);
+    assert_eq!(
+        vrr(&session),
+        [false, false, false],
+        "a window that is no game"
+    );
+    toggle(&mut session);
+    session.open("steam_app_1");
+    toggle(&mut session);
+    assert_eq!(vrr(&session), [false, false, true], "a game, by its rule");
+    toggle(&mut session);
+    assert_eq!(vrr(&session), [false, false, false]);
 
     // The lid takes the panel alone.
     session.state.lid_switch_toggled(true);
     session.roundtrip();
-    assert_eq!(config(&session, "eDP-1").mode, Some(RuntimeOutputMode::Disabled));
+    assert_eq!(
+        config(&session, "eDP-1").mode,
+        Some(RuntimeOutputMode::Disabled)
+    );
     let seen = state();
     assert_eq!(placed(&seen, "HDMI-A-1"), desk);
     assert_eq!(placed(&seen, "DP-3"), portable);
-    assert_eq!(stack(&seen, "DP-3"), ["4", "8"]);
+    assert_eq!(
+        stack(&seen, "HDMI-A-1"),
+        ["1", "2", "3", "5", "6", "7", "9"]
+    );
+    // The panel's workspace keeps its two windows on the next output over.
+    assert_eq!(stack(&seen, "DP-3"), ["4", "8", "d1"]);
 }

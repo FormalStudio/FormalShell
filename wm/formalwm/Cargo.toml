@@ -9,13 +9,13 @@ formalwm-core = { path = "../core" }
 fs-wm-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-shojiwm_rs = { git = "https://github.com/FormalSnake/ShojiWM.git", rev = "670b966776e6c7259f18e3597db6859f4f2a5c06" }
+shojiwm_rs = { git = "https://github.com/FormalSnake/ShojiWM.git", rev = "f479b5a56ccfa61506a18ef27e66b46bdf7ff86e" }
 tracing = "0.1"
 
 # The headless session of src/headless.rs: the compositor's state and a
 # client to connect to it.
 [dev-dependencies]
-shojiwm_lib = { git = "https://github.com/FormalSnake/ShojiWM.git", rev = "670b966776e6c7259f18e3597db6859f4f2a5c06" }
+shojiwm_lib = { git = "https://github.com/FormalSnake/ShojiWM.git", rev = "f479b5a56ccfa61506a18ef27e66b46bdf7ff86e" }
 smithay = { git = "https://github.com/bea4dev/smithay.git", rev = "c1253794ee2a7c466e88bb20dfdaabb4ccbfb2aa", default-features = false }
 wayland-client = "0.31.14"
 wayland-protocols = { version = "0.32.12", features = ["client", "staging"] }
