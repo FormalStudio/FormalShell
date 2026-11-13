@@ -13,7 +13,7 @@ use std::{
     os::{fd::AsFd, unix::net::UnixStream},
     rc::Rc,
     sync::Mutex,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use formalwm_core::{model::Big, rules, settings::Settings};
@@ -1244,7 +1244,8 @@ fn two_outputs_and_the_touchpad() {
 
     // Four half columns on a tape two wide: the last one in view.
     for app in ["one", "two", "three", "four"] {
-        session.open(app);
+        let surface = session.open(app);
+        session.draw(&surface, 400, 300);
     }
     let seen = state();
     assert!(seen.windows.iter().all(|window| window.workspace_id == "1"));
@@ -1312,7 +1313,8 @@ fn two_outputs_and_the_touchpad() {
 
     // A rule's workspace lives on the second output: the window opens
     // there and the view follows it.
-    session.open("Slack");
+    let slack = session.open("Slack");
+    session.draw(&slack, 400, 300);
     let seen = state();
     let slack = seen.windows.iter().find(|w| w.app_id == "Slack").unwrap();
     assert_eq!(slack.workspace_id, "4");
@@ -2389,23 +2391,23 @@ fn classification(session: &mut Session) {
     assert_eq!(at("cls-stale-fixed").0, (tile.0, 200), "at its fixed size");
     opened.push((stale, top));
 
-    // A maximize asked before the first configure and taken back before
+    // A fullscreen asked before the first configure and taken back before
     // the first buffer stays taken back when the window floats by it.
-    let (unmaximized, top) = session.bare("cls-unmaximized");
-    top.set_maximized();
-    session.commit(&unmaximized);
-    assert_eq!(big("cls-unmaximized"), Some(Big::Maximized));
-    top.unset_maximized();
+    let (taken_back, top) = session.bare("cls-taken-back");
+    top.set_fullscreen(None);
+    session.commit(&taken_back);
+    assert_eq!(big("cls-taken-back"), Some(Big::Fullscreen));
+    top.unset_fullscreen();
     session.roundtrip();
-    assert_eq!(big("cls-unmaximized"), None);
+    assert_eq!(big("cls-taken-back"), None);
     top.set_parent(Some(&main_top));
-    session.draw(&unmaximized, 240, 160);
+    session.draw(&taken_back, 240, 160);
     assert!(
-        floats("cls-unmaximized"),
+        floats("cls-taken-back"),
         "a parent by the first buffer floats"
     );
-    assert_eq!(big("cls-unmaximized"), None, "not maximized again");
-    opened.push((unmaximized, top));
+    assert_eq!(big("cls-taken-back"), None, "not fullscreen again");
+    opened.push((taken_back, top));
 
     // xdg-dialog-v1's modal hint has no effect without a parent.
     let dialogs: XdgWmDialogV1 = session.bind("xdg_wm_dialog_v1");
@@ -3128,4 +3130,238 @@ fn a_rule_places_a_picture_in_picture() {
     session.caught_up();
     let (seen, area) = (look(&pip), picture_area("TEST-1"));
     assert_eq!((seen.rect.x, seen.rect.y), (area.x, area.y));
+}
+
+#[test]
+fn a_window_that_asks_to_be_maximized_before_it_draws_opens_as_a_column() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("open-maximized", HOST, &[test_display("TEST-1")]);
+    let files = session.open("files");
+    session.draw(&files, 400, 300);
+    settle();
+    let column = tile_rect("files").width;
+
+    // A GTK app restoring a maximized session asks before its first commit.
+    let (early, early_top) = session.bare("asks-early");
+    early_top.set_maximized();
+    session.commit(&early);
+    let told = session.configured(&early_top);
+    assert!(
+        f64::from(told.0) < WIDTH / 2.0,
+        "told a column's size: {told:?}"
+    );
+    session.draw(&early, told.0, told.1);
+    settle();
+    assert_eq!(
+        tile_rect("asks-early").width,
+        column,
+        "a column of the default width"
+    );
+    assert_eq!(
+        tile_rect("files").width,
+        column,
+        "its neighbour left as it was"
+    );
+
+    // Asked between the first configure and the first buffer, still unmapped.
+    let (late, late_top) = session.bare("asks-late");
+    session.commit(&late);
+    late_top.set_maximized();
+    session.roundtrip();
+    let told = session.configured(&late_top);
+    session.draw(&late, told.0, told.1);
+    settle();
+    assert_eq!(tile_rect("asks-late").width, column);
+
+    // Once drawn, the same request maximizes it.
+    late_top.set_maximized();
+    assert!(session.until(|| f64::from(tile_rect("asks-late").width) > WIDTH * 0.9));
+
+    // Fullscreen asked before the first commit still opens fullscreen.
+    let (full, full_top) = session.bare("asks-full");
+    full_top.set_fullscreen(None);
+    session.commit(&full);
+    assert_eq!(
+        session.configured(&full_top),
+        (WIDTH as i32, HEIGHT as i32),
+        "fullscreen from the start"
+    );
+
+    for top in [early_top, late_top, full_top] {
+        top.destroy();
+    }
+    session.roundtrip();
+}
+
+/// Where the scene draws a window, which the model's rect in the state is
+/// not while a new tile waits to draw.
+fn shown(app_id: &str) -> formalwm_core::geom::Rect {
+    let app = app_id.to_owned();
+    ask(move |engine| {
+        let id = engine
+            .windows
+            .iter()
+            .find(|(_, win)| win.handle.app_id().get_untracked().as_deref() == Some(app.as_str()))
+            .map(|(id, _)| id.clone())
+            .ok_or("no such window")?;
+        Ok(engine.scene.visual(&id).ok_or("not in the scene")?.rect)
+    })
+    .unwrap()
+}
+
+/// A drawn window and a dialog of it, then a tile that has committed but
+/// not drawn: the files tile stays put while that tile waits.
+fn waiting_beside_files(
+    test: &str,
+) -> (
+    Session,
+    xdg_toplevel::XdgToplevel,
+    xdg_toplevel::XdgToplevel,
+    Instant,
+) {
+    let mut session = Session::new(test, HOST, &[test_display("TEST-1")]);
+    let (files, files_top) = session.bare("files");
+    session.commit(&files);
+    let told = session.configured(&files_top);
+    session.draw(&files, told.0, told.1);
+    let (dialog, dialog_top) = session.bare("dialog");
+    dialog_top.set_parent(Some(&files_top));
+    session.commit(&dialog);
+    session.draw(&dialog, 300, 200);
+    settle();
+    let alone = shown("files");
+    let (late, _late_top) = session.bare("late");
+    // Its wait starts on this commit.
+    let committed = Instant::now();
+    session.commit(&late);
+    settle();
+    assert_ne!(
+        f64::from(tile_rect("files").x),
+        alone.x,
+        "late moved files in the model"
+    );
+    assert_eq!(shown("files"), alone, "held while late has not drawn");
+    (session, files_top, dialog_top, committed)
+}
+
+#[test]
+fn a_maximize_or_fullscreen_goes_through_while_a_new_tile_waits_to_draw() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (mut session, files_top, dialog_top, _) = waiting_beside_files("wait-maximize");
+
+    files_top.set_maximized();
+    session.roundtrip();
+    settle();
+    assert!(
+        shown("files").w > WIDTH * 0.9,
+        "maximized: {:?}",
+        shown("files")
+    );
+    assert!(f64::from(session.configured(&files_top).0) > WIDTH * 0.9);
+
+    dialog_top.set_fullscreen(None);
+    session.roundtrip();
+    settle();
+    assert_eq!(
+        session.configured(&dialog_top),
+        (WIDTH as i32, HEIGHT as i32),
+        "the dialog is fullscreen"
+    );
+}
+
+#[test]
+fn a_new_tile_that_never_draws_lets_its_workspace_go_on_its_own() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (mut session, _files_top, _dialog_top, committed) = waiting_beside_files("wait-timeout");
+    let held = shown("files");
+
+    let mut moved = None;
+    while committed.elapsed() < Duration::from_secs(6) {
+        session.roundtrip();
+        settle();
+        if shown("files") != held {
+            moved = Some(committed.elapsed());
+            break;
+        }
+    }
+    let moved = moved.expect("the workspace moved on within 6 s of the commit");
+    assert!(
+        moved >= Duration::from_secs(2),
+        "not before the wait ran out: {moved:?}"
+    );
+}
+
+#[test]
+fn a_swipe_while_a_tile_waits_follows_the_fingers_and_lands_with_the_focus() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("wait-swipe", HOST, &[test_display("TEST-1")]);
+    for app in ["a", "b", "c", "e"] {
+        let surface = session.open(app);
+        session.draw(&surface, 400, 300);
+    }
+    ask(|engine| {
+        let id = engine
+            .windows
+            .iter()
+            .find(|(_, win)| win.handle.app_id().get_untracked().as_deref() == Some("b"))
+            .map(|(id, _)| id.clone())
+            .ok_or("no b")?;
+        engine.model.focus_window(&id);
+        engine.commit();
+        Ok(())
+    })
+    .unwrap();
+    let (late, _late_top) = session.bare("late");
+    session.commit(&late);
+    settle();
+    let (_, start) = scroll("1");
+    assert!(start > 200.0, "room to swipe back: {start}");
+
+    session.swipe(Phase::Begin, 3, (0.0, 0.0), (0.0, 0.0));
+    let mut last = start;
+    for step in 1..=3 {
+        session.swipe(Phase::Update, 3, (f64::from(step) * 60.0, 0.0), (0.0, 0.0));
+        let (_, now) = scroll("1");
+        assert!(
+            (last - now - 60.0).abs() < 1e-6,
+            "the view moves with the fingers: {last} to {now}"
+        );
+        last = now;
+    }
+    session.swipe(Phase::End, 3, (180.0, 0.0), (0.0, 0.0));
+    settle();
+    let (focus, model_at, drawn_at) = ask(|engine| {
+        let id = engine.model.focused_window().cloned().ok_or("no focus")?;
+        let place = engine
+            .model
+            .layout()
+            .into_iter()
+            .find(|place| place.id == id)
+            .ok_or("not placed")?;
+        let drawn = engine.scene.visual(&id).ok_or("not drawn")?.rect;
+        let app = engine.windows[&id].handle.app_id().get_untracked();
+        Ok((app, engine.model.shown_rect(&place), drawn))
+    })
+    .unwrap();
+    assert_ne!(
+        focus.as_deref(),
+        Some("late"),
+        "the focus left with the view"
+    );
+    assert!(
+        (drawn_at.center().0 - model_at.center().0).abs() < 1.0,
+        "{focus:?} lands where the model has it: {drawn_at:?}, {model_at:?}"
+    );
+    assert!(
+        drawn_at.x >= 0.0 && drawn_at.x + drawn_at.w <= WIDTH,
+        "in view"
+    );
 }

@@ -5,7 +5,7 @@
 //! window that changes place keeps the spot it is drawn at and rides a
 //! spring from there, whatever moved it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use fs_wm_proto::{Families, Motion};
 
@@ -14,7 +14,7 @@ use crate::{
     model::{Layer, Model, Placed, WsId},
     motion::{Spring, SpringParams, Tween},
     pip,
-    tape::WinId,
+    tape::{Tape, WinId},
 };
 
 /// Hyprland's `popin`: an unstyled `windows` leaf opens a window from a
@@ -73,6 +73,14 @@ pub struct Scene {
     /// The output each workspace is on, whose frames step its scroll.
     homes: BTreeMap<WsId, String>,
     stack: BTreeMap<String, Spring>,
+    /// Tiles in the model that their clients have not drawn yet. Hyprland
+    /// lays a window out when it maps, so until then the rest of its
+    /// workspace is the model's with their columns at no width: what they
+    /// would push aside stays, and everything else, the scroll included,
+    /// follows the model.
+    waiting: BTreeSet<WinId>,
+    /// Waited-for tiles that have just drawn: they start at their place.
+    landing: BTreeSet<WinId>,
     families: Families,
     enabled: bool,
 }
@@ -90,6 +98,8 @@ impl Scene {
             scroll: BTreeMap::new(),
             homes: BTreeMap::new(),
             stack: BTreeMap::new(),
+            waiting: BTreeSet::new(),
+            landing: BTreeSet::new(),
             families: motion.families,
             enabled: motion.enabled,
         }
@@ -154,11 +164,79 @@ impl Scene {
     /// Takes the model's new state. Everything already on screen keeps the
     /// spot it is drawn at and heads for its new place from there.
     pub fn sync(&mut self, model: &Model) {
+        let layout = model.layout();
+        self.waiting
+            .retain(|id| layout.iter().any(|place| &place.id == id));
+        let mut waits_on: BTreeMap<WsId, BTreeSet<WinId>> = BTreeMap::new();
+        for place in &layout {
+            if let Some(ws) = place.workspace.as_ref()
+                && place.scrolls
+                && self.waiting.contains(&place.id)
+            {
+                waits_on
+                    .entry(ws.clone())
+                    .or_default()
+                    .insert(place.id.clone());
+            }
+        }
+        // The layout the rest of a waiting tile's workspace heads for, and
+        // its scroll: the model's, with the waiting tiles at no width.
+        let mut scrolls: BTreeMap<WsId, f64> = BTreeMap::new();
+        let shadow: BTreeMap<WinId, Placed> = if waits_on.is_empty() {
+            BTreeMap::new()
+        } else {
+            let mut without = model.clone();
+            for (ws_id, waiting) in &waits_on {
+                let Some(ws) = model.workspace(ws_id) else {
+                    continue;
+                };
+                let strip_w = model.strip_of(&ws.output).w;
+                let gone: Vec<usize> = (0..ws.tape.columns.len())
+                    .filter(|&c| {
+                        ws.tape.columns[c]
+                            .windows
+                            .iter()
+                            .all(|id| waiting.contains(id))
+                    })
+                    .collect();
+                // A waiting row of a column that has drawn ones only gives
+                // up its height.
+                for id in waiting {
+                    if ws.tape.find(id).is_some_and(|(c, _)| !gone.contains(&c)) {
+                        without.close(id);
+                    }
+                }
+                let scroll = projected_scroll(&ws.tape, &gone, strip_w);
+                if let Some(tape) = without
+                    .workspaces
+                    .iter_mut()
+                    .find(|ws| &ws.id == ws_id)
+                    .map(|ws| &mut ws.tape)
+                {
+                    for &c in &gone {
+                        if let Some(column) = tape.columns.get_mut(c) {
+                            column.width = 0.0;
+                        }
+                    }
+                    tape.scroll = if tape.held.is_some() {
+                        scroll
+                    } else {
+                        scroll.clamp(0.0, tape.max_scroll(strip_w))
+                    };
+                    scrolls.insert(ws_id.clone(), tape.scroll);
+                }
+            }
+            without
+                .layout()
+                .into_iter()
+                .map(|place| (place.id.clone(), place))
+                .collect()
+        };
         for ws in &model.workspaces {
-            let target = ws.tape.scroll;
+            let target = scrolls.get(&ws.id).copied().unwrap_or(ws.tape.scroll);
             self.scroll
                 .entry(ws.id.clone())
-                .or_insert_with(|| Spring::at(target))
+                .or_insert_with(|| Spring::at(ws.tape.scroll))
                 .target = target;
         }
         self.scroll
@@ -178,7 +256,6 @@ impl Scene {
         self.stack
             .retain(|name, _| model.outputs.iter().any(|o| &o.geo.name == name));
 
-        let layout = model.layout();
         for place in &layout {
             let stack_index = place
                 .workspace
@@ -189,6 +266,20 @@ impl Scene {
                 .output(&place.output)
                 .map(|o| o.geo.rect)
                 .unwrap_or_default();
+            let waits = self.waiting.contains(&place.id);
+            let place = match shadow.get(&place.id) {
+                Some(shadowed)
+                    if !waits
+                        && place
+                            .workspace
+                            .as_ref()
+                            .is_some_and(|ws| waits_on.contains_key(ws)) =>
+                {
+                    shadowed
+                }
+                _ => place,
+            };
+            let lands = waits || self.landing.contains(&place.id);
             match self.actors.get(&place.id) {
                 Some(actor) => {
                     let before = self.drawn(actor);
@@ -209,7 +300,7 @@ impl Scene {
                         }
                         spring.value = offset;
                         spring.target = 0.0;
-                        if offset == 0.0 && spring.velocity == 0.0 {
+                        if lands || (offset == 0.0 && spring.velocity == 0.0) {
                             spring.jump(0.0);
                         }
                     }
@@ -238,6 +329,7 @@ impl Scene {
                 }
             }
         }
+        self.landing.clear();
         self.actors
             .retain(|id, _| layout.iter().any(|place| &place.id == id));
         if !self.enabled {
@@ -271,19 +363,35 @@ impl Scene {
         }
     }
 
-    /// Plays a window's way in from its start: its client has drawn it,
-    /// which is the first there is to show.
-    pub fn arrive(&mut self, id: &str) {
-        if !self.enabled {
-            return;
+    /// Holds the rest of a new tile's workspace still until it arrives.
+    pub fn wait(&mut self, id: &str) {
+        self.waiting.insert(id.to_owned());
+    }
+
+    /// Lets a tile's workspace move again without its client having drawn.
+    /// Whether it was waiting.
+    pub fn unwait(&mut self, id: &str) -> bool {
+        let waited = self.waiting.remove(id);
+        if waited {
+            self.landing.insert(id.to_owned());
         }
+        waited
+    }
+
+    /// Plays a window's way in from its start: its client has drawn it,
+    /// which is the first there is to show. Whether it was waiting.
+    pub fn arrive(&mut self, id: &str) -> bool {
+        let waited = self.unwait(id);
         let effects = self.families.effects;
-        if let Some(actor) = self.actors.get_mut(id) {
+        if self.enabled
+            && let Some(actor) = self.actors.get_mut(id)
+        {
             actor.pop = Spring::at(OPEN_FROM);
             actor.pop.target = 1.0;
             actor.presence = Tween::at(0.0);
             actor.presence.retarget(1.0, &effects);
         }
+        waited
     }
 
     /// Puts a window where it is going without playing the way there, for a
@@ -510,4 +618,26 @@ impl Scene {
         visuals.sort_by_key(|visual| (visual.layer, visual.order));
         visuals
     }
+}
+
+/// The scroll of `tape` with its columns `gone` at no width. A focused
+/// column keeps its middle where the model has it on screen, so a swipe, a
+/// scroll bind or a fit moves this view as it moves the model's. A focused
+/// tile still waiting has no place yet, and the model has not scrolled to
+/// it: the view's left edge is mapped instead.
+fn projected_scroll(tape: &Tape, gone: &[usize], strip_w: f64) -> f64 {
+    let left = |c: usize| tape.column_left(c, strip_w);
+    let width = |c: usize| tape.columns[c].width * strip_w;
+    let narrowed = |x: f64| {
+        x - gone
+            .iter()
+            .map(|&c| (x - left(c)).clamp(0.0, width(c)))
+            .sum::<f64>()
+    };
+    let focus = tape.focus;
+    if focus >= tape.columns.len() || gone.contains(&focus) {
+        return narrowed(tape.scroll);
+    }
+    let middle = left(focus) + width(focus) / 2.0;
+    narrowed(middle) - (middle - tape.scroll)
 }

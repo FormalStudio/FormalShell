@@ -23,6 +23,24 @@ fn settle(scene: &mut Scene) -> usize {
     frames
 }
 
+/// Opens a tile its client has not drawn yet, as the engine does: the model
+/// takes it, but its tape keeps the scroll it had until it draws.
+fn open_waiting(model: &mut formalwm_core::model::Model, scene: &mut Scene, id: &str) {
+    let before = model.workspace("1").unwrap().tape.scroll;
+    open(model, id);
+    let now = model.workspace("1").unwrap().tape.scroll;
+    model.scroll_by("1", before - now);
+    scene.wait(id);
+}
+
+/// The waited tile has drawn: the view fits to it if it has the focus.
+fn arrive(model: &mut formalwm_core::model::Model, scene: &mut Scene, id: &str) {
+    scene.arrive(id);
+    if model.focused_window().is_some_and(|focus| focus == id) {
+        model.focus_window(id);
+    }
+}
+
 fn drawn(scene: &Scene, id: &str) -> Rect {
     scene.visual(id).unwrap().rect
 }
@@ -543,4 +561,277 @@ fn a_flung_picture_leaves_at_the_speed_of_the_hand() {
     still.fling("pip", (-3000.0, 0.0));
     assert!(!still.animating());
     assert_eq!(drawn(&still, "pip"), hand);
+}
+
+#[test]
+fn a_new_tile_moves_its_workspace_only_once_it_has_drawn() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b"] {
+        open(&mut model, id);
+        scene.sync(&model);
+    }
+    model.focus_window("a");
+    scene.sync(&model);
+    settle(&mut scene);
+    let (a, b) = (drawn(&scene, "a"), drawn(&scene, "b"));
+    let scroll = scene.scroll_of("1");
+
+    // Opened right of a, as a client's first commit has it placed.
+    open_waiting(&mut model, &mut scene, "c");
+    scene.sync(&model);
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "a"), a);
+    assert_eq!(drawn(&scene, "b"), b, "b stays while c has not drawn");
+    assert_eq!(scene.scroll_of("1"), scroll);
+
+    arrive(&mut model, &mut scene, "c");
+    scene.sync(&model);
+    scene.step(FRAME);
+    assert!(drawn(&scene, "b").x > b.x, "b makes room once c has drawn");
+    let rest = |id: &str| {
+        let scroll = model.workspace("1").unwrap().tape.scroll;
+        place(&model, id).rect.translate(-scroll, 0.0)
+    };
+    let (c, at) = (drawn(&scene, "c"), rest("c"));
+    assert!(
+        (c.x + c.w / 2.0 - (at.x + at.w / 2.0)).abs() < 1.0,
+        "c pops in at its place: {c:?}, {at:?}"
+    );
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "b"), rest("b"));
+    assert_eq!(drawn(&scene, "c"), rest("c"));
+}
+
+#[test]
+fn a_tile_let_go_before_it_draws_frees_its_workspace() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_window("a");
+    scene.sync(&model);
+    settle(&mut scene);
+    open_waiting(&mut model, &mut scene, "c");
+    scene.sync(&model);
+    settle(&mut scene);
+    let b = drawn(&scene, "b");
+    scene.unwait("c");
+    scene.sync(&model);
+    settle(&mut scene);
+    assert_ne!(drawn(&scene, "b"), b);
+
+    // Closed before it drew: the hold goes with it.
+    open_waiting(&mut model, &mut scene, "d");
+    scene.sync(&model);
+    model.close("d");
+    scene.sync(&model);
+    settle(&mut scene);
+    let scroll = model.workspace("1").unwrap().tape.scroll;
+    assert_eq!(
+        drawn(&scene, "b"),
+        place(&model, "b").rect.translate(-scroll, 0.0)
+    );
+}
+
+#[test]
+fn motion_already_running_goes_on_while_a_new_tile_waits() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+        scene.sync(&model);
+    }
+    settle(&mut scene);
+    // Focus back on a scrolls the tape and a resize slides b and c.
+    model.focus_window("a");
+    model.resize_column(0.1);
+    scene.sync(&model);
+    for _ in 0..5 {
+        scene.step(FRAME);
+    }
+    let heading = model.workspace("1").unwrap().tape.scroll;
+    let rest = |model: &formalwm_core::model::Model, id: &str| {
+        let scroll = model.workspace("1").unwrap().tape.scroll;
+        place(model, id).rect.translate(-scroll, 0.0)
+    };
+    let b = rest(&model, "b");
+    let (scroll, b_now) = (scene.scroll_of("1"), drawn(&scene, "b"));
+    assert_ne!(scroll, heading, "the tape is on its way");
+    assert_ne!(b_now, b, "b is on its way");
+
+    open_waiting(&mut model, &mut scene, "d");
+    scene.sync(&model);
+    scene.step(FRAME);
+    assert_ne!(scene.scroll_of("1"), scroll, "the scroll goes on");
+    assert_ne!(drawn(&scene, "b"), b_now, "b goes on");
+    settle(&mut scene);
+    assert_eq!(scene.scroll_of("1"), heading);
+    assert_eq!(
+        drawn(&scene, "b"),
+        b,
+        "b ends where it was going, not past d"
+    );
+}
+
+#[test]
+fn a_maximize_on_a_waiting_tiles_workspace_goes_through() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b"] {
+        open(&mut model, id);
+        scene.sync(&model);
+    }
+    model.focus_window("a");
+    scene.sync(&model);
+    settle(&mut scene);
+    let b = drawn(&scene, "b");
+
+    open_waiting(&mut model, &mut scene, "c");
+    scene.sync(&model);
+    model.set_big("a", Some(formalwm_core::model::Big::Maximized));
+    scene.sync(&model);
+    settle(&mut scene);
+    let scroll = model.workspace("1").unwrap().tape.scroll;
+    assert_eq!(
+        drawn(&scene, "a"),
+        place(&model, "a").rect.translate(-scroll, 0.0),
+        "a is maximized while c waits"
+    );
+    assert_eq!(scene.visual("a").unwrap().size, {
+        let rect = place(&model, "a").rect;
+        (rect.w, rect.h)
+    });
+    let mut without = model.clone();
+    without.close("c");
+    assert_eq!(
+        drawn(&scene, "b"),
+        place(&without, "b").rect.translate(-scroll, 0.0),
+        "b makes way for a as it would were c not there"
+    );
+    assert_ne!(drawn(&scene, "b"), b);
+}
+
+/// a, b and c drawn at the default width, c focused and the tape scrolled.
+fn scrolled_three() -> (formalwm_core::model::Model, Scene) {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+        scene.sync(&model);
+    }
+    settle(&mut scene);
+    assert!(model.workspace("1").unwrap().tape.scroll > 0.0, "scrolled");
+    (model, scene)
+}
+
+#[test]
+fn a_second_tile_waiting_does_not_scroll_the_first_ones_view() {
+    let (mut model, mut scene) = scrolled_three();
+    let scroll = scene.scroll_of("1");
+    let before: Vec<Rect> = ["a", "b", "c"].map(|id| drawn(&scene, id)).to_vec();
+
+    for id in ["d", "e"] {
+        open_waiting(&mut model, &mut scene, id);
+        scene.sync(&model);
+    }
+    settle(&mut scene);
+    assert_eq!(scene.scroll_of("1"), scroll, "neither d nor e has drawn");
+    let after: Vec<Rect> = ["a", "b", "c"].map(|id| drawn(&scene, id)).to_vec();
+    assert_eq!(after, before);
+}
+
+#[test]
+fn a_maximize_from_a_scrolled_tape_shows_the_window_while_a_tile_waits() {
+    let (mut model, mut scene) = scrolled_three();
+    open_waiting(&mut model, &mut scene, "d");
+    scene.sync(&model);
+    settle(&mut scene);
+
+    model.focus_window("a");
+    model.set_big("a", Some(formalwm_core::model::Big::Maximized));
+    scene.sync(&model);
+    settle(&mut scene);
+    let a = place(&model, "a");
+    assert_eq!(
+        drawn(&scene, "a"),
+        model.shown_rect(&a),
+        "a covers the view as the model has it"
+    );
+    assert_eq!(
+        scene.scroll_of("1"),
+        model.workspace("1").unwrap().tape.scroll
+    );
+}
+
+#[test]
+fn a_swipe_while_a_tile_waits_moves_the_view_with_the_fingers_and_lands_with_the_focus() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b", "c", "e", "f"] {
+        open(&mut model, id);
+        scene.sync(&model);
+    }
+    model.focus_window("c");
+    scene.sync(&model);
+    open_waiting(&mut model, &mut scene, "d");
+    scene.sync(&model);
+    settle(&mut scene);
+    let view = scene.scroll_of("1");
+    assert!(view > 400.0, "room to swipe back: {view}");
+
+    // Each step of the fingers moves the view by as much, d not drawn.
+    let mut last = view;
+    for _ in 0..4 {
+        assert!(model.scroll_by("1", -100.0));
+        scene.sync(&model);
+        settle(&mut scene);
+        let now = scene.scroll_of("1");
+        assert!((last - now - 100.0).abs() < 1e-6, "{last} to {now}");
+        last = now;
+    }
+
+    // Let go: the model snaps and focuses a tile in view, which the view
+    // shows where the model has it.
+    let projected = model.workspace("1").unwrap().tape.scroll - 150.0;
+    model.scroll_release("1", projected);
+    scene.sync(&model);
+    settle(&mut scene);
+    let focus = model.focused_window().unwrap().clone();
+    assert_ne!(focus, "d");
+    let at = model.shown_rect(&place(&model, &focus));
+    let drawn_at = drawn(&scene, &focus);
+    assert_eq!(
+        drawn_at.center(),
+        at.center(),
+        "{focus} where the model has it"
+    );
+    assert!(
+        drawn_at.x >= 0.0 && drawn_at.x + drawn_at.w <= 1920.0,
+        "in view"
+    );
+}
+
+#[test]
+fn the_newest_waiting_tile_drawing_first_is_shown_while_an_older_one_waits() {
+    let (mut model, mut scene) = scrolled_three();
+    for id in ["d", "e"] {
+        open_waiting(&mut model, &mut scene, id);
+        scene.sync(&model);
+    }
+    settle(&mut scene);
+
+    arrive(&mut model, &mut scene, "e");
+    scene.sync(&model);
+    settle(&mut scene);
+    let e = drawn(&scene, "e");
+    assert!(
+        e.x >= 0.0 && e.x + e.w <= 1920.0,
+        "e has the focus and a buffer: in view at {e:?}"
+    );
+    assert!(scene.visual("e").unwrap().visible);
+    assert_eq!(e.w, place(&model, "e").rect.w);
+    // d still waits, so no room is made for it between c and e.
+    let (b, c) = (drawn(&scene, "b"), drawn(&scene, "c"));
+    assert_eq!(e.x - (c.x + c.w), c.x - (b.x + b.w));
 }

@@ -6,7 +6,7 @@ use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 use formalwm_core::{
     color::Rgba,
-    model::{Big, Layer, Model, WorkspaceSpec},
+    model::{Layer, Model, WorkspaceSpec},
     motion::Clocks,
     rules,
     scene::{Scene, Visual},
@@ -28,8 +28,10 @@ pub struct Win {
     /// Out of sight until it draws itself at its float's size; the timer
     /// shows it anyway.
     pub held: Option<TimerHandle>,
-    /// Maximized or fullscreen as the client asked before it was placed.
-    pub asked: Option<Big>,
+    /// Fullscreen as the client asked before it was placed.
+    pub asked_fullscreen: bool,
+    /// The client has drawn it: Hyprland's mapped.
+    pub drawn: bool,
     pub scope: Scope,
 }
 

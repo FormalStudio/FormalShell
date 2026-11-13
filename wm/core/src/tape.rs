@@ -481,8 +481,22 @@ impl Tape {
 
     /// A column's left edge. A lone column sits centred at the width it has.
     pub fn column_left(&self, index: usize, strip_w: f64) -> f64 {
-        if self.columns.len() == 1 && !self.held.is_some() {
-            return ((1.0 - self.columns[0].width) * strip_w / 2.0).max(0.0);
+        // A column of no width, the scene's stand-in for a tile not drawn
+        // yet, does not count: the one column with a width is still alone.
+        let mut sized = self
+            .columns
+            .iter()
+            .enumerate()
+            .filter(|(_, column)| column.width > 0.0);
+        if let (Some((lone, column)), None) = (sized.next(), sized.next())
+            && self.held.is_none()
+        {
+            let left = ((1.0 - column.width) * strip_w / 2.0).max(0.0);
+            return if index <= lone {
+                left
+            } else {
+                left + column.width * strip_w
+            };
         }
         self.columns[..index.min(self.columns.len())]
             .iter()

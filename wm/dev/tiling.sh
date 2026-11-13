@@ -65,20 +65,15 @@ key Super+l 1; focus_app; tape
 key Super+h 1; focus_app; tape
 key Super+Shift+f 1; tape
 
-step "a window that asks to be maximized before it maps, as T3 Code and Discord do"
+step "a window that asks to be maximized before it maps, as T3 Code, Discord and Text Editor do"
 win asks --maximized > "$run/asks.out"; sleep 1.5; tape; asked asks; shot 66-asks-maximized
-# Maximized: the output inset evenly by the border, and the client told that size.
-rect=$(ipc state.get | jq -r '(.outputs[0] | [.width, .height]) as [$w, $h]
+# Hyprland drops a maximize asked before the window maps: it opens a column of the default width.
+rect=$(ipc state.get | jq -r '(.outputs[0] | .width) as $w
   | .windows[] | select(.appId == "asks") | .rect
-  | "\(.width)x\(.height) \(.x * 2 + .width == $w and .y * 2 + .height == $h and .x <= 10)"')
-expect "asks covers the output but its border" "${rect#* }" true
+  | "\(.width)x\(.height) \(.width * 2 < $w)"')
+expect "asks opens as a half column" "${rect#* }" true
 expect "asks was told the size it shows" "$(asked asks)" "configure ${rect% *}"
-key Super+Return 1.5; tape; focus_app
-# Off the focus, a maximized column keeps the maximized height.
-size=${rect%% *}
-expect "asks stays maximized beside the new window" \
-  "$(ipc state.get | jq -r '.windows[] | select(.appId == "asks") | .rect.height')" "${size#*x}"
-close asks; ipc state.get | jq -r '.windows[] | select(.appId == "foot") | .id' | while read -r id; do ipc window.close "{\"id\": \"$id\"}" >/dev/null; done; sleep 1
+close asks; sleep 1
 
 step "a window that will not go below 700x500 in a half column: bands on both edges, Hyprland shows only the left"
 win big --min 700x500 > "$run/big.out"; sleep 1.5

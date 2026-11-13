@@ -57,6 +57,10 @@ const POP_OUT: f64 = 0.9;
 /// is shown at whatever size it has.
 const HOLD_MS: f64 = 300.0;
 
+/// How long a new tile's workspace stays still for a client that has not
+/// drawn it yet.
+const WAIT_MS: f64 = 2000.0;
+
 fn blend(from: Color, to: Color, t: f64) -> Color {
     let channel = |from: u8, to: u8| {
         (from as f64 + (to as f64 - from as f64) * t.clamp(0.0, 1.0)).round() as u8
@@ -218,7 +222,8 @@ impl Engine {
                 placed: false,
                 sized: false,
                 held: None,
-                asked: None,
+                asked_fullscreen: false,
+                drawn: false,
                 scope,
             },
         );
@@ -254,11 +259,11 @@ impl Engine {
             });
         let float_rect = rules::float_rect(&effect, area, None);
         let sized = effect.size.is_some();
-        // Electron apps ask to be maximized before they map; Hyprland's
-        // scrolling layout opens them as a column the width of the view.
-        let asked = self.windows.get_mut(&id).and_then(|win| win.asked.take());
-        let fullscreen =
-            window.is_fullscreen().get_untracked() || asked == Some(Big::Fullscreen);
+        let asked_fullscreen = self
+            .windows
+            .get_mut(&id)
+            .is_some_and(|win| std::mem::take(&mut win.asked_fullscreen));
+        let fullscreen = window.is_fullscreen().get_untracked() || asked_fullscreen;
         // A picture in picture floats and pins unless a rule says otherwise.
         let pip = !fullscreen
             && crate::pip::allowed(&effect)
@@ -271,6 +276,12 @@ impl Engine {
         window
             .state(&CONFINE)
             .set(effect.confine_pointer == Some(true));
+        let scrolls: Vec<(String, f64)> = self
+            .model
+            .workspaces
+            .iter()
+            .map(|ws| (ws.id.clone(), ws.tape.scroll))
+            .collect();
         self.model.open(
             NewWindow {
                 id: id.clone(),
@@ -289,14 +300,29 @@ impl Engine {
                 fullscreen,
             },
         );
-        if asked == Some(Big::Maximized) {
-            self.model.set_big(&id, Some(Big::Maximized));
-        }
         let _ = self.model.set_max_size(&id, max_size(window));
+        let drawn = self.windows.get(&id).is_some_and(|win| win.drawn);
         if let Some(win) = self.windows.get_mut(&id) {
             win.effect = effect;
             win.placed = true;
             win.sized = !floating || sized;
+        }
+        if !floating && !drawn {
+            // Hyprland lays a window out, and fits the view to it, when it
+            // maps: until it draws, its tape keeps the scroll it had.
+            let home = self
+                .model
+                .workspaces
+                .iter()
+                .find(|ws| ws.tape.find(&id).is_some())
+                .map(|ws| (ws.id.clone(), ws.tape.scroll));
+            if let Some((ws, now)) = home
+                && let Some(&(_, before)) = scrolls.iter().find(|(id, _)| *id == ws)
+            {
+                self.model.scroll_by(&ws, before - now);
+            }
+            self.scene.wait(&id);
+            set_timeout(WAIT_MS, move || enter(move |engine| engine.unwait(window)));
         }
         window.set_close_animation_duration(self.scene.close_ms() as u64);
         self.commit();
@@ -405,6 +431,22 @@ impl Engine {
         true
     }
 
+    /// A new tile's client has not drawn it in time: its workspace moves on.
+    fn unwait(&mut self, window: Window) {
+        if self.scene.unwait(&window.id()) {
+            self.fit_waited(&window.id());
+        }
+        self.commit();
+    }
+
+    /// A tile that waited to be drawn is laid out now: the view fits to it
+    /// if it still has the focus.
+    fn fit_waited(&mut self, id: &str) {
+        if self.model.focused_window().is_some_and(|focus| focus == id) {
+            self.model.focus_window(id);
+        }
+    }
+
     /// A held window has drawn itself at its float's size, or ran out of
     /// time: it is shown.
     fn release(&mut self, window: Window) {
@@ -445,6 +487,9 @@ impl Engine {
     fn first_commit(&mut self, window: Window) {
         self.place(window);
         let id = window.id();
+        if let Some(win) = self.windows.get_mut(&id) {
+            win.drawn = true;
+        }
         let told = self
             .model
             .layout()
@@ -459,10 +504,15 @@ impl Engine {
 
     fn settle(&mut self, window: Window) {
         let id = window.id();
+        if !self.windows.contains_key(&id) {
+            return;
+        }
+        if self.scene.arrive(&id) {
+            self.fit_waited(&id);
+        }
         let Some(win) = self.windows.get(&id) else {
             return;
         };
-        self.scene.arrive(&id);
         if win.sized {
             return self.commit();
         }
@@ -612,15 +662,18 @@ impl Engine {
 
     fn set_big(&mut self, window: Window, kind: Big, on: bool) {
         let id = window.id();
-        if let Some(win) = self.windows.get_mut(&id)
-            && !win.placed
-        {
-            win.asked = match (on, win.asked) {
-                (true, _) => Some(kind),
-                (false, Some(asked)) if asked == kind => None,
-                (false, asked) => asked,
-            };
-            return;
+        if let Some(win) = self.windows.get_mut(&id) {
+            // Hyprland acts on a maximize only once the window has drawn and
+            // replays only fullscreen at map (Window.cpp onUpdateState), so
+            // a window that asks before then, as GTK apps restoring a
+            // maximized session and Electron apps do, opens as a column.
+            if kind == Big::Maximized && !win.drawn {
+                return;
+            }
+            if !win.placed {
+                win.asked_fullscreen = on;
+                return;
+            }
         }
         let now = self.model.big_of(&id);
         let changed = match (on, now) {
