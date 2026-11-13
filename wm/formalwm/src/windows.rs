@@ -215,22 +215,9 @@ impl Engine {
         if self.windows.get(&id).is_none_or(|win| win.placed) {
             return;
         }
-        let (app_id, title, xwayland) = self.facts(window);
-        // A dialog floats unless a rule says otherwise, as it does under
-        // Hyprland.
-        let dialog =
-            window.is_transient().get_untracked() || !window.is_resizable().get_untracked();
-        let effect = rules::resolve(
-            &self.settings.rules,
-            &rules::Facts {
-                app_id: &app_id,
-                title: &title,
-                xwayland,
-                tag: &window.tag().get_untracked().unwrap_or_default(),
-                floating: dialog,
-            },
-        );
-        let floating = effect.float.unwrap_or(dialog) || effect.overlay.is_some();
+        let (app_id, title, _) = self.facts(window);
+        let effect = self.effect(window);
+        let floating = effect.float == Some(true) || effect.overlay.is_some();
         let workspace = effect.workspace.map(|number| number.to_string());
         let output = workspace
             .as_deref()
@@ -275,10 +262,90 @@ impl Engine {
         self.commit();
     }
 
+    /// The rules' sum for the window as it is now. A window the client
+    /// marks as a dialog floats unless a rule says otherwise, as under
+    /// Hyprland.
+    fn effect(&self, window: Window) -> rules::Effect {
+        let (app_id, title, xwayland) = self.facts(window);
+        rules::resolve(
+            &self.settings.rules,
+            &rules::Facts {
+                app_id: &app_id,
+                title: &title,
+                xwayland,
+                tag: &window.tag().get_untracked().unwrap_or_default(),
+                floating: window.suggests_float().get_untracked(),
+            },
+        )
+    }
+
+    /// Decides float or tile again on what the client said by its first
+    /// buffer, as Hyprland does at map: GTK 3 sets a dialog's fixed size
+    /// only after the first configure, so Electron's `showErrorBox` looks
+    /// resizable when it is placed. Nothing of the window is drawn yet, so
+    /// it does not jump.
+    fn reclassify(&mut self, window: Window) {
+        let id = window.id();
+        let Some(was) = self.model.window(&id).map(|rec| rec.floating) else {
+            return;
+        };
+        if self
+            .windows
+            .get(&id)
+            .is_none_or(|win| win.effect.overlay.is_some())
+        {
+            return;
+        }
+        let effect = self.effect(window);
+        let floating = effect.float == Some(true);
+        if floating == was
+            || effect.overlay.is_some()
+            || !self.model.set_floating(&id, Some(floating))
+        {
+            return;
+        }
+        let sized = !floating || effect.size.is_some();
+        self.model.set_pinned(&id, effect.pin.unwrap_or(false));
+        window.state(&FORCE).set(sized);
+        window.state(&BLUR).set(self.blurs(&effect));
+        window
+            .state(&CONFINE)
+            .set(effect.confine_pointer == Some(true));
+        if let Some(win) = self.windows.get_mut(&id) {
+            win.effect = effect;
+            win.sized = sized;
+        }
+    }
+
+    /// Where a float of `size` goes on `output` (global): over the middle of
+    /// its parent when the parent is on the same output, else the output's
+    /// middle; kept on the output either way. Local to the output.
+    fn centred(&self, window: Window, output: Box2, size: (f64, f64)) -> Box2 {
+        let (w, h) = size;
+        let parent = window.parent_id().get_untracked().and_then(|parent| {
+            self.model
+                .layout()
+                .into_iter()
+                .find(|placed| placed.id == parent)
+                .filter(|placed| {
+                    self.model.output_of(&window.id()).as_deref() == Some(&placed.output)
+                })
+                .map(|placed| placed.rect.translate(-output.x, -output.y))
+        });
+        let (cx, cy) = match parent {
+            Some(rect) => (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0),
+            None => (output.w / 2.0, output.h / 2.0),
+        };
+        let x = (cx - w / 2.0).clamp(0.0, (output.w - w).max(0.0));
+        let y = (cy - h / 2.0).clamp(0.0, (output.h - h).max(0.0));
+        Box2::new(x.round(), y.round(), w, h)
+    }
+
     /// The client has drawn itself: a float that was not told a size keeps
-    /// the one it chose, where its rule or the centre puts it.
+    /// the one it chose, where its rule, its parent or the centre puts it.
     fn first_commit(&mut self, window: Window) {
         self.place(window);
+        self.reclassify(window);
         let id = window.id();
         let Some(win) = self.windows.get(&id) else {
             return;
@@ -303,14 +370,8 @@ impl Engine {
             && natural.height >= 1.0
         {
             let (w, h) = (natural.width.min(output.w), natural.height.min(output.h));
-            let local = rules::float_rect(&effect, (output.w, output.h), Some((w, h))).unwrap_or(
-                Box2::new(
-                    ((output.w - w) / 2.0).round(),
-                    ((output.h - h) / 2.0).round(),
-                    w,
-                    h,
-                ),
-            );
+            let local = rules::float_rect(&effect, (output.w, output.h), Some((w, h)))
+                .unwrap_or_else(|| self.centred(window, output, (w, h)));
             if self.model.place(&id, local.translate(output.x, output.y)) {
                 self.scene.sync(&self.model);
                 self.scene.land(&id);
