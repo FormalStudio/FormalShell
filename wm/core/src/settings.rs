@@ -263,6 +263,7 @@ struct RuleFile {
     overlay: Option<String>,
     float: Option<bool>,
     pin: Option<bool>,
+    pip: Option<bool>,
     size: Option<[LengthFile; 2]>,
     position: Option<PositionFile>,
     opacity: Option<f64>,
@@ -543,6 +544,7 @@ impl Settings {
                     overlay: rule.overlay,
                     float: rule.float,
                     pin: rule.pin,
+                    pip: rule.pip,
                     size: match &rule.size {
                         Some([w, h]) => Some((length(w)?, length(h)?)),
                         None => None,

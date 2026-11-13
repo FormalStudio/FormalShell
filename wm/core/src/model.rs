@@ -182,6 +182,8 @@ pub struct WindowRec {
     pub float_rect: Rect,
     /// Shown on every workspace of its output.
     pub pinned: bool,
+    /// Picture in picture: pinned, and drawn over every window of its output.
+    pub pip: bool,
     pub urgent: bool,
     /// The most the client will draw, 0 on an axis it leaves free.
     pub max_size: Option<(f64, f64)>,
@@ -196,6 +198,7 @@ pub struct Placement {
     /// Relative to the output's origin.
     pub float_rect: Option<Rect>,
     pub pinned: bool,
+    pub pip: bool,
     pub fullscreen: bool,
 }
 
@@ -219,6 +222,8 @@ pub enum Layer {
     Pinned,
     Fullscreen,
     Overlay,
+    /// A picture in picture, over everything else an output shows.
+    Pip,
 }
 
 /// One window's place at rest.
@@ -591,6 +596,7 @@ impl Model {
             .unwrap_or_default();
         let floating = placement.floating || overlay.is_some();
         let column = self.new_column(&workspace, &new.id);
+        let pip = placement.pip && floating && overlay.is_none();
         let float_rect = placement
             .float_rect
             .unwrap_or_else(|| self.default_float_rect(&output, new.size));
@@ -607,7 +613,8 @@ impl Model {
             },
             floating,
             float_rect,
-            pinned: placement.pinned && floating,
+            pinned: (placement.pinned && floating) || pip,
+            pip,
             urgent: false,
             max_size: None,
         });
@@ -653,7 +660,7 @@ impl Model {
     }
 
     fn attach(&mut self, id: &str, workspace: &str, column: Option<usize>) {
-        let Some(floating) = self.window(id).map(|w| w.floating) else {
+        let Some((floating, pip)) = self.window(id).map(|w| (w.floating, w.pip)) else {
             return;
         };
         let width = self.options.default_width;
@@ -661,7 +668,11 @@ impl Model {
         let Some(ws) = self.workspace_mut(workspace) else {
             return;
         };
-        if floating {
+        if pip {
+            // Under the other floats in the focus order: a picture arrives
+            // without the keyboard, and takes it when it is pressed.
+            ws.floats.insert(0, id.to_owned());
+        } else if floating {
             ws.floats.push(id.to_owned());
             ws.float_focused = true;
         } else {
@@ -693,11 +704,23 @@ impl Model {
             }
             Home::Workspace(workspace) => {
                 let strip_w = self.strip_w(&workspace);
+                let pips: Vec<WinId> = self
+                    .windows
+                    .iter()
+                    .filter(|w| w.pip)
+                    .map(|w| w.id.clone())
+                    .collect();
                 if let Some(ws) = self.workspace_mut(&workspace) {
                     ws.tape.remove(id);
                     ws.tape.fit(strip_w);
+                    let was_top = ws.floats.last().is_some_and(|w| w == id);
                     ws.floats.retain(|w| w != id);
-                    if ws.floats.is_empty() {
+                    // The focus a float leaves does not fall to a picture
+                    // while there is a tile to take it.
+                    let to_picture = was_top
+                        && !ws.tape.is_empty()
+                        && ws.floats.last().is_some_and(|w| pips.contains(w));
+                    if ws.floats.is_empty() || to_picture {
                         ws.float_focused = false;
                     }
                     ws.unmark(id);
@@ -875,6 +898,7 @@ impl Model {
         if let Some(window) = self.window_mut(id) {
             window.floating = floating;
             window.pinned &= floating;
+            window.pip &= floating;
             if let (true, Some(tile)) = (floating, tiled) {
                 let (mut w, mut h) = (window.float_rect.w, window.float_rect.h);
                 // A float the size of its tile would not be seen to float.
@@ -893,10 +917,46 @@ impl Model {
         true
     }
 
-    /// Pins or unpins a floating window.
+    /// Pins or unpins a floating window. A picture in picture that is
+    /// unpinned is an ordinary float again.
     pub fn set_pinned(&mut self, id: &str, pinned: bool) {
         if let Some(window) = self.window_mut(id) {
             window.pinned = pinned && window.floating;
+            window.pip &= window.pinned;
+        }
+    }
+
+    /// Makes a floating window on a workspace a picture in picture, or an
+    /// ordinary pinned float again.
+    pub fn set_pip(&mut self, id: &str, pip: bool) -> bool {
+        match self.window_mut(id) {
+            Some(window)
+                if window.floating
+                    && matches!(window.home, Home::Workspace(_))
+                    && window.pip != pip =>
+            {
+                window.pip = pip;
+                window.pinned |= pip;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Takes the focus from a float and gives it to what is under it: the
+    /// float below, else the tape.
+    pub fn yield_focus(&mut self, id: &str) {
+        let Some(Home::Workspace(workspace)) = self.window(id).map(|w| w.home.clone()) else {
+            return;
+        };
+        if let Some(ws) = self.workspace_mut(&workspace)
+            && let Some(index) = ws.floats.iter().position(|w| w == id)
+        {
+            let window = ws.floats.remove(index);
+            ws.floats.insert(0, window);
+            if ws.floats.len() == 1 && !ws.tape.is_empty() {
+                ws.float_focused = false;
+            }
         }
     }
 
@@ -1056,7 +1116,7 @@ impl Model {
             if matches!(window.home, Home::Overlay(_)) {
                 window.floating = true;
             }
-            window.pinned &= from_output == to_output;
+            window.pinned &= window.pip || from_output == to_output;
         }
         // At the end of the tape it joins, as Hyprland's move to a workspace.
         self.attach(id, workspace, Some(usize::MAX));
@@ -1212,6 +1272,7 @@ impl Model {
         if let Some(window) = self.window_mut(id) {
             window.floating = true;
             window.pinned = false;
+            window.pip = false;
             window.home = Home::Overlay(overlay.to_owned());
         }
         let overlay = self.overlay_mut(overlay);
@@ -1712,7 +1773,9 @@ impl Model {
                 let rect = window
                     .float_rect
                     .translate(output.geo.rect.x, output.geo.rect.y);
-                let layer = if window.pinned {
+                let layer = if window.pip {
+                    Layer::Pip
+                } else if window.pinned {
                     Layer::Pinned
                 } else {
                     Layer::Float

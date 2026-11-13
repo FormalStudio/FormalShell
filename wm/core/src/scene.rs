@@ -13,6 +13,7 @@ use crate::{
     geom::Rect,
     model::{Layer, Model, Placed, WsId},
     motion::{Spring, SpringParams, Tween},
+    pip,
     tape::WinId,
 };
 
@@ -38,6 +39,8 @@ struct Actor {
     dh: Spring,
     pop: Spring,
     presence: Tween,
+    /// Under a gesture: drawn where the hand has it until it lets go.
+    held: bool,
 }
 
 /// One window as drawn this frame.
@@ -124,7 +127,7 @@ impl Scene {
             rect.x -= self.scroll_of(workspace);
         }
         match actor.place.layer {
-            Layer::Pinned => {}
+            Layer::Pinned | Layer::Pip => {}
             Layer::Overlay => {
                 if !actor.place.shown {
                     rect.y -= actor.output_rect.h;
@@ -200,6 +203,10 @@ impl Scene {
                         (&mut next.dw, before.w - after.w),
                         (&mut next.dh, before.h - after.h),
                     ] {
+                        if next.held {
+                            spring.jump(offset);
+                            continue;
+                        }
                         spring.value = offset;
                         spring.target = 0.0;
                         if offset == 0.0 && spring.velocity == 0.0 {
@@ -225,6 +232,7 @@ impl Scene {
                             dh: Spring::at(0.0),
                             pop,
                             presence,
+                            held: false,
                         },
                     );
                 }
@@ -253,8 +261,10 @@ impl Scene {
             spring.jump(spring.target);
         }
         for actor in self.actors.values_mut() {
-            for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
-                spring.jump(0.0);
+            if !actor.held {
+                for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
+                    spring.jump(0.0);
+                }
             }
             actor.pop.jump(1.0);
             actor.presence.jump(1.0);
@@ -306,6 +316,54 @@ impl Scene {
                 spring.target = 0.0;
             }
             actor.pop.jump(1.0);
+        }
+    }
+
+    /// Draws a window at `drawn` whatever the model says, until `release`:
+    /// a pinch has it stretched past the size its client is given.
+    pub fn hold(&mut self, id: &str, drawn: Rect) {
+        let Some(rest) = self.actors.get(id).map(|actor| self.composed(actor)) else {
+            return;
+        };
+        if let Some(actor) = self.actors.get_mut(id) {
+            for (spring, offset) in [
+                (&mut actor.dx, drawn.x - rest.x),
+                (&mut actor.dy, drawn.y - rest.y),
+                (&mut actor.dw, drawn.w - rest.w),
+                (&mut actor.dh, drawn.h - rest.h),
+            ] {
+                spring.jump(offset);
+            }
+            actor.held = true;
+            actor.pop.jump(1.0);
+        }
+    }
+
+    /// Lets a held window go from where it is drawn to where the model has
+    /// it.
+    pub fn release(&mut self, id: &str) {
+        let enabled = self.enabled;
+        if let Some(actor) = self.actors.get_mut(id) {
+            actor.held = false;
+            for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
+                if enabled {
+                    spring.target = 0.0;
+                } else {
+                    spring.jump(0.0);
+                }
+            }
+        }
+    }
+
+    /// Gives a window on its way to its place the speed a hand let it go
+    /// with, in pixels a second.
+    pub fn fling(&mut self, id: &str, velocity: (f64, f64)) {
+        if !self.enabled {
+            return;
+        }
+        if let Some(actor) = self.actors.get_mut(id).filter(|actor| !actor.held) {
+            actor.dx.velocity = velocity.0;
+            actor.dy.velocity = velocity.1;
         }
     }
 
@@ -377,8 +435,14 @@ impl Scene {
     }
 
     fn step_actor(actor: &mut Actor, spatial: SpringParams, dt: f64) {
+        // A picture in picture rides its own spring, whatever the theme's
+        // clocks are.
+        let place = match actor.place.layer {
+            Layer::Pip => pip::SPRING,
+            _ => spatial,
+        };
         for spring in [&mut actor.dx, &mut actor.dy, &mut actor.dw, &mut actor.dh] {
-            spring.step(spatial, dt);
+            spring.step(place, dt);
         }
         actor.pop.step_in(spatial, dt, UNIT);
         actor.presence.step(dt);
@@ -429,7 +493,7 @@ impl Scene {
             layer: actor.place.layer,
             order: actor.place.order,
             lane: match actor.place.layer {
-                Layer::Pinned | Layer::Overlay => 0.0,
+                Layer::Pinned | Layer::Overlay | Layer::Pip => 0.0,
                 _ => actor.stack_index - self.stack_of(&actor.place.output),
             },
             settled: springs_rest && self.settled(actor),

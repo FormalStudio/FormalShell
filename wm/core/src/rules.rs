@@ -103,6 +103,8 @@ pub struct Effect {
     pub overlay: Option<String>,
     pub float: Option<bool>,
     pub pin: Option<bool>,
+    /// Picture in picture, whatever the window says of itself.
+    pub pip: Option<bool>,
     pub size: Option<(Length, Length)>,
     pub position: Option<Position>,
     pub opacity: Option<f64>,
@@ -127,7 +129,8 @@ pub struct Facts<'a> {
     pub title: &'a str,
     pub xwayland: bool,
     pub tag: &'a str,
-    /// It asked to float: a dialog, a fixed-size window.
+    /// It asked to float: a dialog, a fixed-size window, a picture in
+    /// picture.
     pub floating: bool,
 }
 
@@ -165,6 +168,7 @@ pub fn resolve(rules: &[Rule], facts: &Facts<'_>) -> Effect {
             overlay,
             float,
             pin,
+            pip,
             size,
             position,
             opacity,

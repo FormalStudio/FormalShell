@@ -11,6 +11,7 @@ pub mod handover;
 pub mod model;
 pub mod motion;
 pub mod overview;
+pub mod pip;
 pub mod rules;
 pub mod scene;
 pub mod settings;

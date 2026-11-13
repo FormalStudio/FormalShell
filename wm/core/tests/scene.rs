@@ -359,3 +359,125 @@ fn each_output_steps_on_its_own_frames() {
     assert!(frames > 100);
     assert!(!scene.animating(), "both landed");
 }
+
+fn picture(rect: Rect) -> Placement {
+    Placement {
+        floating: true,
+        pip: true,
+        float_rect: Some(rect),
+        ..Placement::default()
+    }
+}
+
+#[test]
+fn a_picture_does_not_ride_the_stack_and_flies_on_its_own_spring() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    let from = Rect::new(1424.0, 794.0, 480.0, 270.0);
+    open_with(&mut model, "pip", picture(from));
+    open(&mut model, "a");
+    scene.sync(&model);
+    settle(&mut scene);
+    model.focus_workspace("5");
+    scene.sync(&model);
+    for _ in 0..30 {
+        scene.step(FRAME);
+        assert_eq!(drawn(&scene, "pip"), from);
+    }
+    assert_eq!(scene.visual("pip").unwrap().lane, 0.0);
+
+    // To the other corner: it and a float making the same move part ways,
+    // the picture on its spring and the float on the theme's.
+    let float = Placement {
+        floating: true,
+        float_rect: Some(from),
+        ..Placement::default()
+    };
+    open_with(&mut model, "f", float);
+    scene.sync(&model);
+    settle(&mut scene);
+    let to = Rect::new(16.0, 794.0, 480.0, 270.0);
+    model.place("pip", to);
+    model.place("f", to);
+    scene.sync(&model);
+    let mut peak = f64::MAX;
+    for _ in 0..12 {
+        scene.step(FRAME);
+    }
+    assert_ne!(drawn(&scene, "pip").x, drawn(&scene, "f").x);
+    for _ in 0..240 {
+        scene.step(FRAME);
+        peak = peak.min(drawn(&scene, "pip").x);
+    }
+    assert_eq!(drawn(&scene, "pip"), to);
+    assert!(peak < 16.0 && peak > 16.0 - 1408.0 * 0.02, "overshoot {peak}");
+}
+
+#[test]
+fn a_held_picture_is_drawn_where_the_hand_has_it_until_it_lets_go() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    let rest = Rect::new(1424.0, 794.0, 480.0, 270.0);
+    open_with(&mut model, "pip", picture(rest));
+    scene.sync(&model);
+    settle(&mut scene);
+
+    // Stretched past its size by a pinch: the client keeps `rest`.
+    let stretched = Rect::new(1400.0, 780.0, 528.0, 297.0);
+    scene.hold("pip", stretched);
+    assert!(!scene.animating(), "a held picture waits for the hand");
+    for _ in 0..30 {
+        scene.step(FRAME);
+    }
+    assert_eq!(drawn(&scene, "pip"), stretched);
+    assert_eq!(scene.visual("pip").unwrap().size, (480.0, 270.0));
+    // Something else changing the model does not let it go.
+    open(&mut model, "a");
+    scene.sync(&model);
+    scene.finish();
+    assert_eq!(drawn(&scene, "pip"), stretched);
+
+    scene.release("pip");
+    assert!(scene.animating());
+    scene.step(FRAME);
+    let on_the_way = drawn(&scene, "pip");
+    assert!(on_the_way.w < 528.0 && on_the_way.w > 480.0);
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "pip"), rest);
+}
+
+#[test]
+fn a_flung_picture_leaves_at_the_speed_of_the_hand() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    let hand = Rect::new(900.0, 400.0, 480.0, 270.0);
+    open_with(&mut model, "pip", picture(hand));
+    scene.sync(&model);
+    settle(&mut scene);
+    let to = Rect::new(16.0, 794.0, 480.0, 270.0);
+    model.place("pip", to);
+    scene.sync(&model);
+    let mut slow = scene.clone();
+    scene.fling("pip", (-3000.0, 1500.0));
+    scene.step(FRAME);
+    slow.step(FRAME);
+    let (flung, eased) = (drawn(&scene, "pip"), drawn(&slow, "pip"));
+    // One 120 Hz frame at 3000 px/s is 25 px more than the spring covers
+    // from rest.
+    assert!((eased.x - flung.x - 25.0).abs() < 3.0, "{}", eased.x - flung.x);
+    assert!(flung.y - hand.y > eased.y - hand.y);
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "pip"), to);
+
+    // Motion off: no flight at all.
+    let mut still = Scene::new(&Motion {
+        enabled: false,
+        ..Motion::default()
+    });
+    still.sync(&model);
+    model.place("pip", hand);
+    still.sync(&model);
+    still.fling("pip", (-3000.0, 0.0));
+    assert!(!still.animating());
+    assert_eq!(drawn(&still, "pip"), hand);
+}

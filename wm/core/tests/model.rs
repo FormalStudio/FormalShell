@@ -1289,3 +1289,123 @@ fn a_float_sent_to_a_smaller_output_is_fitted_into_it() {
         Rect::new(1920.0 + 100.0, 100.0, 400.0, 150.0)
     );
 }
+
+fn picture(rect: Rect) -> Placement {
+    Placement {
+        floating: true,
+        pip: true,
+        float_rect: Some(rect),
+        ..Placement::default()
+    }
+}
+
+#[test]
+fn a_picture_in_picture_is_over_every_layer_on_every_workspace_of_its_output() {
+    let mut model = two_outputs();
+    open(&mut model, "a");
+    open_with(&mut model, "pip", picture(Rect::new(1424.0, 794.0, 480.0, 270.0)));
+    assert_eq!(focused(&model), "a", "it arrives without the keyboard");
+    assert!(model.window("pip").unwrap().pinned, "a picture is pinned");
+
+    // Over a float, a pinned float, a fullscreen window and an overlay.
+    let float = Placement {
+        floating: true,
+        ..Placement::default()
+    };
+    open_with(&mut model, "f", float.clone());
+    let pinned = Placement {
+        pinned: true,
+        ..float
+    };
+    open_with(&mut model, "p", pinned);
+    model.set_big("a", Some(Big::Fullscreen));
+    let overlay = Placement {
+        overlay: Some("console".into()),
+        ..Placement::default()
+    };
+    open_with(&mut model, "console", overlay);
+    model.show_overlay("console");
+    let layers: Vec<(String, Layer)> = {
+        let mut placed = model.layout();
+        placed.sort_by_key(|place| (place.layer, place.order));
+        placed.into_iter().map(|p| (p.id, p.layer)).collect()
+    };
+    assert_eq!(
+        layers,
+        [
+            ("f".to_owned(), Layer::Float),
+            ("p".to_owned(), Layer::Pinned),
+            ("a".to_owned(), Layer::Fullscreen),
+            ("console".to_owned(), Layer::Overlay),
+            ("pip".to_owned(), Layer::Pip),
+        ]
+    );
+    assert!(Layer::Pip > Layer::Fullscreen && Layer::Pip > Layer::Overlay);
+
+    // It follows its output from workspace to workspace, shown on each,
+    // and never takes the keyboard on the way.
+    model.focus_workspace("3");
+    open(&mut model, "b");
+    for workspace in ["1", "3", "2", "3"] {
+        model.focus_workspace(workspace);
+        let pip = place(&model, "pip");
+        assert_eq!((pip.layer, pip.shown), (Layer::Pip, true), "{workspace}");
+        assert_eq!(pip.workspace.as_deref(), Some(workspace));
+        assert_eq!(pip.rect, Rect::new(1424.0, 794.0, 480.0, 270.0));
+    }
+    assert_ne!(focused(&model), "pip");
+    // The other output's workspaces leave it where it is.
+    model.focus_workspace("4");
+    assert_eq!(place(&model, "pip").output, "A");
+}
+
+#[test]
+fn a_picture_alone_on_a_workspace_has_the_keyboard_and_gives_it_up_to_a_tile() {
+    let mut model = desk();
+    open_with(&mut model, "pip", picture(Rect::new(16.0, 16.0, 480.0, 270.0)));
+    assert_eq!(focused(&model), "pip", "nothing else could take it");
+    open(&mut model, "a");
+    assert_eq!(focused(&model), "a");
+    // Pressed, it has the keyboard; put away, the tile has it again.
+    model.focus_window("pip");
+    assert_eq!(focused(&model), "pip");
+    model.yield_focus("pip");
+    assert_eq!(focused(&model), "a");
+    // A dialog closing over the tile hands the keyboard to the tile.
+    let float = Placement {
+        floating: true,
+        ..Placement::default()
+    };
+    open_with(&mut model, "dialog", float);
+    assert_eq!(focused(&model), "dialog");
+    model.close("dialog");
+    assert_eq!(focused(&model), "a");
+}
+
+#[test]
+fn a_picture_stays_one_across_outputs_and_stops_being_one_when_it_tiles() {
+    let mut model = two_outputs();
+    open_with(&mut model, "pip", picture(Rect::new(16.0, 16.0, 480.0, 270.0)));
+    assert!(model.move_to_workspace("pip", "4", false));
+    let pip = place(&model, "pip");
+    assert_eq!((pip.output.as_str(), pip.layer), ("B", Layer::Pip));
+    assert!(model.window("pip").unwrap().pinned);
+    model.focus_workspace("8");
+    assert_eq!(place(&model, "pip").workspace.as_deref(), Some("8"));
+
+    // An output that goes takes its workspaces to the one left, and the
+    // picture with them.
+    model.set_outputs(vec![output("A", 0.0, 1920.0, 1080.0)]);
+    let pip = place(&model, "pip");
+    assert_eq!((pip.output.as_str(), pip.layer), ("A", Layer::Pip));
+
+    assert!(model.set_floating("pip", Some(false)));
+    assert!(!model.window("pip").unwrap().pip);
+    assert_eq!(place(&model, "pip").layer, Layer::Tile);
+    assert!(!model.set_pip("pip", true), "a tile is not a picture");
+    model.set_floating("pip", Some(true));
+    assert!(model.set_pip("pip", true));
+    assert_eq!(place(&model, "pip").layer, Layer::Pip);
+    model.set_pinned("pip", false);
+    assert_eq!(place(&model, "pip").layer, Layer::Float);
+}
