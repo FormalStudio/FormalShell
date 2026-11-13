@@ -38,6 +38,6 @@ if [ -n "${FWM_TIMING:-}" ]; then
   export SHOJI_ANIMATION_TIMING_DEBUG=1 SHOJI_ANIMATION_SPIKE_THRESHOLD_MS=0.001 SHOJI_PRESENT_RATE_DEBUG=1
   export SHOJI_LOG_RATE_LIMIT=0
 fi
-export XDG_CONFIG_HOME="$config" SHOJI_BIN="$HOME/fwm-build/release-fast/formalwm" SHOJI_RUN_TIMEOUT=${FWM_TIMEOUT:-240}
+export XDG_CONFIG_HOME="$config" SHOJI_BIN="${FWM_BIN:-$HOME/fwm-build/release-fast/formalwm}" SHOJI_RUN_TIMEOUT=${FWM_TIMEOUT:-240}
 export FWM_SCRIPT="$wm/dev/${1:-session.sh}"
 exec ~/shoji-run.sh -- bash -c 'echo "$SHOJI_RUN_DIR" > ~/fwm-last-run; exec bash "$FWM_SCRIPT"'
