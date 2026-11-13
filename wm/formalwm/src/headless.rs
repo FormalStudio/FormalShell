@@ -620,6 +620,37 @@ fn scroll(workspace: &'static str) -> (f64, f64) {
 }
 
 #[test]
+fn a_workspace_bind_onto_another_output_takes_the_pointer_there() {
+    const SUPER: u32 = 125;
+    const FOUR: u32 = 5;
+    const EIGHT: u32 = 9;
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new(
+        "warp",
+        HOST,
+        &[test_display("TEST-1"), test_display("TEST-2")],
+    );
+    session.pointer_to(100.0, 100.0);
+    session.chord(&[SUPER, FOUR]);
+    let seen = state();
+    assert_eq!(
+        (
+            seen.focused_workspace_id.as_str(),
+            seen.focused_output.as_str()
+        ),
+        ("4", "TEST-2")
+    );
+    assert_eq!(session.pointer(), (WIDTH * 1.5, HEIGHT / 2.0));
+    // On the output that has the focus, the pointer stays where it is.
+    session.pointer_to(1100.0, 100.0);
+    session.chord(&[SUPER, EIGHT]);
+    assert_eq!(state().focused_workspace_id, "8");
+    assert_eq!(session.pointer(), (1100.0, 100.0));
+}
+
+#[test]
 fn two_outputs_and_the_touchpad() {
     let _turn = ONE_AT_A_TIME
         .lock()

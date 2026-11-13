@@ -197,6 +197,7 @@ impl Engine {
 
     pub fn run(&mut self, action: &Action) {
         let focused = self.model.focused_window().cloned();
+        let output = self.model.focused_output.clone();
         let changed = match action {
             Action::Spawn(argv) => {
                 COMPOSITOR.process.spawn(Command::exec(argv.clone()));
@@ -260,6 +261,18 @@ impl Engine {
         };
         if changed {
             self.commit();
+        }
+        // Hyprland's workspace dispatcher puts the pointer in the middle of
+        // the output it moves the focus to, so the next hover or wheel turn
+        // is there.
+        if matches!(action, Action::Workspace(_))
+            && self.model.focused_output != output
+            && let Some(to) = self.model.output(&self.model.focused_output)
+        {
+            let (x, y) = to.geo.rect.center();
+            COMPOSITOR
+                .cursor
+                .set_position(CursorPosition::Global { x, y });
         }
     }
 
