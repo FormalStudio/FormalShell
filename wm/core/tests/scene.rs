@@ -268,6 +268,37 @@ fn zen_slides_the_neighbours_off_and_back() {
 }
 
 #[test]
+fn zen_hands_over_by_sliding_each_window_from_where_it_is_drawn() {
+    let mut model = desk();
+    let mut scene = Scene::default();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    model.focus_window("b");
+    model.set_zen(None, None);
+    scene.sync(&model);
+    settle(&mut scene);
+    let zen = model.zen_rect("A");
+    let waiting = drawn(&scene, "c");
+    assert!(!scene.visual("c").unwrap().visible);
+
+    model.focus_column(formalwm_core::tape::Side::Next);
+    scene.sync(&model);
+    assert_eq!(drawn(&scene, "b"), zen, "b leaves from the centre");
+    assert_eq!(drawn(&scene, "c"), waiting, "c comes in from off the right");
+    for _ in 0..4 {
+        scene.step(FRAME);
+    }
+    let (b, c) = (drawn(&scene, "b"), drawn(&scene, "c"));
+    assert!(b.x < zen.x, "b heads left: {b:?}");
+    assert!(c.x < waiting.x, "c heads in: {c:?}");
+    settle(&mut scene);
+    assert_eq!(drawn(&scene, "c"), zen);
+    assert!(!scene.visual("b").unwrap().visible);
+    assert!(scene.visual("c").unwrap().visible);
+}
+
+#[test]
 fn a_dropped_window_rides_to_its_place_from_where_the_hand_left_it() {
     let mut model = common::desk();
     common::open(&mut model, "a");

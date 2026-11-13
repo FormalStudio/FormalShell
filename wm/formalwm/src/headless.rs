@@ -1022,6 +1022,169 @@ fn super_and_the_wheel_take_one_workspace_a_turn() {
     assert_eq!(state().focused_output, "TEST-2");
 }
 
+/// Every way the focus moves on a workspace in zen moves zen with it: the
+/// owner's binds, the socket's `window.focus` (the shell's switcher, as an
+/// activation is), a click, a window opening and the zen window closing.
+#[test]
+fn zen_goes_with_the_focus() {
+    const SUPER: u32 = 125;
+    const Z: u32 = 44;
+    const H: u32 = 35;
+    const J: u32 = 36;
+    const K: u32 = 37;
+    const L: u32 = 38;
+    const COMMA: u32 = 51;
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new(
+        "zen",
+        HOST,
+        &[test_display("TEST-1"), test_display("TEST-2")],
+    );
+    let row = |app: &str| {
+        state()
+            .windows
+            .into_iter()
+            .find(|window| window.app_id == app)
+            .unwrap_or_else(|| panic!("no {app}"))
+    };
+    let zen = |workspace: &str| {
+        let seen = state();
+        let id = seen
+            .workspaces
+            .iter()
+            .find(|ws| ws.id == workspace)?
+            .zen
+            .clone()?;
+        seen.windows
+            .into_iter()
+            .find(|window| window.id == id)
+            .map(|window| window.app_id)
+    };
+    let focused = || {
+        state()
+            .windows
+            .into_iter()
+            .find(|window| window.focused)
+            .map(|window| window.app_id)
+    };
+    let both = || (focused(), zen("1"));
+    let on = |app: &str| (Some(app.to_owned()), Some(app.to_owned()));
+
+    let mut surfaces = HashMap::new();
+    for app in ["one", "two", "three"] {
+        surfaces.insert(app, session.open(app));
+    }
+    for app in ["one", "two", "three"] {
+        settle();
+        let rect = row(app).rect.unwrap();
+        session.draw(&surfaces[app], rect.width, rect.height);
+    }
+    session.chord(&[SUPER, H]);
+    session.chord(&[SUPER, Z]);
+    assert_eq!(both(), on("two"), "zen on two");
+
+    // H and L walk the columns, zen going along.
+    session.chord(&[SUPER, L]);
+    assert_eq!(both(), on("three"));
+    session.chord(&[SUPER, H]);
+    assert_eq!(both(), on("two"));
+    session.chord(&[SUPER, H]);
+    assert_eq!(both(), on("one"));
+    settle();
+    let zen_rect = row("one").rect.unwrap();
+    let two = row("two").rect.unwrap();
+    assert!(
+        two.x >= WIDTH as i32,
+        "two went back to its column, off the right: {two:?}"
+    );
+
+    // K and J walk a stack.
+    session.chord(&[SUPER, Z]);
+    assert_eq!(zen("1"), None);
+    session.chord(&[SUPER, L]);
+    session.chord(&[SUPER, L]);
+    session.chord(&[SUPER, COMMA]);
+    assert_eq!(
+        row("three").column,
+        row("two").column,
+        "three in two's column"
+    );
+    session.chord(&[SUPER, Z]);
+    assert_eq!(both(), on("three"));
+    session.chord(&[SUPER, K]);
+    assert_eq!(both(), on("two"));
+    session.chord(&[SUPER, J]);
+    assert_eq!(both(), on("three"));
+
+    // The shell's switcher and an activation go through window.focus.
+    let mut shell = session.socket();
+    session.call(
+        &mut shell,
+        proto::method::WINDOW_FOCUS,
+        json!({ "id": row("one").id }),
+    );
+    assert_eq!(both(), on("one"));
+
+    // A float opened in zen has the keyboard over the zen window; a click
+    // goes from one to the other and zen stays.
+    let preview = session.open("org.gnome.NautilusPreviewer");
+    session.draw(&preview, 300, 200);
+    settle();
+    assert!(row("org.gnome.NautilusPreviewer").floating);
+    assert_eq!(
+        both(),
+        (
+            Some("org.gnome.NautilusPreviewer".into()),
+            Some("one".into())
+        )
+    );
+    session.pointer_to(f64::from(zen_rect.x) + 20.0, f64::from(zen_rect.y) + 20.0);
+    session.click();
+    assert_eq!(both(), on("one"), "a click on the zen window");
+    let float = row("org.gnome.NautilusPreviewer").rect.unwrap();
+    session.pointer_to(
+        f64::from(float.x + float.width / 2),
+        f64::from(float.y + float.height / 2),
+    );
+    session.click();
+    assert_eq!(
+        both(),
+        (
+            Some("org.gnome.NautilusPreviewer".into()),
+            Some("one".into())
+        ),
+        "a click on the float"
+    );
+
+    // A tile opening takes zen.
+    let (four, toplevel) = session.open_tagged("four", None);
+    session.draw(&four, 400, 300);
+    assert_eq!(both(), on("four"));
+
+    // The zen window closing hands zen to the tile the focus goes to.
+    toplevel.destroy();
+    four.destroy();
+    session.roundtrip();
+    let next = focused().unwrap();
+    assert_ne!(next, "four");
+    assert_eq!(zen("1"), Some(next.clone()), "zen went to {next}");
+
+    // The other output's workspace is not in zen, and the focus there
+    // leaves this one's zen as it is.
+    ask(|engine| {
+        engine.model.focus_workspace("4");
+        engine.commit();
+        Ok(())
+    })
+    .unwrap();
+    session.open("away");
+    assert_eq!(focused().as_deref(), Some("away"));
+    assert_eq!(zen("4"), None);
+    assert!(zen("1").is_some());
+}
+
 #[test]
 fn a_border_drag_whose_grab_is_taken_away_lets_the_view_go() {
     let _turn = ONE_AT_A_TIME

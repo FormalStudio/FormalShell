@@ -47,12 +47,13 @@ step "zen: the window in the middle takes the zen rect, the columns left and rig
 key Super+l; focus_app; before=$(tape); echo "$before"; mark
 key Super+z 0.25; shot 53-zen-midway; sleep 1.2
 zen; tape; drawn; steps; shot 54-zen
-key Super+h; focus_app; zen
+key Super+h; focus_app; zen; key Super+l; focus_app; zen
 mark; key Super+z 1.4; zen; after=$(tape); steps
 [ "$before" = "$after" ] && echo "the tape is as it was" || { echo "the tape changed:"; echo "$after"; }
 
-step "zen, then the window closes: the tape comes back without it"
+step "zen, then the window closes: zen goes to the window the focus goes to"
 key Super+z 1.2; zen; key Super+q 1.4; zen; tape; drawn
+key Super+z 1.4; zen; tape
 
 step "a float in zen goes back to its float rect"
 key Super+v 1; float=$(tape); echo "$float"

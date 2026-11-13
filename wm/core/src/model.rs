@@ -117,16 +117,28 @@ impl Workspace {
         self.tape.is_empty() && self.floats.is_empty()
     }
 
+    /// A float that takes the focus in zen has it over the zen window,
+    /// which stays where it is.
     pub fn focused(&self) -> Option<&WinId> {
-        if let Some(zen) = &self.zen {
-            return Some(zen);
-        }
         if self.float_focused
             && let Some(top) = self.floats.last()
         {
             return Some(top);
         }
+        if let Some(zen) = &self.zen {
+            return Some(zen);
+        }
         self.tape.focused().or(self.floats.last())
+    }
+
+    /// Zen goes with the focus to the tiled window it lands on.
+    fn follow_zen(&mut self) {
+        if self.zen.is_some()
+            && !self.float_focused
+            && let Some(focused) = self.tape.focused()
+        {
+            self.zen = Some(focused.clone());
+        }
     }
 
     pub fn windows(&self) -> impl Iterator<Item = &WinId> {
@@ -683,6 +695,7 @@ impl Model {
             ws.tape.fit(strip_w);
             ws.float_focused = false;
             ws.big = None;
+            ws.follow_zen();
         }
         if let Some(window) = self.window_mut(id) {
             window.home = Home::Workspace(workspace.to_owned());
@@ -729,8 +742,22 @@ impl Model {
         }
     }
 
+    /// The zen window closing hands zen to the tiled window the focus goes
+    /// to; with a float or nothing focused after it, zen ends.
     pub fn close(&mut self, id: &str) {
+        let zen = match self.window(id).map(|w| &w.home) {
+            Some(Home::Workspace(ws)) => self
+                .workspace(ws)
+                .filter(|ws| ws.zen.as_deref() == Some(id))
+                .map(|ws| ws.id.clone()),
+            _ => None,
+        };
         self.detach(id);
+        if let Some(ws) = zen.and_then(|ws| self.workspace_mut(&ws))
+            && !ws.float_focused
+        {
+            ws.zen = ws.tape.focused().cloned();
+        }
         self.windows.retain(|w| w.id != id);
         self.collect();
     }
@@ -808,9 +835,6 @@ impl Model {
                 let Some(ws) = self.workspace_mut(&workspace) else {
                     return false;
                 };
-                if ws.zen.as_deref().is_some_and(|zen| zen != id) {
-                    ws.zen = None;
-                }
                 if floating {
                     raise(&mut ws.floats, id);
                     ws.float_focused = true;
@@ -821,6 +845,7 @@ impl Model {
                     if ws.big.as_ref().is_some_and(|(big, _)| big != id) {
                         ws.big = None;
                     }
+                    ws.follow_zen();
                 }
                 let output = ws.output.clone();
                 if self
@@ -1410,7 +1435,14 @@ impl Model {
     /// messages act on the focused window's column, and a float has none:
     /// with a float focused they do nothing, unless `from_float` (the row
     /// binds, Hyprland's `movefocus`, which leave a float for the tape).
-    fn tape_op(&mut self, from_float: bool, op: impl FnOnce(&mut Tape, &Options) -> bool) -> bool {
+    /// Only a bind that moves the focus (`in_zen`) runs on a tape that zen
+    /// holds, and zen goes with it.
+    fn tape_op(
+        &mut self,
+        from_float: bool,
+        in_zen: bool,
+        op: impl FnOnce(&mut Tape, &Options) -> bool,
+    ) -> bool {
         let options = self.options.clone();
         // With no window typed into, a bind on the tape is for the output
         // the pointer is on, and the keyboard goes there with it.
@@ -1421,7 +1453,7 @@ impl Model {
         let Some(ws) = active.and_then(|id| self.workspace_mut(&id)) else {
             return taken;
         };
-        if ws.zen.is_some() || (ws.float_focused && !from_float) {
+        if (ws.zen.is_some() && !in_zen) || (ws.float_focused && !from_float) {
             return taken;
         }
         let was_floating = std::mem::take(&mut ws.float_focused);
@@ -1433,33 +1465,34 @@ impl Model {
             }
         }
         ws.tape.fit(strip_w);
+        ws.follow_zen();
         changed || taken || (was_floating && !ws.tape.is_empty())
     }
 
     pub fn focus_column(&mut self, side: Side) -> bool {
-        self.tape_op(false, |tape, _| tape.focus_column(side))
+        self.tape_op(false, true, |tape, _| tape.focus_column(side))
     }
 
     pub fn focus_row(&mut self, side: Side) -> bool {
-        self.tape_op(true, |tape, _| tape.focus_row(side))
+        self.tape_op(true, true, |tape, _| tape.focus_row(side))
     }
 
     pub fn swap_column(&mut self, side: Side) -> bool {
-        self.tape_op(false, |tape, _| tape.swap_column(side))
+        self.tape_op(false, false, |tape, _| tape.swap_column(side))
     }
 
     pub fn swap_row(&mut self, side: Side) -> bool {
-        self.tape_op(false, |tape, _| tape.swap_row(side))
+        self.tape_op(false, false, |tape, _| tape.swap_row(side))
     }
 
     pub fn consume_or_expel(&mut self, side: Side) -> bool {
-        self.tape_op(false, |tape, options| {
+        self.tape_op(false, false, |tape, options| {
             tape.consume_or_expel(side, options.default_width)
         })
     }
 
     pub fn set_column_width(&mut self, width: f64) -> bool {
-        self.tape_op(false, |tape, _| tape.set_width(width))
+        self.tape_op(false, false, |tape, _| tape.set_width(width))
     }
 
     /// A tile dragged by an edge to a column `column_px` wide; see
@@ -1486,15 +1519,17 @@ impl Model {
     }
 
     pub fn resize_column(&mut self, delta: f64) -> bool {
-        self.tape_op(false, |tape, _| tape.resize(delta))
+        self.tape_op(false, false, |tape, _| tape.resize(delta))
     }
 
     pub fn cycle_column_width(&mut self) -> bool {
-        self.tape_op(false, |tape, options| tape.cycle_width(&options.presets))
+        self.tape_op(false, false, |tape, options| {
+            tape.cycle_width(&options.presets)
+        })
     }
 
     pub fn fit_into_view(&mut self) -> bool {
-        self.tape_op(false, |_, _| true)
+        self.tape_op(false, false, |_, _| true)
     }
 
     /// Drags a tape by `dx`; nothing moves while zen holds it.
@@ -1687,11 +1722,7 @@ impl Model {
             let strip = self.strip_of(&ws.output);
             let zen_rect = self.zen_rect(&ws.output);
             let maximized = output.geo.usable.inset(self.options.border);
-            let zen_column = ws
-                .zen
-                .as_ref()
-                .and_then(|zen| ws.tape.find(zen))
-                .map(|(c, _)| c);
+            let zen_cell = ws.zen.as_ref().and_then(|zen| ws.tape.find(zen));
             let view_centre = ws.tape.scroll + strip.w / 2.0;
             let base = |id: &WinId, rect: Rect, layer: Layer, order: usize| Placed {
                 id: id.clone(),
@@ -1721,16 +1752,20 @@ impl Model {
                     place.layer = Layer::Zen;
                     place.scrolls = false;
                 } else if ws.zen.is_some() {
-                    let left = match zen_column {
-                        Some(column) => cell.column < column,
-                        None => cell.rect.center().0 < view_centre,
+                    // The zen window's column mates leave by the top and
+                    // bottom, so a walk up or down its stack comes in from
+                    // the side it is on.
+                    let (w, h) = (output.geo.rect.w, output.geo.rect.h);
+                    let (dx, dy) = match zen_cell {
+                        Some((column, row)) if cell.column == column => {
+                            (0.0, if cell.row < row { -h } else { h })
+                        }
+                        Some((column, _)) if cell.column < column => (-w, 0.0),
+                        Some(_) => (w, 0.0),
+                        None if cell.rect.center().0 < view_centre => (-w, 0.0),
+                        None => (w, 0.0),
                     };
-                    let shift = if left {
-                        -output.geo.rect.w
-                    } else {
-                        output.geo.rect.w
-                    };
-                    place.rect = rect.translate(shift, 0.0);
+                    place.rect = rect.translate(dx, dy);
                 } else if let Some(kind) = ws.tape.columns[cell.column].big {
                     // In the tape, from the column's left edge: what the
                     // layers leave, or the output, while it has the focus;

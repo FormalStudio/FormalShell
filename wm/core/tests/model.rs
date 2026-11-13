@@ -649,7 +649,10 @@ fn zen_takes_the_centre_and_the_tape_slides_off_its_sides() {
         "c went off the right"
     );
     assert!(!model.scroll_by("1", 100.0), "the tape holds still");
-    assert!(!model.focus_column(Side::Next));
+    assert!(
+        !model.swap_column(Side::Next),
+        "only a focus move runs in zen"
+    );
     assert_eq!(focused(&model), "b");
 
     assert!(model.set_zen(None, None));
@@ -657,16 +660,203 @@ fn zen_takes_the_centre_and_the_tape_slides_off_its_sides() {
     assert_eq!(model.focused_workspace().unwrap().zen, None);
 }
 
+fn zen_of(model: &formalwm_core::model::Model, ws: &str) -> Option<String> {
+    model.workspace(ws).unwrap().zen.clone()
+}
+
+/// In zen at the zen rect, or wholly off its output.
+fn in_zen(model: &formalwm_core::model::Model, id: &str) -> bool {
+    let place = place(model, id);
+    place.layer == Layer::Zen && place.rect == model.zen_rect(&place.output)
+}
+
+fn off_output(model: &formalwm_core::model::Model, id: &str) -> bool {
+    let place = place(model, id);
+    let output = model.output(&place.output).unwrap().geo.rect;
+    let rect = model.shown_rect(&place);
+    !rect.intersects(&output)
+}
+
 #[test]
-fn closing_the_zen_window_brings_the_tape_back() {
+fn closing_the_zen_window_hands_zen_to_the_window_the_focus_goes_to() {
+    let mut model = desk();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    model.set_zen(Some("b"), Some(true));
+    model.close("b");
+    let next = focused(&model).to_owned();
+    assert_ne!(next, "b");
+    assert_eq!(zen_of(&model, "1").as_deref(), Some(next.as_str()));
+    assert!(in_zen(&model, &next));
+
+    model.close(&next);
+    let last = focused(&model).to_owned();
+    assert_eq!(zen_of(&model, "1"), Some(last.clone()));
+    model.close(&last);
+    assert_eq!(zen_of(&model, "1"), None, "nothing left, zen ends");
+}
+
+#[test]
+fn closing_the_zen_window_with_a_float_left_focused_ends_zen() {
+    let mut model = desk();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    open(&mut model, "f");
+    model.set_floating("f", Some(true));
+    model.set_zen(Some("b"), Some(true));
+    model.focus_window("f");
+    model.close("b");
+    assert_eq!(zen_of(&model, "1"), None);
+    assert_eq!(focused(&model), "f");
+    assert_eq!(place(&model, "a").layer, Layer::Tile);
+}
+
+#[test]
+fn zen_walks_the_columns_with_the_focus() {
+    let mut model = desk();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    model.focus_window("b");
+    let rest: Vec<_> = ["a", "b", "c"]
+        .iter()
+        .map(|id| place(&model, id).rect)
+        .collect();
+    model.set_zen(None, None);
+
+    assert!(model.focus_column(Side::Next));
+    assert_eq!(focused(&model), "c");
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("c"));
+    assert!(in_zen(&model, "c"));
+    assert_eq!(
+        place(&model, "b").layer,
+        Layer::Tile,
+        "b is back in its column"
+    );
+    assert!(off_output(&model, "b") && off_output(&model, "a"));
+    assert!(
+        model.shown_rect(&place(&model, "b")).right() <= 0.0,
+        "b leaves by the left"
+    );
+
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("b"));
+    assert!(in_zen(&model, "b"));
+    assert!(
+        model.shown_rect(&place(&model, "c")).x >= 1920.0,
+        "c leaves by the right"
+    );
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("a"));
+
+    // Out of zen the tape is as it was, with the focus where zen left it.
+    model.set_zen(None, None);
+    assert_eq!(focused(&model), "a");
+    assert_eq!(zen_of(&model, "1"), None);
+    for (id, rect) in ["a", "b", "c"].iter().zip(&rest) {
+        assert_eq!(place(&model, id).rect, *rect, "{id} back in place");
+    }
+}
+
+#[test]
+fn zen_walks_a_stack_and_its_mates_leave_by_the_top_and_bottom() {
+    let mut model = desk();
+    for id in ["a", "b", "c"] {
+        open(&mut model, id);
+    }
+    model.focus_window("c");
+    assert!(model.consume_or_expel(Side::Prev), "c joins b's column");
+    assert_eq!(place(&model, "c").column, place(&model, "b").column);
+    model.set_zen(Some("c"), Some(true));
+    let b = model.shown_rect(&place(&model, "b"));
+    assert!(b.bottom() <= 0.0, "b, above c, is off the top: {b:?}");
+
+    assert!(model.focus_row(Side::Prev));
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("b"));
+    assert!(in_zen(&model, "b"));
+    let c = model.shown_rect(&place(&model, "c"));
+    assert!(c.y >= 1080.0, "c, below b, is off the bottom: {c:?}");
+    assert!(off_output(&model, "a"));
+}
+
+#[test]
+fn a_click_moves_zen_to_a_tile_and_gives_a_float_the_focus_over_it() {
+    let mut model = desk();
+    for id in ["a", "b", "f"] {
+        open(&mut model, id);
+    }
+    model.set_floating("f", Some(true));
+    model.set_zen(Some("b"), Some(true));
+
+    assert!(model.focus_window("a"));
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("a"));
+    assert!(in_zen(&model, "a"));
+    assert!(off_output(&model, "b"));
+
+    let float = place(&model, "f").rect;
+    assert!(model.focus_window("f"));
+    assert_eq!(focused(&model), "f", "the float has the keyboard");
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("a"), "zen stays");
+    assert!(in_zen(&model, "a"));
+    assert_eq!(place(&model, "f").rect, float, "the float keeps its rect");
+
+    assert!(model.focus_window("a"));
+    assert_eq!(focused(&model), "a");
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("a"));
+}
+
+#[test]
+fn a_new_tile_takes_zen_and_a_new_float_the_focus() {
     let mut model = desk();
     open(&mut model, "a");
     open(&mut model, "b");
     model.set_zen(Some("b"), Some(true));
-    model.close("b");
-    assert_eq!(model.focused_workspace().unwrap().zen, None);
-    assert_eq!(place(&model, "a").layer, Layer::Tile);
-    assert_eq!(focused(&model), "a");
+    open(&mut model, "c");
+    assert_eq!(focused(&model), "c");
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("c"));
+    assert!(in_zen(&model, "c"));
+    assert!(off_output(&model, "b"));
+
+    let dialog = Placement {
+        floating: true,
+        ..Placement::default()
+    };
+    open_with(&mut model, "d", dialog);
+    assert_eq!(
+        focused(&model),
+        "d",
+        "a dialog opened in zen has the keyboard"
+    );
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("c"));
+}
+
+#[test]
+fn zen_stays_with_its_workspace_and_output() {
+    let mut model = two_outputs();
+    open(&mut model, "a");
+    open(&mut model, "b");
+    model.focus_workspace("4");
+    open(&mut model, "x");
+    open(&mut model, "y");
+    model.focus_window("b");
+    model.set_zen(None, None);
+
+    // Focus on the other output leaves A's zen as it is.
+    assert!(model.focus_window("x"));
+    assert_eq!(focused(&model), "x");
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("b"));
+    assert_eq!(zen_of(&model, "4"), None);
+    assert!(in_zen(&model, "b"));
+
+    // Away from the workspace and back, zen is where it was.
+    model.focus_workspace("1");
+    model.focus_workspace("2");
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("b"));
+    model.focus_workspace("1");
+    assert_eq!(focused(&model), "b");
+    assert!(model.focus_column(Side::Prev));
+    assert_eq!(zen_of(&model, "1").as_deref(), Some("a"));
 }
 
 #[test]

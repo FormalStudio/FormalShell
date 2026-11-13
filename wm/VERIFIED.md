@@ -206,7 +206,11 @@ and 2 of border.
 | Every other column slides off the side it was on | rig | `tape.sh`: -1522, -1014 to the left, 2050 to the right |
 | The tape does not scroll while it holds | unit | `zen_takes_the_centre_and_the_tape_slides_off_its_sides` |
 | Toggling again slides the tape back, the window in its column at its width | rig | `tape.sh`: `the tape is as it was` |
-| Closing the window brings the tape back | rig | `tape.sh` |
+| Zen follows the focus: H and L, K and J, `window.focus`, a click, a new tile, the zen window closing | rig, headless, unit | `zen.sh` (`shoji-shots/zen`); `zen_goes_with_the_focus`; `zen_walks_the_columns_with_the_focus`, `zen_walks_a_stack_and_its_mates_leave_by_the_top_and_bottom`, `a_click_moves_zen_to_a_tile_and_gives_a_float_the_focus_over_it`, `a_new_tile_takes_zen_and_a_new_float_the_focus`, `closing_the_zen_window_hands_zen_to_the_window_the_focus_goes_to` |
+| The window before slides back into its column as the next comes in | rig, unit | `zen.sh`: one -1522 to 12 and two 12 to 1542 over 44 frames, largest step 203 px; `zen_hands_over_by_sliding_each_window_from_where_it_is_drawn` |
+| A float focused in zen has the keyboard over the zen window | headless, unit | `zen_goes_with_the_focus` |
+| Zen stays with its workspace across a workspace switch and the other output's focus | unit | `zen_stays_with_its_workspace_and_output` |
+| Closing the window with nothing tiled left, or a float focused, brings the tape back | unit | `closing_the_zen_window_with_a_float_left_focused_ends_zen` |
 | A floating window in zen returns to its float rect | rig | `tape.sh`: `[256,154 512x461]` again |
 | `workspaces[].zen` | rig | `tape.sh` |
 
