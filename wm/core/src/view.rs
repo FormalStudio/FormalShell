@@ -75,15 +75,12 @@ pub fn state(model: &Model, extras: &Extras) -> proto::State {
         .map(|window| {
             let place = layout.iter().find(|place| place.id == window.id);
             let rect = place.map(|place| {
-                let scroll = match (&place.workspace, place.scrolls) {
-                    (Some(ws), true) => model.workspace(ws).map_or(0.0, |ws| ws.tape.scroll),
-                    _ => 0.0,
-                };
+                let rect = model.shown_rect(place);
                 proto::Rect {
-                    x: (place.rect.x - scroll).round() as i32,
-                    y: place.rect.y.round() as i32,
-                    width: place.rect.w.round() as i32,
-                    height: place.rect.h.round() as i32,
+                    x: rect.x.round() as i32,
+                    y: rect.y.round() as i32,
+                    width: rect.w.round() as i32,
+                    height: rect.h.round() as i32,
                 }
             });
             let (workspace_id, overlay) = match &window.home {

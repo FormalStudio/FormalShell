@@ -262,17 +262,23 @@ impl Engine {
         if changed {
             self.commit();
         }
-        // Hyprland's workspace dispatcher puts the pointer in the middle of
-        // the output it moves the focus to, so the next hover or wheel turn
-        // is there.
-        if matches!(action, Action::Workspace(_))
-            && self.model.focused_output != output
-            && let Some(to) = self.model.output(&self.model.focused_output)
-        {
-            let (x, y) = to.geo.rect.center();
-            COMPOSITOR
-                .cursor
-                .set_position(CursorPosition::Global { x, y });
+        // Hyprland's workspace dispatcher puts the pointer on the output it
+        // moves the focus to, so the next hover or wheel turn is there: in the
+        // middle of the window last focused on the workspace
+        // (binds:workspace_center_on 1), of the output when it has none.
+        if matches!(action, Action::Workspace(_)) && self.model.focused_output != output {
+            let window = self.model.focused_window().and_then(|id| {
+                let layout = self.model.layout();
+                let place = layout.iter().find(|place| &place.id == id)?;
+                Some(self.model.shown_rect(place))
+            });
+            let output = self.model.output(&self.model.focused_output);
+            if let Some(rect) = window.or_else(|| output.map(|output| output.geo.rect)) {
+                let (x, y) = rect.center();
+                COMPOSITOR
+                    .cursor
+                    .set_position(CursorPosition::Global { x, y });
+            }
         }
     }
 

@@ -1429,6 +1429,16 @@ impl Model {
     // Layout.
 
     /// Every window's place at rest.
+    /// Where a placed window is in view: its rect with its tape's scroll
+    /// taken off.
+    pub fn shown_rect(&self, place: &Placed) -> Rect {
+        let scroll = match (&place.workspace, place.scrolls) {
+            (Some(ws), true) => self.workspace(ws).map_or(0.0, |ws| ws.tape.scroll),
+            _ => 0.0,
+        };
+        place.rect.translate(-scroll, 0.0)
+    }
+
     pub fn layout(&self) -> Vec<Placed> {
         let mut placed = Vec::new();
         for ws in &self.workspaces {

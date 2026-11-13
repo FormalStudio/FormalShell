@@ -684,6 +684,39 @@ fn a_workspace_bind_onto_another_output_takes_the_pointer_there() {
     session.chord(&[SUPER, EIGHT]);
     assert_eq!(state().focused_workspace_id, "8");
     assert_eq!(session.pointer(), (1100.0, 100.0));
+
+    // A workspace with windows: the pointer goes to the middle of the one
+    // last focused there, as under Hyprland's binds:workspace_center_on 1.
+    session.open("left");
+    session.open("right");
+    ask(|engine| {
+        let left = engine.model.windows.iter().find(|w| w.app_id == "left");
+        let left = left.map(|w| w.id.clone()).ok_or("no left")?;
+        engine.model.focus_window(&left);
+        engine.commit();
+        Ok(())
+    })
+    .unwrap();
+    session.pointer_to(100.0, 100.0);
+    assert_eq!(state().focused_output, "TEST-1");
+    session.chord(&[SUPER, EIGHT]);
+    let seen = state();
+    assert_eq!(seen.focused_output, "TEST-2");
+    let middle = |app: &str| {
+        let rect = seen.windows.iter().find(|w| w.app_id == app).unwrap();
+        let rect = rect.rect.as_ref().unwrap();
+        (
+            f64::from(rect.x) + f64::from(rect.width) / 2.0,
+            f64::from(rect.y) + f64::from(rect.height) / 2.0,
+        )
+    };
+    let (left, right) = (middle("left"), middle("right"));
+    assert!(left.0 < right.0, "two columns side by side");
+    let at = session.pointer();
+    assert!(
+        (at.0 - left.0).abs() <= 1.0 && (at.1 - left.1).abs() <= 1.0,
+        "the pointer at {at:?}, the left window's middle at {left:?}"
+    );
 }
 
 #[test]
