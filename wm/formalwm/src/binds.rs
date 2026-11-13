@@ -91,6 +91,9 @@ impl Engine {
             let id = format!("formalwm:{index}");
             let shortcut = group.shortcut.clone();
             let options = options_of(&group);
+            // A wheel or button bind acts where the pointer is, as a press
+            // there would.
+            let pointed = matches!(chord.key, Key::WheelUp | Key::WheelDown | Key::Button(_));
             // The core fires a shortcut marked `locked` in both states and
             // repeats one marked `repeat` whole; which of its binds run is
             // theirs to say.
@@ -99,6 +102,9 @@ impl Engine {
                 let repeat = COMPOSITOR.key.is_repeat();
                 let actions: Vec<Action> = group.actions(locked, repeat).cloned().collect();
                 enter(move |engine| {
+                    if pointed && let Some(at) = COMPOSITOR.cursor.get_position() {
+                        engine.point_at((at.x, at.y));
+                    }
                     for action in &actions {
                         engine.run(action);
                     }

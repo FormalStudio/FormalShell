@@ -1,5 +1,5 @@
-//! The focus the engine does not ask a window for: the output under the
-//! pointer, and the window the compositor means the keyboard for when that
+//! The focus the engine does not ask a window for: the output under a
+//! press, and the window the compositor means the keyboard for when that
 //! is not the one the model has.
 
 use shojiwm_rs::prelude::*;
@@ -35,10 +35,12 @@ pub fn setup() {
 }
 
 impl Engine {
-    /// The output under the pointer is the focused one: on the way across
-    /// and at a press, which is how one with no window to press on is
-    /// reached. The keyboard stays where it is. Not while something is
-    /// dragged, which belongs to the output it left until it is dropped.
+    /// The output under the pointer takes the focus at a press and at a
+    /// wheel or button bind, which is how one with no window to press on is
+    /// reached; the keyboard stays where it is until a window is pressed.
+    /// Crossing to an output does not take it: the focus stays with the
+    /// window that has the keyboard. Not while something is dragged, which
+    /// belongs to the output it left until it is dropped.
     pub fn point_at(&mut self, at: (f64, f64)) {
         if self.hold.data_drag || self.hold.window_drag || self.drag.is_some() {
             return;

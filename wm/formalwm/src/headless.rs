@@ -886,7 +886,11 @@ fn a_workspace_bind_onto_another_output_takes_the_pointer_there() {
         Ok(())
     })
     .unwrap();
+    // Crossing to the first output leaves the focus with the window; a
+    // press on its empty workspace takes it.
     session.pointer_to(100.0, 100.0);
+    assert_eq!(state().focused_output, "TEST-2");
+    session.click();
     assert_eq!(state().focused_output, "TEST-1");
     session.chord(&[SUPER, EIGHT]);
     let seen = state();
@@ -1698,16 +1702,20 @@ fn two_outputs_and_the_touchpad() {
     session.chord(&[SHIFT]);
     assert!(!row("newer").floating);
 
-    // The output under the pointer is the focused one, and the keyboard
-    // stays with its window. The first output shows an empty workspace.
+    // The output follows the window that has the keyboard, not the
+    // pointer: crossing to the first output leaves it where it is. A press
+    // there takes it, and the keyboard stays with its window. The first
+    // output shows an empty workspace.
+    assert_eq!(state().focused_output, "TEST-2");
+    session.pointer_to(WIDTH / 2.0, HEIGHT / 2.0);
     assert_eq!(state().focused_output, "TEST-2");
     let mut listener = session.socket();
-    session.pointer_to(WIDTH / 2.0, HEIGHT / 2.0);
+    session.click();
     let told = session.message(&mut listener, |message| {
         message["event"] == proto::event::STATE_CHANGED
             && message["payload"]["focusedOutput"] == "TEST-1"
     });
-    assert!(told.is_some(), "the pointer's output is broadcast");
+    assert!(told.is_some(), "the pressed output is broadcast");
     drop(listener);
     let seen = state();
     assert_eq!(
@@ -1715,7 +1723,6 @@ fn two_outputs_and_the_touchpad() {
         ("TEST-1", newer.clone())
     );
     assert_eq!(keyed(), Some(newer.clone()));
-    // A press on an output with nothing to press on reaches it too.
     let focus_output = |output: &'static str| {
         ask(move |engine| {
             engine.model.focus_output(output);
@@ -1724,10 +1731,6 @@ fn two_outputs_and_the_touchpad() {
         })
         .unwrap();
     };
-    focus_output("TEST-2");
-    assert_eq!(state().focused_output, "TEST-2");
-    session.click();
-    assert_eq!(state().focused_output, "TEST-1");
     // Not while a window is dragged across.
     let dragging = |on: bool| {
         ask(move |engine| {
@@ -1736,12 +1739,11 @@ fn two_outputs_and_the_touchpad() {
         })
         .unwrap();
     };
+    focus_output("TEST-2");
     dragging(true);
-    session.pointer_to(WIDTH * 1.5, HEIGHT / 2.0);
-    assert_eq!(state().focused_output, "TEST-1");
-    dragging(false);
-    session.pointer_by(1.0, 0.0);
+    session.click();
     assert_eq!(state().focused_output, "TEST-2");
+    dragging(false);
 
     // A workspace asked for while it is in view under the pointer shows
     // nothing new and takes the keyboard all the same: to its window, and
@@ -1755,9 +1757,11 @@ fn two_outputs_and_the_touchpad() {
         assert_eq!((keyed(), said()), (Some(newer.clone()), newer.clone()));
         session.pointer_to(WIDTH / 2.0, HEIGHT / 2.0);
         let seen = state();
-        assert_eq!(
-            (seen.focused_workspace_id.as_str(), seen.focused_window_id),
-            (workspace, newer.clone())
+        assert_eq!(seen.focused_window_id, newer.clone());
+        assert_ne!(
+            seen.focused_workspace_id.as_str(),
+            workspace,
+            "crossing over does not take the output"
         );
         session.call(
             &mut shell,

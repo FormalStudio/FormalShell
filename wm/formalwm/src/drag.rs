@@ -431,7 +431,6 @@ impl Engine {
         self.arm_idle_pointer();
         self.cursor_moved(at);
         self.pip_pointer(at);
-        self.point_at(at);
         if self.hold.data_drag {
             self.hold_at(at, true);
         }
