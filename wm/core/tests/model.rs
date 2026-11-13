@@ -170,7 +170,8 @@ fn floating_and_back() {
     let b = place(&model, "b");
     assert_eq!(b.layer, Layer::Float);
     assert_eq!((b.column, b.row), (-1, -1));
-    assert_eq!(b.rect, Rect::new(480.0, 216.0, 960.0, 648.0));
+    // Around the middle of the tile it was, [964,8 948x1064].
+    assert_eq!(b.rect, Rect::new(958.0, 216.0, 960.0, 648.0));
     assert_eq!(focused(&model), "b");
     assert!(model.place("b", Rect::new(100.0, 120.0, 640.0, 480.0)));
     assert!(model.set_floating("b", Some(false)));
@@ -178,8 +179,14 @@ fn floating_and_back() {
     assert!(model.set_floating("b", Some(true)));
     assert_eq!(
         place(&model, "b").rect,
-        Rect::new(100.0, 120.0, 640.0, 480.0)
+        Rect::new(1118.0, 300.0, 640.0, 480.0),
+        "the size it last floated at"
     );
+    // Wider than the room right of the tile's middle: pushed back inside.
+    assert!(model.place("b", Rect::new(0.0, 0.0, 1400.0, 480.0)));
+    assert!(model.set_floating("b", Some(false)));
+    assert!(model.set_floating("b", Some(true)));
+    assert_eq!(place(&model, "b").rect, Rect::new(520.0, 300.0, 1400.0, 480.0));
     assert!(
         !model.place("a", Rect::new(0.0, 0.0, 10.0, 10.0)),
         "a is tiled"
