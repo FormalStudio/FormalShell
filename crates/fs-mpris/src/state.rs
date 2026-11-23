@@ -210,7 +210,7 @@ fn as_string(v: &Value<'_>) -> Option<String> {
 
 /// Integers arrive as whichever width the player picked (Qt-based ones send
 /// `x`, others `t` or `i`).
-fn as_i64(v: &Value<'_>) -> Option<i64> {
+pub(crate) fn as_i64(v: &Value<'_>) -> Option<i64> {
     match plain(v) {
         Value::I64(n) => Some(*n),
         Value::U64(n) => i64::try_from(*n).ok(),
@@ -243,10 +243,6 @@ fn get_bool(props: &Props, key: &str) -> Option<bool> {
 
 fn get_f64(props: &Props, key: &str) -> Option<f64> {
     props.get(key).and_then(|v| as_f64(v))
-}
-
-pub(crate) fn position_from(v: &Value<'_>) -> Option<i64> {
-    as_i64(v)
 }
 
 fn parse_metadata(v: &OwnedValue) -> Metadata {

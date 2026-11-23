@@ -259,7 +259,7 @@ fn declares_writable_volume(xml: &str) -> bool {
 async fn read_position(conn: &Connection, name: &str) -> Option<i64> {
     let props = props_proxy(conn, name).await.ok()?;
     let v: OwnedValue = props.get(iface(PLAYER_IFACE), "Position").await.ok()?;
-    state::position_from(&v)
+    state::as_i64(&v)
 }
 
 /// Command side. Cheap to clone; each call addresses a player by bus name.
