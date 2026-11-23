@@ -307,6 +307,18 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
   `airplay` source read the metadata and cover art back; a drive-script
   trigger then tells the shim to clear the files and print the disconnect
   line, and both go back to idle in the frame and over IPC.
+- `anim_pacing.sh` `--anim-pacing`: frame pacing while cards come and go,
+  off the shell's commit log, each step between a `menu ping` and a status
+  read: thirty toasts arriving and `dismissAll`, quick settings opening, its
+  Power menu and the card closing, the launcher opening and closing, the
+  volume OSD's round trip, and the switcher over two foot windows opening
+  and cancelled. Per surface, a commit that asked for the next frame
+  followed within two refresh intervals per frame callback between them
+  unless the compositor sent that callback late (counted apart: the
+  switcher's window copies), and no frame past the first rendering for over
+  an interval (not read under `FS_CPU_QUOTA`); each surface's count, median and worst `render_us`
+  and its longest gap split into callback wait, reaction and render are
+  printed. g815 only.
 - `app_grid.sh` `--app-grid`: `menu.appGrid: true` drawing the launcher's
   app results as icons over their names, read off the probe entry's own
   colour covering a 64px cell rather than a row's icon, with real arrow keys
@@ -1456,6 +1468,14 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
   `UnInhibit` releases its own while it is still on the bus.
 - `screenshot.sh` `--screenshot`: the `screenshot` target's region cancel and
   full-screen routes.
+- `scroll_pacing.sh` `--scroll-pacing`: frame pacing while a scroll moves,
+  off the shell's commit log: the wallpaper picker's grid over 120 pictures
+  (`menu-content`) and the notification centre over thirty rows (`panel`),
+  each taking one wheel notch, five notches 40ms apart, thirty finger
+  frames 8ms apart and a flick. A notch glides over at least four commits,
+  no gap past two refresh intervals over a scroll's first 700ms, and the
+  fingers come out one commit a refresh, never one per input frame; each
+  window's median `render_us` is printed. g815 only.
 - `settings_ui.sh` `--settings-ui`: the settings pages
   (`docs/superpowers/specs/2026-10-31-settings-ui.md`) held in the launcher
   card, centred, on real keys, with

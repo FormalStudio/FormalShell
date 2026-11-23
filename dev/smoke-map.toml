@@ -240,11 +240,12 @@ runs = ["--picker", "--picker --light", "--wheel"]
 paths = ["crates/formalshell-rs/src/scroll.rs"]
 runs = ["--wheel", "--menu", "--launcher-mouse", "--scroll-pacing"]
 
-# What paces a scroll's frames: the launcher's and the panel host's own
-# frame callbacks, and the loop that runs a sliced frame's next turn.
+# What paces a scroll's or a card's frames: the launcher's and the panel
+# host's own frame callbacks, and the loop that runs a sliced frame's next
+# turn.
 [[rule]]
 paths = ["crates/formalshell-rs/src/main.rs", "crates/formalshell-rs/src/wayland/owner.rs", "crates/formalshell-rs/src/surfaces/modal.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/launcher/view.rs"]
-runs = ["--scroll-pacing", "--wheel", "--center"]
+runs = ["--scroll-pacing", "--anim-pacing", "--wheel", "--center"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/keyboard.rs"]
@@ -415,7 +416,7 @@ runs = ["--app-grid", "--emoji"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/switcher/**", "crates/formalshell-rs/src/wayland/switcher.rs", "crates/formalshell-rs/src/ipc/switcher.rs"]
-runs = ["--switcher", "--switcher-keys", "--switcher-off"]
+runs = ["--switcher", "--switcher-keys", "--switcher-off", "--anim-pacing"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/wayland/capture.rs", "crates/formalshell-rs/src/wayland/preview.rs", "crates/formalshell-rs/src/surfaces/panel/workspace_preview.rs", "crates/formalshell-rs/src/surfaces/panel/workspace_preview/strip.rs"]
@@ -508,7 +509,7 @@ runs = ["--gallery"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/quick/**", "crates/formalshell-rs/src/ipc/quicksettings.rs"]
-runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power", "--quick-settings-devices", "--quick-settings-devices --light", "--chevron", "--ipad"]
+runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power", "--quick-settings-devices", "--quick-settings-devices --light", "--chevron", "--ipad", "--anim-pacing"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/launcher/monitor.rs"]
@@ -574,7 +575,7 @@ paths = [
   "crates/fs-info/src/notification_icon.rs",
   "crates/formalshell-rs/src/surfaces/toasts/**",
 ]
-runs = ["--notify", "--toast-swipe", "--notify-close", "--notify-emerge", "--center", "--activity", "--tray-overflow --sidebar"]
+runs = ["--notify", "--toast-swipe", "--notify-close", "--notify-emerge", "--center", "--activity", "--tray-overflow --sidebar", "--anim-pacing"]
 
 # Activity
 [[rule]]
@@ -610,7 +611,7 @@ runs = ["--spaces"]
 # OSD
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/osd.rs", "crates/formalshell-rs/src/wayland/osd.rs", "crates/formalshell-rs/src/ipc/osd.rs"]
-runs = ["--osd", "--brightness"]
+runs = ["--osd", "--brightness", "--anim-pacing"]
 
 # Lock, screensaver, idle
 [[rule]]
