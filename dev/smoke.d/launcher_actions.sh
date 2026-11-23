@@ -241,7 +241,7 @@ leg_launcher_actions_assert() {
   echo "SMOKE_LAUNCHER_ACTIONS into answers a row with nothing under it"
 
   launcher_actions_expect list ".ids[0] == \"$launcher_actions_app\"" "the probe does not lead its own name"
-  launcher_actions_expect tab '.actionsOpen and ([.actions[] | select(. != "discrete-gpu")] == ["open", "new-window", "desktop:quiet", "windows", "move-to-workspace", "probe-note", "probe-confirm"])' "Tab did not list the app's actions in order, with copy-path hidden and probe-note and probe-confirm added"
+  launcher_actions_expect tab '.actionsOpen and ([.actions[] | select(. != "discrete-gpu")] == ["open", "new-window", "desktop:quiet", "windows", "move-to-workspace", "dock-pin", "probe-note", "probe-confirm"])' "Tab did not list the app's actions in order, with copy-path hidden and probe-note and probe-confirm added"
   launcher_actions_expect tab '.query == "" and .cursorId == "'"$launcher_actions_app"'"' "the column did not take the field or the row lost the selection"
   local rest busiest
   rest=$(cat "$shot_dir/launcher-actions-rest-commits.txt" 2>/dev/null)
