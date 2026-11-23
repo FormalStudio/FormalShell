@@ -27,7 +27,7 @@ use fs_media::visualizer::model::BAR_COUNT;
 use fs_media::visualizer::style::Style;
 use fs_theme::color::Rgba;
 use super::band::{Band, LEVEL_ACCENT_FROM, LEVEL_DIM_BELOW, level_color_band};
-use super::scene::{Scene, TextAlign, TextBaseline};
+use super::scene::{Scene, TextAlign};
 use fs_js::round;
 
 /// Frames past this are a stall (a hidden window, a suspended session), and
@@ -40,8 +40,6 @@ pub struct Ink {
     pub dim: Rgba,
     pub content: Rgba,
     pub accent: Rgba,
-    /// The mono font family.
-    pub mono: String,
     pub columns: usize,
     pub gap: f64,
     pub radius: f64,
@@ -642,8 +640,7 @@ fn ascii(c: &mut Scene, f: &Frame, _state: &mut State) {
     let cw = col_width(w, n, ink.gap);
     let rows = 4usize;
     let row_h = h / rows as f64;
-    c.set_font(row_h.floor(), &ink.mono);
-    c.text_baseline = TextBaseline::Middle;
+    c.set_font(row_h.floor());
     c.text_align = TextAlign::Center;
     for i in 0..n {
         let cx = i as f64 * (cw + ink.gap) + cw / 2.0;
@@ -683,8 +680,7 @@ fn matrix(c: &mut Scene, f: &Frame, state: &mut State) {
     if state.heads.len() != n {
         state.heads = (0..n).map(|s| ((s * 5) as f64) % span).collect();
     }
-    c.set_font(row_h, &ink.mono);
-    c.text_baseline = TextBaseline::Middle;
+    c.set_font(row_h);
     c.text_align = TextAlign::Center;
     let oy = (h - rows * row_h) / 2.0;
     let glyphs = MATRIX_GLYPHS.as_bytes();
@@ -1365,8 +1361,7 @@ fn binary(c: &mut Scene, f: &Frame, state: &mut State) {
     let off = &mut state.bin_off;
     let ox = (w - cols as f64 * char_w) / 2.0 + char_w / 2.0;
     let oy = (h - rows as f64 * row_h) / 2.0 + row_h / 2.0;
-    c.set_font(row_h, &ink.mono);
-    c.text_baseline = TextBaseline::Middle;
+    c.set_font(row_h);
     c.text_align = TextAlign::Center;
     for col in 0..cols {
         let l = lv[col];
@@ -1871,8 +1866,7 @@ fn stereo(c: &mut Scene, f: &Frame, state: &mut State) {
     let segs = ((w - label_w + gap_x) / (seg_w + gap_x)).floor().max(1.0);
     let x0 = w - (segs * (seg_w + gap_x) - gap_x);
     let meter_h = (((h - 2.0) / 2.0).floor() - 2.0).max(1.0);
-    c.set_font(8.0, &ink.mono);
-    c.text_baseline = TextBaseline::Middle;
+    c.set_font(8.0);
     c.text_align = TextAlign::Left;
     for ch in 0..2 {
         let y = if ch == 0 {
@@ -2087,7 +2081,6 @@ mod tests {
             dim: Rgba::parse("#555555").unwrap(),
             content: Rgba::parse("#eeeeee").unwrap(),
             accent: Rgba::parse("#ff8800").unwrap(),
-            mono: "monospace".into(),
             columns: 12,
             gap: 2.0,
             radius: 4.0,

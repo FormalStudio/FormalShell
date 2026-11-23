@@ -35,11 +35,6 @@ pub enum TextAlign {
     Center,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextBaseline {
-    Middle,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Shape {
     Rect {
@@ -61,15 +56,13 @@ pub enum Shape {
         alpha: f64,
         width: f64,
     },
-    /// `size` is the font's pixel size, `family` the mono family name.
+    /// `size` is the font's pixel size.
     Text {
         text: String,
         x: f64,
         y: f64,
         size: f64,
-        family: String,
         align: TextAlign,
-        baseline: TextBaseline,
         color: Rgba,
         alpha: f64,
     },
@@ -83,9 +76,7 @@ pub struct Scene {
     pub line_width: f64,
     pub global_alpha: f64,
     pub font_size: f64,
-    pub font_family: String,
     pub text_align: TextAlign,
-    pub text_baseline: TextBaseline,
     path: Vec<PathEl>,
 }
 
@@ -98,9 +89,7 @@ impl Default for Scene {
             line_width: 1.0,
             global_alpha: 1.0,
             font_size: 10.0,
-            font_family: String::new(),
             text_align: TextAlign::Left,
-            text_baseline: TextBaseline::Middle,
             path: Vec::new(),
         }
     }
@@ -173,9 +162,8 @@ impl Scene {
         });
     }
 
-    pub(crate) fn set_font(&mut self, size: f64, family: &str) {
+    pub(crate) fn set_font(&mut self, size: f64) {
         self.font_size = size;
-        self.font_family = family.to_string();
     }
 
     pub(crate) fn fill_text(&mut self, text: &str, x: f64, y: f64) {
@@ -184,9 +172,7 @@ impl Scene {
             x,
             y,
             size: self.font_size,
-            family: self.font_family.clone(),
             align: self.text_align,
-            baseline: self.text_baseline,
             color: self.fill_style,
             alpha: self.global_alpha,
         });

@@ -87,7 +87,6 @@ fn paint(cx: &mut Cx, r: Rect, style: Style, columns: usize, feed: Option<visual
         dim: t.colors.get(ColorRole::MutedForeground),
         content: t.colors.get(ColorRole::Foreground),
         accent: t.colors.get(ColorRole::Primary),
-        mono: String::new(),
         columns,
         gap: t.space.xxs,
         radius: t.radii.sm,
