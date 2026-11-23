@@ -98,9 +98,10 @@ leg_join_drive() {
 #!/usr/bin/env bash
 call() { $ipc call "\$@" >> "$join_reply_path" 2>&1; }
 sample() {
-  local name=\$1 i
+  local name=\$1 lead=\${2:-0.3} i
   for i in \$(seq 1 $join_frames); do
-    sleep 0.3
+    sleep \$lead
+    lead=0.3
     "$grim_bin" -g "$join_region" "$shot_dir/join-\$name-\$i.png" > /dev/null 2>&1
   done
 }
@@ -110,7 +111,7 @@ call debug motionScale 1000
 $ipc call debug dump > "$join_dump_path" 2>&1
 "$grim_bin" -g "$join_region" "$join_desktop_path" > /dev/null 2>&1
 call panel open network
-sample a
+sample a 0
 sleep 3
 "$grim_bin" -g "$join_region" "$shot_dir/join-a-rest.png" > /dev/null 2>&1
 $ipc call debug dump > "$join_rest_dump_path" 2>&1
