@@ -238,10 +238,6 @@ pub fn send(cmd: Cmd) {
     }
 }
 
-fn runtime_dir() -> Option<PathBuf> {
-    crate::paths::session_runtime()
-}
-
 fn cache_dir() -> PathBuf {
     crate::paths::shell_cache().join("radio-atlas")
 }
@@ -1037,7 +1033,7 @@ async fn run(ctx: Ctx) {
         ctx: ctx.clone(),
         st: State::default(),
         mpv: None,
-        socket_dir: runtime_dir().map(|d| d.join("formalshell-radio-atlas")),
+        socket_dir: crate::paths::session_runtime().map(|d| d.join("formalshell-radio-atlas")),
         pending: Vec::new(),
         stopping: false,
         resume: None,
