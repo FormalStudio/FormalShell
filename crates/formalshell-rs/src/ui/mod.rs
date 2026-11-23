@@ -587,7 +587,7 @@ impl Cx<'_> {
         };
         if *to != target {
             let p = a.value(now).clamp(0.0, 1.0) as f32;
-            *from = lerp(*from, *to, p);
+            *from = from.mix(*to, p);
             *to = target;
             a.jump(0.0);
             a.set(now, 1.0, ms);
@@ -596,7 +596,7 @@ impl Cx<'_> {
             self.drawn.animating = true;
             self.drawn.settling = true;
         }
-        lerp(*from, *to, a.value(now).clamp(0.0, 1.0) as f32)
+        from.mix(*to, a.value(now).clamp(0.0, 1.0) as f32)
     }
 
     pub fn wake_at(&mut self, at: Instant) {
@@ -858,10 +858,6 @@ impl Cx<'_> {
     pub fn a(&self, c: Rgba) -> Rgba {
         c.with_alpha(c.a * self.alpha)
     }
-}
-
-pub fn lerp(a: Rgba, b: Rgba, t: f32) -> Rgba {
-    a.mix(b, t)
 }
 
 pub fn irect(r: Rect) -> IRect {
