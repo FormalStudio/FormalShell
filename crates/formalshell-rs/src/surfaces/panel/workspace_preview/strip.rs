@@ -6,6 +6,7 @@ use fs_theme::style::Role;
 use vello_cpu::kurbo::Rect;
 
 use fs_types::IRect;
+use crate::motion::Kind as Clock;
 use crate::ui::el::Pic;
 use crate::ui::{Cx, Hit, HitWhat, On, Stop, Widget, boxes, irect, thumb};
 
@@ -32,12 +33,14 @@ pub struct Tile {
 
 /// A framed viewport `size` big, `inset` inside its frame, scrolled to
 /// `scroll`, holding tiles at their own places. The wheel over it fires
-/// `on` with `What::Scroll`.
+/// `on` with `What::Scroll`, a touchpad with `What::Pan`; a wheel's notch
+/// (`glide`) travels to `scroll` on `effectsFast`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Strip {
     pub size: (f64, f64),
     pub inset: f64,
     pub scroll: (f64, f64),
+    pub glide: bool,
     pub tiles: Vec<Tile>,
     pub on: On,
 }
@@ -48,7 +51,15 @@ impl Widget for Strip {
     }
 
     fn paint(&self, cx: &mut Cx, inner: Rect, path: &str) {
-        paint(cx, &self.on, inner, self.inset, self.scroll, &self.tiles, path);
+        let (kx, ky) = (format!("{path}.x"), format!("{path}.y"));
+        let scroll = if self.glide {
+            (cx.tween(&kx, self.scroll.0, Clock::EffectsFast), cx.tween(&ky, self.scroll.1, Clock::EffectsFast))
+        } else {
+            cx.jump(&kx, self.scroll.0, Clock::EffectsFast);
+            cx.jump(&ky, self.scroll.1, Clock::EffectsFast);
+            self.scroll
+        };
+        paint(cx, &self.on, inner, self.inset, scroll, &self.tiles, path);
     }
 }
 

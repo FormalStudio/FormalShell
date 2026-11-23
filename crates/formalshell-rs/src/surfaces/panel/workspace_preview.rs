@@ -77,6 +77,8 @@ pub struct Shared {
     /// opened on the output's region.
     pub scroll: (f64, f64),
     pub scrolled: bool,
+    /// The last scroll came off a wheel's notches, which glide.
+    pub glide: bool,
 }
 
 pub struct WorkspacePreview {
@@ -174,7 +176,7 @@ impl Panel for WorkspacePreview {
                 })
             })
             .collect();
-        let scroll = shared.scroll;
+        let (scroll, glide) = (shared.scroll, shared.glide);
         shared.laid = laid;
         drop(shared);
 
@@ -186,7 +188,7 @@ impl Panel for WorkspacePreview {
         let mini = if tiles.is_empty() {
             w::panel_empty(s, "No windows")
         } else {
-            El::custom(Strip { size: (mini_w, mini_h), inset, scroll, tiles, on: "mini".into() }).width(Size::Px(mini_w))
+            El::custom(Strip { size: (mini_w, mini_h), inset, scroll, glide, tiles, on: "mini".into() }).width(Size::Px(mini_w))
         };
         w::column(s.sm, vec![mini, footer.elide().mid()])
     }
@@ -196,12 +198,14 @@ impl Panel for WorkspacePreview {
             self.focus(id, fx);
             return;
         }
-        if ev.on == "mini"
-            && let What::Scroll(dx, dy) = ev.what
-        {
+        let (dx, dy, step, glide) = match ev.what {
             // Qt turns the rig's continuous axis into 72 px a notch where a wheel's
             // 120 angle units give one control height; the card steps that far.
-            let step = fx.store.theme.theme.space.control_height * 2.25;
+            What::Scroll(dx, dy) => (dx, dy, fx.store.theme.theme.space.control_height * 2.25, true),
+            What::Pan(dx, dy) => (dx, dy, 1.0, false),
+            _ => return,
+        };
+        if ev.on == "mini" {
             let mut shared = self.shared.borrow_mut();
             let laid = &shared.laid;
             let wide = laid.content.0 > laid.view.0;
@@ -216,6 +220,7 @@ impl Panel for WorkspacePreview {
             let next = ((shared.scroll.0 + dx * step).clamp(0.0, max.0), (shared.scroll.1 + dy * step).clamp(0.0, max.1));
             shared.scroll = next;
             shared.scrolled = true;
+            shared.glide = glide;
         }
     }
 

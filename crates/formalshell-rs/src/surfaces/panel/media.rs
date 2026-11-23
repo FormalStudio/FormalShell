@@ -479,7 +479,7 @@ impl Panel for Media {
             ("radio", _) => fx.push(Out::Summon(super::ATLAS)),
             ("raise", _) => fx.store.media.raise(),
             ("lyrics-follow", _) => set_follow(fx, true),
-            ("lyrics-pane", What::Scroll(..)) => set_follow(fx, false),
+            ("lyrics-pane", What::Scroll(..) | What::Pan(..)) => set_follow(fx, false),
             ("source", _) => self.toggle_menu("source"),
             ("output", _) => self.toggle_menu("output"),
             ("transport", What::Pick(i)) => {

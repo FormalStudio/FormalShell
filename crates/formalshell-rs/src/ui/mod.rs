@@ -68,6 +68,8 @@ pub enum What {
     /// A scroll over a viewport, in wheel notches along x and y, positive
     /// moving the view right and down.
     Scroll(f64, f64),
+    /// The same off a touchpad, in content pixels, to land at once.
+    Pan(f64, f64),
 }
 
 /// The pointer button a click came from.
@@ -219,9 +221,9 @@ pub struct Ui {
     /// Where a floating list may go, over everything this surface drew;
     /// `None` keeps one inside the tree's own box.
     pub float_room: Option<IRect>,
-    /// Each floating list's own scroll, by path, and the cursor stop it
-    /// last kept in view.
-    float_scroll: HashMap<String, (f64, Option<String>)>,
+    /// Each floating list's own scroll, by path, the cursor stop it last
+    /// kept in view, and whether a wheel's notch glides it there.
+    float_scroll: HashMap<String, (f64, Option<String>, bool)>,
     /// The floating cards drawn last with how far each is scrolled, and
     /// the stops inside them.
     pub float_cards: Vec<(IRect, f64)>,
@@ -383,14 +385,16 @@ impl Ui {
         self.hits.iter().rev().find(|h| h.what == HitWhat::Scroll && x >= h.rect.x && x < h.rect.right() && y >= h.rect.y && y < h.rect.bottom())
     }
 
-    /// Moves a scroll region's content by `delta` px.
-    pub fn scroll(&mut self, path: &str, delta: f64) {
+    /// Moves a scroll region's content by `delta` px: a wheel's notches
+    /// `glide` there on `effectsFast`, a touchpad's travel lands at once.
+    pub fn scroll(&mut self, path: &str, delta: f64, glide: bool) {
         if let Some(k) = self.custom.get_mut(path) {
-            k.state.scroll(delta);
+            k.state.scroll(delta, glide);
         }
         // Clamped to the list as it next draws.
-        if let Some((s, _)) = self.float_scroll.get_mut(path) {
+        if let Some((s, _, g)) = self.float_scroll.get_mut(path) {
             *s -= delta;
+            *g = glide;
         }
     }
 }
@@ -514,7 +518,7 @@ impl Cx<'_> {
             t.value = TweenValue::Num(Animated::new(target, kind.curve()));
             return target;
         };
-        a.set(now, target, ms);
+        a.set_on(now, target, ms, kind.curve());
         if a.running(now) {
             self.drawn.animating = true;
             self.drawn.settling = true;
@@ -648,7 +652,7 @@ impl Cx<'_> {
             let r = IRect::new(x.round() as i32, y.round() as i32, w.round() as i32, h.round() as i32);
             let view = (h - pad * 2.0).max(0.0);
             let max = (content - view).max(0.0);
-            let (mut scroll, followed) = self.ui.float_scroll.get(&path).cloned().unwrap_or_default();
+            let (mut scroll, followed, mut glide) = self.ui.float_scroll.get(&path).cloned().unwrap_or_default();
             let cursor = self.ui.cursor.clone();
             if max > 0.0 && cursor.is_some() && cursor != followed {
                 // Where the cursor's row sits in the list, laid out unscrolled.
@@ -659,13 +663,22 @@ impl Cx<'_> {
                     let (top, bottom) = (st.rect.y as f64, st.rect.bottom() as f64);
                     if top < scroll {
                         scroll = top;
+                        glide = false;
                     } else if bottom > scroll + view {
                         scroll = bottom - view;
+                        glide = false;
                     }
                 }
             }
             let scroll = scroll.clamp(0.0, max);
-            self.ui.float_scroll.insert(path.clone(), (scroll, cursor));
+            self.ui.float_scroll.insert(path.clone(), (scroll, cursor, glide));
+            let key = format!("{path}.scroll");
+            let scroll = if glide {
+                self.tween(&key, scroll, Clock::EffectsFast)
+            } else {
+                self.jump(&key, scroll, Clock::EffectsFast);
+                scroll
+            };
             let alpha = self.alpha;
             let saved = self.clip;
             self.clip = if room.is_some() { Some(irect(area)) } else { saved };

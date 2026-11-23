@@ -514,7 +514,7 @@ impl Sidebar {
     /// A wheel over hit `i`: on the minimap it scrolls its rows.
     pub fn wheel(&mut self, i: usize, notches: f64) -> bool {
         let on_map = self.hit_at(i).and_then(|h| h.on.as_ref()).is_some_and(minimap::on_map);
-        on_map && notches != 0.0 && self.map.scroll(notches.signum() as i32)
+        on_map && notches != 0.0 && self.map.scroll(notches)
     }
 
     /// A press on hit `i`, which may start a drag on the minimap. The

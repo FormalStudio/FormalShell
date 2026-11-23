@@ -159,6 +159,9 @@ pub struct Map {
     pub first: usize,
     pub fits: usize,
     seen: Option<usize>,
+    /// Notches short of a whole row, a touchpad's fractions of one kept
+    /// for the next frame.
+    carry: f64,
     /// The pointer is on the map: the rows' numbers show.
     pub over: bool,
     /// The cards' left edge and width, past which a lifted icon opens the
@@ -416,10 +419,14 @@ impl Map {
         first.min(total.saturating_sub(fits))
     }
 
-    /// A wheel notch over the map, `dy` rows on.
-    pub fn scroll(&mut self, dy: i32) -> bool {
+    /// `notches` over the map, a row each: a wheel's whole ones, a
+    /// touchpad's fractions adding up to them.
+    pub fn scroll(&mut self, notches: f64) -> bool {
+        self.carry += notches;
+        let rows = self.carry.trunc();
+        self.carry -= rows;
         let before = self.first;
-        self.first = self.first.saturating_add_signed(dy as isize).min(self.len().saturating_sub(self.fits.max(1)));
+        self.first = self.first.saturating_add_signed(rows as isize).min(self.len().saturating_sub(self.fits.max(1)));
         before != self.first
     }
 

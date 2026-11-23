@@ -965,7 +965,7 @@ impl Host {
     /// vertically by `travel`, the same frame read as a wheel's or a
     /// touchpad's.
     #[allow(clippy::too_many_arguments)]
-    pub fn scroll(&mut self, x: f64, y: f64, dx: f64, dy: f64, travel: Travel, store: &Store, runtime: &Runtime) -> Vec<Out> {
+    pub fn scroll(&mut self, x: f64, y: f64, (dx, dy): (f64, f64), (across, travel): (Travel, Travel), store: &Store, runtime: &Runtime) -> Vec<Out> {
         let (view, ms) = (self.viewport.h as f64, Clock::SpatialFast.ms(&store.theme.theme));
         if let Travel::Lift(_) = travel {
             let max = (self.content_h - view).max(0.0);
@@ -979,13 +979,17 @@ impl Host {
             && let Some(on) = h.on.clone()
         {
             // A touchpad's pixels move it as far as they move the body.
-            let along = match travel {
-                Travel::Pixels { px, .. } => px,
-                _ => dy * store.theme.theme.space.control_height,
+            let px = |t: Travel| if let Travel::Pixels { px, .. } = t { Some(px) } else { None };
+            let what = match (px(across), px(travel)) {
+                (None, None) => What::Scroll(dx, dy),
+                (x, y) => What::Pan(x.unwrap_or(0.0), y.unwrap_or(0.0)),
             };
-            self.body.scroll(&h.path, -along);
+            match what {
+                What::Pan(_, y) => self.body.scroll(&h.path, -y, false),
+                _ => self.body.scroll(&h.path, -dy * store.theme.theme.space.control_height, true),
+            }
             let mut fx = Effect::new(store, runtime);
-            self.module.event(&Event { on, what: What::Scroll(dx, dy), button: Button::Left }, &mut fx);
+            self.module.event(&Event { on, what, button: Button::Left }, &mut fx);
             return fx.outs();
         }
         if dy == 0.0 {

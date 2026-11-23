@@ -581,9 +581,9 @@ impl Owner for Cards {
             },
             (PointerEventKind::Axis { time, vertical, horizontal, source }, Some(Target::Panel)) => {
                 let (dx, dy) = (crate::scroll::notches(&horizontal), crate::scroll::notches(&vertical));
-                let travel = crate::scroll::travel(&vertical, source, time);
+                let (across, travel) = (crate::scroll::travel(&horizontal, source, time), crate::scroll::travel(&vertical, source, time));
                 if let Some(h) = app.panel.as_mut().filter(|_| dx != 0.0 || dy != 0.0 || travel != crate::scroll::Travel::None) {
-                    let outs = h.scroll(x, y, dx, dy, travel, &app.store, &app.runtime);
+                    let outs = h.scroll(x, y, (dx, dy), (across, travel), &app.store, &app.runtime);
                     app.panel_outs(Holder::Host, outs);
                 }
                 app.panel_dirty = true;

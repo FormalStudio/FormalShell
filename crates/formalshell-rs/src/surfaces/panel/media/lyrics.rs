@@ -64,6 +64,8 @@ struct Column {
     /// The column's y while a wheel holds it, and as last drawn.
     wheel_y: f64,
     last_y: f64,
+    /// The last scroll came off a wheel's notches: it glides to `wheel_y`.
+    glide: bool,
     following: bool,
     last_anchor: usize,
     /// Which rows were lit last frame, for the arrival fade.
@@ -74,19 +76,20 @@ struct Column {
 
 impl Column {
     fn new() -> Self {
-        Self { laid: None, rows: Vec::new(), wheel_y: 0.0, last_y: 0.0, following: true, last_anchor: 0, lit: Vec::new(), moving: Default::default() }
+        Self { laid: None, rows: Vec::new(), wheel_y: 0.0, last_y: 0.0, glide: false, following: true, last_anchor: 0, lit: Vec::new(), moving: Default::default() }
     }
 }
 
 impl State for Column {
-    /// A wheel's `delta` px over the pane: the first one takes the column
+    /// A scroll's `delta` px over the pane: the first one takes the column
     /// from wherever it is.
-    fn scroll(&mut self, delta: f64) {
+    fn scroll(&mut self, delta: f64, glide: bool) {
         if self.following {
             self.wheel_y = self.last_y;
             self.following = false;
         }
         self.wheel_y += delta;
+        self.glide = glide;
     }
 }
 
@@ -291,6 +294,8 @@ fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
     // so going back to the song travels from where the column is.
     let col_y = if v.follow {
         cx.tween(&format!("{path}.y"), follow_y, Clock::Spatial)
+    } else if pane.glide {
+        cx.tween(&format!("{path}.y"), wheel_y, Clock::EffectsFast)
     } else {
         cx.jump(&format!("{path}.y"), wheel_y, Clock::Spatial);
         wheel_y

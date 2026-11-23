@@ -20,8 +20,9 @@ pub trait Widget: Any + Debug + Same {
 
 /// What a widget keeps between draws.
 pub trait State: Any {
-    /// A wheel's `delta` px over the widget's scroll region.
-    fn scroll(&mut self, _delta: f64) {}
+    /// `delta` px over the widget's scroll region: a wheel's notches, which
+    /// `glide` there, or a touchpad's travel, which lands at once.
+    fn scroll(&mut self, _delta: f64, _glide: bool) {}
 }
 
 /// Clone and compare through the box, so a tree holding a widget is plain
