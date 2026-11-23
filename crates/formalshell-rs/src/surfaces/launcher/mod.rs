@@ -376,14 +376,16 @@ impl Column {
 }
 
 /// The drawn offset headed for `target`: a wheel's notch glides there on
-/// `effectsFast`, a key's follow travels on `spatialFast`, a touchpad's
-/// travel and a coast's frames land at once.
+/// `effectsFast`, a key's follow travels on the table's `cursor` clock with
+/// the cursor's fill it is keeping in view, a touchpad's travel and a
+/// coast's frames land at once.
 fn glide(a: &mut Animated, now: Instant, target: f64, wheeled: bool, travels: bool, theme: &Theme) {
     let gap = (a.target() - target).abs();
     if wheeled && gap > 0.5 {
         a.set_on(now, target, Clock::EffectsFast.ms(theme), Clock::EffectsFast.curve());
     } else if travels && gap > 0.5 {
-        a.set_on(now, target, Clock::SpatialFast.ms(theme), Clock::SpatialFast.curve());
+        let m = theme.motion();
+        a.set_on(now, target, m.cursor, crate::motion::Curve::from_table(&m.cursor_curve));
     } else if !wheeled && !travels && gap > 0.0 {
         // A coast's tail moves under half a pixel a frame.
         a.jump(target);

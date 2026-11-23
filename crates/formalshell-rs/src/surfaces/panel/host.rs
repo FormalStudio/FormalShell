@@ -760,7 +760,9 @@ impl Host {
         let (h, view) = (st.rect.h as f64, self.viewport.h as f64);
         let next = crate::scroll::follow(top, h, scroll, view, self.content_h);
         if (next - scroll).abs() > 0.5 {
-            self.scroll.set_on(now, next, Clock::SpatialFast.ms(theme), Clock::SpatialFast.curve());
+            // With the halo it keeps in view, on the same clock.
+            let m = theme.motion();
+            self.scroll.set_on(now, next, m.cursor, crate::motion::Curve::from_table(&m.cursor_curve));
         }
     }
 
