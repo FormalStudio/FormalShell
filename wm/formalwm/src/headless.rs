@@ -972,6 +972,48 @@ fn a_workspace_bind_onto_another_output_takes_the_pointer_there() {
 }
 
 #[test]
+fn a_wheel_notch_in_the_overview_walks_one_workspace() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("overview-wheel", HOST, &[test_display("TEST-1")]);
+    for app in ["one", "two", "three", "four"] {
+        session.open(app);
+    }
+    ask(|engine| {
+        let ids: Vec<String> = engine.model.windows.iter().map(|w| w.id.clone()).collect();
+        for (id, workspace) in ids[1..].iter().zip(["2", "3", "4"]) {
+            engine.model.move_to_workspace(id, workspace, false);
+        }
+        engine.model.focus_workspace("1");
+        engine.commit();
+        engine.set_overview(Some(true));
+        Ok(())
+    })
+    .unwrap();
+    session.pointer_to(100.0, 100.0);
+    let mut seen = Vec::new();
+    session.scroll_by(AxisSource::Wheel, 1.0);
+    seen.push(state().focused_workspace_id);
+    session.scroll_by(AxisSource::Wheel, 1.0);
+    seen.push(state().focused_workspace_id);
+    session.scroll_by(AxisSource::Wheel, -1.0);
+    seen.push(state().focused_workspace_id);
+    // A high-resolution wheel's notch in eight parts.
+    for _ in 0..8 {
+        session.wheel_steps(15.0);
+    }
+    seen.push(state().focused_workspace_id);
+    // Two fingers: 30 px walks nothing, 10 more walks one.
+    session.scroll_by(AxisSource::Finger, 30.0);
+    seen.push(state().focused_workspace_id);
+    session.scroll_by(AxisSource::Finger, 10.0);
+    seen.push(state().focused_workspace_id);
+    assert_eq!(seen, ["2", "3", "2", "3", "3", "4"]);
+    assert!(state().overview);
+}
+
+#[test]
 fn super_and_the_wheel_take_one_workspace_a_turn() {
     const SUPER: u32 = 125;
     let _turn = ONE_AT_A_TIME

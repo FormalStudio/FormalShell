@@ -7,7 +7,7 @@ use formalwm_core::{
     geom::Rect as Box2,
     model::Home,
     motion::{Spread, SpringParams, project},
-    overview::Lens,
+    overview::{Lens, Walk},
     tape::Side,
 };
 use fs_wm_proto::Motion;
@@ -23,8 +23,6 @@ use crate::{
 const UNIT: f64 = 0.001;
 /// How far the pointer travels with the button down before it is a drag.
 const DRAG_START: f64 = 8.0;
-/// Wheel or two-finger travel that walks one workspace.
-const SCROLL_STEP: f64 = 40.0;
 const BTN_LEFT: u32 = 0x110;
 
 pub struct Overview {
@@ -37,7 +35,7 @@ pub struct Overview {
     press: Option<Press>,
     /// The key pressed last under the grab, until one is let go.
     key: Option<String>,
-    scroll: f64,
+    walk: Walk,
 }
 
 struct Press {
@@ -74,7 +72,7 @@ impl Default for Overview {
             grab: None,
             press: None,
             key: None,
-            scroll: 0.0,
+            walk: Walk::default(),
         }
     }
 }
@@ -124,7 +122,7 @@ impl Engine {
         if open != self.overview.open {
             self.overview.open = open;
             self.overview.press = None;
-            self.overview.scroll = 0.0;
+            self.overview.walk = Walk::default();
             if open {
                 self.grab_overview();
             } else {
@@ -186,10 +184,9 @@ impl Engine {
                 enter(move |engine| engine.overview_button(pressed, at));
             })
             .on_scroll(|event| {
-                let travel = event
-                    .discrete_y
-                    .map_or(event.delta_y, |steps| steps * SCROLL_STEP);
-                enter(move |engine| engine.overview_scroll(travel));
+                let (delta, v120) = (event.delta_y, event.discrete_y);
+                let wheel = event.source.starts_with("wheel");
+                enter(move |engine| engine.overview_scroll(delta, v120, wheel));
             })
             .on_swipe(|event| {
                 let event = event.clone();
@@ -236,14 +233,12 @@ impl Engine {
         }
     }
 
-    fn overview_scroll(&mut self, travel: f64) {
-        self.overview.scroll += travel;
-        let steps = (self.overview.scroll / SCROLL_STEP).trunc();
-        if steps == 0.0 {
+    fn overview_scroll(&mut self, delta: f64, v120: Option<f64>, wheel: bool) {
+        let steps = self.overview.walk.scroll(delta, v120, wheel);
+        if steps == 0 {
             return;
         }
-        self.overview.scroll -= steps * SCROLL_STEP;
-        if self.model.focus_workspace_relative(steps as isize) {
+        if self.model.focus_workspace_relative(steps) {
             self.commit();
         }
     }

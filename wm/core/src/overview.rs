@@ -8,6 +8,35 @@ use crate::geom::Rect;
 pub const ZOOM: f64 = 0.5;
 /// The space between two workspaces, as a share of one's drawn height.
 const GAP: f64 = 0.08;
+/// Two-finger travel, in logical pixels, that walks one workspace. A wheel
+/// walks one a notch.
+pub const SCROLL_STEP: f64 = 40.0;
+/// A wheel notch's axis value with no steps reported: libinput's 15 degrees.
+const NOTCH: f64 = 15.0;
+
+/// Scroll carried between events until it walks a whole workspace.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Walk {
+    travel: f64,
+}
+
+impl Walk {
+    /// Takes one scroll event and gives the workspaces it walks, positive
+    /// down. `v120` is the wheel's steps in 120ths of a notch, as ShojiWM's
+    /// `discrete_y` carries them, not a count of notches; `delta` is the
+    /// axis value in logical pixels. A wheel sending a part of a notch as
+    /// an amount alone reports 0 steps.
+    pub fn scroll(&mut self, delta: f64, v120: Option<f64>, wheel: bool) -> isize {
+        self.travel += match v120.filter(|v120| *v120 != 0.0) {
+            Some(v120) => v120 / 120.0 * SCROLL_STEP,
+            None if wheel => delta / NOTCH * SCROLL_STEP,
+            None => delta,
+        };
+        let steps = (self.travel / SCROLL_STEP).trunc();
+        self.travel -= steps * SCROLL_STEP;
+        steps as isize
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Lens {
@@ -95,5 +124,32 @@ mod tests {
         let drawn = lens.map(rect, 2.0);
         let (x, y) = lens.locate(drawn.x, drawn.y, 2.0);
         assert!((x - 100.0).abs() < 1e-9 && (y - 50.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_wheel_notch_walks_one_workspace() {
+        // ShojiWM's notch: 15 px of axis value and 120 steps.
+        let mut walk = Walk::default();
+        assert_eq!(walk.scroll(15.0, Some(120.0), true), 1);
+        assert_eq!(walk.scroll(-15.0, Some(-120.0), true), -1);
+        // A high-resolution wheel's notch in eight parts.
+        let walked: isize = (0..8).map(|_| walk.scroll(1.875, Some(15.0), true)).sum();
+        assert_eq!(walked, 1);
+        // A wheel that reports no steps: its 15 px is a notch too.
+        assert_eq!(walk.scroll(15.0, None, true), 1);
+        let walked: isize = (0..8).map(|_| walk.scroll(1.875, Some(0.0), true)).sum();
+        assert_eq!(walked, 1);
+        assert_eq!(walk, Walk::default());
+    }
+
+    #[test]
+    fn two_fingers_walk_one_workspace_every_forty_pixels() {
+        let mut walk = Walk::default();
+        let walked: Vec<isize> = [10.0, 25.0, 10.0, 30.0, 10.0, -5.0]
+            .into_iter()
+            .map(|dy| walk.scroll(dy, None, false))
+            .collect();
+        assert_eq!(walked, [0, 0, 1, 0, 1, 0]);
+        assert_eq!(walk.scroll(-40.0, None, false), -1);
     }
 }

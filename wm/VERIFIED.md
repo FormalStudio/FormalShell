@@ -190,7 +190,8 @@ and 2 of border.
 | A window dragged between columns | rig | `overview.sh` |
 | A window dragged between workspaces | rig | `session2.sh`: onto the next workspace's panel |
 | A window dropped between two workspaces opens one there | rig | `session2.sh`: `d1` between 1 and 2, `28-new-workspace` |
-| Two-finger scroll walks workspaces | rig | `session2.sh`, the wheel of a virtual pointer |
+| A wheel notch walks one workspace | rig, headless, unit | `overview.sh`: from 1 a notch to 2 (`23-wheel-one-notch`), another to 3, one back to 2, eight eighths of one to 3; `a_wheel_notch_in_the_overview_walks_one_workspace`, which went from 1 to the last workspace on the notch before ShojiWM's `discrete_y` was read as 120ths of a notch; `a_wheel_notch_walks_one_workspace` |
+| Two-finger scroll walks workspaces, one every 40 px | rig, headless, unit | `overview.sh`: 30 px walks none, 20 more walk one; `session2.sh`; `two_fingers_walk_one_workspace_every_forty_pixels` |
 | The arrow keys walk | rig | `session.sh` Down and Up; `overview.sh` Left and Right |
 | Typing does nothing | rig | `overview.sh`: letters and a digit leave it open and unchanged |
 | The zoom rides the spatial clock | rig | `motion.sh`: progress 0 to 101 to 100 |

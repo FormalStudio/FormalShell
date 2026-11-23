@@ -30,6 +30,18 @@ ipc workspace.focus '{"id":"1"}' >/dev/null; sleep 1
 key Super+e 1.3; seen
 key Left 0.6; seen; key Right 0.6; seen; key Return 1.2; seen
 
+step "the wheel in the overview: a notch walks one workspace, eight parts of one walk one, two fingers one every 40 px, 30 walk none"
+ipc workspace.focus '{"id":"3"}' >/dev/null; sleep 1; open four
+ipc workspace.focus '{"id":"1"}' >/dev/null; sleep 1
+ipc overview.set '{"open":true}' >/dev/null; sleep 1.3; seen; shot 22-wheel-before
+hand at 512 384 wheel 1; sleep 1.3; seen; shot 23-wheel-one-notch
+hand wheel 1; sleep 1; seen
+hand wheel -1; sleep 1; seen
+hand wheel 0.125 wheel 0.125 wheel 0.125 wheel 0.125 wheel 0.125 wheel 0.125 wheel 0.125 wheel 0.125; sleep 1; seen
+hand fingers -30 200; sleep 1; seen
+hand fingers -20 100; sleep 1; seen
+key Escape 1.2; seen
+
 step "the theme the shell sent stands across a settings reload"
 ipc theme.set '{"colors":{"primary":"#ff0000"},"chrome":{"gapsIn":8,"gapsOut":16}}' >/dev/null; sleep 1
 ipc state.get | jq -c '.chrome'
