@@ -1127,7 +1127,7 @@ impl App {
                 }
             }
         }
-        if self.tip_card.as_ref().is_some_and(|c| c.surface.mapped() && c.finished(now)) {
+        if !self.tips.in_grace(now) && self.tip_card.as_ref().is_some_and(|c| c.surface.mapped() && c.finished(now)) {
             self.tip_card = None;
         }
         let qh = self.qh.clone();

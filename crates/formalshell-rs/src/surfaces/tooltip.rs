@@ -88,6 +88,9 @@ impl Group {
 
     /// The delay running out. True when that showed something.
     pub fn tick(&mut self, now: Instant) -> bool {
+        if self.grace_until.is_some_and(|g| now >= g) {
+            self.grace_until = None;
+        }
         if self.delay_until.is_some_and(|d| now >= d) {
             self.delay_until = None;
             if self.target.is_some() {
@@ -98,8 +101,18 @@ impl Group {
         false
     }
 
+    /// The delay running out, or the grace, which lets the faded card go.
     pub fn wake(&self) -> Option<Instant> {
-        self.delay_until
+        match (self.delay_until, self.grace_until) {
+            (Some(d), Some(g)) => Some(d.min(g)),
+            (d, g) => d.or(g),
+        }
+    }
+
+    /// A hide's grace still running: the next item takes the card over
+    /// rather than paying the delay, so the card has to still be there.
+    pub fn in_grace(&self, now: Instant) -> bool {
+        self.grace_until.is_some_and(|g| now < g)
     }
 }
 
@@ -153,6 +166,9 @@ pub struct Card {
     x: Animated,
     y: Animated,
     w: Animated,
+    /// Where on the card the item it points at lies, as fractions of its
+    /// width and height: the zoom grows out of that side.
+    pivot: (f64, f64),
     /// The two text slots and which one is in front.
     texts: [String; 2],
     front: usize,
@@ -174,6 +190,7 @@ impl Card {
             x: Animated::new(0.0, s),
             y: Animated::new(0.0, s),
             w: Animated::new(0.0, s),
+            pivot: (0.5, 0.5),
             texts: [String::new(), String::new()],
             front: 0,
             cross: Animated::new(1.0, f),
@@ -188,12 +205,22 @@ impl Card {
     pub fn set_open(&mut self, theme: &Theme, open: bool, now: Instant) {
         self.open = open;
         let target = if open && self.surface.mapped() { 1.0 } else { 0.0 };
-        self.pose.set(now, target, Clock::Effects.ms(theme));
-        self.zoom.set(now, target, Clock::SpatialFast.ms(theme));
+        if target > 0.0 {
+            // A card that had faded out grows in again from its small end.
+            if self.pose.value(now) <= 0.0 {
+                self.zoom.jump(0.0);
+            }
+            self.pose.set(now, target, Clock::Effects.ms(theme));
+            self.zoom.set(now, target, Clock::SpatialFast.ms(theme));
+        } else {
+            // Leaving is a fade alone, and a quicker one: the card is not
+            // what the pointer went on to look at.
+            self.pose.set(now, target, Clock::EffectsFast.ms(theme));
+        }
     }
 
     pub fn finished(&self, now: Instant) -> bool {
-        !self.open && !self.pose.running(now) && !self.zoom.running(now)
+        !self.open && !self.pose.running(now)
     }
 
     pub fn animating(&self, now: Instant) -> bool {
@@ -234,6 +261,8 @@ impl Card {
         for (a, v) in [(&mut self.x, x), (&mut self.y, y), (&mut self.w, w)] {
             if travel && self.placed { a.set(now, v, fast) } else { a.jump(v) }
         }
+        let (ax, ay) = (ask.rect.x as f64 + ask.rect.w as f64 / 2.0, ask.rect.y as f64 + ask.rect.h as f64 / 2.0);
+        self.pivot = (((ax - x) / w.max(1.0)).clamp(0.0, 1.0), ((ay - y) / h.max(1.0)).clamp(0.0, 1.0));
         self.placed = true;
     }
 
@@ -248,9 +277,10 @@ impl Card {
         let cross = self.cross.value(now).clamp(0.0, 1.0) as f32;
         let w = self.w.value(now);
         let h = front.line_height() as f64 + s.sm * 2.0;
-        let (cx, cy) = (self.x.value(now) + w / 2.0, self.y.value(now) + h / 2.0);
+        let (px, py) = self.pivot;
+        let (ox, oy) = (self.x.value(now) + w * px, self.y.value(now) + h * py);
         let (zw, zh) = (w * zoom, h * zoom);
-        let rect = IRect::new((cx - zw / 2.0).round() as i32, (cy - zh / 2.0).round() as i32, zw.round() as i32, zh.round() as i32);
+        let rect = IRect::new((ox - zw * px).round() as i32, (oy - zh * py).round() as i32, zw.round() as i32, zh.round() as i32);
         let radius = theme.box_radius(&b, rect.h as f64);
         let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
         crate::ui::boxes::paint(&mut p, rect, &b, radius, pose, 0.0);
