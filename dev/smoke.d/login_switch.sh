@@ -354,6 +354,18 @@ leg_login_switch_assert() {
   grep -qx origin=gone "$login_switch_dest_txt" || fail "the first compositor was still up when $target started"
   [ ! -e "$login_switch_marker" ] || fail "a session marker is left after the run"
 
+  # A compositor that ends before the shell has locked: the next login's shell must find no
+  # boot lock's marker (g815, 2026-11-23: formalwm died on a busy card and the greeter's login
+  # locked a second time).
+  local dead
+  dead=$(mktemp -d)
+  mkdir "$dead/bin"
+  printf '#!/bin/sh\nexit 1\n' > "$dead/bin/uwsm"
+  chmod +x "$dead/bin/uwsm"
+  XDG_RUNTIME_DIR="$dead" PATH="$dead/bin:$PATH" sh "$script_dir/../crates/formalshell-rs/src/formalshell-login.sh" || true
+  [ -d "$dead/formalshell" ] && [ ! -e "$dead/formalshell/login-lock" ] || fail "a compositor that ended before the lock left the boot lock's marker"
+  rm -rf "$dead"
+
   expect_jq "$login_switch_dest_json" '.locked == false and .boot == false and .leavingFor == null' "$target did not come up unlocked" '{locked, boot, leavingFor}'
   [ -f "$login_switch_dest_png" ] && echo "SMOKE_LOGIN_SWITCH_DESTINATION_FRAME $login_switch_dest_png"
 }
