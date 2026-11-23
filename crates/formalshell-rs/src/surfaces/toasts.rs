@@ -461,7 +461,9 @@ impl Toasts {
                     width: Animated::new(g.width, restack.1),
                     height: Animated::new(h, restack.1),
                     presence,
-                    visible: Animated::new(1.0, Kind::Effects.curve()),
+                    // One arriving past the peeks starts there, rather than
+                    // fading out of a whole card behind the rest.
+                    visible: Animated::new(if g.visible { 1.0 } else { 0.0 }, Kind::Effects.curve()),
                     content: Animated::new(content, Kind::Effects.curve()),
                     reveal,
                     departing: false,
@@ -569,6 +571,16 @@ impl Toasts {
             let rest = Rect::new(cx - rw / 2.0, ry, cx + rw / 2.0, ry + rh);
             let base = b.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
             slot.rim.aim(now, self.lit.as_ref(), rest, base, rim::blend_ms(theme));
+            // A card past the peeks is clear, and its casts would still be
+            // worked out over the pile every frame something moves.
+            if alpha <= 0.0 {
+                for id in slot.nodes.drain(..) {
+                    self.scene.remove(id);
+                }
+                slot.ui_animating = false;
+                slot.ui.hide(&mut self.scene);
+                continue;
+            }
             let mut p = Painter::new(&mut self.scene, &mut slot.nodes, Some(around)).after(anchor);
             ui::boxes::paint_rimmed(&mut p, shown, &b, radius, alpha, 0.0, Some((&mut slot.rim, now, at.matrix)));
             p.finish();

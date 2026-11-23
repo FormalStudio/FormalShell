@@ -35,6 +35,10 @@ pub trait Raster {
     fn stroke_path(&mut self, p: &BezPath);
     fn fill_blurred_rounded_rect(&mut self, r: &Rect, radius: f32, std_dev: f32);
     fn push_clip_layer(&mut self, p: &BezPath);
+    /// A clip that cuts the geometry drawn under it, so no paint is worked
+    /// out past it, rather than a layer composited through it.
+    fn push_clip_path(&mut self, p: &BezPath);
+    fn pop_clip(&mut self);
     fn push_group(&mut self);
     fn push_blend_layer(&mut self, b: BlendMode);
     fn push_blur_layer(&mut self, radius: f32);
@@ -94,6 +98,14 @@ impl Raster for RenderContext {
         RenderContext::push_clip_layer(self, p);
     }
 
+    fn push_clip_path(&mut self, p: &BezPath) {
+        RenderContext::push_clip_path(self, p);
+    }
+
+    fn pop_clip(&mut self) {
+        RenderContext::pop_clip(self);
+    }
+
     fn push_group(&mut self) {
         self.push_layer(None, None, None, None, None);
     }
@@ -145,8 +157,18 @@ struct Caches {
     /// canvas pixel; the entry holds the line so its glyphs' addresses are
     /// never reused under it. A scrolling marquee only moves it.
     glows: HashMap<GlowKey, (ShapedText, Arc<Pixmap>)>,
+    /// A cast's blurred rect drawn once into a pixmap of its own (a
+    /// notification's five wide blurs were most of a stack's frame), by
+    /// `BlurKey`.
+    blurs: HashMap<BlurKey, Arc<Pixmap>>,
+    /// The bytes `blurs`' pixmaps hold.
+    blur_bytes: usize,
     #[cfg(test)]
     no_glow_cache: bool,
+    #[cfg(test)]
+    no_cast_cache: bool,
+    #[cfg(test)]
+    no_cast_ring: bool,
 }
 
 /// The glyphs' outline addresses and places, the glow's colour, offset and
@@ -156,6 +178,22 @@ type GlowKey = (u64, [u8; 4], [u32; 3], u64, (u8, u8));
 /// Glows are a few lines' worth on a strip; a crossfade's every alpha
 /// step is its own entry, so the table is cleared rather than kept.
 const GLOWS_LIMIT: usize = 64;
+
+/// A blurred rect's size, radius and deviation, its full-strength ink and
+/// the canvas's scale.
+type BlurKey = (u64, u64, u32, u32, [u8; 4], u64);
+
+/// An unfolding card makes one entry a frame, at a few kilobytes each.
+const BLURS_BYTES: usize = 4 << 20;
+
+/// The pixels a cast's pixmap spends on its deviation. The blur has no
+/// detail finer than its deviation, so sampling it up from pixels a third
+/// of one apart lands within two steps of the blur worked out in place, at
+/// a twentieth of the pixels or fewer for a toast's casts.
+const BLUR_SAMPLES: f64 = 3.0;
+
+/// How far inside a card its casts stop being worked out (`cast_ring`).
+const CAST_HOLE: f64 = 3.0;
 
 const INKED_LIMIT: usize = 8192;
 /// An emoji at 20 px is 1.6 KB, so a full table stays under a megabyte.
@@ -194,8 +232,14 @@ impl Renderer {
                 scaled: HashMap::new(),
                 colors: HashMap::new(),
                 glows: HashMap::new(),
+                blurs: HashMap::new(),
+                blur_bytes: 0,
                 #[cfg(test)]
                 no_glow_cache: false,
+                #[cfg(test)]
+                no_cast_cache: false,
+                #[cfg(test)]
+                no_cast_ring: false,
             },
             size: (width, height),
             scale: 1.0,
@@ -226,6 +270,8 @@ impl Renderer {
             self.caches.scaled.clear();
             self.caches.colors.clear();
             self.caches.glows.clear();
+            self.caches.blurs.clear();
+            self.caches.blur_bytes = 0;
             self.resize(self.size.0, self.size.1);
         }
     }
@@ -710,25 +756,7 @@ impl Caches {
                     }
                 }
                 Paint::Faded { .. } => {}
-                Paint::Casts { rect: card, radius, layers, cutout } => {
-                    ctx.set_transform(at);
-                    ctx.push_group();
-                    for cast in layers {
-                        let shrink = (-cast.spread).max(0.0);
-                        let grow = cast.spread.max(0.0);
-                        let r = card.inflate(grow - shrink, grow - shrink) + Vec2::new(cast.x, cast.y);
-                        ctx.set_color(color(cast.color));
-                        // RectangularShadow's blur is CSS's blur radius, twice the deviation.
-                        ctx.fill_blurred_rounded_rect(&r, (radius - shrink).max(0.0) as f32, (cast.blur / 2.0) as f32);
-                    }
-                    ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
-                    ctx.set_color(color(Rgba::hex(0)));
-                    let g = Grid::fit(origin, node.transform, s, cutout);
-                    ctx.set_transform(g.lift);
-                    ctx.fill_path(&g.drawn(&cutout.outline).fill);
-                    ctx.pop_layer();
-                    ctx.pop_layer();
-                }
+                Paint::Casts { rect: card, radius, layers, cutout } => self.draw_casts(ctx, origin, node.transform, *card, *radius, layers, cutout),
             }
             if let Some(fade) = fade {
                 self.fade_out(ctx, origin, fade);
@@ -742,6 +770,121 @@ impl Caches {
 }
 
 impl Caches {
+    /// A card's casts, filled and cut out of the card, under `origin` and
+    /// the node's `transform`.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_casts(&mut self, ctx: &mut impl Raster, origin: Affine, transform: Affine, card: Rect, radius: f64, layers: &[crate::scene::Cast], cutout: &Fit) {
+        let at = origin * transform;
+        ctx.set_transform(at);
+        ctx.push_group();
+        let ring = matches!(cutout.outline, Outline::Box { .. }).then(|| self.cast_ring(card, radius, layers)).flatten();
+        if let Some(ring) = &ring {
+            ctx.push_clip_path(ring);
+        }
+        for cast in layers {
+            let shrink = (-cast.spread).max(0.0);
+            let grow = cast.spread.max(0.0);
+            let r = card.inflate(grow - shrink, grow - shrink) + Vec2::new(cast.x, cast.y);
+            // RectangularShadow's blur is CSS's blur radius, twice the deviation.
+            let (radius, deviation) = ((radius - shrink).max(0.0) as f32, (cast.blur / 2.0) as f32);
+            if !self.cached_blur(ctx, at, r, radius, deviation, cast.color) {
+                ctx.set_transform(at);
+                ctx.set_color(color(cast.color));
+                ctx.fill_blurred_rounded_rect(&r, radius, deviation);
+            }
+        }
+        if ring.is_some() {
+            ctx.pop_clip();
+        }
+        ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
+        ctx.set_color(color(Rgba::hex(0)));
+        let g = Grid::fit(origin, transform, self.scale, cutout);
+        ctx.set_transform(g.lift);
+        ctx.fill_path(&g.drawn(&cutout.outline).fill);
+        ctx.pop_layer();
+        ctx.pop_layer();
+    }
+
+    /// One cast's blurred rect drawn from its pixmap, made at a fraction of
+    /// the canvas's pixels and sampled up; false when `at` rotates or
+    /// squeezes it, for the caller to fill it. The pixmap holds the rect in
+    /// `ink` at full strength and the ink's alpha is the sampler's, so a
+    /// fade reuses it: a blur is its coverage times its ink, so that is the
+    /// same fill. Worked out at the canvas's own pixels, each costs several
+    /// `powf`s: thirty toasts arriving at once took 25ms a frame at 1.25.
+    fn cached_blur(&mut self, ctx: &mut impl Raster, at: Affine, r: Rect, radius: f32, deviation: f32, ink: Rgba) -> bool {
+        #[cfg(test)]
+        if self.no_cast_cache {
+            return false;
+        }
+        let [a, b, c, d, _, _] = at.as_coeffs();
+        if b != 0.0 || c != 0.0 || a != d || a <= 0.0 || ink.a <= 0.0 {
+            return false;
+        }
+        // vello's blurred rect paints its rect grown by 2.5 deviations.
+        let reach = f64::from(deviation) * 2.5 + 1.0;
+        let s = self.scale * (BLUR_SAMPLES / (f64::from(deviation) * self.scale)).min(1.0);
+        let full = ink.with_alpha(1.0);
+        let key = (r.width().to_bits(), r.height().to_bits(), radius.to_bits(), deviation.to_bits(), full.to_u8(), self.scale.to_bits());
+        let pixmap = match self.blurs.get(&key) {
+            Some(p) => p.clone(),
+            None => {
+                // A pixel clear round it, for the sampler's edge to pad.
+                let w = ((r.width() + reach * 2.0) * s).ceil() as u16 + 2;
+                let h = ((r.height() + reach * 2.0) * s).ceil() as u16 + 2;
+                let bytes = usize::from(w) * usize::from(h) * 4;
+                if self.blur_bytes + bytes > BLURS_BYTES {
+                    self.blurs.clear();
+                    self.blur_bytes = 0;
+                }
+                let mut blur = RenderContext::new(w, h);
+                blur.set_transform(Affine::translate((1.0, 1.0)) * Affine::scale(s) * Affine::translate((reach - r.x0, reach - r.y0)));
+                blur.set_paint(color(full));
+                blur.fill_blurred_rounded_rect(&r, radius, deviation, false);
+                blur.flush();
+                let mut pixmap = Pixmap::new(w, h);
+                blur.render(&mut pixmap, &mut self.resources);
+                let pixmap = Arc::new(pixmap);
+                self.blurs.insert(key, pixmap.clone());
+                self.blur_bytes += bytes;
+                pixmap
+            }
+        };
+        let (w, h) = (f64::from(pixmap.width()), f64::from(pixmap.height()));
+        let corner = at * Point::new(r.x0 - reach, r.y0 - reach);
+        ctx.set_transform(Affine::translate(corner.to_vec2()) * Affine::scale(a / s) * Affine::translate((-1.0, -1.0)));
+        ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a));
+        ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+        true
+    }
+
+    /// Where a boxed card's casts are worked out: everything they reach less
+    /// a hole `CAST_HOLE` inside the card. The box cutout takes the hole
+    /// away again anyway, and the hole's edge clears the cutout's snapped,
+    /// antialiased one, which still cuts the ring exactly. A join's cutout
+    /// rounds its near corners off the card's rect while it detaches, so it
+    /// keeps the whole box. Each blurred pixel costs several `powf`s: thirty
+    /// toasts' casts over their card took 20ms a frame.
+    fn cast_ring(&self, card: Rect, radius: f64, layers: &[crate::scene::Cast]) -> Option<BezPath> {
+        #[cfg(test)]
+        if self.no_cast_ring {
+            return None;
+        }
+        let hole = card.inflate(-CAST_HOLE, -CAST_HOLE);
+        if hole.width() <= 0.0 || hole.height() <= 0.0 {
+            return None;
+        }
+        // vello's blurred rect paints its rect grown by 2.5 deviations.
+        let reach = layers.iter().map(|c| {
+            let grow = c.spread.max(0.0) - (-c.spread).max(0.0);
+            (card.inflate(grow, grow) + Vec2::new(c.x, c.y)).inflate(c.blur * 1.25 + 1.0, c.blur * 1.25 + 1.0)
+        });
+        let outer = reach.reduce(|a, b| a.union(b))?;
+        let mut ring = outer.to_path(0.1);
+        ring.extend(RoundedRect::from_rect(hole, (radius - CAST_HOLE).max(0.0)).to_path(0.1).reverse_subpaths());
+        Some(ring)
+    }
+
     /// A bitmap with its top-left at `at`'s origin, over its logical box:
     /// one of its pixels to a canvas pixel on a whole one where `at` scales
     /// by exactly its density, stretched by the difference otherwise.
@@ -1299,6 +1442,83 @@ mod tests {
         let right = super::scaled(x + w, 1.25);
         let arc = (top..top + 12).flat_map(|yy| (right - 12..right).map(move |xx| (xx, yy))).map(|(xx, yy)| px(xx, yy)[0]).max().unwrap();
         assert!(arc <= lit + 2, "the arc {arc} past a lip {lit}");
+    }
+
+    /// Casts cut to a ring round their card land within a rounding step
+    /// (the clip's mask) of casts worked out over their whole box, and a
+    /// join, which keeps the whole box, on the same pixels.
+    #[test]
+    fn casts_worked_out_on_a_ring_draw_what_the_whole_box_does() {
+        use crate::scene::{Cast, Fit, Joined, Outline, Snap};
+        use crate::paint::shoulders::Walls;
+        let layers = vec![
+            Cast { x: 0.0, y: 4.0, blur: 12.0, spread: -2.0, color: Rgba::BLACK.with_alpha(0.3) },
+            Cast { x: 0.0, y: 1.0, blur: 3.0, spread: 1.0, color: Rgba::BLACK.with_alpha(0.2) },
+        ];
+        let card = Rect::new(0.0, 0.0, 60.0, 40.0);
+        let join = Joined { size: (60.0, 40.0), radius: 10.0, border: 1.0, attach: 0.3, near_inset: 0.0, walls: Walls::NONE };
+        for outline in [Outline::Box { rect: card, radius: 10.0, border: 1.0 }, Outline::Join(join)] {
+            for scale in [1.0, 1.25] {
+                // A toast's stack scales its cards about an edge.
+                for at in [Affine::translate((30.0, 25.0)), Affine::translate((31.5, 26.0)) * Affine::scale(0.95)] {
+                    let draw = |ring: bool| {
+                        let mut scene = Scene::new(120, 100);
+                        let cutout = Fit { outline, snap: Snap::Edges };
+                        let id = scene.add(IRect::new(0, 0, 120, 100), Paint::Casts { rect: card, radius: 10.0, layers: layers.clone(), cutout });
+                        scene.set_transform(id, at);
+                        let mut r = Renderer::new(120, 100);
+                        r.set_scale(scale);
+                        r.caches.no_cast_ring = !ring;
+                        r.render(&scene, IRect::new(0, 0, 120, 100));
+                        r.canvas().data_as_u8_slice().to_vec()
+                    };
+                    let (whole, ring) = (draw(false), draw(true));
+                    assert!(whole.iter().any(|v| *v > 0), "the casts drew nothing");
+                    let worst = whole.iter().zip(&ring).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
+                    assert!(worst <= 1, "{outline:?} at {scale} under {at:?}: a channel off by {worst}");
+                }
+            }
+        }
+    }
+
+    /// A card's casts drawn from their sampled pixmap land within a step
+    /// of the casts worked out in place, faded and at a fraction of a
+    /// pixel, the first frame and from the cache the next.
+    #[test]
+    fn cached_casts_draw_what_the_blurs_do() {
+        use crate::scene::{Cast, Fit, Outline, Snap};
+        let card = Rect::new(0.0, 0.0, 60.0, 40.0);
+        let cutout = Fit { outline: Outline::Box { rect: card, radius: 10.0, border: 1.0 }, snap: Snap::Edges };
+        for scale in [1.0, 1.25] {
+            for fade in [1.0_f32, 0.4] {
+                let layers = vec![
+                    Cast { x: 0.0, y: -6.0, blur: 24.5, spread: 0.0, color: Rgba::BLACK.with_alpha(0.12 * fade) },
+                    Cast { x: 0.0, y: 6.0, blur: 10.0, spread: 0.0, color: Rgba::BLACK.with_alpha(0.19 * fade) },
+                ];
+                for at in [Affine::translate((40.0, 35.0)), Affine::translate((41.3, 35.6)) * Affine::scale(0.95)] {
+                    let draw = |r: &mut Renderer| {
+                        let mut scene = Scene::new(140, 120);
+                        let id = scene.add(IRect::new(0, 0, 140, 120), Paint::Casts { rect: card, radius: 10.0, layers: layers.clone(), cutout });
+                        scene.set_transform(id, at);
+                        r.render(&scene, IRect::new(0, 0, 140, 120));
+                        r.canvas().data_as_u8_slice().to_vec()
+                    };
+                    let mut direct = Renderer::new(140, 120);
+                    direct.set_scale(scale);
+                    direct.caches.no_cast_cache = true;
+                    let want = draw(&mut direct);
+                    let mut cached = Renderer::new(140, 120);
+                    cached.set_scale(scale);
+                    assert!(want.iter().any(|v| *v > 0), "the casts drew nothing");
+                    for pass in ["made", "cached"] {
+                        let got = draw(&mut cached);
+                        assert_eq!(cached.caches.blurs.len(), layers.len(), "{pass}: one pixmap a layer");
+                        let worst = want.iter().zip(&got).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
+                        assert!(worst <= 2, "{pass} at scale {scale} fade {fade} under {at:?}: a channel off by {worst}");
+                    }
+                }
+            }
+        }
     }
 
     /// A card hanging off a bar 40 high starts its shape a border above

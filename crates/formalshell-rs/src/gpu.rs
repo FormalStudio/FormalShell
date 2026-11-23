@@ -1214,6 +1214,14 @@ impl Raster for Frame<'_> {
         self.gpu.scene.push_clip_layer(p);
     }
 
+    fn push_clip_path(&mut self, p: &BezPath) {
+        self.gpu.scene.push_clip_path(p);
+    }
+
+    fn pop_clip(&mut self) {
+        self.gpu.scene.pop_clip_path();
+    }
+
     fn push_group(&mut self) {
         self.gpu.scene.push_layer(None, None, None, None, None);
     }
