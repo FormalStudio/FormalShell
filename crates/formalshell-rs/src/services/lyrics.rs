@@ -238,7 +238,7 @@ pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: 
             let _ = tx.try_send(ask);
         }
     }
-    let row = a.as_ref().and_then(|a| media.players_rows().into_iter().find(|r| r.id == a.id));
+    let row = a.as_ref().and_then(|a| media.rows().into_iter().find(|r| r.id == a.id));
     let auto = Settings::read(config).auto;
     let wanted = auto && lyrics.synced();
     LATENCY.with_borrow_mut(|held| {

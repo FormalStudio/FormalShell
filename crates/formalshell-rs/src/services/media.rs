@@ -440,11 +440,7 @@ impl State {
         self.mpris.iter().find(|p| p.id == id).map(|p| p.url.clone()).unwrap_or_default()
     }
 
-    pub fn players_rows(&self) -> Vec<PlayerRow> {
-        self.rows()
-    }
-
-    fn rows(&self) -> Vec<PlayerRow> {
+    pub fn rows(&self) -> Vec<PlayerRow> {
         let mut rows: Vec<PlayerRow> = self
             .mpris
             .iter()
