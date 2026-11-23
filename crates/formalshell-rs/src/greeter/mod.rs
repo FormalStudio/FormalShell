@@ -57,6 +57,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 use crate::ui::field::{self, Field};
+use crate::wayland::lock::{buffer, field};
 use zeroize::Zeroizing;
 
 use crate::render::Renderer;
@@ -344,16 +345,6 @@ pub fn main(args: &[String]) {
         eprintln!("greeter: event loop: {err}");
     }
     eprintln!("greeter: exiting after {}ms", g.started.elapsed().as_millis());
-}
-
-/// A typed secret's buffer, sized so typing never reallocates.
-fn buffer() -> Zeroizing<String> {
-    Zeroizing::new(String::with_capacity(256))
-}
-
-/// Masked or not, nothing is copied out of the greeter's field.
-fn field() -> Field<Zeroizing<String>> {
-    Field::new(buffer()).secret()
 }
 
 impl Greeter {

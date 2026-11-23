@@ -1789,12 +1789,12 @@ impl App {
 
 /// A typed secret's buffer, sized up front so typing never reallocates and
 /// leaves an unwiped copy behind.
-pub(super) fn buffer() -> Zeroizing<String> {
+pub(crate) fn buffer() -> Zeroizing<String> {
     Zeroizing::new(String::with_capacity(256))
 }
 
 /// An empty masked field over a fresh [`buffer`].
-pub(super) fn field() -> Field<Zeroizing<String>> {
+pub(crate) fn field() -> Field<Zeroizing<String>> {
     Field::new(buffer()).secret()
 }
 
