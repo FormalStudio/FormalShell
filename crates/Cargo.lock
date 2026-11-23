@@ -1055,7 +1055,6 @@ dependencies = [
 name = "fs-media"
 version = "0.2.0"
 dependencies = [
- "fastrand",
  "fs-js",
  "fs-types",
  "regex",
