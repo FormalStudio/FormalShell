@@ -574,7 +574,7 @@ pub(crate) mod tests {
     use crate::palette;
     use serde_json::json;
 
-    const MOTION_KEYS: [&str; 4] = ["emerge", "arrive", "restack", "switcher"];
+    const MOTION_KEYS: [&str; 6] = ["emerge", "leave", "arrive", "restack", "switcher", "cursor"];
     const WASH_KEYS: [&str; 4] = ["hover", "press", "filledHover", "filledPress"];
     const RADIUS_STEPS: [&str; 5] = ["sm", "md", "lg", "xl", "pill"];
 

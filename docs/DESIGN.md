@@ -297,8 +297,8 @@ never writes its own margin.
 `formalshell-rs/src/motion.rs`): two families of clock, and the property
 picks the family, never the surface. `spatialFast` 350, `spatial` 500 and
 `spatialSlow` 650 pace anything with a position or a size: x, y, width,
-height, margins, scale, radius, rotation, an emerge, a morph, a cursor's
-travel. `effectsFast` 150, `effects` 200 and `effectsSlow` 300 pace anything
+height, margins, scale, radius, rotation, an emerge, a morph.
+`effectsFast` 150, `effects` 200 and `effectsSlow` 300 pace anything
 with neither: opacity, colour, a progress that only drives alpha. Two names
 sit outside both families, `emphasized` 400 for the workspace pill and
 `emphasizedDecel`, a curve with no duration of its own that the bubbles
@@ -306,6 +306,21 @@ restack on.
 `reveal` 400 is the
 full-screen fades: the wallpaper and palette crossfades, the lock's blank
 and wake, the screensaver's own enter and exit, on `effectsSlow`'s curve.
+
+The table carries the clocks a theme owns (`motion` in
+`fs-theme/formalshell.json`, `Theme::motion`): `emerge` 150 for a card
+opening, on a strong ease-out (`cubic-bezier(0.23, 1, 0.32, 1)`) that
+covers most of the travel in the first frames and never overshoots, and
+`leave` 110 for it closing, on the drawer curve
+(`cubic-bezier(0.32, 0.72, 0, 1)`), which starts a touch softer so a card
+far from its line retracts rather than vanishing in one frame. A close always outruns its open: the
+user has already moved on. A modal's scrim rides the same pair as its
+card. `arrive` 400 on the same curve is a bubble's arrival and the
+overview's zoom, `restack` the pile closing up behind a bubble, and
+`switcher` the Alt+Tab card's fade. `cursor` 120 on that ease-out is a
+keyboard cursor stepping to the next row or cell (the launcher's fill, a
+panel's halo): the most frequent motion in the shell, so the shortest,
+and it never passes the row it was sent to.
 
 The curves are Material 3 Expressive's, the set caelestia runs on (amended
 2026-09-09, owner: caelestia's morphs, not curves alone). Each is a cubic
@@ -394,7 +409,8 @@ An anchored surface opens as a drawer (amended 2026-09-09, owner: the fade,
 0.97 zoom and 8px slide it replaces read as the surface not animating at
 all). A panel, the notification centre and the OSD each hang off one edge:
 the card starts behind that edge, displaced toward it by its own extent on
-that axis, and travels to rest on `spatial` both ways, clipped at the line
+that axis, and travels to rest on the table's `emerge` clock, back on its
+quicker `leave` (below), clipped at the line
 it rests on so it comes out from under the bar rather than across it. No
 fade and no zoom, since the clip is what hides it; its contents come up on
 `effects` behind the travel, so the card lands before its text. A card's

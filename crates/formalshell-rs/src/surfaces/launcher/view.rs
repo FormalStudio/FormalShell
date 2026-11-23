@@ -382,9 +382,9 @@ impl Shown {
             self.wake = Some(now);
         }
 
-        // The cursor's fill travels between cells on `spatialFast` (DESIGN.md
-        // §1 "Motion"), keyboard and pointer alike; a wrap, a filter and a
-        // level change land at once.
+        // The cursor's fill travels between cells on the table's `cursor`
+        // clock (DESIGN.md §1 "Motion"), keyboard and pointer alike; a wrap,
+        // a filter and a level change land at once.
         let id = m.rows.get(m.cursor).map(|r| r.id.as_str());
         let stop = id.and_then(|id| self.body.stops.iter().find(|st| st.key.split_once(':').is_some_and(|(_, k)| k == id))).cloned();
         let mut p = Painter::new(scene, &mut self.sel_nodes, Some(body_clip)).after(Some(self.sel_anchor));
@@ -393,9 +393,10 @@ impl Shown {
                 let on = (m.level.clone(), m.query.text().to_owned());
                 let travels = self.sel_on.as_ref() == Some(&on) && (m.travels || !m.from_keys);
                 let local = [st.rect.x as f64 - origin.0, st.rect.y as f64 - origin.1, st.rect.w as f64, st.rect.h as f64];
-                let ms = Clock::SpatialFast.ms(theme);
+                let motion = theme.motion();
+                let curve = crate::motion::Curve::from_table(&motion.cursor_curve);
                 for (a, t) in self.sel.iter_mut().zip(local) {
-                    if travels { a.set_on(now, t, ms, Clock::SpatialFast.curve()) } else { a.jump(t) }
+                    if travels { a.set_on(now, t, motion.cursor, curve) } else { a.jump(t) }
                 }
                 self.sel_on = Some(on);
                 let [x, y, w_, h] = [0, 1, 2, 3].map(|i| self.sel[i].value(now));

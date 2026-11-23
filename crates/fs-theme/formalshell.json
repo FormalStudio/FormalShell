@@ -1466,9 +1466,20 @@
         "emerge": {
             "duration": 150,
             "curve": [
-                0.4,
+                0.23,
+                1,
+                0.32,
+                1,
+                1,
+                1
+            ]
+        },
+        "leave": {
+            "duration": 110,
+            "curve": [
+                0.32,
+                0.72,
                 0,
-                0.2,
                 1,
                 1,
                 1
@@ -1477,9 +1488,9 @@
         "arrive": {
             "duration": 400,
             "curve": [
-                0.4,
-                0,
-                0.2,
+                0.23,
+                1,
+                0.32,
                 1,
                 1,
                 1
@@ -1489,6 +1500,17 @@
             "duration": 200,
             "curve": "emphasizedDecel",
             "stagger": 150
+        },
+        "cursor": {
+            "duration": 120,
+            "curve": [
+                0.23,
+                1,
+                0.32,
+                1,
+                1,
+                1
+            ]
         },
         "switcher": {
             "duration": 200,
@@ -1667,9 +1689,11 @@
             "With no screen frame (`frame.thickness` 0, the default) the outer gap is the whole margin a window gets and 8 read as a wide one with nothing drawn in it (owner, 2026-09-18)."
         ],
         "motion": [
-            "Gala's menu map (`lib/Constants.vala`) on elementary's own curve (`_animate.scss`): 150ms, and the one easing every transition in the stylesheet rides, written as the control points plus the end point Qt's `easing.bezierCurve` wants. It never overshoots, which is what a popover dropping out of its cell asks for: the card arrives and stops rather than settling back onto the bar.",
-            "The bubble's two clocks (`notifications/data/application.css`'s `bubble` keyframes, M60 T4) ride the same curve: 400ms for the flip a bubble arrives on, and 200ms for the pile closing up behind it, spread over a 150ms window so N bubbles move one after another rather than together. The restack takes `emphasizedDecel` instead of the curve above because it is the one clock here that is a card travelling rather than appearing, and it must not pass the place it is going to: a bubble overshooting into its neighbour reads as the pile bouncing.",
-            "The switcher is the fourth, and none of the three above: Gala fades its card on `AnimationDuration.HIDE` (200ms, `WindowSwitcher.vala`'s `set_easing_duration`) with no easing mode set, which leaves Clutter's own default for an implicit animation, ease-out-cubic, written here as its control points. Opacity and nothing else moves; the card does not drop, scale or slide."
+            "Gala's menu map (`lib/Constants.vala`): 150ms, on a strong ease-out rather than elementary's own `cubic-bezier(0.4, 0, 0.2, 1)` (`_animate.scss`). That curve eases in, so the first third of an open barely moves, and that is when the eye is on the card; this one covers most of the travel in the first frames and never overshoots, which is what a popover dropping out of its cell asks for: the card arrives and stops rather than settling back onto the bar.",
+            "`leave` is the same card going away: 110ms, faster than the open came in, since a close is something the user already decided. Its curve is the drawer's (`cubic-bezier(0.32, 0.72, 0, 1)`), a softer start than the open's: the launcher travels the furthest of any card back into the bar, and the open's curve threw over half of that into the first frame, which read as the card teleporting rather than retracting. The scrim under a modal card rides the same pair so the two fade as one.",
+            "The bubble's two clocks (`notifications/data/application.css`'s `bubble` keyframes, M60 T4): 400ms on the same strong ease-out for the flip a bubble arrives on, and 200ms for the pile closing up behind it, spread over a 150ms window so N bubbles move one after another rather than together. The restack takes `emphasizedDecel` instead of the curve above because it is the one clock here that is a card travelling rather than appearing, and it must not pass the place it is going to: a bubble overshooting into its neighbour reads as the pile bouncing.",
+            "`cursor` is the keyboard cursor's fill (and a panel's halo) stepping to the next row or cell. An arrow key is the most frequent thing anyone does in this shell, so it gets the shortest clock here and no overshoot: the fill reaches the row it was sent to inside a key repeat's gap and never passes it, where the spatial family's 350ms bounce left a held key's fill rows behind and swinging past each one.",
+            "The switcher is the last, and none of the three above: Gala fades its card on `AnimationDuration.HIDE` (200ms, `WindowSwitcher.vala`'s `set_easing_duration`) with no easing mode set, which leaves Clutter's own default for an implicit animation, ease-out-cubic, written here as its control points. Opacity and nothing else moves; the card does not drop, scale or slide."
         ]
     }
 }

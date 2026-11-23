@@ -699,12 +699,13 @@ impl Host {
         // with the cursor's fill riding it.
         let stop = self.cursor.key.as_ref().filter(|_| self.cursor.active && self.cursor.keyed).and_then(|k| self.body.stops.iter().find(|s| s.key == *k)).cloned();
         let cr = theme.cursor_ring();
-        let fast = Clock::SpatialFast.ms(theme);
+        let motion = theme.motion();
+        let curve = crate::motion::Curve::from_table(&motion.cursor_curve);
         match stop {
             Some(st) => {
                 let local = [st.rect.x as f64 - origin.0, st.rect.y as f64 - origin.1, st.rect.w as f64, st.rect.h as f64];
                 for (a, t) in self.halo.iter_mut().zip(local) {
-                    if self.halo_shown && self.cursor.travels { a.set(now, t, fast) } else { a.jump(t) }
+                    if self.halo_shown && self.cursor.travels { a.set_on(now, t, motion.cursor, curve) } else { a.jump(t) }
                 }
                 self.halo_shown = true;
                 let [x, y, w, h] = [0, 1, 2, 3].map(|i| self.halo[i].value(now));

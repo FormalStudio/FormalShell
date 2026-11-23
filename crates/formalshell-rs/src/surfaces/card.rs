@@ -52,10 +52,11 @@ struct Look {
     lit: Option<LitLine>,
     /// Off the line, on the popover path.
     popover: bool,
-    emerge_ms: f64,
+    /// The open's clock, and the close's, which outruns it.
+    emerge: (f64, Curve),
+    leave: (f64, Curve),
     /// The line-join attach, on the spatial-fast family.
     attach_ms: f64,
-    emerge_curve: Curve,
     drop: f64,
     /// How far from the line a cast thins out, the gap a card rests off it.
     ramp: f64,
@@ -87,9 +88,9 @@ impl Look {
             casts,
             lit: card.inset_rings.first().map(LitLine::of),
             popover,
-            emerge_ms: if theme.motion_enabled { motion.emerge } else { 0.0 },
+            emerge: (motion.emerge, Curve::from_table(&motion.emerge_curve)),
+            leave: (motion.leave, Curve::from_table(&motion.leave_curve)),
             attach_ms: Kind::SpatialFast.ms(theme),
-            emerge_curve: Curve::from_table(&motion.emerge_curve),
             drop: theme.space.sm,
             ramp: theme.space.bar_margin,
         }
@@ -323,7 +324,7 @@ impl Card {
         for id in [casts, shape, rim_node] {
             scene.set_visible(id, false);
         }
-        let curve = look.emerge_curve;
+        let curve = look.emerge.1;
         Self {
             scene,
             look,
@@ -498,7 +499,8 @@ impl Card {
         if self.bypass {
             self.progress.jump(target);
         } else {
-            self.progress.set(now, target, self.look.emerge_ms);
+            let (ms, curve) = if target > 0.0 { self.look.emerge } else { self.look.leave };
+            self.progress.set_on(now, target, ms, curve);
         }
         self.tick(now);
     }
@@ -899,14 +901,15 @@ pub fn battery(card: Rect, radius: f64, nub: (f64, f64, f64), inset: f64) -> vel
     p
 }
 
-/// A full-output black scrim on the pose a modal drawer rides,
-/// here on its own `emerge` clock with no card in front of it. It rasters
-/// nothing: its surface is one black pixel the compositor scales and fades.
+/// A full-output black scrim on the clocks a modal drawer opens and
+/// closes on, with no card in front of it. It rasters nothing: its surface
+/// is one black pixel the compositor scales and fades.
 pub struct Scrim {
     open: bool,
     mapped: bool,
     pose: Animated,
-    ms: f64,
+    emerge: (f64, Curve),
+    leave: (f64, Curve),
     /// The `scrim` role's fill alpha over its plain black.
     alpha: f64,
 }
@@ -914,7 +917,10 @@ pub struct Scrim {
 impl Scrim {
     pub fn new(theme: &Theme) -> Self {
         let alpha = f64::from(theme.box_style(Role::Scrim, None).fill.a);
-        Self { open: true, mapped: false, pose: Animated::new(0.0, Kind::Spatial.curve()), ms: Kind::Spatial.ms(theme), alpha }
+        let m = theme.motion();
+        let emerge = (m.emerge, Curve::from_table(&m.emerge_curve));
+        let leave = (m.leave, Curve::from_table(&m.leave_curve));
+        Self { open: true, mapped: false, pose: Animated::new(0.0, emerge.1), emerge, leave, alpha }
     }
 
     pub fn mapped(&mut self, now: Instant) {
@@ -927,7 +933,8 @@ impl Scrim {
     pub fn set_open(&mut self, now: Instant, open: bool) {
         self.open = open;
         let target = if open && self.mapped { 1.0 } else { 0.0 };
-        self.pose.set(now, target, self.ms);
+        let (ms, curve) = if target > 0.0 { self.emerge } else { self.leave };
+        self.pose.set_on(now, target, ms, curve);
     }
 
     pub fn animating(&self, now: Instant) -> bool {
@@ -945,7 +952,6 @@ impl Scrim {
 
     /// How far in the scrim is on this frame, over its own alpha.
     pub fn fade(&self, now: Instant) -> f64 {
-        // The spatial pose overshoots both ends; an opacity may not.
         self.pose.value(now).clamp(0.0, 1.0)
     }
 }

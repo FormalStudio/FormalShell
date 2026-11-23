@@ -134,15 +134,19 @@ impl Default for Colors {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ThemeMotion {
     pub emerge: f64,
+    pub leave: f64,
     pub arrive: f64,
     pub restack: f64,
     pub switcher: f64,
+    pub cursor: f64,
     pub restack_stagger: f64,
     pub families: tokens::Motion,
     pub emerge_curve: Easing,
+    pub leave_curve: Easing,
     pub arrive_curve: Easing,
     pub restack_curve: Easing,
     pub switcher_curve: Easing,
+    pub cursor_curve: Easing,
 }
 
 /// A text role's family: the fontconfig alias it resolves through.
@@ -439,15 +443,18 @@ impl Theme {
     pub fn motion(&self) -> ThemeMotion {
         let families_on = tokens::motion_tokens(true);
         let clock = |key: &str| -> Clock { style::motion(self.style, key, &families_on) };
-        let (emerge, arrive, restack, switcher) = (clock("emerge"), clock("arrive"), clock("restack"), clock("switcher"));
+        let (emerge, leave, arrive) = (clock("emerge"), clock("leave"), clock("arrive"));
+        let (restack, switcher, cursor) = (clock("restack"), clock("switcher"), clock("cursor"));
         let on = |d: f64| if self.motion_enabled { d * self.motion_scale } else { 0.0 };
         let m = tokens::motion_tokens(self.motion_enabled);
         let s = self.motion_scale;
         ThemeMotion {
             emerge: on(emerge.duration),
+            leave: on(leave.duration),
             arrive: on(arrive.duration),
             restack: on(restack.duration),
             switcher: on(switcher.duration),
+            cursor: on(cursor.duration),
             restack_stagger: on(restack.stagger),
             families: tokens::Motion {
                 spatial_fast: m.spatial_fast * s,
@@ -461,9 +468,11 @@ impl Theme {
                 ..m
             },
             emerge_curve: emerge.curve,
+            leave_curve: leave.curve,
             arrive_curve: arrive.curve,
             restack_curve: restack.curve,
             switcher_curve: switcher.curve,
+            cursor_curve: cursor.curve,
         }
     }
 }
@@ -727,6 +736,7 @@ mod tests {
         let mut t = theme();
         let m = t.motion();
         assert_eq!(m.emerge, 150.0);
+        assert!(m.leave < m.emerge, "a close outruns the open");
         assert_eq!(m.restack_stagger, 150.0);
         assert_eq!(m.restack_curve, Easing::Bezier(tokens::curve("emphasizedDecel").unwrap().to_vec()));
 
@@ -738,6 +748,7 @@ mod tests {
         let off = Theme::resolve(make_get(json!({ "motion": { "enabled": false } })), &sentinel());
         assert!(!off.motion_enabled);
         assert_eq!(off.motion().emerge, 0.0);
+        assert_eq!(off.motion().leave, 0.0);
         assert_eq!(off.motion().families.marquee_px_per_sec, 30.0);
     }
 
