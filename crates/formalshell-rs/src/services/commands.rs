@@ -112,7 +112,11 @@ async fn poll(ctx: Ctx, module: Module, generation: async_channel::Receiver<()>)
             let _ = generation.recv().await;
             true
         };
-        if Timer::after(module.interval).map(|_| false).or(stop).await {
+        let tick = async {
+            Timer::after(module.interval).await;
+            false
+        };
+        if tick.or(stop).await {
             return;
         }
     }
@@ -138,14 +142,6 @@ async fn run(ctx: Ctx) {
         current = modules;
     }
 }
-
-trait MapFuture: std::future::Future + Sized {
-    fn map<T>(self, f: impl FnOnce(Self::Output) -> T) -> impl std::future::Future<Output = T> {
-        async move { f(self.await) }
-    }
-}
-
-impl<F: std::future::Future> MapFuture for F {}
 
 #[cfg(test)]
 mod tests {
