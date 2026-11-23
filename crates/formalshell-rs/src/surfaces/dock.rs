@@ -12,20 +12,30 @@ use fs_types::IRect;
 use vello_cpu::kurbo::Rect;
 
 use crate::ui::el::{Font, Pic};
-use crate::ui::{self, Cx, El, Size, State, Type, Weight, Widget, irect, w};
+use crate::ui::{self, Cx, El, State, Type, Weight, Widget, irect, w};
 
 /// An icon's side, and the room between two.
 pub const ICON: f64 = 48.0;
-pub const GAP: f64 = 9.0;
+pub const GAP: f64 = 6.0;
 /// The running dot's diameter.
 const DOT: f64 = 4.0;
-/// One hop of an icon asking for attention, in seconds, how many it takes
-/// and how often it takes them again.
-const HOP: f64 = 0.4;
-const HOPS: f64 = 3.0;
-const AGAIN: f64 = 4.0;
-/// A launching icon's breath, in seconds.
-const BREATH: f64 = 1.2;
+/// A rounded square icon's corner as a share of its side, which the card's
+/// own corner follows a padding out, so the two curves are concentric.
+const ICON_CORNER: f64 = 0.225;
+/// A hop off a launch, measured off macOS's Dock frame by frame: half the
+/// icon high, 0.65 s up and down on a gravity parabola, landing for good
+/// on the first touchdown once the window is up.
+const LAUNCH_HOP: f64 = 0.65;
+const LAUNCH_RISE: f64 = 0.5;
+/// A hop asking for attention: macOS's critical request, taller and
+/// slower, a second each (its informational request is one such hop), over
+/// and over until the app is looked at.
+const ATTENTION_HOP: f64 = 1.0;
+const ATTENTION_RISE: f64 = 0.75;
+/// A launching icon's opacity with motion off, which takes the hops away.
+const LAUNCHING_STILL: f32 = 0.6;
+/// A pressed icon's opacity, macOS's darker icon under the button.
+const PRESSED: f32 = 0.7;
 
 /// A press on an app's cell.
 pub struct Press {
@@ -55,106 +65,148 @@ pub struct Mark {
     pub progress: Option<f64>,
     /// Started from here, its window not mapped yet.
     pub launching: bool,
+    /// Which way is away from the dock's edge: -1 up off the bottom, 1
+    /// down off the top.
+    pub away: f64,
 }
 
-/// The room under an icon for its dot.
-fn foot(theme: &Theme) -> f64 {
-    theme.space.xs + DOT
+/// The card's padding round the icons. The running dot sits in the
+/// padding under its icon, as macOS's does.
+pub fn padding(theme: &Theme) -> f64 {
+    theme.space.md
 }
 
-/// A cell's (width, height): the icon and its dot inside the cell's own
-/// padding.
-pub fn cell(theme: &Theme) -> (f64, f64) {
-    let pad = theme.space.xs;
-    (ICON + pad * 2.0, ICON + foot(theme) + pad * 2.0)
+/// The card's corner, concentric with the icons' own a padding in.
+pub fn radius(theme: &Theme) -> f64 {
+    padding(theme) + ICON * ICON_CORNER
+}
+
+/// How far past the card's far side an icon may stand mid hop.
+pub fn reach(theme: &Theme) -> i32 {
+    (ICON * LAUNCH_RISE.max(ATTENTION_RISE) - padding(theme)).ceil().max(0.0) as i32
 }
 
 /// The row's (width, height) for `count` apps, with the rule or without.
 pub fn size(theme: &Theme, count: usize, rule: bool) -> (f64, f64) {
-    let (cw, ch) = cell(theme);
     let n = count.max(1) as f64;
     let ruled = if rule { GAP + theme.border_width } else { 0.0 };
-    (n * cw + (n - 1.0) * GAP + ruled, ch)
+    (n * ICON + (n - 1.0) * GAP + ruled, ICON)
 }
 
-pub fn row(theme: &Theme, marks: Vec<Mark>, rule: Option<usize>) -> El {
-    let s = &theme.space;
-    let (cw, ch) = cell(theme);
+pub fn row(marks: Vec<Mark>, rule: Option<usize>) -> El {
     let mut cells = Vec::with_capacity(marks.len() + 1);
     for (index, mark) in marks.into_iter().enumerate() {
         if rule == Some(index) {
-            cells.push(w::separator_vertical().height(ch));
+            cells.push(w::separator_vertical().height(ICON));
         }
         let (press, tip) = (Press { index, app: mark.app.clone() }, mark.name.clone());
-        let pad = s.xs;
-        cells.push(
-            w::cell(El::custom(mark))
-                .cell_state(|c| {
-                    c.ghost = true;
-                    c.inset = Some((pad, pad));
-                })
-                .width(Size::Px(cw))
-                .height(ch)
-                .interactive()
-                .on(press)
-                .tip(tip),
-        );
+        cells.push(El::custom(mark).on(press).tip(tip));
     }
     w::row(GAP, cells)
 }
 
-/// When the icon started asking for attention.
-struct Asking(Option<Instant>);
-
-impl State for Asking {}
-
-/// How high an icon stands `t` seconds into asking, as a share of its
-/// side: three hops, each lower than the one before, then still until
-/// the next round.
-pub fn hop(t: f64) -> f64 {
-    let t = t.rem_euclid(AGAIN);
-    let n = (t / HOP).floor();
-    if n >= HOPS {
-        return 0.0;
-    }
-    let through = t / HOP - n;
-    (std::f64::consts::PI * through).sin() * 0.3 * (1.0 - n / HOPS)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ask {
+    Launch,
+    Attention,
 }
 
-/// A launching icon's opacity `t` seconds in.
-pub fn breath(t: f64) -> f32 {
-    (0.7 + 0.3 * (std::f64::consts::TAU * t / BREATH).cos()) as f32
+impl Ask {
+    fn hop(self) -> f64 {
+        match self {
+            Ask::Launch => LAUNCH_HOP,
+            Ask::Attention => ATTENTION_HOP,
+        }
+    }
+
+    fn rise(self) -> f64 {
+        match self {
+            Ask::Launch => LAUNCH_RISE,
+            Ask::Attention => ATTENTION_RISE,
+        }
+    }
+}
+
+/// An icon's hops: what they are for, when they started, and once the
+/// reason is gone, the touchdown they end on.
+#[derive(Default)]
+struct Hops {
+    on: Option<(Ask, Instant)>,
+    lands: Option<f64>,
+}
+
+impl State for Hops {}
+
+/// How high an icon stands `t` seconds into a hop `period` long, as a
+/// share of its peak: a body thrown up under gravity, fastest off the
+/// ground and still at the top.
+pub fn hop(t: f64, period: f64) -> f64 {
+    let p = (t / period).rem_euclid(1.0);
+    4.0 * p * (1.0 - p)
+}
+
+/// The touchdown at or after `t` seconds into hops `period` long.
+fn touchdown(t: f64, period: f64) -> f64 {
+    (t / period).ceil() * period
 }
 
 impl Widget for Mark {
-    fn measure(&self, cx: &mut Cx, _avail: f64) -> (f64, f64) {
-        (ICON, ICON + foot(cx.theme))
+    fn measure(&self, _cx: &mut Cx, _avail: f64) -> (f64, f64) {
+        (ICON, ICON)
     }
 
     fn paint(&self, cx: &mut Cx, inner: Rect, path: &str) {
         let t = cx.theme;
         let moving = t.motion_enabled;
         let (now, scale) = (cx.now, t.motion_scale.max(f64::EPSILON));
-        let mut held = cx.take(path, || Asking(None));
-        let asked = match (self.urgent || self.launching, held.0) {
-            (true, None) => {
-                held.0 = Some(now);
-                0.0
+        let want = match () {
+            () if self.urgent => Some(Ask::Attention),
+            () if self.launching => Some(Ask::Launch),
+            () => None,
+        };
+        let mut hops = cx.take(path, Hops::default);
+        let lift = match (want.filter(|_| moving), hops.on) {
+            (Some(ask), Some((was, _))) if ask == was => {
+                hops.lands = None;
+                None
             }
-            (true, Some(since)) => now.saturating_duration_since(since).as_secs_f64() / scale,
-            (false, _) => {
-                held.0 = None;
-                0.0
+            (Some(ask), _) => {
+                *hops = Hops { on: Some((ask, now)), lands: None };
+                None
+            }
+            (None, None) => None,
+            (None, Some((ask, since))) => {
+                let t = now.saturating_duration_since(since).as_secs_f64() / scale;
+                let lands = *hops.lands.get_or_insert_with(|| touchdown(t, ask.hop()));
+                if t >= lands {
+                    *hops = Hops::default();
+                    Some(0.0)
+                } else {
+                    None
+                }
             }
         };
-        cx.keep(held);
-        let lift = if self.urgent && moving { hop(asked) * ICON } else { 0.0 };
-        let alpha = cx.alpha * if self.launching && moving { breath(asked) } else { 1.0 };
-        if (self.urgent || self.launching) && moving {
+        let lift = lift.unwrap_or_else(|| {
+            hops.on.map_or(0.0, |(ask, since)| {
+                let t = now.saturating_duration_since(since).as_secs_f64() / scale;
+                hop(t, ask.hop()) * ask.rise() * ICON
+            })
+        });
+        let airborne = hops.on.is_some();
+        cx.keep(hops);
+        if airborne {
             cx.animate();
         }
+        let pressed = cx.pressed(path);
+        let alpha = cx.alpha
+            * match () {
+                () if pressed => PRESSED,
+                () if self.launching && !moving => LAUNCHING_STILL,
+                () => 1.0,
+            };
 
-        let icon = irect(Rect::new(inner.x0, inner.y0 - lift, inner.x0 + ICON, inner.y0 - lift + ICON));
+        let y = inner.y0 + lift * self.away;
+        let icon = irect(Rect::new(inner.x0, y, inner.x0 + ICON, y + ICON));
         let glyph = self.image.0.is_none().then(|| ui::icon(cx, "app-window", Type::DisplayLarge));
         let badge = self.badge.as_ref().map(|text| ui::shape(cx, text, &Font { size: Type::Caption, weight: Weight::Semibold, mono: false }));
         let ink = |role: ColorRole| {
@@ -188,7 +240,10 @@ impl Widget for Mark {
         }
         if self.running {
             let d = DOT as i32;
-            let dot = IRect::new((inner.x0 + (ICON - DOT) / 2.0).round() as i32, (inner.y1 - DOT).round() as i32, d, d);
+            // Centred in the padding on the edge's side of the icon.
+            let gap = (padding(t) - DOT) / 2.0;
+            let y = if self.away < 0.0 { inner.y1 + gap } else { inner.y0 - gap - DOT };
+            let dot = IRect::new((inner.x0 + (ICON - DOT) / 2.0).round() as i32, y.round() as i32, d, d);
             p.rect(dot, dot_ink, DOT as f32 / 2.0);
         }
         if let Some(text) = &badge {
@@ -209,20 +264,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn three_hops_then_still_until_the_next_round() {
-        assert_eq!(hop(0.0), 0.0);
-        let (first, second, third) = (hop(HOP * 0.5), hop(HOP * 1.5), hop(HOP * 2.5));
-        assert!(first > second && second > third && third > 0.0, "{first} {second} {third}");
-        assert_eq!(hop(HOP * 3.5), 0.0);
-        assert_eq!(hop(AGAIN - 0.1), 0.0);
-        assert!((hop(AGAIN + HOP * 0.5) - first).abs() < 1e-9);
+    fn a_hop_is_a_parabola_landing_on_its_period() {
+        assert_eq!(hop(0.0, LAUNCH_HOP), 0.0);
+        assert!((hop(LAUNCH_HOP / 2.0, LAUNCH_HOP) - 1.0).abs() < 1e-9);
+        assert!(hop(LAUNCH_HOP - 1e-6, LAUNCH_HOP) < 1e-4);
+        let (rising, falling) = (hop(LAUNCH_HOP * 0.25, LAUNCH_HOP), hop(LAUNCH_HOP * 0.75, LAUNCH_HOP));
+        assert!((rising - falling).abs() < 1e-9 && (rising - 0.75).abs() < 1e-9);
+        assert!((hop(LAUNCH_HOP * 2.5, LAUNCH_HOP) - 1.0).abs() < 1e-9);
     }
 
     #[test]
-    fn a_breath_never_takes_the_icon_away() {
-        for i in 0..24 {
-            let a = breath(f64::from(i) * 0.1);
-            assert!((0.39..=1.0).contains(&a), "{a}");
-        }
+    fn hops_end_on_the_next_touchdown() {
+        assert_eq!(touchdown(0.0, 1.0), 0.0);
+        assert_eq!(touchdown(0.3, 1.0), 1.0);
+        assert_eq!(touchdown(2.0, 1.0), 2.0);
+        assert!((touchdown(0.7, LAUNCH_HOP) - 2.0 * LAUNCH_HOP).abs() < 1e-9);
     }
 }

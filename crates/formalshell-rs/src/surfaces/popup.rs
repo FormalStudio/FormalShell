@@ -68,6 +68,26 @@ impl Popup {
         self.ui.draw(root, rect, Some(clip), alpha, theme, kit, &mut card.scene, now)
     }
 
+    /// Lays `root` at `rect` as `draw_in` does, its content let `reach`
+    /// pixels past the card's far side once the card rests out: what stands
+    /// off the card for a moment, a dock icon mid hop.
+    pub fn draw_reaching(&mut self, root: &El, rect: Rect, reach: i32, theme: &Theme, kit: &mut Kit, now: Instant) -> Drawn {
+        let card = &mut self.win.card;
+        let (_, alpha) = card.content;
+        let mut clip = card.content_clip();
+        if card.is_open() && card.settled(now) {
+            let r = card.rest_rect();
+            let past = match card.edge {
+                fs_types::Edge::Top => IRect::new(r.x, r.y, r.w, r.h + reach),
+                fs_types::Edge::Bottom => IRect::new(r.x, r.y - reach, r.w, r.h + reach),
+                fs_types::Edge::Left => IRect::new(r.x, r.y, r.w + reach, r.h),
+                fs_types::Edge::Right => IRect::new(r.x - reach, r.y, r.w + reach, r.h),
+            };
+            clip = past.intersect(&IRect::new(0, 0, card.scene.size.w, card.scene.size.h));
+        }
+        self.ui.draw(root, rect, Some(clip), alpha, theme, kit, &mut card.scene, now)
+    }
+
     /// A painter for what the owner draws itself, and the content's opacity.
     pub fn painter(&mut self) -> (Painter<'_>, f32) {
         let card = &mut self.win.card;

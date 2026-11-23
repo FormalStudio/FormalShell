@@ -196,6 +196,8 @@ pub struct CardSpec {
     /// Ends rounded right through, macOS's capsule: the radius half the
     /// card's depth.
     pub capsule: bool,
+    /// A corner of the owner's own in place of the box style's.
+    pub radius: Option<f64>,
     /// The compositor draws a popover's look off `popover_frame`; the
     /// card's own surface paints none of it.
     pub compositor_look: bool,
@@ -214,6 +216,7 @@ impl CardSpec {
             deform: DEFORM_AMOUNT,
             nub: None,
             capsule: false,
+            radius: None,
             compositor_look: false,
         }
     }
@@ -226,6 +229,7 @@ pub struct Card {
     role: Role,
     state: Option<&'static str>,
     capsule: bool,
+    radius: Option<f64>,
     pub edge: Edge,
     rest: Rect,
     live: Rect,
@@ -277,7 +281,7 @@ pub fn popover_theme(theme: &Theme) -> Theme {
 
 impl Card {
     pub fn new(theme: &Theme, spec: CardSpec, cast: bool) -> Self {
-        let CardSpec { role, state, edge, size, line_at, ends, deform, nub, capsule, compositor_look } = spec;
+        let CardSpec { role, state, edge, size, line_at, ends, deform, nub, capsule, radius, compositor_look } = spec;
         let mut look = Look::new(theme, role, state, cast);
         let (size, rest, clear) = match size {
             Sizing::Surface { size, rest } => (size, rest, true),
@@ -307,6 +311,9 @@ impl Card {
         if capsule {
             look.radius = rest.height() / 2.0;
         }
+        if let Some(r) = radius {
+            look.radius = r;
+        }
         let (sw, sh) = if edge.is_vertical() { (size.1, size.0) } else { size };
         let mut scene = if clear { Scene::clear(sw, sh) } else { Scene::new(sw, sh) };
         let empty = || Paint::Shape { fill: None, strokes: Vec::new() };
@@ -323,6 +330,7 @@ impl Card {
             role,
             state,
             capsule,
+            radius,
             edge,
             rest,
             live: rest,
@@ -361,6 +369,9 @@ impl Card {
         self.look = Look::new(theme, self.role, self.state, cast);
         if self.capsule {
             self.look.radius = self.rest.height() / 2.0;
+        }
+        if let Some(r) = self.radius {
+            self.look.radius = r;
         }
     }
 

@@ -25,6 +25,7 @@ use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_vie
 use smithay_client_toolkit::seat::pointer::PointerEventKind;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerSurface};
+use vello_cpu::kurbo::Rect;
 
 use super::App;
 use super::tray_menu::{Hang, Source};
@@ -281,6 +282,7 @@ impl App {
         let scale = self.dock_scale();
         let activity = &self.store.activity.activity;
         let items: Vec<Item> = self.dock.entries.iter().map(|e| e.item.clone()).collect();
+        let away = if self.dock_edge() == Edge::Top { 1.0 } else { -1.0 };
         let marks = self
             .dock
             .entries
@@ -301,6 +303,7 @@ impl App {
                     urgent: self.dock_urgent(e),
                     progress: progress.and_then(|i| i.progress.fraction()).map(|f| f.as_fraction()),
                     launching: activity.live().iter().filter(running).any(|i| i.origin == Origin::Launch),
+                    away,
                 }
             })
             .collect();
@@ -313,7 +316,7 @@ impl App {
         let rule = self.dock.entries.iter().take_while(|e| e.item.pinned).count();
         let ruled = rule > 0 && rule < self.dock.entries.len();
         let (w, h) = dock::size(theme, self.dock.entries.len(), ruled);
-        let pad = theme.space.panel_padding;
+        let pad = dock::padding(theme);
         (w + pad * 2.0, h + pad * 2.0)
     }
 
@@ -433,7 +436,7 @@ impl App {
         let size = self.dock_size();
         let theme = &self.store.theme.theme;
         let room = (if edge.is_vertical() { ow } else { oh }) as i32;
-        let spec = CardSpec { ends: chrome.ends(edge), ..CardSpec::new(edge, chrome.inset(edge), Sizing::Card { size, anchor: ow / 2.0, length: ow as i32, room }) };
+        let spec = CardSpec { ends: chrome.ends(edge), radius: Some(dock::radius(theme)), ..CardSpec::new(edge, chrome.inset(edge), Sizing::Card { size, anchor: ow / 2.0, length: ow as i32, room }) };
         let card = Card::new(theme, spec, self.cast);
         let surface = self.popout_surface(&card, Layer::Top);
         let mut popup = Popup::new(surface, card);
@@ -633,10 +636,9 @@ impl App {
         let (ow, oh) = self.output_size();
         let theme = &self.store.theme.theme;
         let rest = d.popup.win.card.rest();
-        let (cw, _) = dock::cell(theme);
         let ruled = d.sized.1 && index >= self.dock.entries.iter().take_while(|e| e.item.pinned).count();
-        let along = theme.space.panel_padding + index as f64 * (cw + dock::GAP) + if ruled { dock::GAP + theme.border_width } else { 0.0 };
-        let anchor = rest.x0 + along + cw / 2.0;
+        let along = dock::padding(theme) + index as f64 * (ICON + dock::GAP) + if ruled { dock::GAP + theme.border_width } else { 0.0 };
+        let anchor = rest.x0 + along + ICON / 2.0;
         let line_at = rest.y1;
         let cap = oh - line_at - theme.space.bar_margin - theme.space.screen_padding;
         let room = (if d.edge.is_vertical() { ow } else { oh }) as i32;
@@ -880,8 +882,10 @@ impl App {
         if d.popup.win.sync_region(&self.compositor, want, &[]) {
             d.popup.win.surface.layer.commit();
         }
-        let el = dock::row(theme, marks, rule);
-        let drawn = d.popup.draw(&el, theme, &mut self.kit, now);
+        let el = dock::row(marks, rule);
+        let (frame, pad) = (d.popup.win.card.content.0, dock::padding(theme));
+        let inner = Rect::new(f64::from(frame.x) + pad, f64::from(frame.y) + pad, f64::from(frame.x + frame.w) - pad, f64::from(frame.y + frame.h) - pad);
+        let drawn = d.popup.draw_reaching(&el, inner, dock::reach(theme), theme, &mut self.kit, now);
         let animating = d.popup.win.animating(now) || drawn.animating;
         let qh = self.qh.clone();
         d.popup.win.present(animating, &qh);

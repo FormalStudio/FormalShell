@@ -26,7 +26,7 @@ leg_dock_flag="--dock"
 leg_dock_order=174
 leg_dock_compositors="hyprland shoji"
 leg_dock_needs="python3 jq foot wlrctl convert"
-leg_dock_claims="screen=shared"
+leg_dock_claims="screen=shared dock.show"
 
 dock_prefix="$shot_dir/dock"
 dock_log="$shot_dir/dock-stub.log"
@@ -34,6 +34,9 @@ dock_log="$shot_dir/dock-stub.log"
 # The stub has a desktop entry, so its icon, its name and its entry's
 # action are the entry's; foot has none and keeps the glyph and its app id.
 leg_dock_fixture() {
+  # Every step below reads the dock as it is under "mac", a surface only
+  # while a Mac app runs; the default is "always".
+  settings_pin '.dock.show = "mac"'
   local icons="$iso_home/.local/share/icons/hicolor"
   mkdir -p "$iso_home/.local/share/applications" "$icons/128x128/apps"
   $convert_bin -size 128x128 xc:none -fill '#E0A021' -draw 'roundrectangle 6,6,121,121,28,28' "$icons/128x128/apps/org.atoll.stub.png"
