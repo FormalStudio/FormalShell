@@ -169,14 +169,23 @@ menu_emerge_level() {
   $convert_bin "$1" -crop "$2" +repage -format "%[fx:mean]" info: 2>/dev/null
 }
 
-# How far a frame differs from the closed one over a patch, 0 to 1.
-menu_emerge_moved() {
-  $convert_bin "$menu_emerge_closed_path" "$1" -compose difference -composite -crop "$2" +repage \
+# How far a frame differs over a patch from the closed frame under the
+# scrim that frame carries: what the patch shows where no card is. The
+# scrim's share is read off the desktop probe in the same frame, so a light
+# card over a light desktop still reads as arriving.
+menu_emerge_arrived() {
+  local k
+  k=$(awk -v c="$d_closed" -v v="$(menu_emerge_level "$1" "$menu_emerge_desk_box")" 'BEGIN { printf "%.6f", v / c }')
+  $convert_bin \( "$menu_emerge_closed_path" -evaluate multiply "$k" \) "$1" -compose difference -composite -crop "$2" +repage \
     -format "%[fx:mean]" info: 2>/dev/null
 }
 
+# Whether the card's fill has reached a patch: the patch differs from the
+# scrimmed desktop by more than half what the card's own fill does at rest
+# (`menu_emerge_fill_rest`), so a white card over a white desktop reads the
+# same as a dark one over a dark desktop, words on the card included.
 menu_emerge_covered() {
-  awk -v v="$(menu_emerge_level "$1" "$2")" 'BEGIN { exit !(v > 0.06) }'
+  awk -v v="$(menu_emerge_arrived "$1" "$2")" -v f="$menu_emerge_fill_rest" 'BEGIN { exit !(v > f / 2) }'
 }
 
 # One pixel of a frame as six hex digits, --join's own read-out.
@@ -346,31 +355,32 @@ leg_menu_emerge_assert() {
   #
   # Every frame of the open, how far the header's placeholder has come in
   # against how far the card's own fill has, each as a share of its change
-  # at rest: the content may never lead the card under it. The fill is read
-  # in the header's own left padding, beside the text, where nothing is
-  # drawn on the card. Once the fill reads whole there is nothing left
-  # for the text to lead, and a card still travelling to its rest carries
-  # the header's words through the text probe at other heights, past their
-  # rest share.
+  # at rest off the scrimmed desktop: the content may never lead the card
+  # under it. The fill is read in the header's own left padding, beside
+  # the text, where nothing is drawn on the card. Once the fill reads whole
+  # there is nothing left for the text to lead, and a card still travelling
+  # to its rest carries the header's words through the text probe at other
+  # heights, past their rest share, so the text's share counts to 1 at most.
   local card fill_box text_box fill_rest text_rest ladder="" lead=""
   card='[.modals[] | select(.namespace == "formalshell:menu") | .card] | first'
   "$jq_bin" -e "$card"' | .height > 0' "$menu_emerge_rest_dump_path" > /dev/null 2>&1 \
     || fail "no launcher card rect in the dump at rest: $("$jq_bin" -c "$card" "$menu_emerge_rest_dump_path" 2>&1)"
   fill_box=$(scaled_jq -r "$geometry_jq$card"' | {x: (.x + 6), y: (.y + 24), width: 6, height: 4} | geometry' "$menu_emerge_rest_dump_path")
   text_box=$(scaled_jq -r "$geometry_jq$card"' | {x: (.x + 24), y: (.y + 20), width: 160, height: 16} | geometry' "$menu_emerge_rest_dump_path")
-  fill_rest=$(menu_emerge_moved "$menu_emerge_rest_path" "$fill_box")
-  text_rest=$(menu_emerge_moved "$menu_emerge_rest_path" "$text_box")
+  fill_rest=$(menu_emerge_arrived "$menu_emerge_rest_path" "$fill_box")
+  text_rest=$(menu_emerge_arrived "$menu_emerge_rest_path" "$text_box")
+  menu_emerge_fill_rest=$fill_rest
   awk -v f="$fill_rest" -v t="$text_rest" 'BEGIN { exit !(f > 0.005 && t > 0.005) }' || fail \
-    "the card fill ($fill_rest at $fill_box) or the header text ($text_rest at $text_box) does not differ from the closed frame at rest: the probes read nothing"
+    "the card fill ($fill_rest at $fill_box) or the header text ($text_rest at $text_box) does not differ from the scrimmed desktop at rest: the probes read nothing"
   for i in $(seq 1 $menu_emerge_frames); do
     path="$shot_dir/menu-emerge-$i.png"
     local f t
-    f=$(menu_emerge_moved "$path" "$fill_box")
-    t=$(menu_emerge_moved "$path" "$text_box")
+    f=$(menu_emerge_arrived "$path" "$fill_box")
+    t=$(menu_emerge_arrived "$path" "$text_box")
     local pair
     pair=$(awk -v f="$f" -v t="$t" -v fr="$fill_rest" -v tr="$text_rest" 'BEGIN { printf "%.2f/%.2f", t / tr, f / fr }')
     ladder="$ladder $i:$pair"
-    awk -v f="$f" -v t="$t" -v fr="$fill_rest" -v tr="$text_rest" 'BEGIN { exit !(f / fr < 0.95 && t / tr > f / fr + 0.2) }' && lead="$lead $i"
+    awk -v f="$f" -v t="$t" -v fr="$fill_rest" -v tr="$text_rest" 'BEGIN { s = t / tr; if (s > 1) s = 1; exit !(f / fr < 0.95 && s > f / fr + 0.2) }' && lead="$lead $i"
   done
   echo "SMOKE_MENU_EMERGE_CONTENT text/fill$ladder"
   [ -z "$lead" ] || fail "the header's text came in ahead of the card fill under it in frames$lead"
@@ -379,12 +389,14 @@ leg_menu_emerge_assert() {
   # The fade, open and close
   #
   # How much of the card each frame shows, read as its mean difference from
-  # the closed frame over the card's resting box against the rest frame's,
-  # and the scrim's share the same way off the desktop probe. Across the
-  # open both rise through at least one frame strictly between 0.15 and
-  # 0.85, and across the close both fall through one: a card that travels
-  # at full opacity and is then cut has no such frame, and the pair of
-  # neighbours where it goes from 0.9 or over to 0.1 or under is named.
+  # the closed frame under that frame's scrim over the card's resting box
+  # against the rest frame's (a white card on a white desktop differs from
+  # the closed frame only where the scrim is), and the scrim's share the
+  # same way off the desktop probe. Across the open both rise through at
+  # least one frame strictly between 0.15 and 0.85, and across the close
+  # both fall through one: a card that travels at full opacity and is then
+  # cut has no such frame, and the pair of neighbours where it goes from
+  # 0.9 or over to 0.1 or under is named.
   # The card's box runs up to the line it buds off: the card travels
   # through that span on both legs, and a content-tall card leaves its own
   # resting box within a frame or two of the close while still drawn.
@@ -397,10 +409,10 @@ leg_menu_emerge_assert() {
   local card_box card_rest scrim_rest
   card_box=$(scaled_jq -r --argjson top "$card_top" "$card"' | ((.x + 8) * $s | floor) as $x | ((.y + .height - 8) * $s | floor) as $b
     | "\((.width - 16) * $s | floor)x\($b - $top)+\($x)+\($top)"' "$menu_emerge_rest_dump_path")
-  card_rest=$(menu_emerge_moved "$menu_emerge_rest_path" "$card_box")
+  card_rest=$(menu_emerge_arrived "$menu_emerge_rest_path" "$card_box")
   scrim_rest=$(awk -v c="$d_closed" -v r="$d_rest" 'BEGIN { print c - r }')
   awk -v v="$card_rest" 'BEGIN { exit !(v > 0.01) }' || fail \
-    "the rest frame's card box $card_box reads $card_rest off the closed frame: the probe reads nothing"
+    "the rest frame's card box $card_box reads $card_rest off the scrimmed closed frame: the probe reads nothing"
   local phase frames prefix series who_series v
   for phase in open close; do
     if [ "$phase" = open ]; then frames=$menu_emerge_frames prefix=menu-emerge; else frames=$menu_emerge_close_frames prefix=menu-emerge-close; fi
@@ -409,7 +421,7 @@ leg_menu_emerge_assert() {
       path="$shot_dir/$prefix-$i.png"
       [ -f "$path" ] || fail "no screenshot produced at $path"
       [ "$phase" = close ] && echo "SMOKE_MENU_EMERGE_CLOSE_$i $path"
-      v=$(menu_emerge_moved "$path" "$card_box")
+      v=$(menu_emerge_arrived "$path" "$card_box")
       card_series="$card_series $(awk -v v="$v" -v r="$card_rest" 'BEGIN { printf "%.2f", v / r }')"
       v=$(menu_emerge_level "$path" "$menu_emerge_desk_box")
       scrim_series="$scrim_series $(awk -v c="$d_closed" -v v="$v" -v r="$scrim_rest" 'BEGIN { printf "%.2f", (c - v) / r }')"
@@ -529,7 +541,11 @@ leg_menu_emerge_assert() {
   else
   bar_open=$(menu_emerge_level "$last_attached" "$menu_emerge_bar_box")
   bar_closed=$(menu_emerge_level "$menu_emerge_closed_path" "$menu_emerge_bar_box")
-  menu_emerge_same "$last_attached" "$menu_emerge_closed_path" "$menu_emerge_bar_box" || fail \
+  # The band's scrim comes in with the let-go (1 - attach, `surfaces/card.rs`),
+  # and the neck still carries fill as it starts: the band dims by under a
+  # tenth of what the desktop does in the same frame.
+  awk -v bo="$bar_open" -v bc="$bar_closed" -v so="$desk_open" -v sc="$desk_closed" \
+    'BEGIN { exit !(bc - bo <= (sc - so) / 10) }' || fail \
     "the bar's own band at $menu_emerge_bar_box reads $bar_open in $last_attached against $bar_closed closed: the scrim dims the line the card is still budding off"
   echo "SMOKE_MENU_EMERGE_LIT_BAR ok bar $bar_open = $bar_closed, desktop $desk_open under $desk_closed in $last_attached"
   fi
