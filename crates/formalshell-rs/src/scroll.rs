@@ -253,6 +253,10 @@ impl Velocity {
         self.samples.clear();
         self.travelled = 0.0;
     }
+
+    fn is_empty(&self) -> bool {
+        self.samples.is_empty()
+    }
 }
 
 /// A touchpad gesture over a scroll area: the stretch it pulls past either
@@ -392,6 +396,9 @@ impl Touchpad {
                 self.settle();
                 ((offset + px).clamp(0.0, max), false)
             }
+            // A stop with no fingers down (Hyprland sends one after a
+            // virtual pointer's wheel notch) would cut the notch's glide.
+            Travel::Lift(_) if self.velocity.is_empty() => return None,
             Travel::Lift(time) => {
                 self.release(now, time, offset, max, release_ms, slow);
                 (offset, false)
@@ -607,6 +614,16 @@ mod tests {
         assert!(v.at_lift(240) < 0.0);
         v.clear();
         assert_eq!(v.at_lift(240), 0.0);
+    }
+
+    #[test]
+    fn a_stop_after_a_notch_leaves_its_glide_alone() {
+        let mut s = Touchpad::new();
+        assert_eq!(s.travel(Travel::Notches(1.0), 0.0, 500.0, 32.0, 300.0, 350.0, 1.0), Some((32.0, true)));
+        assert_eq!(s.travel(Travel::Lift(5), 32.0, 500.0, 32.0, 300.0, 350.0, 1.0), None);
+        let px = Travel::Pixels { px: 10.0, finger: true, time: 10 };
+        assert_eq!(s.travel(px, 32.0, 500.0, 32.0, 300.0, 350.0, 1.0), Some((42.0, false)));
+        assert_eq!(s.travel(Travel::Lift(200), 42.0, 500.0, 32.0, 300.0, 350.0, 1.0), Some((42.0, false)));
     }
 
     #[test]

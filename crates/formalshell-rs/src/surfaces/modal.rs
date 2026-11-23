@@ -164,9 +164,10 @@ impl Modal {
         }
     }
 
-    /// The popover's look still being drawn in slices.
-    pub fn look_rastering(&self) -> bool {
-        self.win.look.as_ref().is_some_and(Quads::rastering)
+    /// Some part of the card's frame, its popover look included, still
+    /// being drawn in slices.
+    pub fn rastering(&self) -> bool {
+        self.win.surface.rastering() || self.layer.as_ref().is_some_and(|l| l.surface.rastering()) || self.win.look.as_ref().is_some_and(Quads::rastering)
     }
 
     /// Moves the card's resting rect, given on the output, drawn on this

@@ -299,6 +299,9 @@ pub struct App {
     /// `debug join`'s x and width on the bar's line, held under any card's.
     debug_join: Option<(i32, i32)>,
     pub exit: bool,
+    /// A sliced frame has bands left: the loop takes another turn at once
+    /// rather than waiting for the next event.
+    pub again: bool,
     started: Instant,
     pub launcher: crate::surfaces::launcher::Model,
     launch: launcher::State,
@@ -402,6 +405,7 @@ impl App {
             cast: false,
             debug_join: None,
             exit: false,
+            again: false,
             started,
             launcher: Default::default(),
             launch: Default::default(),
@@ -1079,6 +1083,10 @@ impl App {
         for o in owner::LIFECYCLE {
             o.present(self, now);
         }
+        // The rest of a sliced frame on the next turn, after whatever the
+        // loop has waiting (the bar's callback first).
+        let again = self.modals().any(Modal::rastering);
+        self.again = again;
         self.arm_wake(now);
     }
 

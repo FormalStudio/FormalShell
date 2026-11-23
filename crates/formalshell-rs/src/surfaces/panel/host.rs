@@ -263,6 +263,10 @@ pub struct Host {
     /// A touchpad's pull past either end, drawn over `scroll`, and the
     /// coast after a flick, which moves `scroll` frame by frame.
     touch: Touchpad,
+    /// A scroll moved the body since the last frame went out: drawn on the
+    /// card's next callback, one frame a refresh however fast a touchpad
+    /// reports.
+    pub paced: bool,
     content_h: f64,
     viewport: IRect,
     handoff: Option<Handoff>,
@@ -330,6 +334,7 @@ impl Host {
             halo_shown: false,
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             touch: Touchpad::new(),
+            paced: false,
             content_h: 0.0,
             viewport: IRect::default(),
             handoff: None,
@@ -754,7 +759,7 @@ impl Host {
         let (h, view) = (st.rect.h as f64, self.viewport.h as f64);
         let next = crate::scroll::follow(top, h, scroll, view, self.content_h);
         if (next - scroll).abs() > 0.5 {
-            self.scroll.set(now, next, Clock::SpatialFast.ms(theme));
+            self.scroll.set_on(now, next, Clock::SpatialFast.ms(theme), Clock::SpatialFast.curve());
         }
     }
 
@@ -967,12 +972,18 @@ impl Host {
             self.touch.travel(travel, self.scroll.target(), max, crate::scroll::BODY_NOTCH, view, ms, store.theme.theme.motion_scale);
             return Vec::new();
         }
+        self.paced = true;
         let point = IRect::new(x.floor() as i32, y.floor() as i32, 1, 1);
         if (self.viewport.intersects(&point) || self.body.over_float(x, y))
             && let Some(h) = self.body.scroll_hit(x, y).cloned()
             && let Some(on) = h.on.clone()
         {
-            self.body.scroll(&h.path, -dy * store.theme.theme.space.control_height);
+            // A touchpad's pixels move it as far as they move the body.
+            let along = match travel {
+                Travel::Pixels { px, .. } => px,
+                _ => dy * store.theme.theme.space.control_height,
+            };
+            self.body.scroll(&h.path, -along);
             let mut fx = Effect::new(store, runtime);
             self.module.event(&Event { on, what: What::Scroll(dx, dy), button: Button::Left }, &mut fx);
             return fx.outs();
@@ -993,12 +1004,12 @@ impl Host {
         if max <= 0.0 {
             return Vec::new();
         }
-        // The body moves a whole notch a wheel frame, whatever the frame's
-        // own size.
-        let travel = if matches!(travel, Travel::Pixels { .. }) { travel } else { Travel::Notches(if up { -1.0 } else { 1.0 }) };
+        // A notch glides on `effectsFast`, which never overshoots an end,
+        // as the launcher's does.
         if let Some((next, glide)) = self.touch.travel(travel, self.scroll.target(), max, crate::scroll::BODY_NOTCH, view, ms, store.theme.theme.motion_scale) {
             if glide {
-                self.scroll.set(Instant::now(), next, ms);
+                let theme = &store.theme.theme;
+                self.scroll.set_on(Instant::now(), next, Clock::EffectsFast.ms(theme), Clock::EffectsFast.curve());
             } else {
                 self.scroll.jump(next);
             }

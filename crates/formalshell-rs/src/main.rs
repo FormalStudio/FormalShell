@@ -109,6 +109,11 @@ fn main() {
         let t0 = Instant::now();
         app.present();
         trace::slow("present", t0.elapsed(), format_args!("present_us={}", t0.elapsed().as_micros()));
+        // calloop polls with no timeout even with idles queued, so the
+        // next turn has to be woken.
+        if std::mem::take(&mut app.again) {
+            signal.wakeup();
+        }
         if app.exit {
             signal.stop();
         }

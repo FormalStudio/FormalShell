@@ -1286,7 +1286,10 @@ impl App {
         // which marks the model dirty (`launcher_frame`). Laid out every turn
         // instead, the content layer commits each turn without a callback,
         // and the compositor's release of the last buffer brings the next.
-        let wants = (self.launcher.dirty || !w.shown.modal.win.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now);
+        // A scroll waits out a frame already on its way, and the frame that
+        // draws it asks for the next callback.
+        let held = self.launcher.paced && w.shown.modal.win.surface.frame_pending();
+        let wants = (self.launcher.dirty || !w.shown.modal.win.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now) && !held;
         // A layout held back by a sliced frame runs once it is out, even
         // when whatever moved has stopped by then.
         if rastering && wants {
@@ -1308,16 +1311,9 @@ impl App {
             w.shown.place_card(theme, now);
         }
         let laid = t1.elapsed();
-        let animating = w.shown.animating(now) || self.launcher.rows_moving(now);
+        let paced = !held && !rastering && std::mem::take(&mut self.launcher.paced);
+        let animating = w.shown.animating(now) || self.launcher.rows_moving(now) || paced;
         w.shown.modal.present(animating, now, &qh);
-        // The rest of a sliced frame on the next turn, after whatever the
-        // loop has waiting (the bar's callback first).
-        if w.shown.modal.win.surface.rastering()
-            || w.shown.modal.layer.as_ref().is_some_and(|l| l.surface.rastering())
-            || w.shown.modal.look_rastering()
-        {
-            self.handle.insert_idle(|_| {});
-        }
         crate::trace::slow(
             "launcher",
             t0.elapsed(),

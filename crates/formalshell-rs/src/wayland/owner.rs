@@ -676,12 +676,16 @@ impl Owner for Cards {
             if h.prime_until.is_some_and(|t| t <= now) {
                 h.primed();
             }
+            // A scroll waits out a frame already on its way, and the frame
+            // that draws it asks for the next callback.
+            let held = h.paced && h.win.surface.frame_pending();
             let animating = h.animating(now) || h.content_animating(now);
-            if app.panel_dirty || animating {
+            if (app.panel_dirty || animating) && !held {
                 h.sync_region(&app.compositor, &strip);
                 h.layout(&app.store, theme, &mut app.kit, now);
             }
-            let animating = h.animating(now) || h.content_animating(now);
+            let paced = !held && std::mem::take(&mut h.paced);
+            let animating = h.animating(now) || h.content_animating(now) || paced;
             h.win.surface.looping = !h.settling(now);
             h.win.present(animating, &qh);
         }

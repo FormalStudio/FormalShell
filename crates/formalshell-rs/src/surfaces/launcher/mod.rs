@@ -208,6 +208,10 @@ pub struct Model {
     body_h: f64,
     /// The rows changed since the window last drew.
     pub dirty: bool,
+    /// A scroll moved the view since the last frame went out: drawn on the
+    /// card's next callback, one frame a refresh however fast a touchpad
+    /// reports.
+    pub paced: bool,
     /// A `pasteAfter` row ran: the chord goes out once the window is gone.
     pub paste: bool,
     /// A call that reads the screen, held until the window is gone so the
@@ -458,6 +462,7 @@ impl Default for Model {
             layout: Layout::default(),
             body_h: 0.0,
             dirty: true,
+            paced: false,
         }
     }
 }
@@ -1274,6 +1279,7 @@ impl Model {
         self.wheeled = glide;
         self.scroll = next;
         self.dirty = true;
+        self.paced = true;
     }
 
     fn max_scroll(&self) -> f64 {
@@ -1291,6 +1297,7 @@ impl Model {
         c.wheeled = glide;
         c.travels = false;
         self.dirty = true;
+        self.paced = true;
     }
 
     /// A click on row `index` (launcher spec §6): the row takes the

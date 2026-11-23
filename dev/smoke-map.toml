@@ -238,7 +238,13 @@ runs = ["--picker", "--picker --light", "--wheel"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/scroll.rs"]
-runs = ["--wheel", "--menu", "--launcher-mouse"]
+runs = ["--wheel", "--menu", "--launcher-mouse", "--scroll-pacing"]
+
+# What paces a scroll's frames: the launcher's and the panel host's own
+# frame callbacks, and the loop that runs a sliced frame's next turn.
+[[rule]]
+paths = ["crates/formalshell-rs/src/main.rs", "crates/formalshell-rs/src/wayland/owner.rs", "crates/formalshell-rs/src/surfaces/modal.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/launcher/view.rs"]
+runs = ["--scroll-pacing", "--wheel", "--center"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/keyboard.rs"]
