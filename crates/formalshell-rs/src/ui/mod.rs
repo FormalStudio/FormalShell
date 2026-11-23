@@ -561,6 +561,15 @@ impl Cx<'_> {
         }
     }
 
+    /// A colour that lands on `target` this frame, whatever it was doing:
+    /// a press shows under the finger, and only the release eases back.
+    pub fn color_now(&mut self, key: &str, target: Rgba) -> Rgba {
+        let frame = self.ui.frame;
+        let t = Animated::new(1.0, Clock::EffectsSlow.curve());
+        self.ui.tweens.insert(key.to_owned(), Tween { value: TweenValue::Color { from: target, to: target, t }, seen: frame });
+        target
+    }
+
     /// A colour crossfading to `target` (`CAnim`, always `effectsSlow`).
     pub fn color(&mut self, key: &str, target: Rgba) -> Rgba {
         let frame = self.ui.frame;
@@ -765,6 +774,12 @@ impl Cx<'_> {
 
     pub fn pressed(&self, path: &str) -> bool {
         self.ui.pressed.as_deref() == Some(path) && self.hover(path)
+    }
+
+    /// The button is still down on `path`, wherever the pointer went: a
+    /// drag that left the hit rect is still that drag.
+    pub fn held(&self, path: &str) -> bool {
+        self.ui.pressed.as_deref() == Some(path)
     }
 
     /// Whether `key` holds the cursor, and whether its ring draws.

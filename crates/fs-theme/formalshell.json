@@ -498,6 +498,12 @@
                     "alpha": 0.15
                 }
             },
+            "press": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": 0.22
+                }
+            },
             "active": {
                 "fill": "primary",
                 "fillAlpha": 1

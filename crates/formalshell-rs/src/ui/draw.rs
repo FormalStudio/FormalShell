@@ -977,7 +977,8 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
         b
     };
     let washing = hovered && !state.active && !state.selected;
-    b.wash = t.box_style(if state.row { Role::LauncherRow } else { Role::Cell }, Some("hover")).wash;
+    let pressed = washing && !state.row && interactive && cx.pressed(path);
+    b.wash = t.box_style(if state.row { Role::LauncherRow } else { Role::Cell }, Some(if pressed { "press" } else { "hover" })).wash;
     let (_, ring) = cx.cursor(stop.as_deref());
     let ring = (ring || state.cursor) && !owned && !state.row;
     let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);
@@ -1070,7 +1071,9 @@ fn button(
     b.wash = held;
     let ri = irect(r);
     let radius = radius.unwrap_or_else(|| t.box_radius(&b, ri.h as f64));
-    let fill = cx.color(&format!("{path}.fill"), b.fill);
+    // A press lands under the finger; a click is over before a crossfade
+    // into it would show. The release eases back on the usual clock.
+    let fill = if cx.pressed(path) { cx.color_now(&format!("{path}.fill"), b.fill) } else { cx.color(&format!("{path}.fill"), b.fill) };
     let border = b.border.clone().map(|l| Line { color: cx.color(&format!("{path}.border"), l.color), width: l.width });
     let b = BoxStyle { fill, border, ..b };
     let wash = cx.tween(&format!("{path}.wash"), if washing { 1.0 } else { 0.0 }, Clock::Effects) as f32;
@@ -1190,7 +1193,15 @@ fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interact
     // The fill paints whole pixels, so the target is the pixel it lands
     // on: a value read off the clock at every draw (the calendar's year)
     // would otherwise retarget the tween each frame and never let it land.
-    let w = cx.tween(&format!("{path}.fill"), (inset + travel * value.clamp(0.0, 1.0)).round(), Clock::SpatialFast);
+    // Under a drag the fill is the pointer's, so it follows it frame for
+    // frame; a key, a wheel or the daemon moving the value travels there.
+    let to = (inset + travel * value.clamp(0.0, 1.0)).round();
+    let w = if cx.held(path) {
+        cx.jump(&format!("{path}.fill"), to, Clock::SpatialFast);
+        to
+    } else {
+        cx.tween(&format!("{path}.fill"), to, Clock::SpatialFast)
+    };
     let alpha = cx.alpha;
     let mut p = cx.painter(path);
     boxes::paint(&mut p, ri, &groove, radius, alpha, 0.0);

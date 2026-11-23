@@ -42,6 +42,11 @@ and its direction over every wallpaper. A control already carrying a
 colour takes `Theme::hover_filled(c)`/`Theme::press_filled(c)`, the fill
 blended toward `background` and left opaque (shadcn's `hover:bg-primary/90`);
 dropping its opacity instead makes it see-through on a translucent panel.
+A press lands on the frame the button goes down, with no crossfade into
+it: a click is over before one would show. A button's fill and a cell's
+wash (the `cell` role's `press` state) ease back on release. A slider's
+fill under a drag is the pointer's, frame for frame; only a key, a wheel
+or the daemon moving the value makes it travel.
 
 **Radius** (the ladder, `fs_theme::tokens::RADII`, fixed): `Sm` 6, `Md` 9,
 `Lg` 12, `Xl` 15, `Full`: libadwaita's `$check_radius`, `$button_radius`,

@@ -66,7 +66,7 @@ roles! {
     Notification "notification" &["rest", "critical", "flat", "flatCritical"],
     Popover "popover" &[],
     Menu "menu" &[],
-    Cell "cell" &["rest", "ghost", "hover", "active", "selected", "destructive", "warning", "ghostOpen"],
+    Cell "cell" &["rest", "ghost", "hover", "press", "active", "selected", "destructive", "warning", "ghostOpen"],
     CellMark "cell.mark" &[],
     ButtonDefault "button.default" &["rest", "hover", "press"],
     ButtonOutline "button.outline" &["rest", "hover", "press"],
