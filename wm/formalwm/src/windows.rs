@@ -624,6 +624,12 @@ impl Engine {
         if self.drag.as_ref().is_some_and(|drag| drag.id == id) {
             self.drag = None;
         }
+        // The compositor reports no end for a move whose window closed.
+        if self.hold.window_drag.as_deref() == Some(id) {
+            self.hold.window_drag = None;
+            self.hold_end();
+            self.regrab_overview();
+        }
         self.window_gone(id);
         self.pip_gone(id);
         if self.model.window(id).is_none() {

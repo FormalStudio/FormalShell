@@ -131,7 +131,7 @@ impl Engine {
                 }
                 // A drag of the overview's own ends with it; one the core
                 // is running goes on over the workspace now shown.
-                if !self.hold.window_drag {
+                if self.hold.window_drag.is_none() {
                     self.drag = None;
                 }
             }
@@ -147,7 +147,7 @@ impl Engine {
     /// it to be dropped. The shell's bar and corners are drawn over it and
     /// keep the pointer there.
     fn grab_overview(&mut self) {
-        if self.hold.data_drag || self.hold.window_drag || self.overview.grab.is_some() {
+        if self.hold.data_drag || self.hold.window_drag.is_some() || self.overview.grab.is_some() {
             return;
         }
         let options = InputGrabOptions::new()

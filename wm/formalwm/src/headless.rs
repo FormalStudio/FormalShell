@@ -972,6 +972,35 @@ fn a_workspace_bind_onto_another_output_takes_the_pointer_there() {
 }
 
 #[test]
+fn a_window_closing_mid_move_leaves_the_overview_its_input() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("move-closed", HOST, &[test_display("TEST-1")]);
+    session.open("stays");
+    let (tab, toplevel) = session.open_tagged("tab", None);
+    session.draw(&tab, 400, 300);
+    // The compositor reports no end for a move whose window is gone: a
+    // tab dropped into another window's strip.
+    ask(|engine| {
+        let id = engine.model.windows.last().map(|w| w.id.clone());
+        engine.hold.window_drag = id;
+        Ok(())
+    })
+    .unwrap();
+    toplevel.destroy();
+    tab.destroy();
+    session.roundtrip();
+    let grabbed = ask(|engine| {
+        let held = engine.hold.window_drag.clone();
+        engine.set_overview(Some(true));
+        Ok((held, engine.overview.grab.is_some()))
+    })
+    .unwrap();
+    assert_eq!(grabbed, (None, true));
+}
+
+#[test]
 fn a_wheel_notch_in_the_overview_walks_one_workspace() {
     let _turn = ONE_AT_A_TIME
         .lock()
@@ -1973,7 +2002,7 @@ fn two_outputs_and_the_touchpad() {
     // Not while a window is dragged across.
     let dragging = |on: bool| {
         ask(move |engine| {
-            engine.hold.window_drag = on;
+            engine.hold.window_drag = on.then(|| "moved".to_owned());
             Ok(())
         })
         .unwrap();

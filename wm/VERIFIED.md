@@ -192,6 +192,7 @@ and 2 of border.
 | A window dropped between two workspaces opens one there | rig | `session2.sh`: `d1` between 1 and 2, `28-new-workspace` |
 | A wheel notch walks one workspace | rig, headless, unit | `overview.sh`: from 1 a notch to 2 (`23-wheel-one-notch`), another to 3, one back to 2, eight eighths of one to 3; `a_wheel_notch_in_the_overview_walks_one_workspace`, which went from 1 to the last workspace on the notch before ShojiWM's `discrete_y` was read as 120ths of a notch; `a_wheel_notch_walks_one_workspace` |
 | Two-finger scroll walks workspaces, one every 40 px | rig, headless, unit | `overview.sh`: 30 px walks none, 20 more walk one; `session2.sh`; `two_fingers_walk_one_workspace_every_forty_pixels` |
+| A window closing mid-move leaves the overview its keys and wheel | headless | `a_window_closing_mid_move_leaves_the_overview_its_input`: the move's hold goes with the window, and the next open takes the grab |
 | The arrow keys walk | rig | `session.sh` Down and Up; `overview.sh` Left and Right |
 | Typing does nothing | rig | `overview.sh`: letters and a digit leave it open and unchanged |
 | The zoom rides the spatial clock | rig | `motion.sh`: progress 0 to 101 to 100 |

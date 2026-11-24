@@ -42,7 +42,7 @@ impl Engine {
     /// window that has the keyboard. Not while something is dragged, which
     /// belongs to the output it left until it is dropped.
     pub fn point_at(&mut self, at: (f64, f64)) {
-        if self.hold.data_drag || self.hold.window_drag || self.drag.is_some() {
+        if self.hold.data_drag || self.hold.window_drag.is_some() || self.drag.is_some() {
             return;
         }
         if let Some(output) = self.output_at(at)

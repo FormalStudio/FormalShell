@@ -54,8 +54,8 @@ enum Zone {
 pub struct Hold {
     /// Data is being dragged between clients.
     pub data_drag: bool,
-    /// A window is being moved by the pointer.
-    pub window_drag: bool,
+    /// The window the pointer is moving.
+    pub window_drag: Option<String>,
     zone: Zone,
     timer: Option<TimerHandle>,
 }
@@ -275,7 +275,18 @@ impl Engine {
 
     fn window_move(&mut self, window: Window, event: &WindowMoveEventSnapshot) {
         let id = window.id();
+        let ending = matches!(
+            event.phase,
+            WindowMovePhaseSnapshot::End | WindowMovePhaseSnapshot::Cancel
+        );
+        // Before the window is looked up: a move ending on one that has
+        // closed (a tab dropped into another window's strip) ends too.
+        self.hold.window_drag = (!ending).then(|| id.clone());
         let Some(record) = self.model.window(&id) else {
+            if ending {
+                self.hold_end();
+                self.regrab_overview();
+            }
             return;
         };
         let (floating, pip) = (record.floating, record.pip);
@@ -288,11 +299,6 @@ impl Engine {
             event.start_rect.height,
         )
         .inset(border);
-        let ending = matches!(
-            event.phase,
-            WindowMovePhaseSnapshot::End | WindowMovePhaseSnapshot::Cancel
-        );
-        self.hold.window_drag = !ending;
         // A picture has no hot spots: it rests in the corners they are in.
         if pip {
             self.hold_end();

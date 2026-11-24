@@ -302,7 +302,7 @@ impl Engine {
         }
         let id = id.clone();
         self.pip.press = None;
-        if self.hold.window_drag || self.overview.open {
+        if self.hold.window_drag.is_some() || self.overview.open {
             return;
         }
         if let Some(win) = self.windows.get(&id) {
