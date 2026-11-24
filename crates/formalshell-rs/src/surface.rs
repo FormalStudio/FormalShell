@@ -510,6 +510,12 @@ pub struct Surface<R: Role = LayerSurface> {
     left: std::collections::VecDeque<IRect>,
     react_us: u128,
     render_us: u128,
+    /// The owner's own scene work since the last commit ([`Surface::built`]).
+    build_us: u128,
+    /// The same work and the frame's draw in the thread's CPU time, which a
+    /// busy machine's preemption leaves out.
+    build_cpu_us: i64,
+    render_cpu_us: i64,
     slices: u32,
     /// What the canvas is multiplied by on its way into a buffer, out of
     /// 256. Hyprland draws no `wp_alpha_modifier` on a layer surface's
@@ -703,6 +709,9 @@ impl<R: Role> Surface<R> {
             left: std::collections::VecDeque::new(),
             react_us: 0,
             render_us: 0,
+            build_us: 0,
+            build_cpu_us: 0,
+            render_cpu_us: 0,
             slices: 0,
             opacity: 256,
             refade: false,
@@ -714,6 +723,14 @@ impl<R: Role> Surface<R> {
             cleared: false,
             clock: Clock::new(name),
         }
+    }
+
+    /// The owner's scene layout, timed off `wall` and the thread's CPU
+    /// clock at `cpu` ([`crate::thread_cpu_us`]), logged with the next commit
+    /// as `build_us` and as part of `cpu_us`.
+    pub fn built(&mut self, wall: Instant, cpu: i64) {
+        self.build_us += wall.elapsed().as_micros();
+        self.build_cpu_us += crate::thread_cpu_us() - cpu;
     }
 
     /// The scale this surface draws at from its next present on: what the
@@ -929,6 +946,7 @@ impl<R: Role> Surface<R> {
             // From the callback that let this frame go to the start of drawing it.
             self.react_us = self.landed_at.take().map_or(0, |at| at.elapsed().as_micros());
             self.render_us = 0;
+            self.render_cpu_us = 0;
             self.slices = 0;
             // A surface made again for a scene that has drawn before (the
             // bar re-placed when its framing moves, a spare bar on another
@@ -946,16 +964,18 @@ impl<R: Role> Surface<R> {
                 None => self.left.push_back(rect),
             }
         }
-        let t0 = Instant::now();
+        let (t0, c0) = (Instant::now(), crate::thread_cpu_us());
         while let Some(rect) = self.left.pop_front() {
             self.renderer.render(scene, rect);
             if self.raster_budget.is_some_and(|budget| t0.elapsed() >= budget) && !self.left.is_empty() {
                 self.render_us += t0.elapsed().as_micros();
+                self.render_cpu_us += crate::thread_cpu_us() - c0;
                 self.slices += 1;
                 return false;
             }
         }
         self.render_us += t0.elapsed().as_micros();
+        self.render_cpu_us += crate::thread_cpu_us() - c0;
         self.slices += 1;
         true
     }
@@ -1057,6 +1077,10 @@ impl<R: Role> Surface<R> {
             scene.touch(IRect::new(0, 0, 1, 1));
         }
         if !scene.has_damage() && self.raster.is_empty() && !self.refade {
+            (self.build_us, self.build_cpu_us) = (0, 0);
+            // The callback found nothing to draw, so it lets no frame go: a
+            // frame an event starts later reacts to no callback.
+            self.landed_at = None;
             self.clock.set(settling);
             if request && self.commits > 0 {
                 let surface = self.layer.role_surface();
@@ -1122,13 +1146,14 @@ impl<R: Role> Surface<R> {
 
     /// The canvas's `damage` copied into a buffer and committed.
     fn commit_frame<D: Dispatcher>(&mut self, mut damage: Vec<IRect>, size: IRect, request: bool, qh: &QueueHandle<D>) {
-        let (react_us, render_us) = (self.react_us, self.render_us);
+        let (react_us, render_us, build_us) = (self.react_us, self.render_us, std::mem::take(&mut self.build_us));
+        let cpu_us = std::mem::take(&mut self.build_cpu_us) + std::mem::take(&mut self.render_cpu_us);
         if std::mem::take(&mut self.refade) {
             damage.extend(self.drawn);
         }
         self.drawn = damage.iter().fold(self.drawn, |u, r| Some(u.map_or(*r, |u| u.union(r))));
 
-        let t1 = Instant::now();
+        let (t1, c1) = (Instant::now(), crate::thread_cpu_us());
         let (pw, ph) = self.renderer.pixels();
         let at = if self.renderer.is_gpu() { self.fill_dmabuf(&damage, size) } else { Some(self.fill_shm(&damage, size)) };
         let Some(at) = at else {
@@ -1137,6 +1162,7 @@ impl<R: Role> Surface<R> {
             return;
         };
         let copy_us = t1.elapsed().as_micros();
+        let cpu_us = cpu_us + crate::thread_cpu_us() - c1;
 
         let scale = self.renderer.scale();
         let surface = self.layer.role_surface();
@@ -1166,7 +1192,7 @@ impl<R: Role> Surface<R> {
         self.front_view = Some((scale, (size.w, size.h)));
 
         self.commits += 1;
-        trace::drew(self.name, render_us + copy_us);
+        trace::drew(self.name, build_us + render_us + copy_us);
         if !trace::enabled() {
             return;
         }
@@ -1177,9 +1203,11 @@ impl<R: Role> Surface<R> {
             self.name,
             self.commits,
             format_args!(
-                "render_us={} copy_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} slices={}{scaled}",
+                "render_us={} copy_us={} build_us={} cpu_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} slices={}{scaled}",
                 render_us,
                 copy_us,
+                build_us,
+                cpu_us,
                 damage.len(),
                 area,
                 rects.join(" "),

@@ -460,7 +460,9 @@ impl App {
             let animating = s.bar.animating(&self.kit, now);
             let stepping = animating || s.bar.marquee_due(&self.kit, now);
             if all || s.dirty || (stepping && !s.bar.step_in_place(&mut self.kit, now)) {
+                let (t0, c0) = (Instant::now(), crate::thread_cpu_us());
                 s.bar.layout(&mut self.kit, &self.store, now);
+                surface.built(t0, c0);
                 s.dirty = false;
                 if Self::set_input_region_for(&self.compositor, &mut s.bar, surface) {
                     moved.push(i);
@@ -485,7 +487,7 @@ impl App {
         let dither = theme.wallpaper_dither.then(|| self.store.config.f64("wallpaper.ditherColors").unwrap_or(6.0).max(1.0) as usize);
         let background = theme.colors.get(ColorRole::Background);
         let wanted = &self.store.desktop();
-        let reveal = theme.motion().families.reveal;
+        let reveal = theme.families().reveal;
         let animate = crate::settings::WALLPAPER_ANIMATE.get(&self.store.config);
         for b in self.bars.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
             let Some((w, h)) = b.pixels() else { continue };

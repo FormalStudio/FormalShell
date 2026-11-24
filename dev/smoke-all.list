@@ -36,6 +36,7 @@
 --sidebar-activity
 --sidebar-join
 --sidebar-join --light
+--sidebar-pacing
 --sidebar-software
 --sidebar-software --light
 --minimap

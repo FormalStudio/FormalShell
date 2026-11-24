@@ -12,7 +12,7 @@ use vello_cpu::kurbo::{Affine, Rect, RoundedRect, Shape};
 
 use crate::scene::{Cast, Fit, LitLine, Outline, Paint, Scene, Snap};
 use crate::paint::Painter;
-use crate::paint::rim::Rim;
+use crate::paint::rim::{Rim, Spot};
 
 fn rr(r: Rect, radius: f64) -> vello_cpu::kurbo::BezPath {
     RoundedRect::from_rect(r, radius.max(0.0)).to_path(0.1)
@@ -25,15 +25,16 @@ fn frect(r: IRect) -> Rect {
 /// `b`'s fill and border already resolved (and crossfaded) by the caller;
 /// `wash` is the wash's own fade, 0 to 1.
 pub fn paint(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, alpha: f32, wash: f32) {
-    paint_rimmed(p, r, b, radius, alpha, wash, None);
+    let _ = paint_rimmed(p, r, b, radius, alpha, wash, None);
 }
 
 /// [`paint`] with the border drawn by a reactive rim where it has stops.
 /// `rim` carries the transform the box's nodes are drawn under, which the
-/// sweep's centre follows.
-pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, alpha: f32, wash: f32, rim: Option<(&mut Rim, Instant, Affine)>) {
+/// sweep's centre follows. The rim's node and what it was drawn from come
+/// back, for its next frame.
+pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, alpha: f32, wash: f32, rim: Option<(&mut Rim, Instant, Affine)>) -> Option<Spot> {
     if r.is_empty() {
-        return;
+        return None;
     }
     let a = |c: Rgba| c.with_alpha(c.a * alpha);
     let rect = frect(r);
@@ -61,12 +62,14 @@ pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, 
         let mut line = rr(rect.inflate(-half, -half), radius - half);
         line.close_path();
         let fade = b.inset_rings.first().and_then(|r| r.fade);
-        rim.paint(now, line, bw, rr(rect, radius), at.transform_rect_bbox(rect), alpha, None, fade).map(|lit| lit.fit(fit))
+        let (fill, card) = (rr(rect, radius), at.transform_rect_bbox(rect));
+        rim.paint(now, line.clone(), bw, fill.clone(), card, alpha, None, fade).map(|lit| (lit.fit(fit), (line, fill, card, fade)))
     });
     p.framed(r, a(b.fill), radius as f32, if lit.is_some() { Rgba::TRANSPARENT } else { a(bc) }, bw as f32);
-    if let Some(lit) = lit {
+    let spot = lit.and_then(|(lit, (line, fill, card, fade))| {
         p.shape(IRect::new(r.x - 1, r.y - 1, r.w + 2, r.h + 2), lit);
-    }
+        p.placed().map(|node| Spot { node, line, width: bw, fill, card, alpha, fade, fit, live: false })
+    });
     if let Some(face) = &b.face {
         p.shape(r, Paint::Face { from: a(face.from), to: a(face.to), radius: radius as f32, border: bw as f32 });
     }
@@ -94,4 +97,5 @@ pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, 
     if let Some(w) = b.wash.filter(|_| wash > 0.0) {
         p.rect(r, w.with_alpha(w.a * alpha * wash), radius as f32);
     }
+    spot
 }

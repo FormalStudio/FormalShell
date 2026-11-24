@@ -1542,7 +1542,7 @@ impl App {
             self.lock.rise.set(now, 0.0, Clock::Spatial.ms(theme));
         }
         let blanked = self.lock_blanked();
-        let reveal = if theme.motion_enabled { theme.motion().families.reveal } else { 0.0 };
+        let reveal = if theme.motion_enabled { theme.families().reveal } else { 0.0 };
         self.lock.wake.set(now, if blanked { 0.0 } else { 1.0 }, reveal);
         let departing = self.lock.departing || self.lock.depart.running(now);
         let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now) || departing;

@@ -440,14 +440,31 @@ impl Theme {
         }
     }
 
+    /// The motion families' durations, scaled and zeroed as
+    /// [`Theme::motion`]'s are, without resolving its clocks out of the
+    /// table: an animation asks for one every frame.
+    pub fn families(&self) -> tokens::Motion {
+        let m = tokens::motion_tokens(self.motion_enabled);
+        let s = self.motion_scale;
+        tokens::Motion {
+            spatial_fast: m.spatial_fast * s,
+            spatial: m.spatial * s,
+            spatial_slow: m.spatial_slow * s,
+            effects_fast: m.effects_fast * s,
+            effects: m.effects * s,
+            effects_slow: m.effects_slow * s,
+            emphasized: m.emphasized * s,
+            reveal: m.reveal * s,
+            ..m
+        }
+    }
+
     pub fn motion(&self) -> ThemeMotion {
         let families_on = tokens::motion_tokens(true);
         let clock = |key: &str| -> Clock { style::motion(self.style, key, &families_on) };
         let (emerge, leave, arrive) = (clock("emerge"), clock("leave"), clock("arrive"));
         let (restack, switcher, cursor) = (clock("restack"), clock("switcher"), clock("cursor"));
         let on = |d: f64| if self.motion_enabled { d * self.motion_scale } else { 0.0 };
-        let m = tokens::motion_tokens(self.motion_enabled);
-        let s = self.motion_scale;
         ThemeMotion {
             emerge: on(emerge.duration),
             leave: on(leave.duration),
@@ -456,17 +473,7 @@ impl Theme {
             switcher: on(switcher.duration),
             cursor: on(cursor.duration),
             restack_stagger: on(restack.stagger),
-            families: tokens::Motion {
-                spatial_fast: m.spatial_fast * s,
-                spatial: m.spatial * s,
-                spatial_slow: m.spatial_slow * s,
-                effects_fast: m.effects_fast * s,
-                effects: m.effects * s,
-                effects_slow: m.effects_slow * s,
-                emphasized: m.emphasized * s,
-                reveal: m.reveal * s,
-                ..m
-            },
+            families: self.families(),
             emerge_curve: emerge.curve,
             leave_curve: leave.curve,
             arrive_curve: arrive.curve,

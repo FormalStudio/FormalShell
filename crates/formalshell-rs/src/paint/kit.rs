@@ -79,7 +79,7 @@ impl Look {
         let s = &theme.space;
         let cell = |state| theme.box_style(Role::Cell, Some(state));
         let border = |state| cell(state).border.map(|l| (l.color, l.width as f32));
-        let motion = theme.motion().families;
+        let motion = theme.families();
         Self {
             pad_x: s.control_padding_x,
             pad_y: s.control_padding_y,

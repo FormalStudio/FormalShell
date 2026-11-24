@@ -460,6 +460,7 @@ pw_cat pw-cat pipewire-tools
 pw_record pw-record pipewire-tools
 pw_loopback pw-loopback pipewire-tools
 strace strace strace
+taskset taskset util-linux
 file file file
 git git git-core
 gnome_keyring_daemon gnome-keyring-daemon gnome-keyring

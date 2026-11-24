@@ -153,6 +153,10 @@ pub struct Drawn {
     pub settling: bool,
     /// The next moment something holding still starts moving (a marquee's hold).
     pub wake: Option<Instant>,
+    /// Nothing but card rims blending: [`Ui::step_rims`] draws the next
+    /// frame without laying the tree out again.
+    pub rims_only: bool,
+    rims: bool,
 }
 
 #[derive(Hash, PartialEq, Eq)]
@@ -218,6 +222,7 @@ pub struct Ui {
     /// output; `None` draws every card's border flat.
     pub lit: Option<(crate::paint::rim::Lit, (f64, f64))>,
     rims: HashMap<String, crate::paint::rim::Rim>,
+    spots: HashMap<String, crate::paint::rim::Spot>,
     /// Where a floating list may go, over everything this surface drew;
     /// `None` keeps one inside the tree's own box.
     pub float_room: Option<IRect>,
@@ -253,6 +258,7 @@ impl Ui {
             fill_owned: false,
             lit: None,
             rims: HashMap::new(),
+            spots: HashMap::new(),
             float_room: None,
             float_scroll: HashMap::new(),
             float_cards: Vec::new(),
@@ -286,6 +292,7 @@ impl Ui {
         now: Instant,
     ) -> Drawn {
         self.frame += 1;
+        self.spots.clear();
         self.measured.clear();
         self.hits.clear();
         self.cards.clear();
@@ -315,6 +322,9 @@ impl Ui {
         let reach = cx.paint_floats(bounds);
         let last = cx.last;
         let mut drawn = std::mem::take(&mut cx.drawn);
+        drawn.rims_only = drawn.rims && !drawn.animating;
+        drawn.animating |= drawn.rims;
+        drawn.settling |= drawn.rims;
         drawn.width = w;
         drawn.height = h.max(reach - rect.y0);
         drawn.last = last;
@@ -340,6 +350,23 @@ impl Ui {
         self.custom.retain(|_, k| frame - k.seen < 120);
         self.wraps.retain(|_, w| frame - w.seen < 120);
         drawn
+    }
+
+    /// The next frame of every card rim still blending, drawn where the
+    /// last [`Ui::draw`] put it; true while one still blends. Only for a
+    /// frame whose draw reported [`Drawn::rims_only`].
+    pub fn step_rims(&mut self, scene: &mut Scene, now: Instant) -> bool {
+        let mut running = false;
+        for (path, spot) in self.spots.iter_mut().filter(|(_, s)| s.live) {
+            let Some(rim) = self.rims.get_mut(path) else { continue };
+            if let Some(lit) = spot.paint(rim, now) {
+                scene.repaint(spot.node, lit);
+            }
+            rim.painted();
+            spot.live = rim.running(now);
+            running |= spot.live;
+        }
+        running
     }
 
     /// Puts every node this surface drew under `transform`. The painters
@@ -736,12 +763,15 @@ impl Cx<'_> {
         Some(rim)
     }
 
-    pub fn put_rim(&mut self, path: &str, mut rim: crate::paint::rim::Rim) {
+    pub fn put_rim(&mut self, path: &str, mut rim: crate::paint::rim::Rim, spot: Option<crate::paint::rim::Spot>) {
         let running = rim.running(self.now);
-        self.drawn.animating |= running;
-        self.drawn.settling |= running;
+        self.drawn.rims |= running;
         rim.painted();
         self.ui.rims.insert(path.to_owned(), rim);
+        match spot {
+            Some(spot) => self.ui.spots.insert(path.to_owned(), crate::paint::rim::Spot { live: running, ..spot }),
+            None => self.ui.spots.remove(path),
+        };
     }
 
     pub fn painter(&mut self, path: &str) -> crate::paint::Painter<'_> {

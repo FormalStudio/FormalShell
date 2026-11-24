@@ -12,7 +12,7 @@ use fs_theme::color::Rgba;
 use vello_cpu::kurbo::{BezPath, Rect, Shape};
 
 use crate::motion::{Animated, Kind};
-use crate::scene::{Bitmap, Paint, RimLine, RimMask};
+use crate::scene::{Bitmap, Fit, NodeId, Paint, RimInk, RimLine};
 
 /// How far the border goes toward the colour around it.
 const TINT: f32 = 0.2;
@@ -27,10 +27,10 @@ const SPECULAR_TINT: f32 = 0.3;
 /// over the whole fill.
 const SPILL: f32 = 0.12;
 const SPILL_TINT: f32 = 0.03;
-/// How far the spill falls inward from the edge, and the logical pixels to
-/// one mask pixel.
+/// How far the spill falls inward from the edge.
 const SPILL_DEPTH: f64 = 36.0;
-const MASK_CELL: f64 = 4.0;
+/// The logical pixels to one pixel of a line's worked out sweep.
+const CELL: f64 = 4.0;
 
 /// One output's field and the count of times it changed.
 #[derive(Clone)]
@@ -91,6 +91,27 @@ impl Stops {
     }
 }
 
+/// Where a card's rim was last drawn, enough to draw its next blend frame
+/// without the layout that placed it ([`crate::ui::Ui::step_rims`]).
+pub struct Spot {
+    pub node: NodeId,
+    pub line: BezPath,
+    pub width: f64,
+    pub fill: BezPath,
+    pub card: Rect,
+    pub alpha: f32,
+    pub fade: Option<f64>,
+    pub fit: Fit,
+    /// Still blending when it was last drawn.
+    pub live: bool,
+}
+
+impl Spot {
+    pub fn paint(&self, rim: &mut Rim, now: Instant) -> Option<Paint> {
+        rim.paint(now, self.line.clone(), self.width, self.fill.clone(), self.card, self.alpha, None, self.fade).map(|lit| lit.fit(self.fit))
+    }
+}
+
 pub struct Rim {
     from: Option<Stops>,
     to: Option<Stops>,
@@ -99,32 +120,68 @@ pub struct Rim {
     /// The stops changed with no blend to carry them: one more paint.
     fresh: bool,
     pub lights: Option<[Light; STOPS]>,
-    /// The spill's falloff for the last fill size, in mask pixels.
-    mask: Option<((u16, u16), Bitmap)>,
-    /// One white pixel, the wash's mask.
-    flat: Option<Bitmap>,
+    /// The spill's and the faded specular line's last pictures, kept while
+    /// what they were made of holds so the scene sees the same paint.
+    spill: Option<Kept>,
+    specular: Option<Kept>,
+}
+
+struct Kept {
+    stops: Vec<(f32, [u8; 4])>,
+    card: Rect,
+    fade: Option<f64>,
+    image: Bitmap,
+}
+
+/// `slot`'s picture while `stops`, `card` and `fade` are what it was made
+/// of, else `make`'s.
+fn kept(slot: &mut Option<Kept>, stops: &[(f32, Rgba)], card: Rect, fade: Option<f64>, make: impl FnOnce() -> Bitmap) -> Bitmap {
+    let key: Vec<(f32, [u8; 4])> = stops.iter().map(|(o, c)| (*o, c.to_u8())).collect();
+    match slot {
+        Some(k) if k.stops == key && k.card == card && k.fade == fade => k.image.clone(),
+        _ => {
+            let image = make();
+            *slot = Some(Kept { stops: key, card, fade, image: image.clone() });
+            image
+        }
+    }
 }
 
 impl Default for Rim {
     fn default() -> Self {
-        Self { from: None, to: None, blend: Animated::new(1.0, Kind::SpatialFast.curve()), key: None, fresh: false, lights: None, mask: None, flat: None }
+        Self { from: None, to: None, blend: Animated::new(1.0, Kind::SpatialFast.curve()), key: None, fresh: false, lights: None, spill: None, specular: None }
     }
 }
 
-/// The spill's falloff over a fill `size` logical pixels big: white, its
-/// alpha a quadratic fall from each edge over `SPILL_DEPTH`.
-fn spill_mask(size: (f64, f64), cells: (u16, u16)) -> Bitmap {
-    let (w, h) = size;
+/// The sweep round `centre` over `card` (surface pixels) at each pixel of
+/// a picture `CELL` logical pixels to one, times `weight` at that pixel's
+/// offset into the card. Worked out at every canvas pixel the card covers
+/// instead, the sweep and the layer weighting it were most of the card's
+/// frame on every frame of a blend.
+fn sweep_picture(stops: &[(f32, Rgba)], card: Rect, centre: (f64, f64), weight: impl Fn(f64, f64) -> f32) -> Bitmap {
+    let (w, h) = (card.width(), card.height());
+    let cells = ((w / CELL).ceil().clamp(1.0, 4096.0) as u16, (h / CELL).ceil().clamp(1.0, 4096.0) as u16);
     let (sx, sy) = (w / f64::from(cells.0), h / f64::from(cells.1));
+    let premul = |c: Rgba| [c.r * c.a, c.g * c.a, c.b * c.a, c.a];
+    let at = |t: f32| -> [f32; 4] {
+        let i = stops.partition_point(|(o, _)| *o <= t).clamp(1, stops.len() - 1);
+        let ((o0, c0), (o1, c1)) = (stops[i - 1], stops[i]);
+        let k = if o1 > o0 { ((t - o0) / (o1 - o0)).clamp(0.0, 1.0) } else { 0.0 };
+        let (a, b) = (premul(c0), premul(c1));
+        [0, 1, 2, 3].map(|n| a[n] + (b[n] - a[n]) * k)
+    };
     let mut px = Vec::with_capacity(usize::from(cells.0) * usize::from(cells.1) * 4);
     for j in 0..cells.1 {
         let y = (f64::from(j) + 0.5) * sy;
         for i in 0..cells.0 {
             let x = (f64::from(i) + 0.5) * sx;
-            let d = x.min(w - x).min(y).min(h - y);
-            let f = (1.0 - d / SPILL_DEPTH).max(0.0) as f32;
-            let a = (f * f * 255.0).round() as u8;
-            px.extend_from_slice(&[a; 4]);
+            let k = weight(x, y);
+            if k <= 0.0 {
+                px.extend_from_slice(&[0; 4]);
+                continue;
+            }
+            let turn = (card.y0 + y - centre.1).atan2(card.x0 + x - centre.0).rem_euclid(std::f64::consts::TAU) / std::f64::consts::TAU;
+            px.extend(at(turn as f32).map(|v| (v * k * 255.0).round().clamp(0.0, 255.0) as u8));
         }
     }
     Bitmap::from_premultiplied(cells.0, cells.1, px)
@@ -220,28 +277,42 @@ impl Rim {
             v
         };
         let centre = ((card.x0 + card.x1) / 2.0, (card.y0 + card.y1) / 2.0);
-        let mut lines = Vec::with_capacity(3);
+        let mut lines = Vec::with_capacity(4);
         let bounds = fill.bounding_box();
+        let (w, h) = (card.width(), card.height());
         if stops.wash.a > 0.0 {
-            let flat = self.flat.get_or_insert_with(|| Bitmap::from_premultiplied(1, 1, vec![255; 4])).clone();
-            let wash = stops.wash.with_alpha(stops.wash.a * alpha);
-            lines.push(RimLine { path: fill.clone(), width: 0.0, clip: None, centre, stops: vec![(0.0, wash), (1.0, wash)], mask: Some(RimMask { image: flat, rect: bounds }), fade: None });
+            let ink = RimInk::Flat(stops.wash.with_alpha(stops.wash.a * alpha));
+            lines.push(RimLine { path: fill.clone(), width: 0.0, ink, depth: None });
         }
-        if stops.spill.iter().any(|c| c.a > 0.0) && bounds.width() > 0.0 && bounds.height() > 0.0 {
-            // Made again only when the fill grows or shrinks by a mask pixel.
-            let cells = ((bounds.width() / MASK_CELL).ceil().clamp(1.0, 4096.0) as u16, (bounds.height() / MASK_CELL).ceil().clamp(1.0, 4096.0) as u16);
-            if self.mask.as_ref().is_none_or(|(c, _)| *c != cells) {
-                self.mask = Some((cells, spill_mask((bounds.width(), bounds.height()), cells)));
-            }
-            let image = self.mask.as_ref().map(|(_, m)| m.clone()).expect("made above");
-            lines.push(RimLine { path: fill.clone(), width: 0.0, clip: None, centre, stops: sweep(&stops.spill, false), mask: Some(RimMask { image, rect: bounds }), fade: None });
+        if stops.spill.iter().any(|c| c.a > 0.0) && bounds.width() > 0.0 && w > 0.0 && h > 0.0 {
+            let falloff = |x: f64, y: f64| {
+                let d = x.min(w - x).min(y).min(h - y);
+                let f = (1.0 - d / SPILL_DEPTH).max(0.0) as f32;
+                f * f
+            };
+            let spill = sweep(&stops.spill, false);
+            let image = kept(&mut self.spill, &spill, card, None, || sweep_picture(&spill, card, centre, falloff));
+            // The picture is laid over the fill's own box, which is the card's.
+            let depth = SPILL_DEPTH * bounds.width() / w;
+            lines.push(RimLine { path: fill, width: 0.0, ink: RimInk::Picture { image, rect: bounds }, depth: Some(depth) });
         }
         if stops.specular.iter().any(|c| c.a > 0.0) {
-            // One border deep on the fill's own edge, cut to the fill, under
-            // the border: the pixel inside the border is what shows.
-            lines.push(RimLine { path: fill.clone(), width: width * 2.0, clip: Some(fill), centre, stops: sweep(&stops.specular, true), mask: None, fade });
+            // Under the border, on its pixels: the fill's edge one border
+            // deep, which shows through the border's own alpha.
+            let specular = sweep(&stops.specular, true);
+            let ink = match fade.filter(|_| bounds.width() > 0.0 && w > 0.0 && h > 0.0) {
+                // The line's alpha down the card as the box's lit line's,
+                // only the cells along the edge worked out.
+                Some(fade) => {
+                    let down = |x: f64, y: f64| if x.min(w - x).min(y).min(h - y) > CELL * 2.0 { 0.0 } else { 1.0 - (1.0 - fade.clamp(0.0, 1.0) as f32) * (y / h) as f32 };
+                    let image = kept(&mut self.specular, &specular, card, Some(fade), || sweep_picture(&specular, card, centre, down));
+                    RimInk::Picture { image, rect: bounds }
+                }
+                None => RimInk::Sweep { centre, stops: specular },
+            };
+            lines.push(RimLine { path: outer.clone(), width, ink, depth: None });
         }
-        lines.push(RimLine { path: outer, width, clip: None, centre, stops: sweep(&stops.border, false), mask: None, fade: None });
+        lines.push(RimLine { path: outer, width, ink: RimInk::Sweep { centre, stops: sweep(&stops.border, false) }, depth: None });
         Some(Paint::Rim(lines, None))
     }
 

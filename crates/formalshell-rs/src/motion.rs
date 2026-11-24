@@ -81,7 +81,7 @@ impl Kind {
         if !theme.motion_enabled {
             return 0.0;
         }
-        let m = theme.motion().families;
+        let m = theme.families();
         match self {
             Kind::SpatialFast => m.spatial_fast,
             Kind::Spatial => m.spatial,

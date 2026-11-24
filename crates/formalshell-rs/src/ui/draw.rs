@@ -1018,11 +1018,11 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     }
     let now = cx.now;
     let mut p = cx.painter(path);
-    boxes::paint_rimmed(&mut p, ri, &b, radius, alpha, wash, rim.as_mut().map(|r| (r, now, vello_cpu::kurbo::Affine::IDENTITY)));
+    let spot = boxes::paint_rimmed(&mut p, ri, &b, radius, alpha, wash, rim.as_mut().map(|r| (r, now, vello_cpu::kurbo::Affine::IDENTITY)));
     let last = p.last();
     p.finish();
     if let Some(rim) = rim {
-        cx.put_rim(path, rim);
+        cx.put_rim(path, rim, spot);
     }
     cx.done(last);
 

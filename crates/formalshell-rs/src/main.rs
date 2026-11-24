@@ -150,7 +150,7 @@ fn tune_malloc() {
 }
 
 /// CPU time the calling thread has run, in microseconds.
-fn thread_cpu_us() -> i64 {
+pub(crate) fn thread_cpu_us() -> i64 {
     let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
     // SAFETY: a valid out pointer, for the calling thread's own clock.
     unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) };

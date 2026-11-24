@@ -858,6 +858,24 @@ runs = ["--wifi", "--menu"]
 paths = ["crates/formalshell-rs/src/surfaces/sidebar/", "crates/formalshell-rs/src/ipc/sidebar.rs", "dev/smoke.d/sidebar.sh"]
 runs = ["--sidebar", "--sidebar --light", "--minimap", "--sidebar-software", "--sidebar-activity", "--quick-settings"]
 
+# What an animated frame of the sidebar costs on a tall output at 1.6: the
+# rims' blend stepped in place, the renderer's caches, the frame's timing.
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/surfaces/sidebar/",
+  "crates/formalshell-rs/src/surfaces/bar/mod.rs",
+  "crates/formalshell-rs/src/paint/rim.rs",
+  "crates/formalshell-rs/src/ui/mod.rs",
+  "crates/formalshell-rs/src/ui/boxes.rs",
+  "crates/formalshell-rs/src/render.rs",
+  "crates/formalshell-rs/src/scene.rs",
+  "crates/formalshell-rs/src/surface.rs",
+  "crates/formalshell-rs/src/wayland/owner.rs",
+  "crates/formalshell-rs/src/wayland/heads.rs",
+  "crates/formalshell-rs/src/wayland/rims.rs",
+]
+runs = ["--sidebar-pacing"]
+
 # The status card's tray button and the second bar it opens off the column.
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/sidebar/mod.rs", "dev/smoke.d/tray.sh", "dev/smoke.d/tray_overflow.sh"]

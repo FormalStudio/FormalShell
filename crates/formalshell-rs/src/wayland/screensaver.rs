@@ -373,7 +373,7 @@ impl App {
         if !theme.motion_enabled {
             return 0.0;
         }
-        theme.motion().families.reveal
+        theme.families().reveal
     }
 
     /// An overlay on every output that has none, while it shows. Never

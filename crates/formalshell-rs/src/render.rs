@@ -12,7 +12,7 @@ use vello_cpu::kurbo::{Affine, BezPath, Cap, Join, Point, Rect, RoundedRect, Sha
 use vello_cpu::peniko::{BlendMode, Compose, Fill, Gradient, ImageSampler, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
-use crate::scene::{Bitmap, Brush, Drawn, Fade, Fit, LitLine, Outline, Paint, Scene, Snap, VOp};
+use crate::scene::{Bitmap, Brush, Drawn, Fade, Fit, LitLine, Outline, Paint, RimInk, Scene, Snap, VOp};
 use fs_types::IRect;
 use crate::paint::shoulders::{self, Walls};
 use crate::text::{ColorGlyph, Coverage, ShapedText};
@@ -125,7 +125,10 @@ impl Raster for RenderContext {
 }
 
 enum Target {
-    Cpu { ctx: Box<RenderContext>, canvas: Pixmap },
+    /// `tile` is what each draw renders into before its rows are copied to
+    /// the canvas, kept between draws: one made per draw cost its pages
+    /// faulted in, zeroed and unmapped again on every frame.
+    Cpu { ctx: Box<RenderContext>, canvas: Pixmap, tile: Pixmap },
     Gpu(crate::gpu::Canvas),
 }
 
@@ -146,6 +149,10 @@ struct Caches {
     /// Glyph coverage tinted for an ink, by the coverage's address; the
     /// entry holds the coverage so the address is never reused under it.
     inked: HashMap<(usize, [u8; 3]), (Arc<Coverage>, Arc<Pixmap>)>,
+    /// [`coverage_lift`]'s curve by the ink's luma in 256ths: an ink
+    /// tweening between two colours is a new ink every frame, and each
+    /// curve is 256 `powf`s.
+    lifts: HashMap<u8, [u8; 256]>,
     /// Glyph outlines rasterised at `scale`, by the outline's address, the
     /// scale and the origin's quarter pixel across.
     scaled: HashMap<(usize, u64, u8), (Arc<BezPath>, Option<Arc<Coverage>>)>,
@@ -168,7 +175,7 @@ struct Caches {
     #[cfg(test)]
     no_cast_cache: bool,
     #[cfg(test)]
-    no_cast_ring: bool,
+    no_cast_clip: bool,
 }
 
 /// The glyphs' outline addresses and places, the glow's colour, offset and
@@ -192,9 +199,6 @@ const BLURS_BYTES: usize = 4 << 20;
 /// a twentieth of the pixels or fewer for a toast's casts.
 const BLUR_SAMPLES: f64 = 3.0;
 
-/// How far inside a card its casts stop being worked out (`cast_ring`).
-const CAST_HOLE: f64 = 3.0;
-
 const INKED_LIMIT: usize = 8192;
 /// An emoji at 20 px is 1.6 KB, so a full table stays under a megabyte.
 const COLORS_LIMIT: usize = 512;
@@ -213,7 +217,7 @@ pub fn scaled(n: i32, scale: f64) -> i32 {
 
 impl Renderer {
     pub fn new(width: u16, height: u16) -> Self {
-        Self::with_target(Target::Cpu { ctx: Box::new(RenderContext::new(1, 1)), canvas: Pixmap::new(width, height) }, width, height)
+        Self::with_target(Target::Cpu { ctx: Box::new(RenderContext::new(1, 1)), canvas: Pixmap::new(width, height), tile: Pixmap::new(1, 1) }, width, height)
     }
 
     /// A renderer drawing into a GPU canvas; None once the device is gone.
@@ -229,6 +233,7 @@ impl Renderer {
                 resources: Resources::new(),
                 scale: 1.0,
                 inked: HashMap::new(),
+                lifts: HashMap::new(),
                 scaled: HashMap::new(),
                 colors: HashMap::new(),
                 glows: HashMap::new(),
@@ -239,7 +244,7 @@ impl Renderer {
                 #[cfg(test)]
                 no_cast_cache: false,
                 #[cfg(test)]
-                no_cast_ring: false,
+                no_cast_clip: false,
             },
             size: (width, height),
             scale: 1.0,
@@ -394,13 +399,13 @@ impl Renderer {
         let caches = &mut self.caches;
         caches.scale = s;
         match &mut self.target {
-            Target::Cpu { ctx, canvas } => {
+            Target::Cpu { ctx, canvas, tile } => {
                 let (w, h) = (device.w as u16, device.h as u16);
                 ctx.reset_and_resize(w, h);
                 caches.paint(&mut **ctx, scene, rect, origin);
                 ctx.flush();
-                let mut tile = Pixmap::new(w, h);
-                ctx.render(&mut tile, &mut caches.resources);
+                tile.resize(w, h);
+                ctx.render(&mut *tile, &mut caches.resources);
                 let stride = canvas.width() as usize;
                 let src = tile.data();
                 let dst = canvas.data_mut();
@@ -623,7 +628,7 @@ impl Caches {
                             let pixmap = self.inked(coverage, *ink);
                             let shift = Affine::translate(((p.0 + coverage.x) as f64, (p.1 + coverage.y) as f64));
                             ctx.set_transform(at * shift);
-                            ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a));
+                            ctx.set_image(pixmap, blit(at * shift).with_alpha(ink.a));
                             ctx.fill_rect(&Rect::new(0.0, 0.0, coverage.w as f64, coverage.h as f64));
                         } else if let Some(image) = &glyph.image {
                             // A colour glyph keeps its own colours and takes only the ink's alpha.
@@ -708,51 +713,45 @@ impl Caches {
                         None => node.transform.inverse(),
                     };
                     for line in lines {
-                        if line.stops.iter().all(|(_, c)| c.to_u8()[3] == 0) {
+                        if line.ink.clear() {
                             continue;
                         }
                         let fitted = grid.as_ref().map(|(_, drawn)| line.fitted(drawn));
                         let line = fitted.as_ref().unwrap_or(line);
-                        if let Some(clip) = &line.clip {
-                            ctx.push_clip_layer(clip);
-                        }
-                        let stops: Vec<(f32, AlphaColor<Srgb>)> = line.stops.iter().map(|(o, c)| (*o, color(*c))).collect();
-                        let g = vello_cpu::peniko::Gradient::new_sweep(line.centre, 0.0, std::f32::consts::TAU).with_stops(stops.as_slice());
-                        if let Some(mask) = &line.mask {
-                            // The mask's alpha in a layer of its own, the sweep
-                            // kept only where it lands.
-                            let (mw, mh) = (f64::from(mask.image.pixmap.width()), f64::from(mask.image.pixmap.height()));
-                            let r = mask.rect;
-                            ctx.push_group();
-                            ctx.set_transform(at * Affine::translate((r.x0, r.y0)) * Affine::scale_non_uniform(r.width() / mw, r.height() / mh));
-                            let sampler = vello_cpu::peniko::ImageSampler::default().with_quality(vello_cpu::peniko::ImageQuality::Medium);
-                            ctx.set_image(mask.image.pixmap.clone(), sampler);
-                            ctx.fill_rect(&Rect::new(0.0, 0.0, mw, mh));
-                            ctx.set_transform(at);
-                            ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::SrcIn));
-                            ctx.set_paint_transform(back);
-                            ctx.set_gradient(g);
-                            ctx.fill_path(&line.path);
-                            ctx.reset_paint_transform();
-                            ctx.pop_layer();
-                            ctx.pop_layer();
-                        } else {
-                            if line.fade.is_some() {
-                                ctx.push_group();
+                        ctx.set_transform(at);
+                        match &line.ink {
+                            RimInk::Flat(c) => ctx.set_color(color(*c)),
+                            RimInk::Sweep { centre, stops } => {
+                                let stops: Vec<(f32, AlphaColor<Srgb>)> = stops.iter().map(|(o, c)| (*o, color(*c))).collect();
+                                ctx.set_paint_transform(back);
+                                ctx.set_gradient(vello_cpu::peniko::Gradient::new_sweep(*centre, 0.0, std::f32::consts::TAU).with_stops(stops.as_slice()));
                             }
-                            ctx.set_paint_transform(back);
-                            ctx.set_gradient(g);
+                            RimInk::Picture { image, rect } => {
+                                let (w, h) = (f64::from(image.pixmap.width()), f64::from(image.pixmap.height()));
+                                ctx.set_paint_transform(Affine::translate((rect.x0, rect.y0)) * Affine::scale_non_uniform(rect.width() / w, rect.height() / h));
+                                ctx.set_image(image.pixmap.clone(), vello_cpu::peniko::ImageSampler::default().with_quality(vello_cpu::peniko::ImageQuality::Medium));
+                            }
+                        }
+                        if line.width == 0.0 {
+                            match line.depth {
+                                Some(depth) => {
+                                    // Only the ring the line reaches.
+                                    let mut ring = line.path.clone();
+                                    let hole = line.path.bounding_box().inflate(-depth, -depth);
+                                    if hole.width() > 0.0 && hole.height() > 0.0 {
+                                        ring.extend(hole.to_path(0.1));
+                                    }
+                                    ctx.set_fill_rule(Fill::EvenOdd);
+                                    ctx.fill_path(&ring);
+                                    ctx.set_fill_rule(Fill::NonZero);
+                                }
+                                None => ctx.fill_path(&line.path),
+                            }
+                        } else {
                             ctx.set_stroke(Stroke::new(line.width).with_caps(Cap::Square).with_join(Join::Bevel));
                             ctx.stroke_path(&line.path);
-                            ctx.reset_paint_transform();
-                            if let Some(fade) = line.fade {
-                                fade_down(ctx, &line.path, line.width, fade);
-                                ctx.pop_layer();
-                            }
                         }
-                        if line.clip.is_some() {
-                            ctx.pop_layer();
-                        }
+                        ctx.reset_paint_transform();
                     }
                 }
                 Paint::Faded { .. } => {}
@@ -775,34 +774,53 @@ impl Caches {
     #[allow(clippy::too_many_arguments)]
     fn draw_casts(&mut self, ctx: &mut impl Raster, origin: Affine, transform: Affine, card: Rect, radius: f64, layers: &[crate::scene::Cast], cutout: &Fit) {
         let at = origin * transform;
+        let g = Grid::fit(origin, transform, self.scale, cutout);
+        let mut fill = g.drawn(&cutout.outline).fill;
+        fill.apply_affine(g.lift);
+        let reach = matches!(cutout.outline, Outline::Box { .. }).then(|| self.cast_reach(card, layers)).flatten();
+        if let Some(reach) = reach {
+            let mut clip = at.transform_rect_bbox(reach).to_path(0.1);
+            clip.extend(fill.iter());
+            self.fill_casts(ctx, at, card, radius, layers, Some((&fill, &clip)));
+            return;
+        }
         ctx.set_transform(at);
         ctx.push_group();
-        let ring = matches!(cutout.outline, Outline::Box { .. }).then(|| self.cast_ring(card, radius, layers)).flatten();
-        if let Some(ring) = &ring {
-            ctx.push_clip_path(ring);
-        }
+        self.fill_casts(ctx, at, card, radius, layers, None);
+        ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
+        ctx.set_color(color(Rgba::hex(0)));
+        ctx.set_transform(Affine::IDENTITY);
+        ctx.fill_path(&fill);
+        ctx.pop_layer();
+        ctx.pop_layer();
+    }
+
+    /// `cut`, the card's fill and everything the casts reach less it, in
+    /// canvas pixels, is left out of each cast: a cast drawn from its pixmap
+    /// fills its own box less the fill, one worked out in place is clipped.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_casts(&mut self, ctx: &mut impl Raster, at: Affine, card: Rect, radius: f64, layers: &[crate::scene::Cast], cut: Option<(&BezPath, &BezPath)>) {
         for cast in layers {
             let shrink = (-cast.spread).max(0.0);
             let grow = cast.spread.max(0.0);
             let r = card.inflate(grow - shrink, grow - shrink) + Vec2::new(cast.x, cast.y);
             // RectangularShadow's blur is CSS's blur radius, twice the deviation.
             let (radius, deviation) = ((radius - shrink).max(0.0) as f32, (cast.blur / 2.0) as f32);
-            if !self.cached_blur(ctx, at, r, radius, deviation, cast.color) {
+            if !self.cached_blur(ctx, at, r, radius, deviation, cast.color, cut.map(|c| c.0)) {
+                if let Some((_, clip)) = cut {
+                    ctx.set_transform(Affine::IDENTITY);
+                    ctx.set_fill_rule(Fill::EvenOdd);
+                    ctx.push_clip_path(clip);
+                    ctx.set_fill_rule(Fill::NonZero);
+                }
                 ctx.set_transform(at);
                 ctx.set_color(color(cast.color));
                 ctx.fill_blurred_rounded_rect(&r, radius, deviation);
+                if cut.is_some() {
+                    ctx.pop_clip();
+                }
             }
         }
-        if ring.is_some() {
-            ctx.pop_clip();
-        }
-        ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
-        ctx.set_color(color(Rgba::hex(0)));
-        let g = Grid::fit(origin, transform, self.scale, cutout);
-        ctx.set_transform(g.lift);
-        ctx.fill_path(&g.drawn(&cutout.outline).fill);
-        ctx.pop_layer();
-        ctx.pop_layer();
     }
 
     /// One cast's blurred rect drawn from its pixmap, made at a fraction of
@@ -812,7 +830,8 @@ impl Caches {
     /// fade reuses it: a blur is its coverage times its ink, so that is the
     /// same fill. Worked out at the canvas's own pixels, each costs several
     /// `powf`s: thirty toasts arriving at once took 25ms a frame at 1.25.
-    fn cached_blur(&mut self, ctx: &mut impl Raster, at: Affine, r: Rect, radius: f32, deviation: f32, ink: Rgba) -> bool {
+    #[allow(clippy::too_many_arguments)]
+    fn cached_blur(&mut self, ctx: &mut impl Raster, at: Affine, r: Rect, radius: f32, deviation: f32, ink: Rgba, cut: Option<&BezPath>) -> bool {
         #[cfg(test)]
         if self.no_cast_cache {
             return false;
@@ -852,26 +871,38 @@ impl Caches {
         };
         let (w, h) = (f64::from(pixmap.width()), f64::from(pixmap.height()));
         let corner = at * Point::new(r.x0 - reach, r.y0 - reach);
-        ctx.set_transform(Affine::translate(corner.to_vec2()) * Affine::scale(a / s) * Affine::translate((-1.0, -1.0)));
+        let place = Affine::translate(corner.to_vec2()) * Affine::scale(a / s) * Affine::translate((-1.0, -1.0));
         ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a));
-        ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+        match cut {
+            Some(cut) => {
+                let mut ring = place.transform_rect_bbox(Rect::new(0.0, 0.0, w, h)).to_path(0.1);
+                ring.extend(cut.iter());
+                ctx.set_transform(Affine::IDENTITY);
+                ctx.set_paint_transform(place);
+                ctx.set_fill_rule(Fill::EvenOdd);
+                ctx.fill_path(&ring);
+                ctx.set_fill_rule(Fill::NonZero);
+                ctx.reset_paint_transform();
+            }
+            None => {
+                ctx.set_transform(place);
+                ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+            }
+        }
         true
     }
 
-    /// Where a boxed card's casts are worked out: everything they reach less
-    /// a hole `CAST_HOLE` inside the card. The box cutout takes the hole
-    /// away again anyway, and the hole's edge clears the cutout's snapped,
-    /// antialiased one, which still cuts the ring exactly. A join's cutout
-    /// rounds its near corners off the card's rect while it detaches, so it
-    /// keeps the whole box. Each blurred pixel costs several `powf`s: thirty
-    /// toasts' casts over their card took 20ms a frame.
-    fn cast_ring(&self, card: Rect, radius: f64, layers: &[crate::scene::Cast]) -> Option<BezPath> {
+    /// Everything a boxed card's casts reach. Each is cut by the card's own
+    /// drawn fill, as a hole in what it fills or a clip, rather than a layer
+    /// they are cut out of, which was composited over the whole reach on
+    /// every frame the card drew. Each blurred pixel worked out in place
+    /// costs several `powf`s, and none past the clip is: thirty toasts'
+    /// casts over their card took 20ms a frame. A join's cutout rounds its
+    /// near corners off the card's rect while it detaches, and keeps the
+    /// layer.
+    fn cast_reach(&self, card: Rect, layers: &[crate::scene::Cast]) -> Option<Rect> {
         #[cfg(test)]
-        if self.no_cast_ring {
-            return None;
-        }
-        let hole = card.inflate(-CAST_HOLE, -CAST_HOLE);
-        if hole.width() <= 0.0 || hole.height() <= 0.0 {
+        if self.no_cast_clip {
             return None;
         }
         // vello's blurred rect paints its rect grown by 2.5 deviations.
@@ -879,10 +910,7 @@ impl Caches {
             let grow = c.spread.max(0.0) - (-c.spread).max(0.0);
             (card.inflate(grow, grow) + Vec2::new(c.x, c.y)).inflate(c.blur * 1.25 + 1.0, c.blur * 1.25 + 1.0)
         });
-        let outer = reach.reduce(|a, b| a.union(b))?;
-        let mut ring = outer.to_path(0.1);
-        ring.extend(RoundedRect::from_rect(hole, (radius - CAST_HOLE).max(0.0)).to_path(0.1).reverse_subpaths());
-        Some(ring)
+        reach.reduce(|a, b| a.union(b))
     }
 
     /// A bitmap with its top-left at `at`'s origin, over its logical box:
@@ -955,8 +983,9 @@ impl Caches {
         };
         let Some(coverage) = coverage else { return };
         let pixmap = self.inked(&coverage, ink);
-        ctx.set_transform(Affine::translate((x + f64::from(coverage.x), half_up(f) + f64::from(coverage.y))));
-        ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a));
+        let place = Affine::translate((x + f64::from(coverage.x), half_up(f) + f64::from(coverage.y)));
+        ctx.set_transform(place);
+        ctx.set_image(pixmap, blit(place).with_alpha(ink.a));
         ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(coverage.w), f64::from(coverage.h)));
     }
 
@@ -1049,7 +1078,7 @@ impl Caches {
         };
         let (w, h) = (f64::from(pixmap.width()), f64::from(pixmap.height()));
         ctx.set_transform(Affine::translate((px, py)));
-        ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default());
+        ctx.set_image(pixmap, blit(Affine::translate((px, py))));
         ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
         true
     }
@@ -1065,7 +1094,7 @@ impl Caches {
         if self.inked.len() >= INKED_LIMIT {
             self.inked.clear();
         }
-        let lift = coverage_lift([r, g, b]);
+        let lift = *self.lifts.entry(luma([r, g, b])).or_insert_with_key(|l| coverage_lift(*l));
         let mut px = Vec::with_capacity(coverage.alpha.len() * 4);
         for a in &coverage.alpha {
             let a = u32::from(lift[*a as usize]);
@@ -1217,6 +1246,16 @@ fn scaled_wall(v: f64, k: f64) -> f64 {
 /// differs by whole pixels, rounds an edge the same way: `f64::round`
 /// takes a half away from zero, the other way once the tile's origin puts
 /// the edge at a negative half.
+/// The sampler for a pixmap drawn through `at`: nearest when `at` puts its
+/// pixels on whole canvas pixels one to one, where filtering only costs
+/// (vello_cpu filters every Medium image, whole pixels or not).
+fn blit(at: Affine) -> vello_cpu::peniko::ImageSampler {
+    let [a, b, c, d, e, f] = at.as_coeffs();
+    let whole = a == 1.0 && d == 1.0 && b == 0.0 && c == 0.0 && e.fract() == 0.0 && f.fract() == 0.0;
+    let quality = if whole { vello_cpu::peniko::ImageQuality::Low } else { vello_cpu::peniko::ImageQuality::Medium };
+    vello_cpu::peniko::ImageSampler::default().with_quality(quality)
+}
+
 fn half_up(v: f64) -> f64 {
     (v + 0.5).floor()
 }
@@ -1280,20 +1319,6 @@ fn lit_line(ctx: &mut impl Raster, drawn: &Drawn, width: f64, lit: &LitLine) {
     ctx.pop_layer();
 }
 
-/// Erases the open group's stroke along `path`, `width` wide, down the
-/// path's bounds: none of it at the top, all but `fade` of it at the
-/// bottom. Erased along a stroke a pixel wider each side rather than over
-/// the bounds, so only the tiles the line crosses are blended.
-fn fade_down(ctx: &mut impl Raster, path: &BezPath, width: f64, fade: f64) {
-    let bounds = path.bounding_box();
-    ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
-    let erase = Rgba::BLACK.with_alpha((1.0 - fade.clamp(0.0, 1.0)) as f32);
-    ctx.set_gradient(Gradient::new_linear((bounds.x0, bounds.y0), (bounds.x0, bounds.y1)).with_stops([color(Rgba::TRANSPARENT), color(erase)]));
-    ctx.set_stroke(Stroke::new(width + 2.0).with_caps(Cap::Square).with_join(Join::Bevel));
-    ctx.stroke_path(path);
-    ctx.pop_layer();
-}
-
 fn rounded(r: Rect, radius: f64) -> BezPath {
     RoundedRect::from_rect(r, radius.max(0.0)).to_path(0.1)
 }
@@ -1310,7 +1335,7 @@ fn drawn_box(bounds: IRect, transform: Affine) -> Option<IRect> {
     Some(IRect::new(bounds.x + dx, bounds.y + dy, bounds.w + ex, bounds.h + ey))
 }
 
-/// The coverage curve for an ink. vello_cpu blends in sRGB-encoded values,
+/// The coverage curve for an ink of `luma` (in 256ths). vello_cpu blends in sRGB-encoded values,
 /// as cairo does, so a pixel half covered by light ink on a dark card gives
 /// off far less than half the light, and the antialiased edges of light
 /// text fall away: stems read a pixel thin. The edges are lifted by a gamma
@@ -1319,10 +1344,13 @@ fn drawn_box(bounds: IRect, transform: Affine) -> Option<IRect> {
 /// their weight too; black ink, which that blend already renders full, keeps
 /// its coverage as drawn. A fully covered pixel stays fully covered either
 /// way, so hinted stems stay as sharp.
-fn coverage_lift([r, g, b]: [u8; 3]) -> [u8; 256] {
-    let luma = (0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b)) / 255.0;
-    let exponent = 1.0 / (1.0 + 0.8 * luma);
+fn coverage_lift(luma: u8) -> [u8; 256] {
+    let exponent = 1.0 / (1.0 + 0.8 * f32::from(luma) / 255.0);
     std::array::from_fn(|a| ((a as f32 / 255.0).powf(exponent) * 255.0).round() as u8)
+}
+
+fn luma([r, g, b]: [u8; 3]) -> u8 {
+    (0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b)).round() as u8
 }
 
 fn color(c: Rgba) -> AlphaColor<Srgb> {
@@ -1444,11 +1472,12 @@ mod tests {
         assert!(arc <= lit + 2, "the arc {arc} past a lip {lit}");
     }
 
-    /// Casts cut to a ring round their card land within a rounding step
-    /// (the clip's mask) of casts worked out over their whole box, and a
-    /// join, which keeps the whole box, on the same pixels.
+    /// Casts clipped to their reach less their card's fill land within
+    /// three steps of 255 of casts cut out of a layer by it (the layer
+    /// rounds each cast into it, its cut and its composite), and a join,
+    /// which keeps the layer, on the same pixels.
     #[test]
-    fn casts_worked_out_on_a_ring_draw_what_the_whole_box_does() {
+    fn casts_clipped_to_their_reach_draw_what_a_layer_cut_does() {
         use crate::scene::{Cast, Fit, Joined, Outline, Snap};
         use crate::paint::shoulders::Walls;
         let layers = vec![
@@ -1461,21 +1490,21 @@ mod tests {
             for scale in [1.0, 1.25] {
                 // A toast's stack scales its cards about an edge.
                 for at in [Affine::translate((30.0, 25.0)), Affine::translate((31.5, 26.0)) * Affine::scale(0.95)] {
-                    let draw = |ring: bool| {
+                    let draw = |clip: bool| {
                         let mut scene = Scene::new(120, 100);
                         let cutout = Fit { outline, snap: Snap::Edges };
                         let id = scene.add(IRect::new(0, 0, 120, 100), Paint::Casts { rect: card, radius: 10.0, layers: layers.clone(), cutout });
                         scene.set_transform(id, at);
                         let mut r = Renderer::new(120, 100);
                         r.set_scale(scale);
-                        r.caches.no_cast_ring = !ring;
+                        r.caches.no_cast_clip = !clip;
                         r.render(&scene, IRect::new(0, 0, 120, 100));
                         r.canvas().data_as_u8_slice().to_vec()
                     };
-                    let (whole, ring) = (draw(false), draw(true));
-                    assert!(whole.iter().any(|v| *v > 0), "the casts drew nothing");
-                    let worst = whole.iter().zip(&ring).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
-                    assert!(worst <= 1, "{outline:?} at {scale} under {at:?}: a channel off by {worst}");
+                    let (layer, clip) = (draw(false), draw(true));
+                    assert!(layer.iter().any(|v| *v > 0), "the casts drew nothing");
+                    let worst = layer.iter().zip(&clip).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
+                    assert!(worst <= 3, "{outline:?} at {scale} under {at:?}: a channel off by {worst}");
                 }
             }
         }
@@ -1634,8 +1663,8 @@ mod tests {
 
     #[test]
     fn light_ink_lifts_the_edges_and_dark_ink_keeps_them() {
-        let white = coverage_lift([255, 255, 255]);
-        let black = coverage_lift([0, 0, 0]);
+        let white = coverage_lift(super::luma([255, 255, 255]));
+        let black = coverage_lift(super::luma([0, 0, 0]));
         assert_eq!((white[0], white[255]), (0, 255));
         assert!(white[64] > 100, "a quarter covered pixel under white ink: {}", white[64]);
         assert!((0..256).all(|a| black[a] as usize == a));

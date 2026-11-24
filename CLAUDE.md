@@ -1598,6 +1598,21 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
   margin of the edge and the launcher travelling on to rest centred in
   the area right of the column, within 2px both ways. Read dark and
   `--light`.
+- `sidebar_pacing.sh` `--sidebar-pacing`: what an animated sidebar frame
+  costs on g815's tall panel, off the shell's commit log: `layout: sidebar`
+  on a headless second output at DP-3's shape (2560x1600 at 1.6, 144 Hz,
+  the column 154 by 1000), nine foot windows filling the map, a real mpv
+  playing, and the shell pinned to the performance cores
+  (`/sys/devices/cpu_core/cpus`). Focus moving between the window beside
+  the column and one past it (every card's rim blending), the live bar
+  leaving and coming back, a window moving away, a workspace there and
+  back, a window opening and closing, the network panel, a toast, and the
+  fold to the rail and back: no frame past a step's first two over half
+  an interval (3.47ms) in `cpu_us`, the thread's CPU time over the layout,
+  the draw and the copy; both outputs' frames within an interval of each
+  other under one together; no callback gap past two intervals. Each
+  step's median, worst and its parts printed. Then the blends and the fold
+  again under the stale audit. g815 only.
 - `sidebar_software.sh` `--sidebar-software`: the sidebar's Software card
   against a PATH-shimmed `fspec` and a fixture spec checkout
   (`FSPEC_SPEC`) cloned from a bare upstream 22 commits ahead, the

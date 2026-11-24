@@ -250,32 +250,29 @@ impl Paint {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RimLine {
+    /// Filled where `width` is 0, else stroked that wide.
     pub path: BezPath,
     pub width: f64,
-    /// Cut to this shape, in the node's own coordinates.
-    pub clip: Option<BezPath>,
-    /// The sweep's centre in surface pixels, its stops from its +x
-    /// clockwise, the last one back on the first.
-    pub centre: (f64, f64),
-    pub stops: Vec<(f32, Rgba)>,
-    pub mask: Option<RimMask>,
-    /// A stroke's alpha at the bottom of its path as a share of the top.
-    pub fade: Option<f64>,
+    pub ink: RimInk,
+    /// A fill's reach in from its box's edges, nothing drawn past it.
+    pub depth: Option<f64>,
 }
 
 impl RimLine {
     /// This line rebuilt off `drawn`: a fill (wash, spill) over the
-    /// outline, the specular line one border deep inside it, the border
-    /// stroked along its faces.
+    /// outline, the specular line and the border stroked along its faces.
     pub fn fitted(&self, drawn: &Drawn) -> RimLine {
         let mut out = self.clone();
-        if let Some(mask) = &mut out.mask {
+        let to = drawn.fill.bounding_box();
+        if let RimInk::Picture { rect, .. } = &mut out.ink {
+            *rect = to;
+        }
+        if out.width == 0.0 {
+            let from = self.path.bounding_box();
+            if let Some(depth) = &mut out.depth {
+                *depth *= to.width() / from.width();
+            }
             out.path = drawn.fill.clone();
-            mask.rect = drawn.fill.bounding_box();
-        } else if out.clip.is_some() {
-            out.width = drawn.width * 2.0;
-            out.path = drawn.fill.clone();
-            out.clip = Some(drawn.fill.clone());
         } else {
             out.path = drawn.outer.clone();
             out.width = drawn.width;
@@ -284,23 +281,46 @@ impl RimLine {
     }
 }
 
-/// A rim line that fills its path instead of stroking it, the sweep
-/// weighted by `image`'s alpha stretched over `rect` (node coordinates).
+/// What a rim line is drawn in.
 #[derive(Clone)]
-pub struct RimMask {
-    pub image: Bitmap,
-    pub rect: Rect,
+pub enum RimInk {
+    Flat(Rgba),
+    /// The sweep round `centre` (surface pixels) through `stops`, from its
+    /// +x clockwise, the last one back on the first.
+    Sweep { centre: (f64, f64), stops: Vec<(f32, Rgba)> },
+    /// The sweep worked out ahead and weighted, `image` stretched over
+    /// `rect` (node coordinates).
+    Picture { image: Bitmap, rect: Rect },
 }
 
-impl PartialEq for RimMask {
-    fn eq(&self, other: &Self) -> bool {
-        self.rect == other.rect && self.image.same_as(&other.image)
+impl RimInk {
+    pub fn clear(&self) -> bool {
+        match self {
+            RimInk::Flat(c) => c.to_u8()[3] == 0,
+            RimInk::Sweep { stops, .. } => stops.iter().all(|(_, c)| c.to_u8()[3] == 0),
+            RimInk::Picture { .. } => false,
+        }
     }
 }
 
-impl std::fmt::Debug for RimMask {
+impl PartialEq for RimInk {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RimInk::Flat(a), RimInk::Flat(b)) => a == b,
+            (RimInk::Sweep { centre: ca, stops: sa }, RimInk::Sweep { centre: cb, stops: sb }) => ca == cb && sa == sb,
+            (RimInk::Picture { image: a, rect: ra }, RimInk::Picture { image: b, rect: rb }) => a.same_as(b) && ra == rb,
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Debug for RimInk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RimMask({}x{} over {:?})", self.image.pixmap.width(), self.image.pixmap.height(), self.rect)
+        match self {
+            RimInk::Flat(c) => write!(f, "Flat({c:?})"),
+            RimInk::Sweep { centre, stops } => write!(f, "Sweep({centre:?}, {stops:?})"),
+            RimInk::Picture { image, rect } => write!(f, "Picture({}x{} over {rect:?})", image.pixmap.width(), image.pixmap.height()),
+        }
     }
 }
 
@@ -439,6 +459,17 @@ impl Scene {
                 self.mark(Self::cover(r, t, 1.0));
             }
         }
+    }
+
+    /// `id`'s paint replaced where it stands, under the fade it had.
+    pub fn repaint(&mut self, id: NodeId, paint: Paint) {
+        let n = &self.nodes[id.0];
+        let paint = match &n.paint {
+            Paint::Faded { fade, .. } => Paint::Faded { paint: Box::new(paint), fade: *fade },
+            _ => paint,
+        };
+        let (bounds, visible, transform, clip) = (n.bounds, n.visible, n.transform, n.clip);
+        self.update_with(id, bounds, paint, visible, transform, clip);
     }
 
     pub fn transform_of(&self, id: NodeId) -> Affine {

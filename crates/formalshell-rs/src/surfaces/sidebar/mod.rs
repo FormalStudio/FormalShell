@@ -212,6 +212,8 @@ pub struct Sidebar {
     /// The cards the last draw kept, for `sidebar status`.
     cards: Vec<&'static str>,
     pub animating: bool,
+    /// Nothing but the cards' rims blending, as last drawn.
+    rims_only: bool,
     pub wake: Option<Instant>,
     /// The column's box in the window, as last drawn.
     strip: IRect,
@@ -255,6 +257,7 @@ impl Sidebar {
             map: minimap::Map::default(),
             cards: Vec::new(),
             animating: false,
+            rims_only: false,
             wake: None,
             strip: IRect::new(0, 0, 0, 0),
             pressed: None,
@@ -396,7 +399,22 @@ impl Sidebar {
         let card = (x0, width);
         let gliding = self.map.paint(&self.top.hits, theme, kit, scene, face, strip, card, edge == Edge::Right, now);
         self.animating = drawn.animating || feet.animating || gliding;
+        self.rims_only = !gliding && (drawn.rims_only || !drawn.animating) && (feet.rims_only || !feet.animating);
         self.wake = [drawn.wake, feet.wake, self.map.wake()].into_iter().flatten().min();
+    }
+
+    /// The next frame of a column whose last draw had nothing but its
+    /// cards' rims moving, drawn without laying it out again: a blend
+    /// across every card was the whole column re-laid out each frame.
+    /// False when the frame needs [`Sidebar::draw`].
+    pub fn step_rims(&mut self, scene: &mut Scene, now: Instant) -> bool {
+        if !self.rims_only {
+            return false;
+        }
+        let top = self.top.step_rims(scene, now);
+        let foot = self.foot.step_rims(scene, now);
+        self.animating = top || foot;
+        true
     }
 
     /// Fits each notification's picture at the row's icon size once, and

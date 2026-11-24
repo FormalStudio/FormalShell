@@ -119,6 +119,12 @@ impl<'a> Painter<'a> {
         self.nodes.last().copied().or(self.anchor)
     }
 
+    /// The node the last put drew into; [`Painter::last`] is the group's
+    /// last node, which can be one a busier frame left unused.
+    pub fn placed(&self) -> Option<NodeId> {
+        self.used.checked_sub(1).map(|i| self.nodes[i])
+    }
+
     pub fn scene(&mut self) -> &mut Scene {
         self.scene
     }

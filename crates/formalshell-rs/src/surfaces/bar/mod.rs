@@ -1057,7 +1057,10 @@ impl Bar {
         let vertical = self.edge.is_vertical();
         let edge = self.edge;
         let (band, bare) = (&self.paints.band, &self.paints.bare);
-        let Body::Strip(strip) = &mut self.body else { return false };
+        let strip = match &mut self.body {
+            Body::Sidebar(sb) => return visible && sb.step_rims(&mut self.scene, now),
+            Body::Strip(strip) => strip,
+        };
         if !strip.slots.iter_mut().all(|s| s.moves_in_place(kit, vertical, band.is_some(), now)) {
             return false;
         }
