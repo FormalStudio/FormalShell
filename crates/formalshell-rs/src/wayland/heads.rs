@@ -25,7 +25,7 @@ use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 
-use super::App;
+use super::{App, Target};
 use super::backdrop::{Backdrop, Shards};
 use crate::store::Topic;
 use crate::surface::{PixelSurface, Surface};
@@ -77,6 +77,8 @@ pub struct Bars {
     pub(super) heads: Vec<Head>,
     lone: Option<BarWindow>,
     pub(super) live: usize,
+    /// The focused output the live bar last went to (`follow_focus`).
+    followed: String,
 }
 
 /// The key `bars[Live]` reads the live window by.
@@ -104,7 +106,7 @@ impl std::ops::IndexMut<Live> for Bars {
 
 impl Bars {
     pub fn new(bar: Bar) -> Self {
-        Self { heads: Vec::new(), lone: Some(BarWindow::new(bar)), live: 0 }
+        Self { heads: Vec::new(), lone: Some(BarWindow::new(bar)), live: 0, followed: String::new() }
     }
 
     pub(super) fn wins_mut(&mut self) -> impl Iterator<Item = &mut BarWindow> {
@@ -223,6 +225,7 @@ impl App {
             }
             self.close_bar_cards();
             self.bars.live = 0;
+            self.bars.followed.clear();
             if live!(self).surface.is_none() && !live!(self).bar.hidden() {
                 self.place_chrome();
             }
@@ -241,7 +244,10 @@ impl App {
     /// The spare on head `i` made the live bar, when nothing hangs off the
     /// live one.
     pub(super) fn promote(&mut self, i: usize) -> bool {
-        if i >= self.bars.heads.len() || i == self.bars.live || self.bar_busy() {
+        // A press on the live bar is its own until it lets go: a release
+        // read by another bar would leave this one's drag armed.
+        let held = matches!(self.pressed, Some((Target::Bar, _)));
+        if i >= self.bars.heads.len() || i == self.bars.live || self.bar_busy() || held {
             return false;
         }
         if let Some(sb) = live!(self).bar.sidebar_mut() {
@@ -258,14 +264,20 @@ impl App {
         true
     }
 
-    /// The live bar onto the focused output, when it is elsewhere and free.
+    /// The live bar onto the focused output once per change of focus, when
+    /// it is elsewhere and free. A compositor whose focus stays with the
+    /// keyboard (shoji) leaves the pointer on another output's bar, which
+    /// `promote` makes live; pulling it back every turn had the two trade
+    /// the bar on every motion.
     pub(super) fn follow_focus(&mut self) {
-        let focused = &self.store.compositor.snapshot.focused_output_name;
-        if focused.is_empty() || *focused == live!(self).bar.output {
+        let focused = self.store.compositor.snapshot.focused_output_name.clone();
+        if focused.is_empty() || focused == self.bars.followed {
             return;
         }
-        let Some((i, _)) = self.bars.spares().find(|(_, s)| s.bar.output == *focused) else { return };
-        self.promote(i);
+        let i = self.bars.spares().find(|(_, s)| s.bar.output == focused).map(|(i, _)| i);
+        if focused == live!(self).bar.output || i.is_some_and(|i| self.promote(i)) {
+            self.bars.followed = focused;
+        }
     }
 
     /// Something on the live bar's output that a click outside closes.
