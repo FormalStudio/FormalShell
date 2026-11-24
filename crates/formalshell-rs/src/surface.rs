@@ -1166,6 +1166,7 @@ impl<R: Role> Surface<R> {
         self.front_view = Some((scale, (size.w, size.h)));
 
         self.commits += 1;
+        trace::drew(self.name, render_us + copy_us);
         if !trace::enabled() {
             return;
         }

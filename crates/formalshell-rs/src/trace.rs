@@ -173,6 +173,29 @@ pub fn slow(kind: &str, took: Duration, detail: Arguments) {
     }
 }
 
+thread_local! {
+    static DREW: std::cell::RefCell<Vec<(&'static str, u128)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A frame `surface` drew and copied in `us`, kept until the turn's
+/// [`slow_present`] reads it.
+pub fn drew(surface: &'static str, us: u128) {
+    DREW.with(|d| d.borrow_mut().push((surface, us)));
+}
+
+/// `event loop: slow present t=<ms>ms present_us=<us> drew=<surface>:<us>,...`
+/// for a present past the threshold, naming the frames it drew.
+pub fn slow_present(took: Duration) {
+    DREW.with(|d| {
+        let mut d = d.borrow_mut();
+        if took >= SLOW {
+            let drew: Vec<String> = d.iter().map(|(surface, us)| format!("{surface}:{us}")).collect();
+            eprintln!("event loop: slow present t={}ms present_us={} drew={}", ms(), took.as_micros(), drew.join(","));
+        }
+        d.clear();
+    });
+}
+
 /// `dissolve frame <ms>`: one pixel-dissolve frame's drawing time.
 pub fn dissolve_frame(ms: f64) {
     eprintln!("dissolve frame {ms:.2}");

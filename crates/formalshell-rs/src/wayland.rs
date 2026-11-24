@@ -40,6 +40,7 @@ mod settle;
 mod sidebar;
 pub mod overview;
 mod owner;
+mod pacing;
 pub mod switcher;
 mod toasts;
 mod tray_menu;
@@ -225,6 +226,7 @@ pub struct App {
     /// (the lock's blank, settle) ignores inhibitors, which a playing video
     /// holds; caffeinate's idle takes either version.
     idle_notifier: Option<ExtIdleNotifierV1>,
+    pacing: pacing::Pacing,
     activation: Option<ActivationState>,
     seat: Option<wl_seat::WlSeat>,
     /// The last button press's serial and surface, which an activation
@@ -348,6 +350,7 @@ impl App {
             shm,
             pixels,
             idle_notifier: globals.bind(qh, 1..=2, crate::surface::Ignore).ok(),
+            pacing: pacing::Pacing::bind(globals, qh),
             activation: ActivationState::bind(globals, qh).ok(),
             seat: None,
             press: None,
@@ -1349,7 +1352,8 @@ impl CompositorHandler for App {
     /// animation on its rest is drawn, and that commit asks for no other.
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, _: u32) {
         if let Some(o) = owner::of(self, surface) {
-            o.frame(self, surface, Instant::now());
+            let at = self.pacing.frame(surface, Instant::now(), &self.qh.clone());
+            o.frame(self, surface, at);
         }
     }
 

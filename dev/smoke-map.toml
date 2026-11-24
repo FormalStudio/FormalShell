@@ -244,7 +244,7 @@ runs = ["--wheel", "--menu", "--launcher-mouse", "--scroll-pacing"]
 # host's own frame callbacks, and the loop that runs a sliced frame's next
 # turn.
 [[rule]]
-paths = ["crates/formalshell-rs/src/main.rs", "crates/formalshell-rs/src/wayland/owner.rs", "crates/formalshell-rs/src/surfaces/modal.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/launcher/view.rs"]
+paths = ["crates/formalshell-rs/src/main.rs", "crates/formalshell-rs/src/wayland/owner.rs", "crates/formalshell-rs/src/wayland/pacing.rs", "crates/formalshell-rs/src/surfaces/modal.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/launcher/view.rs"]
 runs = ["--scroll-pacing", "--anim-pacing", "--wheel", "--center"]
 
 [[rule]]

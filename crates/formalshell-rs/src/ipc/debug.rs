@@ -94,6 +94,7 @@ fn dump(app: &mut App, _: &[Value]) -> Reply {
     dump["sky"] = sky(app);
     dump["rims"] = app.rims_report();
     dump["animating"] = json!(crate::surface::running());
+    dump["pacing"] = app.pacing_report();
     if let Some(map) = dump.as_object_mut() {
         app.report(map);
     }
