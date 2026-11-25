@@ -125,7 +125,9 @@ impl Ring {
         let level = self.frames();
         let ratio = 1.0 + self.lean;
         let end = self.phase + frames as f64 * ratio;
-        if level < end.floor() as usize + 1 {
+        // The last frame played may lie between the frame `end` falls in
+        // and the one after.
+        if level < end.floor() as usize + 2 {
             let have = level.min(frames);
             for (o, s) in out.iter_mut().zip(self.samples.drain(..have * CHANNELS)) {
                 *o = s;
@@ -447,11 +449,17 @@ fn bytemuck_f32(bytes: &mut [u8]) -> &mut [f32] {
 mod tests {
     use super::*;
 
-    /// A 440 Hz tone from a clock 0.5% fast, in packets that come in bursts,
-    /// played a cycle at a time: no step between frames the tone cannot
-    /// make, and the buffer held near its target.
+    /// A 440 Hz tone from a clock 0.5% fast or slow, in packets that come
+    /// in bursts, played a cycle at a time: no step between frames the tone
+    /// cannot make, and the buffer held near its target.
     #[test]
-    fn a_fast_bursty_phone_plays_without_a_step() {
+    fn a_drifting_bursty_phone_plays_without_a_step() {
+        for drift in [1.005, 0.995] {
+            drifting(drift);
+        }
+    }
+
+    fn drifting(drift: f64) {
         let mut ring = Ring::default();
         let tone = |n: usize| (n as f64 * 440.0 * std::f64::consts::TAU / RATE as f64).sin() as f32 * 0.5;
         let (mut made, mut owed, mut last) = (0usize, 0.0f64, None::<f32>);
@@ -459,7 +467,7 @@ mod tests {
         let mut out = vec![0.0f32; 1024 * CHANNELS];
         for cycle in 0..3000 {
             // Every fourth cycle's packets come late, with the next's.
-            owed += 1024.0 * 1.005;
+            owed += 1024.0 * drift;
             if cycle % 4 != 3 {
                 while owed >= 480.0 {
                     let pcm: Vec<f32> = (made..made + 480).flat_map(|n| [tone(n), tone(n)]).collect();
@@ -482,7 +490,7 @@ mod tests {
                 most = most.max(ring.frames());
             }
         }
-        assert_eq!(steps, 0);
+        assert_eq!(steps, 0, "at {drift}");
         assert!(most < ring.target() + BACKLOG, "{most} buffered");
     }
 
