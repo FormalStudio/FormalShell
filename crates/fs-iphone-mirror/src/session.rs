@@ -186,8 +186,11 @@ const UNPAIRED: &str = "unpaired";
 /// What `pump` ends with when the phone's screen is on and its picture has
 /// stopped: another host took the stream, or the phone dropped it.
 const STALE: &str = "stale";
-/// With the screen on, a picture this quiet asks for a keyframe, and one
-/// quiet for STALE_AFTER starts the stream again.
+/// A still screen sends no picture at all, for as long as it stays still,
+/// and is no stall: the phone's sender report keeps coming every second
+/// with its packet count unmoved. The stream starts again when the count
+/// moves and none of those packets came, or when the reports stop too for
+/// STALE_AFTER.
 const QUIET_AFTER: Duration = Duration::from_secs(1);
 const STALE_AFTER: Duration = Duration::from_secs(3);
 
@@ -265,7 +268,7 @@ async fn connect(
             let mut client = screen.client;
             let _ = tokio::time::timeout(Duration::from_secs(2), client.stop_media_stream()).await;
             match result {
-                Err(e) if e == STALE => tracing::warn!("display stream: no picture for {STALE_AFTER:?} with the screen on; starting it again"),
+                Err(e) if e == STALE => {}
                 other => break other,
             }
         }
@@ -303,6 +306,11 @@ async fn pump(
     let (mut base_seq, mut highest_seq, mut frames) = (None::<u16>, 0u32, 0u16);
     let mut audio_seq = 0u32;
     let mut last_packet = Instant::now();
+    let mut last_report = Instant::now();
+    // The phone's count of picture packets sent, and ours of those that
+    // came, as they stood at its last report.
+    let mut reported: Option<(u32, u64)> = None;
+    let mut packets = 0u64;
     let mut last_keyframe_ask = Instant::now() - Duration::from_secs(10);
     let mut fir_seq = 0u8;
     let epoch = Instant::now();
@@ -317,7 +325,6 @@ async fn pump(
         tokio::select! {
             dg = screen.video.recv() => {
                 let dg = dg.map_err(|e| format!("video: {e}"))?;
-                tunnel.acks.now();
                 if idevice::core_device::is_rtcp(&dg.data) {
                     if let Some(sr) = idevice::core_device::rtcp::SenderReport::parse_first(&dg.data) {
                         tracing::debug!("video SR: phone clock behind ours by {} ms (transit included)", ntp_lag_ms(sr.ntp_middle));
@@ -325,10 +332,25 @@ async fn pump(
                             let rtp = u32::from_be_bytes([dg.data[16], dg.data[17], dg.data[18], dg.data[19]]);
                             clock = Some((sr.ntp_middle, rtp));
                         }
+                        if dg.data.len() >= 24 && dg.data[1] == 200 {
+                            last_report = Instant::now();
+                            let sent = u32::from_be_bytes([dg.data[20], dg.data[21], dg.data[22], dg.data[23]]);
+                            if let Some((was, had)) = reported
+                                && sent != was
+                                && packets == had
+                                && *awake
+                            {
+                                tracing::warn!("display stream: the phone sent {} packets that never came; starting it again", sent.wrapping_sub(was));
+                                return Err(STALE.into());
+                            }
+                            tracing::debug!("video report: the phone has sent {sent} packets, {packets} came");
+                            reported = Some((sent, packets));
+                        }
                     }
                     continue;
                 }
                 let Some(pkt) = RtpPacket::parse(&dg.data) else { continue };
+                packets += 1;
                 let quiet = last_packet.elapsed();
                 last_packet = Instant::now();
                 if !streaming {
@@ -336,7 +358,7 @@ async fn pump(
                     tracing::info!("display stream: picture arriving");
                     sink(Event::Status(Status::Streaming));
                 } else if quiet > QUIET_AFTER {
-                    tracing::info!("display stream: picture back after {} ms", quiet.as_millis());
+                    tracing::debug!("display stream: picture back after {} ms", quiet.as_millis());
                 }
                 let base = *base_seq.get_or_insert(pkt.sequence_number);
                 highest_seq = highest_seq.max(pkt.sequence_number.wrapping_sub(base) as u32);
@@ -380,7 +402,6 @@ async fn pump(
             }
             dg = screen.audio.recv() => {
                 let dg = dg.map_err(|e| format!("audio: {e}"))?;
-                tunnel.acks.now();
                 if idevice::core_device::is_rtcp(&dg.data) {
                     if dg.data.len() >= 20 && dg.data[1] == 200 {
                         let ntp = u32::from_be_bytes([dg.data[10], dg.data[11], dg.data[12], dg.data[13]]);
@@ -411,6 +432,8 @@ async fn pump(
                 // A screen coming on has its picture to send yet.
                 if on && !*awake {
                     last_packet = Instant::now();
+                    last_report = Instant::now();
+                    reported = None;
                 }
                 *awake = on;
                 sink(Event::Asleep(!on));
@@ -439,15 +462,9 @@ async fn pump(
                     send(tunnel, &screen.audio, audio.port, build_liveness(audio.ours, CNAME, &[block(audio.phone, audio_seq)])).await;
                 }
                 let quiet = last_packet.elapsed();
-                if *awake && quiet > STALE_AFTER {
+                if *awake && quiet > STALE_AFTER && last_report.elapsed() > STALE_AFTER {
+                    tracing::warn!("display stream: no picture and no report for {STALE_AFTER:?} with the screen on; starting it again");
                     return Err(STALE.into());
-                }
-                if *awake && quiet > QUIET_AFTER && last_keyframe_ask.elapsed() > QUIET_AFTER {
-                    last_keyframe_ask = Instant::now();
-                    tracing::info!("display stream: no picture for {} ms; asking for a keyframe", quiet.as_millis());
-                    fir_seq = fir_seq.wrapping_add(1);
-                    let blocks = [block(video.phone, highest_seq)];
-                    send(tunnel, &screen.video, video.port, build_keyframe_request(video.ours, CNAME, video.phone, &blocks, fir_seq)).await;
                 }
                 // The screen asleep sends nothing; the tunnel going away
                 // shows as the display service not answering.
