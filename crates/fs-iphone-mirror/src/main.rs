@@ -168,7 +168,10 @@ fn drive() {
                 send(session::Cmd::Type(vec![keys]));
             }
             Some("hold") => send(session::Cmd::Keys(w[1..].iter().filter_map(|k| k.parse().ok()).collect())),
-            Some("paste") => send(session::Cmd::Paste(line[6.min(line.len())..].to_string())),
+            Some("paste") => {
+                send(session::Cmd::Clip(session::Clip::Text(line[6.min(line.len())..].to_string())));
+                send(session::Cmd::Paste);
+            }
             Some("wait") => std::thread::sleep(Duration::from_millis(f(1) as u64)),
             Some("shot") => {
                 if let Some(frame) = latest.take() {

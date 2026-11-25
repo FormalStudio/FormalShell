@@ -13,7 +13,10 @@ use idevice::core_device::{
     TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient,
     build_frame_ack, build_keyframe_request, build_liveness, build_rctl,
 };
-use idevice::core_device::{KeyboardUsage, Orientation, OrientationServiceClient, PasteboardServiceClient, RotationDirection};
+use idevice::core_device::{
+    DataInclusionPolicy, GENERAL_PASTEBOARD, KeyboardUsage, Orientation, OrientationServiceClient, PasteboardServiceClient,
+    RotationDirection, UTI_JPEG, UTI_PNG,
+};
 use idevice::diagnostics_relay::DiagnosticsRelayClient;
 use idevice::springboardservices::{InterfaceOrientation, SpringBoardServicesClient};
 use idevice::{ReadWrite, RsdService};
@@ -44,6 +47,24 @@ pub enum Event {
     Turn(u8),
     /// The phone's screen went dark (it sleeps locked) or lit up again.
     Asleep(bool),
+    /// Something was copied on the phone.
+    Clip(Clip),
+}
+
+/// What a pasteboard holds, as far as the two sides share it.
+#[derive(Clone, PartialEq)]
+pub enum Clip {
+    Text(String),
+    Image { mime: &'static str, bytes: Vec<u8> },
+}
+
+impl std::fmt::Debug for Clip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Clip::Text(t) => write!(f, "Text({t:?})"),
+            Clip::Image { mime, bytes } => write!(f, "Image({mime}, {} bytes)", bytes.len()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -71,7 +92,10 @@ pub enum Cmd {
     /// first where the phone's layout needs one.
     Type(Vec<BTreeSet<u8>>),
     Button(Button),
-    Paste(String),
+    /// Fill the phone's pasteboard, unless it holds this already.
+    Clip(Clip),
+    /// The phone's Command+V.
+    Paste,
     /// Turn the phone a quarter, as if it were rotated in the hand.
     Rotate(RotationDirection),
     /// Lift every finger and key: the window lost focus or closed.
@@ -204,9 +228,10 @@ async fn connect(
         .await
         .map_err(|_| "screen stream did not start".to_string())??;
     let mut lit = backlight(&mut tunnel).await;
+    let mut copied = pasteboard(&mut tunnel).await;
     let mut input = Input::default();
     audio.reset();
-    let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &mut input, &mut lit).await;
+    let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &mut input, &mut lit, &mut copied).await;
     input.release(&mut tunnel).await;
     let mut client = screen.client;
     let _ = tokio::time::timeout(Duration::from_secs(2), client.stop_media_stream()).await;
@@ -222,6 +247,7 @@ async fn pump(
     screen: &stream::Screen,
     input: &mut Input,
     lit: &mut mpsc::UnboundedReceiver<bool>,
+    copied: &mut mpsc::UnboundedReceiver<Clip>,
 ) -> Result<(), String> {
     let video = screen.video_rtcp;
     let audio = screen.audio_rtcp;
@@ -328,6 +354,13 @@ async fn pump(
                 }
             }
             Some(on) = lit.recv() => sink(Event::Asleep(!on)),
+            Some(clip) = copied.recv() => {
+                // Our own copy coming back is not news.
+                if input.clip.as_ref() != Some(&clip) {
+                    input.clip = Some(clip.clone());
+                    sink(Event::Clip(clip));
+                }
+            }
             _ = rctl.tick() => {
                 let clock = epoch.elapsed().as_millis() as u16;
                 send(tunnel, &screen.video, video.port, build_rctl(video.ours, clock, frames, highest_seq as u16)).await;
@@ -424,10 +457,47 @@ struct Input {
     indigo: Option<IndigoHidClient<Box<dyn ReadWrite>>>,
     touch: Option<(u16, u16)>,
     keys: BTreeSet<u8>,
+    board: Option<PasteboardServiceClient<Box<dyn ReadWrite>>>,
+    /// What both pasteboards hold, whichever side it came from.
+    clip: Option<Clip>,
 }
 
 fn hid_xy(x: f64, y: f64) -> (u16, u16) {
     ((x.clamp(0.0, 1.0) * 65535.0).round() as u16, (y.clamp(0.0, 1.0) * 65535.0).round() as u16)
+}
+
+/// The phone's pasteboard, each time something is copied there.
+async fn pasteboard(tunnel: &mut tunnel::Tunnel) -> mpsc::UnboundedReceiver<Clip> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let mut board = match PasteboardServiceClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd).await {
+        Ok(board) => board,
+        Err(e) => {
+            tracing::debug!("pasteboard: {e:?}");
+            return rx;
+        }
+    };
+    if let Err(e) = board.set_change_notifications(true, GENERAL_PASTEBOARD, Some(DataInclusionPolicy::AllResolved)).await {
+        tracing::debug!("pasteboard: {e:?}");
+        return rx;
+    }
+    tokio::spawn(async move {
+        while let Ok(snapshot) = board.recv_push().await {
+            let image = || {
+                let (uti, bytes) = snapshot.image()?;
+                let mime = match uti {
+                    UTI_PNG => "image/png",
+                    UTI_JPEG => "image/jpeg",
+                    _ => return None,
+                };
+                Some(Clip::Image { mime, bytes })
+            };
+            let Some(clip) = snapshot.text().map(Clip::Text).or_else(image) else { continue };
+            if tx.send(clip).is_err() {
+                return;
+            }
+        }
+    });
+    rx
 }
 
 /// Whether the screen is lit, each time that changes. A dark screen sends
@@ -528,7 +598,8 @@ impl Input {
                 r
             }
             Cmd::Button(b) => self.button(tunnel, b).await,
-            Cmd::Paste(text) => self.paste(tunnel, &text).await,
+            Cmd::Clip(clip) => self.set_clip(tunnel, clip).await,
+            Cmd::Paste => self.paste(tunnel).await,
             // The stream loop turns the phone: it reports where it landed.
             Cmd::Rotate(_) => Ok(()),
             Cmd::Release => {
@@ -641,14 +712,34 @@ impl Input {
         }
     }
 
-    async fn paste(&mut self, tunnel: &mut tunnel::Tunnel, text: &str) -> Result<(), String> {
-        let mut board = PasteboardServiceClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd)
-            .await
-            .map_err(|e| format!("pasteboard: {e:?}"))?;
-        tokio::time::timeout(Duration::from_secs(5), board.set_text(text, idevice::core_device::GENERAL_PASTEBOARD))
-            .await
-            .map_err(|_| "pasteboard timed out".to_string())?
-            .map_err(|e| format!("pasteboard: {e:?}"))?;
+    async fn set_clip(&mut self, tunnel: &mut tunnel::Tunnel, clip: Clip) -> Result<(), String> {
+        if self.clip.as_ref() == Some(&clip) {
+            return Ok(());
+        }
+        if self.board.is_none() {
+            self.board = Some(
+                PasteboardServiceClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd)
+                    .await
+                    .map_err(|e| format!("pasteboard: {e:?}"))?,
+            );
+        }
+        let board = self.board.as_mut().unwrap();
+        let set = async {
+            match &clip {
+                Clip::Text(text) => board.set_text(text, GENERAL_PASTEBOARD).await,
+                Clip::Image { mime, bytes } => board.set_image(bytes, if *mime == "image/jpeg" { UTI_JPEG } else { UTI_PNG }, GENERAL_PASTEBOARD).await,
+            }
+        };
+        let r = tokio::time::timeout(Duration::from_secs(5), set).await;
+        if !matches!(r, Ok(Ok(()))) {
+            self.board = None;
+        }
+        r.map_err(|_| "pasteboard timed out".to_string())?.map_err(|e| format!("pasteboard: {e:?}"))?;
+        self.clip = Some(clip);
+        Ok(())
+    }
+
+    async fn paste(&mut self, tunnel: &mut tunnel::Tunnel) -> Result<(), String> {
         // The phone's Command+V, not Control+V.
         let held = self.keys.clone();
         self.keys(tunnel, BTreeSet::from([0xe3])).await?;

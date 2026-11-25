@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
 use smithay_client_toolkit::data_device_manager::data_device::{DataDevice, DataDeviceHandler};
 use smithay_client_toolkit::data_device_manager::data_offer::{DataOfferHandler, DragOffer};
-use smithay_client_toolkit::data_device_manager::data_source::DataSourceHandler;
+use smithay_client_toolkit::data_device_manager::data_source::{CopyPasteSource, DataSourceHandler};
 use smithay_client_toolkit::data_device_manager::{DataDeviceManagerState, WritePipe};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::presentation_time::{PresentTime, PresentationTimeHandler, PresentationTimeState};
@@ -40,17 +40,28 @@ use vello_cpu::kurbo::{Point, Rect};
 use crate::audio::Audio;
 use crate::decode::{Decoder, Latest};
 use crate::model::{self, Model};
-use crate::session::{self, Button, Cmd, Event, Phase, Status};
+use crate::session::{self, Button, Clip, Cmd, Event, Phase, Status};
 use overlay::{Control, MARGIN, Overlay, Scene, Screen, TOP_MARGIN};
 
 pub const APP_ID: &str = "formalshell-iphone-mirror";
 
 /// A picture older than this while streaming reads as a stall.
 const STALL: Duration = Duration::from_millis(1500);
-/// Wheel ticks pass for a finger dragging this far, in logical pixels.
-const WHEEL_STEP: f64 = 40.0;
-/// A wheel drag lifts once the wheel has been still this long.
-const WHEEL_IDLE: Duration = Duration::from_millis(120);
+/// A wheel tick flicks the finger this share of the phone, at most
+/// FLICK_MOST ticks to a flick; the finger lifts at speed so iOS carries the
+/// content on with its own momentum.
+const FLICK_TICK: f64 = 0.1;
+const FLICK_MOST: f64 = 4.0;
+const FLICK_TIME: Duration = Duration::from_millis(120);
+/// A flick starts inside this band of the phone along its way and ends
+/// inside the wider one: a drag from the bottom goes Home, one from the top
+/// opens Notification Center.
+const FLICK_START: (f64, f64) = (0.2, 0.8);
+const FLICK_END: (f64, f64) = (0.1, 0.9);
+/// A touchpad's finger lifts once its axis has been still this long.
+const SWIPE_IDLE: Duration = Duration::from_millis(120);
+/// How often a finger in motion reports.
+const FINGER_FRAME: Duration = Duration::from_millis(8);
 
 pub fn run() -> Result<(), String> {
     let conn = Connection::connect_to_env().map_err(|e| format!("wayland: {e}"))?;
@@ -100,6 +111,9 @@ pub fn run() -> Result<(), String> {
         presentation: PresentationTimeState::bind(&globals, &qh),
         data: DataDeviceManagerState::bind(&globals, &qh).ok(),
         data_device: None,
+        source: None,
+        unoffered: None,
+        serial: None,
         compositor,
         qh: qh.clone(),
         handle: handle.clone(),
@@ -136,7 +150,10 @@ pub fn run() -> Result<(), String> {
         touching: false,
         hover: None,
         pressed: None,
-        wheel: None,
+        swipe: None,
+        flick: None,
+        ticks: Point::ZERO,
+        ticks_at: Point::ZERO,
         held: BTreeSet::new(),
         mods: Modifiers::default(),
         focused: false,
@@ -145,7 +162,8 @@ pub fn run() -> Result<(), String> {
         exit: false,
     };
     while !app.exit {
-        let timeout = app.wheel.as_ref().map(|w| WHEEL_IDLE.saturating_sub(w.last.elapsed())).unwrap_or(Duration::from_millis(500));
+        let moving = app.swipe.is_some() || app.flick.is_some();
+        let timeout = if moving { FINGER_FRAME } else { Duration::from_millis(500) };
         event_loop.dispatch(Some(timeout), &mut app).map_err(|e| e.to_string())?;
         app.tick();
     }
@@ -187,10 +205,19 @@ fn fit_turned(w: f64, h: f64, room: (f64, f64), angle: f64) -> f64 {
     (room.0 / (w * c + h * s)).min(room.1 / (w * s + h * c)).min(1.0)
 }
 
-struct Wheel {
+/// A finger the touchpad drags across the phone, in the phone's portrait
+/// 0..1.
+struct Swipe {
     at: Point,
     moved: Point,
-    last: Instant,
+    input: Instant,
+}
+
+/// A finger a wheel flicks across the phone, in the phone's portrait 0..1.
+struct Flick {
+    from: Point,
+    by: Point,
+    start: Instant,
 }
 
 struct App {
@@ -200,6 +227,13 @@ struct App {
     presentation: PresentationTimeState,
     data: Option<DataDeviceManagerState>,
     data_device: Option<DataDevice>,
+    /// The phone's copy, offered as this computer's clipboard while we hold it.
+    source: Option<(CopyPasteSource, Clip)>,
+    /// A phone copy waiting for the keyboard to come back to take the
+    /// clipboard: Wayland hands it only to a window with an input serial.
+    unoffered: Option<Clip>,
+    /// The serial of the last key or click.
+    serial: Option<u32>,
     compositor: CompositorState,
     qh: QueueHandle<App>,
     handle: LoopHandle<'static, App>,
@@ -252,7 +286,11 @@ struct App {
     touching: bool,
     hover: Option<Control>,
     pressed: Option<Control>,
-    wheel: Option<Wheel>,
+    swipe: Option<Swipe>,
+    flick: Option<Flick>,
+    /// Wheel travel waiting for the next flick, and where the pointer was.
+    ticks: Point,
+    ticks_at: Point,
     held: BTreeSet<u8>,
     mods: Modifiers,
     focused: bool,
@@ -512,6 +550,7 @@ impl App {
             }
             Event::Turn(turn) => self.set_turn(turn),
             Event::Asleep(asleep) => self.asleep = asleep,
+            Event::Clip(clip) => self.offer(clip),
             Event::Phone { product_type } => {
                 let m = model::lookup(&product_type);
                 tracing::info!("phone: {product_type} ({})", m.map(|m| m.name).unwrap_or("unknown"));
@@ -537,13 +576,7 @@ impl App {
     /// Runs after every dispatch: lifts a wheel drag gone still, and shows
     /// a stall once the picture has been quiet for a while.
     fn tick(&mut self) {
-        if let Some(w) = &self.wheel
-            && w.last.elapsed() >= WHEEL_IDLE
-        {
-            let at = self.to_phone(Point::new(w.at.x + w.moved.x, w.at.y + w.moved.y));
-            self.send(Cmd::Touch(Phase::Up, at.x, at.y));
-            self.wheel = None;
-        }
+        self.step_fingers();
         let stalled = self.frame_at.is_some_and(|t| t.elapsed() > STALL);
         if self.scene.as_ref().is_some_and(|s| s.screen != self.screen()) || (stalled && self.dirty) {
             self.draw();
@@ -557,6 +590,111 @@ impl App {
         let u = ((p.x - r.x0) / r.width()).clamp(0.0, 1.0);
         let v = ((p.y - r.y0) / r.height()).clamp(0.0, 1.0);
         unturn(self.turn, u, v)
+    }
+
+    /// A move across the window as a move across the phone's portrait 0..1.
+    fn phone_delta(&self, dx: f64, dy: f64) -> Point {
+        let r = self.phone_rect();
+        let (o, d) = (unturn(self.turn, 0.0, 0.0), unturn(self.turn, dx / r.width(), dy / r.height()));
+        Point::new(d.x - o.x, d.y - o.y)
+    }
+
+    /// A touchpad's scroll by `dx`, `dy` window pixels with the pointer at
+    /// `p`: a finger goes down there, inside the bands, and drags the
+    /// content along.
+    fn swipe(&mut self, p: Point, dx: f64, dy: f64) {
+        if self.flick.is_some() {
+            return;
+        }
+        let d = self.phone_delta(-dx, -dy);
+        let swipe = match self.swipe.take() {
+            Some(s) => s,
+            None => {
+                let at = self.to_phone(p);
+                let at = Point::new(at.x.clamp(FLICK_END.0, FLICK_END.1), at.y.clamp(FLICK_START.0, FLICK_START.1));
+                self.send(Cmd::Touch(Phase::Down, at.x, at.y));
+                Swipe { at, moved: Point::ZERO, input: Instant::now() }
+            }
+        };
+        let moved = Point::new(swipe.moved.x + d.x, swipe.moved.y + d.y);
+        let to = Point::new(swipe.at.x + moved.x, swipe.at.y + moved.y);
+        let inside = |v: f64| (FLICK_END.0..=FLICK_END.1).contains(&v);
+        if !inside(to.x) || !inside(to.y) {
+            // At the edge of the band: lift there, at speed, and go down
+            // again where the next stroke has room.
+            let last = Point::new(to.x.clamp(FLICK_END.0, FLICK_END.1), to.y.clamp(FLICK_END.0, FLICK_END.1));
+            self.send(Cmd::Touch(Phase::Up, last.x, last.y));
+            return;
+        }
+        self.send(Cmd::Touch(Phase::Move, to.x, to.y));
+        self.swipe = Some(Swipe { at: swipe.at, moved, input: Instant::now() });
+    }
+
+    /// A wheel's `ticks` (positive scrolls the content down or right) with
+    /// the pointer at `p`, flicked once the current flick ends.
+    fn wheel(&mut self, p: Point, vertical: f64, horizontal: f64) {
+        if self.swipe.is_some() {
+            return;
+        }
+        let r = self.phone_rect();
+        let d = self.phone_delta(-horizontal * FLICK_TICK * r.width(), -vertical * FLICK_TICK * r.height());
+        let most = FLICK_TICK * FLICK_MOST;
+        self.ticks = Point::new((self.ticks.x + d.x).clamp(-most, most), (self.ticks.y + d.y).clamp(-most, most));
+        self.ticks_at = self.to_phone(p);
+        if self.flick.is_none() {
+            self.start_flick();
+        }
+    }
+
+    fn start_flick(&mut self) {
+        let by = std::mem::replace(&mut self.ticks, Point::ZERO);
+        if by.x.abs() < 1e-4 && by.y.abs() < 1e-4 {
+            return;
+        }
+        // Inside the start band along the flick's way, anywhere but the
+        // very edge across it; the end stays inside the end band.
+        let along_x = by.x.abs() > by.y.abs();
+        let band = |v: f64, along: bool| if along { v.clamp(FLICK_START.0, FLICK_START.1) } else { v.clamp(FLICK_END.0, FLICK_END.1) };
+        let from = Point::new(band(self.ticks_at.x, along_x), band(self.ticks_at.y, !along_x));
+        let to = Point::new((from.x + by.x).clamp(FLICK_END.0, FLICK_END.1), (from.y + by.y).clamp(FLICK_END.0, FLICK_END.1));
+        self.send(Cmd::Touch(Phase::Down, from.x, from.y));
+        self.flick = Some(Flick { from, by: Point::new(to.x - from.x, to.y - from.y), start: Instant::now() });
+    }
+
+    /// Moves a flick's finger on, lifting it at the end and starting the
+    /// next one; lifts a touchpad's finger gone still.
+    fn step_fingers(&mut self) {
+        if let Some(f) = &self.flick {
+            let k = (f.start.elapsed().as_secs_f64() / FLICK_TIME.as_secs_f64()).min(1.0);
+            let at = Point::new(f.from.x + f.by.x * k, f.from.y + f.by.y * k);
+            if k < 1.0 {
+                self.send(Cmd::Touch(Phase::Move, at.x, at.y));
+            } else {
+                self.send(Cmd::Touch(Phase::Move, at.x, at.y));
+                self.send(Cmd::Touch(Phase::Up, at.x, at.y));
+                self.flick = None;
+                self.start_flick();
+            }
+        }
+        if self.swipe.as_ref().is_some_and(|s| s.input.elapsed() >= SWIPE_IDLE) {
+            self.lift_finger();
+        }
+    }
+
+    fn lift_finger(&mut self) {
+        if let Some(s) = self.swipe.take() {
+            self.send(Cmd::Touch(Phase::Up, s.at.x + s.moved.x, s.at.y + s.moved.y));
+        }
+    }
+
+    /// A click or the pointer leaving ends any scroll under way.
+    fn end_scroll(&mut self) {
+        self.lift_finger();
+        self.ticks = Point::ZERO;
+        if let Some(f) = self.flick.take() {
+            let k = (f.start.elapsed().as_secs_f64() / FLICK_TIME.as_secs_f64()).min(1.0);
+            self.send(Cmd::Touch(Phase::Up, f.from.x + f.by.x * k, f.from.y + f.by.y * k));
+        }
     }
 
     fn control_at(&self, p: Point) -> Option<Control> {
@@ -643,32 +781,76 @@ impl App {
         }
     }
 
-    fn paste(&mut self) {
-        let Some(offer) = self.data_device.as_ref().and_then(|d| d.data().selection_offer()) else { return };
-        let mime = offer.with_mime_types(|m| {
-            ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain"].iter().find(|t| m.iter().any(|x| x == *t)).map(|t| t.to_string())
+    /// The phone's copy becomes this computer's clipboard.
+    fn offer(&mut self, clip: Clip) {
+        let (Some(data), Some(device), Some(serial)) = (&self.data, &self.data_device, self.serial) else {
+            self.unoffered = Some(clip);
+            return;
+        };
+        if !self.focused {
+            self.unoffered = Some(clip);
+            return;
+        }
+        let mimes: &[&str] = match &clip {
+            Clip::Text(_) => &["text/plain;charset=utf-8", "UTF8_STRING", "text/plain"],
+            Clip::Image { mime, .. } => &[mime],
+        };
+        let source = data.create_copy_paste_source(&self.qh, mimes.iter().copied());
+        source.set_selection(device, serial);
+        self.source = Some((source, clip));
+    }
+
+    /// This computer's clipboard, read and handed to `then`; none when it
+    /// is the phone's own copy or holds nothing the phone takes.
+    fn read_selection(&mut self, then: impl FnOnce(&mut App, Option<Clip>) + 'static) {
+        let offer = self.data_device.as_ref().and_then(|d| d.data().selection_offer());
+        let picked = offer.as_ref().filter(|_| self.source.is_none()).and_then(|offer| {
+            offer.with_mime_types(|m| {
+                ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "image/png", "image/jpeg"]
+                    .iter()
+                    .find(|t| m.iter().any(|x| x == *t))
+                    .map(|t| t.to_string())
+            })
         });
-        let Some(mime) = mime else { return };
-        let Ok(pipe) = offer.receive(mime) else { return };
-        let mut text = Vec::new();
+        let (Some(offer), Some(mime)) = (offer, picked) else { return then(self, None) };
+        let Ok(pipe) = offer.receive(mime.clone()) else { return then(self, None) };
+        let mut bytes = Vec::new();
+        let mut then = Some(then);
         let _ = self.handle.insert_source(pipe, move |_, file, app: &mut App| {
-            let mut buf = [0u8; 4096];
+            let mut buf = [0u8; 65536];
             // SAFETY: the pipe is the read end calloop handed us, open until removed.
-            match unsafe { file.get_mut() }.read(&mut buf) {
-                Ok(0) => {
-                    let s = String::from_utf8_lossy(&text).into_owned();
-                    if !s.is_empty() {
-                        app.send(Cmd::Paste(s));
-                    }
-                    PostAction::Remove
-                }
+            let done = match unsafe { file.get_mut() }.read(&mut buf) {
+                Ok(0) => true,
                 Ok(n) => {
-                    text.extend_from_slice(&buf[..n]);
-                    PostAction::Continue
+                    bytes.extend_from_slice(&buf[..n]);
+                    false
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => PostAction::Continue,
-                Err(_) => PostAction::Remove,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => false,
+                Err(_) => true,
+            };
+            if !done {
+                return PostAction::Continue;
             }
+            let bytes = std::mem::take(&mut bytes);
+            let clip = match mime.as_str() {
+                "image/png" => Some(Clip::Image { mime: "image/png", bytes }),
+                "image/jpeg" => Some(Clip::Image { mime: "image/jpeg", bytes }),
+                _ => Some(Clip::Text(String::from_utf8_lossy(&bytes).into_owned())).filter(|c| *c != Clip::Text(String::new())),
+            };
+            if let Some(then) = then.take() {
+                then(app, clip);
+            }
+            PostAction::Remove
+        });
+    }
+
+    /// The phone pastes its own pasteboard: fill it with ours first.
+    fn paste(&mut self) {
+        self.read_selection(|app, clip| {
+            if let Some(clip) = clip {
+                app.send(Cmd::Clip(clip));
+            }
+            app.send(Cmd::Paste);
         });
     }
 }
@@ -856,6 +1038,7 @@ impl PointerHandler for App {
                     self.dirty = true;
                 }
                 PointerEventKind::Leave { .. } => {
+                    self.lift_finger();
                     if self.touching {
                         let at = self.to_phone(p);
                         self.send(Cmd::Touch(Phase::Up, at.x, at.y));
@@ -878,6 +1061,8 @@ impl PointerHandler for App {
                     }
                 }
                 PointerEventKind::Press { button, serial, .. } if button == BTN_LEFT => {
+                    self.end_scroll();
+                    self.serial = Some(serial);
                     if let Some(c) = self.control_at(p) {
                         self.pressed = Some(c);
                     } else if self.on_phone(p) && self.asleep {
@@ -907,25 +1092,22 @@ impl PointerHandler for App {
                     if self.touching || !self.on_phone(p) {
                         continue;
                     }
-                    // Discrete ticks scroll a fixed step; a touchpad's
-                    // continuous axis moves by its own distance.
-                    let dy = if vertical.discrete != 0 || vertical.value120 != 0 { vertical.value120 as f64 / 120.0 * WHEEL_STEP } else { vertical.absolute };
-                    let dx = if horizontal.discrete != 0 || horizontal.value120 != 0 { horizontal.value120 as f64 / 120.0 * WHEEL_STEP } else { horizontal.absolute };
-                    if dx == 0.0 && dy == 0.0 {
-                        continue;
+                    // A wheel's ticks flick; a touchpad's axis drags by its
+                    // own distance, and its fingers leaving lift the finger
+                    // at speed, so iOS flings the content the way it would
+                    // a real one.
+                    let ticks = |a: &smithay_client_toolkit::seat::pointer::AxisScroll| (a.discrete != 0 || a.value120 != 0).then(|| a.value120 as f64 / 120.0);
+                    match (ticks(&vertical), ticks(&horizontal)) {
+                        (None, None) => {
+                            if vertical.absolute != 0.0 || horizontal.absolute != 0.0 {
+                                self.swipe(p, horizontal.absolute, vertical.absolute);
+                            }
+                            if vertical.stop || horizontal.stop {
+                                self.lift_finger();
+                            }
+                        }
+                        (v, h) => self.wheel(p, v.unwrap_or(0.0), h.unwrap_or(0.0)),
                     }
-                    if self.wheel.is_none() {
-                        let at = self.to_phone(p);
-                        self.send(Cmd::Touch(Phase::Down, at.x, at.y));
-                        self.wheel = Some(Wheel { at: p, moved: Point::ZERO, last: Instant::now() });
-                    }
-                    let wheel = self.wheel.as_mut().unwrap();
-                    // Content follows the finger: scrolling down drags up.
-                    wheel.moved = Point::new(wheel.moved.x - dx, wheel.moved.y - dy);
-                    wheel.last = Instant::now();
-                    let to = Point::new(wheel.at.x + wheel.moved.x, wheel.at.y + wheel.moved.y);
-                    let at = self.to_phone(to);
-                    self.send(Cmd::Touch(Phase::Move, at.x, at.y));
                 }
                 _ => {}
             }
@@ -937,9 +1119,13 @@ impl PointerHandler for App {
 }
 
 impl KeyboardHandler for App {
-    fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, surface: &wl_surface::WlSurface, _: u32, _: &[u32], _: &[Keysym]) {
+    fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, surface: &wl_surface::WlSurface, serial: u32, _: &[u32], _: &[Keysym]) {
         if surface == self.window.wl_surface() {
             self.focused = true;
+            self.serial = Some(serial);
+            if let Some(clip) = self.unoffered.take() {
+                self.offer(clip);
+            }
         }
     }
 
@@ -951,10 +1137,11 @@ impl KeyboardHandler for App {
         }
     }
 
-    fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
+    fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, serial: u32, event: KeyEvent) {
         if !self.focused {
             return;
         }
+        self.serial = Some(serial);
         let ctrl_or_super = self.mods.ctrl || self.mods.logo;
         if ctrl_or_super && matches!(event.keysym, Keysym::v | Keysym::V) {
             // The phone pastes its own pasteboard: fill it with ours first.
@@ -988,7 +1175,15 @@ impl DataDeviceHandler for App {
     fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice, _: f64, _: f64, _: &wl_surface::WlSurface) {}
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice) {}
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice, _: f64, _: f64) {}
-    fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice) {}
+    /// This computer's clipboard changed, or the window got it on focus:
+    /// the phone gets a copy.
+    fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice) {
+        self.read_selection(|app, clip| {
+            if let Some(clip) = clip {
+                app.send(Cmd::Clip(clip));
+            }
+        });
+    }
     fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice) {}
 }
 
@@ -999,8 +1194,23 @@ impl DataOfferHandler for App {
 
 impl DataSourceHandler for App {
     fn accept_mime(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource, _: Option<String>) {}
-    fn send_request(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource, _: String, _: WritePipe) {}
-    fn cancelled(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource) {}
+    fn send_request(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource, _: String, mut pipe: WritePipe) {
+        let Some((_, clip)) = self.source.as_ref().filter(|(s, _)| s.inner() == source) else { return };
+        let bytes = match clip {
+            Clip::Text(t) => t.clone().into_bytes(),
+            Clip::Image { bytes, .. } => bytes.clone(),
+        };
+        // A reader that takes its time must not hold up the window.
+        std::thread::spawn(move || {
+            let _ = std::io::Write::write_all(&mut pipe, &bytes);
+        });
+    }
+    fn cancelled(&mut self, _: &Connection, _: &QueueHandle<Self>, source: &smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource) {
+        if self.source.as_ref().is_some_and(|(s, _)| s.inner() == source) {
+            self.source = None;
+        }
+        source.destroy();
+    }
     fn dnd_dropped(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource) {}
     fn dnd_finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource) {}
     fn action(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_source::WlDataSource, _: wl_data_device_manager::DndAction) {}
