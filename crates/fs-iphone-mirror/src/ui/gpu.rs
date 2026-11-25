@@ -16,9 +16,9 @@ struct U {
     radius: f32,
     video: f32,
     scale: f32,
-    _p0: f32,
-    _p1: f32,
-    _p2: f32,
+    turn: f32,
+    angle: f32,
+    zoom: f32,
 };
 @group(0) @binding(0) var luma: texture_2d<f32>;
 @group(0) @binding(1) var chroma: texture_2d<f32>;
@@ -46,6 +46,17 @@ fn rrect(p: vec2f, half: vec2f, r: f32) -> f32 {
     return n + min(max(q.x, q.y), 0.0) - l;
 }
 
+// A point of the picture as shown, turned `turn` quarters clockwise, back on
+// the portrait panel. Must match ui/mod.rs's `unturn`.
+fn unturn(q: vec2f) -> vec2f {
+    switch (u32(u.turn) & 3u) {
+        case 1u: { return vec2f(q.y, 1.0 - q.x); }
+        case 2u: { return vec2f(1.0) - q; }
+        case 3u: { return vec2f(1.0 - q.y, q.x); }
+        default: { return q; }
+    }
+}
+
 fn rgb(t: vec2f) -> vec3f {
     let y = textureSampleLevel(luma, samp, t, 0.0).r;
     let c = textureSampleLevel(chroma, samp, t, 0.0).rg - vec2f(0.5);
@@ -53,13 +64,24 @@ fn rgb(t: vec2f) -> vec3f {
     return vec3f(y + 1.5748 * c.y, y - 0.1873 * c.x - 0.4681 * c.y, y + 1.8556 * c.x);
 }
 
+// A window pixel, seen from the phone while it spins: turned back by the
+// spin's angle about the phone's centre and grown back by its shrink.
+fn unspin(p: vec2f, centre: vec2f) -> vec2f {
+    let c = cos(u.angle);
+    let s = sin(u.angle);
+    let d = p - centre;
+    return centre + vec2f(c * d.x + s * d.y, c * d.y - s * d.x) / u.zoom;
+}
+
 @fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
-    let p = pos.xy;
     let half = u.size * 0.5;
     let centre = u.origin + half;
-    let d = rrect(p - centre, half, u.radius);
+    let p = unspin(pos.xy, centre);
+    // Distances back in window pixels for the edge's antialiasing.
+    let d = rrect(p - centre, half, u.radius) * u.zoom;
     let cover = clamp(0.5 - d, 0.0, 1.0);
-    let ds = rrect(p - centre - vec2f(0.0, 10.0 * u.scale), half - vec2f(4.0 * u.scale), u.radius);
+    // The shadow falls down the window, not down the turning phone.
+    let ds = rrect(unspin(pos.xy - vec2f(0.0, 10.0 * u.scale), centre) - centre, half - vec2f(4.0 * u.scale), u.radius) * u.zoom;
     let soft = 26.0 * u.scale;
     let shadow = 0.42 * (1.0 - smoothstep(-soft, soft, ds));
     var base = vec4f(0.0, 0.0, 0.0, shadow);
@@ -67,8 +89,10 @@ fn rgb(t: vec2f) -> vec3f {
         // A box of 4x4 bilinear taps over the pixel's footprint: the
         // picture is shrunk three to four times, and one tap shimmers.
         let dims = vec2f(textureDimensions(luma));
-        let t = (p - u.origin) / u.size * u.crop;
-        let step = u.crop / u.size / 4.0;
+        let t = unturn((p - u.origin) / u.size) * u.crop;
+        // The window's pixel on the panel's axes, which a quarter turn swaps.
+        let span = select(u.size, u.size.yx, (u32(u.turn) & 1u) == 1u);
+        let step = u.crop / (span * u.zoom) / 4.0;
         var acc = vec3f(0.0);
         for (var j = 0; j < 4; j++) {
             for (var i = 0; i < 4; i++) {
@@ -78,7 +102,7 @@ fn rgb(t: vec2f) -> vec3f {
         let c = clamp(acc / 16.0, vec3f(0.0), vec3f(1.0));
         base = vec4f(c * cover, cover) + base * (1.0 - cover);
     }
-    let o = textureLoad(over, vec2i(p), 0);
+    let o = textureLoad(over, vec2i(pos.xy), 0);
     return o + base * (1.0 - o.a);
 }
 "#;
@@ -92,7 +116,9 @@ struct Uniforms {
     radius: f32,
     video: f32,
     scale: f32,
-    _pad: [f32; 3],
+    turn: f32,
+    angle: f32,
+    zoom: f32,
 }
 
 /// Where the picture goes, in device pixels, and how much of the decoded
@@ -103,6 +129,12 @@ pub struct Placement {
     pub radius: f32,
     pub scale: f32,
     pub content: (u32, u32),
+    /// Quarter turns clockwise to stand the picture up.
+    pub turn: u8,
+    /// While it spins: its extra turn clockwise about its centre, in
+    /// radians, and the shrink that keeps it inside the window.
+    pub angle: f32,
+    pub zoom: f32,
 }
 
 pub struct Gpu {
@@ -320,7 +352,9 @@ impl Gpu {
             radius: at.radius,
             video: if self.has_video { 1.0 } else { 0.0 },
             scale: at.scale,
-            _pad: [0.0; 3],
+            turn: at.turn as f32,
+            angle: at.angle,
+            zoom: at.zoom,
         };
         // SAFETY: Uniforms is plain f32s, repr(C), no padding beyond its own fields.
         let bytes = unsafe { std::slice::from_raw_parts(&u as *const Uniforms as *const u8, std::mem::size_of::<Uniforms>()) };

@@ -13,7 +13,8 @@ use idevice::core_device::{
     TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient,
     build_frame_ack, build_keyframe_request, build_liveness, build_rctl,
 };
-use idevice::core_device::{KeyboardUsage, PasteboardServiceClient};
+use idevice::core_device::{KeyboardUsage, Orientation, OrientationServiceClient, PasteboardServiceClient, RotationDirection};
+use idevice::springboardservices::{InterfaceOrientation, SpringBoardServicesClient};
 use idevice::{ReadWrite, RsdService};
 use tokio::sync::mpsc;
 
@@ -37,6 +38,9 @@ pub enum Status {
 pub enum Event {
     Status(Status),
     Phone { product_type: String },
+    /// The phone turned: quarter turns clockwise that stand its picture
+    /// up. The stream is always the portrait panel, whichever way it faces.
+    Turn(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -64,6 +68,8 @@ pub enum Cmd {
     Type(Vec<BTreeSet<u8>>),
     Button(Button),
     Paste(String),
+    /// Turn the phone a quarter, as if it were rotated in the hand.
+    Rotate(RotationDirection),
     /// Lift every finger and key: the window lost focus or closed.
     Release,
 }
@@ -158,6 +164,12 @@ async fn connect(
     *last_addr = Some(tunnel.phone);
     if let Some(pt) = tunnel.rsd.properties.get("ProductType").and_then(|v| v.as_string()) {
         sink(Event::Phone { product_type: pt.to_string() });
+    }
+    // A phone a session left turned stays turned. An interface in
+    // landscape gives that away; one in portrait reads as upright.
+    match interface_turn(&mut tunnel).await {
+        Ok(turn) => sink(Event::Turn(turn)),
+        Err(e) => tracing::debug!("orientation: {e}"),
     }
     if !image::mounted(&mut tunnel).await? {
         sink(Event::Status(Status::Preparing));
@@ -306,6 +318,19 @@ async fn pump(
             }
             cmd = cmds.recv() => {
                 let Some(mut cmd) = cmd else { return Ok(()) };
+                if let Cmd::Rotate(direction) = cmd {
+                    let mut turned = rotate(tunnel, direction).await;
+                    // An iPhone has no upside-down interface: on to landscape.
+                    if let Ok(Some(2)) = turned {
+                        turned = rotate(tunnel, direction).await;
+                    }
+                    match turned {
+                        Ok(Some(turn)) => sink(Event::Turn(turn)),
+                        Ok(None) => {}
+                        Err(e) => tracing::warn!("{e}"),
+                    }
+                    continue;
+                }
                 // Only the newest of a run of moves matters.
                 if matches!(cmd, Cmd::Touch(Phase::Move, ..)) {
                     while let Ok(next) = cmds.try_recv() {
@@ -377,6 +402,45 @@ fn hid_xy(x: f64, y: f64) -> (u16, u16) {
     ((x.clamp(0.0, 1.0) * 65535.0).round() as u16, (y.clamp(0.0, 1.0) * 65535.0).round() as u16)
 }
 
+async fn interface_turn(tunnel: &mut tunnel::Tunnel) -> Result<u8, String> {
+    let mut sb = SpringBoardServicesClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd)
+        .await
+        .map_err(|e| format!("springboard: {e:?}"))?;
+    let o = tokio::time::timeout(Duration::from_secs(2), sb.get_interface_orientation())
+        .await
+        .map_err(|_| "springboard timed out".to_string())?
+        .map_err(|e| format!("{e:?}"))?;
+    // The interface turns against the phone: landscape left is the phone
+    // turned clockwise.
+    Ok(match o {
+        InterfaceOrientation::LandscapeLeft => 1,
+        InterfaceOrientation::LandscapeRight => 3,
+        _ => 0,
+    })
+}
+
+/// Turns the phone as if in the hand and returns the quarter turns
+/// clockwise that stand its picture up, or none while it reads as flat.
+async fn rotate(tunnel: &mut tunnel::Tunnel, direction: RotationDirection) -> Result<Option<u8>, String> {
+    let mut control = OrientationServiceClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd)
+        .await
+        .map_err(|e| format!("device control: {e:?}"))?;
+    let state = tokio::time::timeout(Duration::from_secs(3), control.rotate(direction))
+        .await
+        .map_err(|_| "rotate timed out".to_string())?
+        .map_err(|e| format!("rotate: {e:?}"))?;
+    tracing::debug!("orientation now {:?}", state.orientation);
+    // UIKit's device landscape right is the phone turned clockwise: its
+    // panel's left edge is now the top.
+    Ok(match state.orientation {
+        Orientation::Portrait => Some(0),
+        Orientation::LandscapeRight => Some(1),
+        Orientation::PortraitUpsideDown => Some(2),
+        Orientation::LandscapeLeft => Some(3),
+        _ => None,
+    })
+}
+
 impl Input {
     async fn handle(&mut self, tunnel: &mut tunnel::Tunnel, cmd: Cmd) {
         let r = match cmd {
@@ -399,6 +463,8 @@ impl Input {
             }
             Cmd::Button(b) => self.button(tunnel, b).await,
             Cmd::Paste(text) => self.paste(tunnel, &text).await,
+            // The stream loop turns the phone: it reports where it landed.
+            Cmd::Rotate(_) => Ok(()),
             Cmd::Release => {
                 self.release(tunnel).await;
                 Ok(())

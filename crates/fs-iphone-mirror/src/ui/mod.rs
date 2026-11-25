@@ -19,6 +19,7 @@ use smithay_client_toolkit::data_device_manager::data_source::DataSourceHandler;
 use smithay_client_toolkit::data_device_manager::{DataDeviceManagerState, WritePipe};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::presentation_time::{PresentTime, PresentationTimeHandler, PresentationTimeState};
+use calloop::signals::{Signal, Signals};
 use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle, PostAction, channel, ping};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
@@ -33,6 +34,7 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::xdg::{XdgShell, XdgSurface};
 use smithay_client_toolkit::shell::xdg::window::{DecorationMode, Window, WindowConfigure, WindowDecorations, WindowHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
+use idevice::core_device::RotationDirection;
 use tokio::sync::mpsc::UnboundedSender;
 use vello_cpu::kurbo::{Point, Rect};
 
@@ -57,6 +59,11 @@ pub fn run() -> Result<(), String> {
     let qh = queue.handle();
     let mut event_loop: EventLoop<App> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let handle = event_loop.handle();
+    // Before any thread starts, so every thread inherits the blocked mask: a
+    // SIGTERM (the shell going away) closes the window the way its button
+    // does, phone stood back up.
+    let signals = Signals::new(&[Signal::SIGTERM, Signal::SIGINT, Signal::SIGHUP]).map_err(|e| e.to_string())?;
+    handle.insert_source(signals, |_, _, app: &mut App| app.exit = true).map_err(|e| e.to_string())?;
     WaylandSource::new(conn.clone(), queue).insert(handle.clone()).map_err(|e| e.to_string())?;
 
     let compositor = CompositorState::bind(&globals, &qh).map_err(|e| format!("wl_compositor: {e}"))?;
@@ -104,6 +111,9 @@ pub fn run() -> Result<(), String> {
         size: (0, 0),
         scale: 1,
         phone: (0.0, 0.0),
+        turn: 0,
+        spin: None,
+        room: (0.0, 0.0),
         model: None,
         bounds: None,
         sized: false,
@@ -137,9 +147,35 @@ pub fn run() -> Result<(), String> {
         app.tick();
     }
     let _ = app.cmds.send(Cmd::Release);
+    // A phone left turned stays turned: stand it back up.
+    let back = match app.turn {
+        1 => vec![RotationDirection::Left],
+        2 => vec![RotationDirection::Right, RotationDirection::Right],
+        3 => vec![RotationDirection::Right],
+        _ => vec![],
+    };
+    let wait = 150 + 250 * back.len() as u64;
+    for d in back {
+        let _ = app.cmds.send(Cmd::Rotate(d));
+    }
     // Give the session a moment to lift fingers and keys before the process goes.
-    std::thread::sleep(Duration::from_millis(150));
+    std::thread::sleep(Duration::from_millis(wait));
     Ok(())
+}
+
+/// The turn's spring: Apple's default, half a second, barely
+/// underdamped. Its share of the way, at `t` seconds.
+fn spring(t: f64) -> f64 {
+    let (omega, zeta): (f64, f64) = (2.0 * std::f64::consts::PI / 0.5, 0.9);
+    let wd = omega * (1.0 - zeta * zeta).sqrt();
+    1.0 - (-zeta * omega * t).exp() * ((wd * t).cos() + zeta * omega / wd * (wd * t).sin())
+}
+
+/// How small a `w` by `h` rectangle turned `angle` must be to stay inside
+/// `room`.
+fn fit_turned(w: f64, h: f64, room: (f64, f64), angle: f64) -> f64 {
+    let (c, s) = (angle.cos().abs(), angle.sin().abs());
+    (room.0 / (w * c + h * s)).min(room.1 / (w * s + h * c)).min(1.0)
 }
 
 struct Wheel {
@@ -167,6 +203,15 @@ struct App {
     scale: i32,
     /// The phone's screen in the window, logical, as it is now oriented.
     phone: (f64, f64),
+    /// Quarter turns clockwise the picture is shown at.
+    turn: u8,
+    /// The turn under way: where the picture started, in radians from
+    /// where it is going, and since when.
+    spin: Option<(f64, Instant)>,
+    /// The window less its margins, logical, which the phone fits inside
+    /// either way round: a square of its long side unless the compositor
+    /// set a size (a tile, a resize by hand).
+    room: (f64, f64),
     model: Option<Model>,
     /// The largest window the compositor suggests, when it says.
     bounds: Option<(u32, u32)>,
@@ -199,37 +244,51 @@ struct App {
     exit: bool,
 }
 
+/// A point of the picture as shown, turned `turn` quarters clockwise, back
+/// on the portrait panel. Must match the shader's `unturn`.
+fn unturn(turn: u8, u: f64, v: f64) -> Point {
+    match turn % 4 {
+        1 => Point::new(v, 1.0 - u),
+        2 => Point::new(1.0 - u, 1.0 - v),
+        3 => Point::new(1.0 - v, u),
+        _ => Point::new(u, v),
+    }
+}
+
 impl App {
     fn send(&self, cmd: Cmd) {
         let _ = self.cmds.send(cmd);
     }
 
     fn landscape(&self) -> bool {
-        self.gpu.as_ref().and_then(|g| g.frame_size()).is_some_and(|(w, h)| w > h)
+        self.turn % 2 == 1
     }
 
-    /// The phone's screen as the picture holds it: its native size, turned
-    /// with the picture.
+    /// The phone's screen in the picture, portrait as the stream always is:
+    /// its native size, less the encoder's padding.
     fn content(&self) -> (u32, u32) {
         let frame = self.gpu.as_ref().and_then(|g| g.frame_size());
         let m = self.model.unwrap_or_else(|| {
             let (w, h) = frame.unwrap_or((1206, 2622));
             model::fallback(w, h)
         });
-        let (w, h) = if self.landscape() { (m.height, m.width) } else { (m.width, m.height) };
         match frame {
-            Some((fw, fh)) => (w.min(fw), h.min(fh)),
-            None => (w, h),
+            Some((fw, fh)) => (m.width.min(fw), m.height.min(fh)),
+            None => (m.width, m.height),
         }
     }
 
+    /// Width over height as shown, turned with the interface.
     fn aspect(&self) -> f64 {
         let (w, h) = self.content();
-        w as f64 / h as f64
+        if self.landscape() { h as f64 / w as f64 } else { w as f64 / h as f64 }
     }
 
+    /// The phone, centred in the room.
     fn phone_rect(&self) -> Rect {
-        Rect::new(MARGIN, TOP_MARGIN, MARGIN + self.phone.0, TOP_MARGIN + self.phone.1)
+        let x = MARGIN + (self.room.0 - self.phone.0) / 2.0;
+        let y = TOP_MARGIN + (self.room.1 - self.phone.1) / 2.0;
+        Rect::new(x, y, x + self.phone.0, y + self.phone.1)
     }
 
     fn radius(&self) -> f64 {
@@ -237,11 +296,12 @@ impl App {
         m.corner_fraction() * self.phone.0.min(self.phone.1)
     }
 
-    /// The phone at its true size on the output the window is on, or the
-    /// first one: millimetres over the mode's pixels per millimetre.
-    fn natural_phone(&self) -> (f64, f64) {
+    /// A square of the phone's long side at its true size on the output the
+    /// window is on, or the first one (millimetres over the mode's pixels per
+    /// millimetre), as far as the compositor's room allows.
+    fn natural_room(&self) -> (f64, f64) {
         let m = self.model.unwrap_or_else(|| model::fallback(1206, 2622));
-        let info = self.window.wl_surface().data::<smithay_client_toolkit::compositor::SurfaceData<()>>().and_then(|d| d.outputs().next()).and_then(|o| self.outputs.info(&o)).or_else(|| self.outputs.outputs().next().and_then(|o| self.outputs.info(&o)));
+        let info = self.output();
         let current = info.as_ref().and_then(|i| i.modes.iter().find(|m| m.current).map(|m| m.dimensions));
         // The panel's pixels per millimetre, mode and physical size both
         // in the output's own (unrotated) orientation.
@@ -259,9 +319,21 @@ impl App {
             None => (m.width as f64 / m.scale, m.height as f64 / m.scale),
         };
         tracing::info!("natural size {w:.0}x{h:.0} logical ({} on {:?})", m.name, info.map(|i| i.name));
-        let (w, h) = if self.landscape() { (h, w) } else { (w, h) };
-        // A phone taller than the space the compositor offers shrinks to fit it.
-        match self.bounds {
+        let long = w.max(h);
+        self.within_bounds((long, long))
+    }
+
+    /// The output the window is on, or the first one.
+    fn output(&self) -> Option<smithay_client_toolkit::output::OutputInfo> {
+        let on = self.window.wl_surface().data::<smithay_client_toolkit::compositor::SurfaceData<()>>().and_then(|d| d.outputs().next());
+        on.or_else(|| self.outputs.outputs().next()).and_then(|o| self.outputs.info(&o))
+    }
+
+    /// A phone bigger than the space the compositor offers (else the
+    /// output's) shrinks to fit it.
+    fn within_bounds(&self, (w, h): (f64, f64)) -> (f64, f64) {
+        let room = self.bounds.filter(|(bw, bh)| *bw > 0 && *bh > 0).or_else(|| self.output()?.logical_size.map(|(w, h)| (w.max(0) as u32, h.max(0) as u32)));
+        match room {
             Some((bw, bh)) if bw > 0 && bh > 0 => {
                 let room = (bw as f64 - 2.0 * MARGIN, bh as f64 - TOP_MARGIN - MARGIN);
                 let k = (room.0 / w).min(room.1 / h).min(1.0);
@@ -271,13 +343,16 @@ impl App {
         }
     }
 
-    /// Fits the phone into `avail` (the window less its margins) at the
-    /// picture's aspect.
-    fn fit(&mut self, avail: (f64, f64)) {
+    /// The phone as big as `room` holds it at the picture's aspect. A turn
+    /// refits it in the same room, so it spins in place and the compositor
+    /// is never asked for a new size.
+    fn fit(&mut self, room: (f64, f64)) {
+        let room = (room.0.max(120.0).round(), room.1.max(120.0).round());
         let a = self.aspect();
-        let (w, h) = if avail.0 / avail.1 > a { (avail.1 * a, avail.1) } else { (avail.0, avail.0 / a) };
-        self.phone = (w.max(60.0).round(), h.max(60.0).round());
-        self.size = ((self.phone.0 + 2.0 * MARGIN) as u32, (self.phone.1 + TOP_MARGIN + MARGIN) as u32);
+        let (w, h) = if room.0 / room.1 > a { (room.1 * a, room.1) } else { (room.0, room.0 / a) };
+        self.room = room;
+        self.phone = (w.round(), h.round());
+        self.size = ((room.0 + 2.0 * MARGIN) as u32, (room.1 + TOP_MARGIN + MARGIN) as u32);
     }
 
     fn set_input_region(&self) {
@@ -315,19 +390,9 @@ impl App {
         }
         let mut decoded = None;
         if let Some(frame) = self.latest.take() {
-            let gpu = self.gpu.as_mut().unwrap();
-            let turned = gpu.frame_size().is_some_and(|(w, h)| (w > h) != (frame.width > frame.height));
-            gpu.set_frame(&frame);
+            self.gpu.as_mut().unwrap().set_frame(&frame);
             decoded = Some(frame.decoded);
             self.frame_at = Some(Instant::now());
-            if turned {
-                // The phone turned: the same long side, the other way round.
-                let long = self.phone.0.max(self.phone.1);
-                let a = self.aspect();
-                self.fit(if a > 1.0 { (long, long / a) } else { (long * a, long) });
-                self.limits();
-                self.set_input_region();
-            }
         }
         let device = self.device_size();
         let scene = Scene {
@@ -342,12 +407,16 @@ impl App {
         };
         let p = self.phone_rect();
         let s = self.scale as f32;
+        let (angle, zoom) = self.spin_now();
         let at = gpu::Placement {
             origin: (p.x0 as f32 * s, p.y0 as f32 * s),
             size: (p.width() as f32 * s, p.height() as f32 * s),
             radius: self.radius() as f32 * s,
             scale: s,
             content: self.content(),
+            turn: self.turn,
+            angle: angle as f32,
+            zoom: zoom as f32,
         };
         let gpu = self.gpu.as_mut().unwrap();
         gpu.resize(device);
@@ -367,17 +436,16 @@ impl App {
         match gpu.render(&at) {
             Ok(()) => {
                 self.frame_pending = true;
-                self.dirty = false;
+                // A spin draws every frame until it settles.
+                self.dirty = self.spin.is_some();
             }
             Err(e) => tracing::warn!("render: {e}"),
         }
     }
 
-    /// The smallest window, at the picture's aspect.
+    /// The smallest window.
     fn limits(&self) {
-        let a = self.aspect();
-        let min = (120.0 * a.max(1.0) + 2.0 * MARGIN, 120.0 / a.min(1.0) + TOP_MARGIN + MARGIN);
-        self.window.set_min_size(Some((min.0 as u32, min.1 as u32)));
+        self.window.set_min_size(Some(((120.0 + 2.0 * MARGIN) as u32, (120.0 + TOP_MARGIN + MARGIN) as u32)));
     }
 
     fn new_frame(&mut self) {
@@ -391,6 +459,7 @@ impl App {
                 tracing::info!("status: {s:?}");
                 self.status = s;
             }
+            Event::Turn(turn) => self.set_turn(turn),
             Event::Phone { product_type } => {
                 let m = model::lookup(&product_type);
                 tracing::info!("phone: {product_type} ({})", m.map(|m| m.name).unwrap_or("unknown"));
@@ -398,8 +467,8 @@ impl App {
                     self.model = m;
                     if self.configured {
                         // Within the size the compositor gave, once it gave one.
-                        let avail = if self.sized { self.phone } else { self.natural_phone() };
-                        self.fit(avail);
+                        let room = if self.sized { self.room } else { self.natural_room() };
+                        self.fit(room);
                         self.set_input_region();
                     }
                 }
@@ -425,12 +494,13 @@ impl App {
         }
     }
 
-    /// A window point as a share of the phone's screen, portrait-relative.
+    /// A window point as a share of the phone's portrait panel, the way
+    /// its touchscreen reads whichever way the interface faces.
     fn to_phone(&self, p: Point) -> Point {
         let r = self.phone_rect();
-        let x = ((p.x - r.x0) / r.width()).clamp(0.0, 1.0);
-        let y = ((p.y - r.y0) / r.height()).clamp(0.0, 1.0);
-        Point::new(x, y)
+        let u = ((p.x - r.x0) / r.width()).clamp(0.0, 1.0);
+        let v = ((p.y - r.y0) / r.height()).clamp(0.0, 1.0);
+        unturn(self.turn, u, v)
     }
 
     fn control_at(&self, p: Point) -> Option<Control> {
@@ -452,10 +522,53 @@ impl App {
                 let m = &self.audio.muted;
                 m.store(!m.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
             }
+            Control::Rotate => {
+                // Portrait and landscape, the phone's top to the right.
+                let (direction, turn) = match self.turn {
+                    1 => (RotationDirection::Left, 0),
+                    3 => (RotationDirection::Right, 0),
+                    t => (RotationDirection::Right, (t + 1) % 4),
+                };
+                self.send(Cmd::Rotate(direction));
+                // The window turns now; the phone's answer corrects it.
+                self.set_turn(turn);
+            }
             Control::Close => self.exit = true,
         }
         self.dirty = true;
         self.draw();
+    }
+
+    /// Shows the picture `turn` quarters clockwise: the phone takes the new
+    /// aspect at once and spins into it.
+    fn set_turn(&mut self, turn: u8) {
+        if turn == self.turn {
+            return;
+        }
+        let quarters = match (turn + 4 - self.turn) % 4 {
+            3 => -1.0,
+            q => q as f64,
+        };
+        let now = self.spin.map(|(from, at)| from * (1.0 - spring(at.elapsed().as_secs_f64()))).unwrap_or(0.0);
+        self.spin = Some((now - quarters * std::f64::consts::FRAC_PI_2, Instant::now()));
+        let flips = self.landscape() != (turn % 2 == 1);
+        self.turn = turn;
+        if self.configured && flips {
+            self.fit(self.room);
+            self.set_input_region();
+        }
+    }
+
+    /// The picture's extra turn and shrink this frame, while it spins.
+    fn spin_now(&mut self) -> (f64, f64) {
+        let Some((from, at)) = self.spin else { return (0.0, 1.0) };
+        let t = at.elapsed().as_secs_f64();
+        let angle = from * (1.0 - spring(t));
+        if t > 1.0 || angle.abs() < 1e-3 {
+            self.spin = None;
+            return (0.0, 1.0);
+        }
+        (angle, fit_turned(self.phone.0, self.phone.1, self.room, angle))
     }
 
     fn release_keys(&mut self) {
@@ -586,12 +699,11 @@ impl WindowHandler for App {
         match configure.new_size {
             (Some(w), Some(h)) if !first => {
                 self.sized = true;
-                let avail = (w.get() as f64 - 2.0 * MARGIN, h.get() as f64 - TOP_MARGIN - MARGIN);
-                self.fit((avail.0.max(60.0), avail.1.max(60.0)));
+                self.fit((w.get() as f64 - 2.0 * MARGIN, h.get() as f64 - TOP_MARGIN - MARGIN));
             }
             _ if first || self.phone.0 == 0.0 => {
-                let natural = self.natural_phone();
-                self.fit(natural);
+                let room = self.natural_room();
+                self.fit(room);
             }
             _ => {}
         }

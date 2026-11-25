@@ -9,10 +9,11 @@ name = "formalshell-iphone-mirror"
 path = "src/main.rs"
 
 [dependencies]
-idevice = { version = "0.1.68", default-features = false, features = ["ring", "core_device", "display_stream", "remote_pairing", "rsd", "tunnel_tcp_stack", "mobile_image_mounter", "tss", "xpc"] }
+idevice = { version = "0.1.68", default-features = false, features = ["ring", "core_device", "display_stream", "remote_pairing", "rsd", "tunnel_tcp_stack", "mobile_image_mounter", "tss", "xpc", "springboardservices"] }
 mdns-sd = "0.13"
 ed25519-dalek = "2"
 fs-theme = { path = "../fs-theme" }
+calloop = { version = "0.14", features = ["signals"] }
 futures-lite = "2"
 libc = "0.2"
 libloading = "0.8"

@@ -11,6 +11,8 @@ use std::io::BufRead;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use idevice::core_device::RotationDirection;
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -159,6 +161,7 @@ fn drive() {
             Some("up") => send(session::Cmd::Touch(session::Phase::Up, f(1), f(2))),
             Some("home") => send(session::Cmd::Button(session::Button::Home)),
             Some("switcher") => send(session::Cmd::Button(session::Button::AppSwitcher)),
+            Some("rotate") => send(session::Cmd::Rotate(if w.get(1) == Some(&"left") { RotationDirection::Left } else { RotationDirection::Right })),
             Some("lock") => send(session::Cmd::Button(session::Button::Lock)),
             Some("key") => {
                 let keys: BTreeSet<u8> = w[1..].iter().filter_map(|k| k.parse().ok()).collect();

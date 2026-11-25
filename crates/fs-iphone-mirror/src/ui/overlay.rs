@@ -17,11 +17,12 @@ use vello_cpu::{Glyph, Pixmap, RenderContext, Resources};
 pub enum Control {
     Home,
     AppSwitcher,
+    Rotate,
     Mute,
     Close,
 }
 
-pub const CONTROLS: [Control; 4] = [Control::Home, Control::AppSwitcher, Control::Mute, Control::Close];
+pub const CONTROLS: [Control; 5] = [Control::Home, Control::AppSwitcher, Control::Rotate, Control::Mute, Control::Close];
 
 /// What the phone's shape holds when it is not the live picture.
 #[derive(Clone, Debug, PartialEq)]
@@ -190,6 +191,7 @@ impl Overlay {
                 let name = match control {
                     Control::Home => "house",
                     Control::AppSwitcher => "layers",
+                    Control::Rotate => "rotate-cw",
                     Control::Mute if s.muted => "volume-x",
                     Control::Mute => "volume-2",
                     Control::Close => "x",
