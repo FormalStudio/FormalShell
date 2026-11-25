@@ -232,6 +232,11 @@ pub struct App {
     /// The last button press's serial and surface, which an activation
     /// token for what the click opens is asked with.
     press: Option<(u32, wl_surface::WlSurface)>,
+    /// Where the pointer last was, and whether the event in hand put it
+    /// somewhere else. Hyprland repeats a motion at the same place on the
+    /// surface the pointer is leaving when focus goes to another output.
+    pointer_seen: Option<(wl_surface::WlSurface, (f64, f64))>,
+    pointer_moved: bool,
     display: WlDisplay,
     qh: QueueHandle<Self>,
     handle: LoopHandle<'static, App>,
@@ -354,6 +359,8 @@ impl App {
             activation: ActivationState::bind(globals, qh).ok(),
             seat: None,
             press: None,
+            pointer_seen: None,
+            pointer_moved: false,
             display,
             qh: qh.clone(),
             handle,
@@ -1236,6 +1243,11 @@ impl App {
         'events: for e in events {
             if let PointerEventKind::Press { serial, .. } = e.kind {
                 self.press = Some((serial, e.surface.clone()));
+            }
+            if matches!(e.kind, PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. }) {
+                let at = (e.surface.clone(), e.position);
+                self.pointer_moved = self.pointer_seen.as_ref() != Some(&at);
+                self.pointer_seen = Some(at);
             }
             let (e, mut target) = self.over_strip(e, owner::target(self, &e.surface));
             self.reveal_pointer(&e, target);

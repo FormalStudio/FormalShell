@@ -190,8 +190,8 @@ impl Owner for Heads {
     }
 
     /// A press on another output's catcher closes what a click outside
-    /// closes; a spare bar under the pointer becomes the live one, and the
-    /// event goes on to it.
+    /// closes; a spare bar the pointer comes to or moves on becomes the
+    /// live one, and the event goes on to it.
     fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
         match target {
             Some(Target::Head(_, heads::Part::Catcher)) => {
@@ -203,7 +203,7 @@ impl Owner for Heads {
             Some(Target::Head(i, heads::Part::Bar))
                 if match e.kind {
                     PointerEventKind::Press { .. } => app.press_spare(i),
-                    PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => app.promote(i),
+                    PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => app.pointer_moved && app.promote(i),
                     _ => false,
                 } =>
             {
