@@ -173,6 +173,13 @@ async fn run(sink: impl Fn(Event), mut cmds: mpsc::UnboundedReceiver<Cmd>, decod
 }
 
 const UNPAIRED: &str = "unpaired";
+/// What `pump` ends with when the phone's screen is on and its picture has
+/// stopped: another host took the stream, or the phone dropped it.
+const STALE: &str = "stale";
+/// With the screen on, a picture this quiet asks for a keyframe, and one
+/// quiet for STALE_AFTER starts the stream again.
+const QUIET_AFTER: Duration = Duration::from_secs(1);
+const STALE_AFTER: Duration = Duration::from_secs(3);
 
 async fn connect(
     sink: &impl Fn(Event),
@@ -224,17 +231,28 @@ async fn connect(
         sink(Event::Status(Status::Preparing));
         image::mount(&mut tunnel).await?;
     }
-    let screen = tokio::time::timeout(Duration::from_secs(15), stream::start(&mut tunnel.adapter, &mut tunnel.rsd))
-        .await
-        .map_err(|_| "screen stream did not start".to_string())??;
     let mut lit = backlight(&mut tunnel).await;
     let mut copied = pasteboard(&mut tunnel).await;
     let mut input = Input::default();
-    audio.reset();
-    let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &mut input, &mut lit, &mut copied).await;
+    let mut awake = true;
+    // A stalled picture starts the display stream again on the same tunnel:
+    // input and the pasteboard carry on.
+    let result = loop {
+        let screen = match tokio::time::timeout(Duration::from_secs(15), stream::start(&mut tunnel.adapter, &mut tunnel.rsd)).await {
+            Ok(Ok(screen)) => screen,
+            Ok(Err(e)) => break Err(e),
+            Err(_) => break Err("screen stream did not start".to_string()),
+        };
+        audio.reset();
+        let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &mut input, &mut lit, &mut copied, &mut awake).await;
+        let mut client = screen.client;
+        let _ = tokio::time::timeout(Duration::from_secs(2), client.stop_media_stream()).await;
+        match result {
+            Err(e) if e == STALE => tracing::warn!("display stream: no picture for {STALE_AFTER:?} with the screen on; starting it again"),
+            other => break other,
+        }
+    };
     input.release(&mut tunnel).await;
-    let mut client = screen.client;
-    let _ = tokio::time::timeout(Duration::from_secs(2), client.stop_media_stream()).await;
     result
 }
 
@@ -248,6 +266,7 @@ async fn pump(
     input: &mut Input,
     lit: &mut mpsc::UnboundedReceiver<bool>,
     copied: &mut mpsc::UnboundedReceiver<Clip>,
+    awake: &mut bool,
 ) -> Result<(), String> {
     let video = screen.video_rtcp;
     let audio = screen.audio_rtcp;
@@ -282,10 +301,14 @@ async fn pump(
                     continue;
                 }
                 let Some(pkt) = RtpPacket::parse(&dg.data) else { continue };
+                let quiet = last_packet.elapsed();
                 last_packet = Instant::now();
                 if !streaming {
                     streaming = true;
+                    tracing::info!("display stream: picture arriving");
                     sink(Event::Status(Status::Streaming));
+                } else if quiet > QUIET_AFTER {
+                    tracing::info!("display stream: picture back after {} ms", quiet.as_millis());
                 }
                 let base = *base_seq.get_or_insert(pkt.sequence_number);
                 highest_seq = highest_seq.max(pkt.sequence_number.wrapping_sub(base) as u32);
@@ -321,6 +344,7 @@ async fn pump(
                     && last_keyframe_ask.elapsed() > Duration::from_millis(500)
                 {
                     last_keyframe_ask = Instant::now();
+                    tracing::info!("display stream: the decoder lost its place; asking for a keyframe");
                     fir_seq = fir_seq.wrapping_add(1);
                     let blocks = [block(video.phone, highest_seq)];
                     send(tunnel, &screen.video, video.port, build_keyframe_request(video.ours, CNAME, video.phone, &blocks, fir_seq)).await;
@@ -353,7 +377,15 @@ async fn pump(
                     }
                 }
             }
-            Some(on) = lit.recv() => sink(Event::Asleep(!on)),
+            Some(on) = lit.recv() => {
+                tracing::info!("phone screen {}", if on { "on" } else { "off" });
+                // A screen coming on has its picture to send yet.
+                if on && !*awake {
+                    last_packet = Instant::now();
+                }
+                *awake = on;
+                sink(Event::Asleep(!on));
+            }
             Some(clip) = copied.recv() => {
                 // Our own copy coming back is not news.
                 if input.clip.as_ref() != Some(&clip) {
@@ -370,9 +402,20 @@ async fn pump(
                 if audio.port != 0 {
                     send(tunnel, &screen.audio, audio.port, build_liveness(audio.ours, CNAME, &[block(audio.phone, audio_seq)])).await;
                 }
+                let quiet = last_packet.elapsed();
+                if *awake && quiet > STALE_AFTER {
+                    return Err(STALE.into());
+                }
+                if *awake && quiet > QUIET_AFTER && last_keyframe_ask.elapsed() > QUIET_AFTER {
+                    last_keyframe_ask = Instant::now();
+                    tracing::info!("display stream: no picture for {} ms; asking for a keyframe", quiet.as_millis());
+                    fir_seq = fir_seq.wrapping_add(1);
+                    let blocks = [block(video.phone, highest_seq)];
+                    send(tunnel, &screen.video, video.port, build_keyframe_request(video.ours, CNAME, video.phone, &blocks, fir_seq)).await;
+                }
                 // The screen asleep sends nothing; the tunnel going away
                 // shows as the display service not answering.
-                if last_packet.elapsed() > Duration::from_secs(5) {
+                if quiet > Duration::from_secs(5) {
                     alive(tunnel).await?;
                     last_packet = Instant::now();
                 }

@@ -25,6 +25,7 @@ smithay-client-toolkit = { version = "0.21", default-features = false, features 
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-journald = "0.3"
 vello_cpu = "0.3"
 # The raw display and surface pointers wgpu takes.
 wayland-backend = { version = "0.3", features = ["client_system"] }

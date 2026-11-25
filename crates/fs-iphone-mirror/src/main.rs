@@ -7,18 +7,23 @@ mod session;
 mod ui;
 
 use std::collections::BTreeSet;
-use std::io::BufRead;
+use std::io::{BufRead, IsTerminal};
+
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use idevice::core_device::RotationDirection;
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .with_writer(std::io::stderr)
+    // Launched from the shell, stderr goes nowhere anyone reads: the journal
+    // keeps what the stream did for the next time the picture stops.
+    let journal = (!std::io::stderr().is_terminal()).then(|| tracing_journald::layer().ok()).flatten();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .with(journal)
         .init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
