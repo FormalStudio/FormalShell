@@ -159,6 +159,7 @@ pub fn run() -> Result<(), String> {
         cursor: Point::ZERO,
         inside: false,
         touching: false,
+        pinch: None,
         hover: None,
         pressed: None,
         drag: None,
@@ -292,6 +293,10 @@ struct App {
     cursor: Point,
     inside: bool,
     touching: bool,
+    /// Two fingers down from an Alt drag: the second's offset from the
+    /// pointer when Shift made it a pan, mirrored through the phone's
+    /// middle when not.
+    pinch: Option<(Option<vello_cpu::kurbo::Vec2>, [Point; 2])>,
     hover: Option<Control>,
     pressed: Option<Control>,
     drag: Option<Drag>,
@@ -501,6 +506,7 @@ impl App {
             strip: self.inside,
             hover: self.hover,
             muted: self.audio.muted.load(std::sync::atomic::Ordering::Relaxed),
+            fingers: self.finger_dots(),
         };
         let p = self.phone_rect();
         let s = self.scale as f32;
@@ -674,6 +680,25 @@ impl App {
             return None;
         }
         overlay::strip_buttons(self.phone_rect()).into_iter().find(|(_, r)| r.contains(p)).map(|(c, _)| c)
+    }
+
+    /// The two fingers an Alt drag at `p` puts down.
+    fn fingers_at(&self, p: Point, pan: Option<vello_cpu::kurbo::Vec2>) -> [Point; 2] {
+        let c = self.phone_rect().center();
+        [p, pan.map_or(Point::new(2.0 * c.x - p.x, 2.0 * c.y - p.y), |d| p + d)]
+    }
+
+    fn finger_dots(&self) -> Option<([Point; 2], bool)> {
+        if let Some((_, at)) = self.pinch {
+            return Some((at, true));
+        }
+        (self.inside && self.mods.alt && !self.touching && self.phone_rect().contains(self.cursor))
+            .then(|| (self.fingers_at(self.cursor, None), false))
+    }
+
+    fn send_fingers(&self, phase: Phase, at: [Point; 2]) {
+        let [a, b] = at.map(|p| self.to_phone(p));
+        self.send(Cmd::Fingers(phase, [(a.x, a.y), (b.x, b.y)]));
     }
 
     fn on_phone(&self, p: Point) -> bool {
@@ -1066,6 +1091,9 @@ impl PointerHandler for App {
                     self.dirty = true;
                 }
                 PointerEventKind::Leave { .. } => {
+                    if let Some((_, at)) = self.pinch.take() {
+                        self.send_fingers(Phase::Up, at);
+                    }
                     if self.touching {
                         let at = self.to_phone(p);
                         self.send(Cmd::Touch(Phase::Up, at.x, at.y));
@@ -1077,6 +1105,14 @@ impl PointerHandler for App {
                     self.dirty = true;
                 }
                 PointerEventKind::Motion { .. } => {
+                    if let Some((pan, _)) = self.pinch {
+                        let at = self.fingers_at(p, pan);
+                        self.pinch = Some((pan, at));
+                        self.send_fingers(Phase::Move, at);
+                    }
+                    if self.mods.alt || self.pinch.is_some() {
+                        self.dirty = true;
+                    }
                     if self.touching {
                         let at = self.to_phone(p);
                         self.send(Cmd::Touch(Phase::Move, at.x, at.y));
@@ -1095,6 +1131,13 @@ impl PointerHandler for App {
                     self.serial = Some(serial);
                     if let Some(c) = self.control_at(p) {
                         self.pressed = Some(c);
+                    } else if self.mods.alt && !self.asleep && self.phone_rect().contains(p) {
+                        let c = self.phone_rect().center();
+                        let pan = self.mods.shift.then(|| Point::new(2.0 * c.x - p.x, 2.0 * c.y - p.y) - p);
+                        let at = self.fingers_at(p, pan);
+                        self.pinch = Some((pan, at));
+                        self.send_fingers(Phase::Down, at);
+                        self.dirty = true;
                     } else if let (Some(edge), Some(seat)) = (self.edge_at(p), &self.seat) {
                         self.window.resize(seat, serial, edge);
                     } else if self.on_phone(p) && self.asleep {
@@ -1109,6 +1152,10 @@ impl PointerHandler for App {
                     }
                 }
                 PointerEventKind::Release { button, .. } if button == BTN_LEFT => {
+                    if let Some((_, at)) = self.pinch.take() {
+                        self.send_fingers(Phase::Up, at);
+                        self.dirty = true;
+                    }
                     if self.touching {
                         let at = self.to_phone(p);
                         self.send(Cmd::Touch(Phase::Up, at.x, at.y));
@@ -1121,7 +1168,7 @@ impl PointerHandler for App {
                     }
                 }
                 PointerEventKind::Axis { vertical, .. } => {
-                    if self.touching || !self.on_phone(p) {
+                    if self.touching || self.pinch.is_some() || !self.on_phone(p) {
                         continue;
                     }
                     // Read as mpv reads them: a wheel in notches, a
@@ -1195,7 +1242,12 @@ impl KeyboardHandler for App {
     }
 
     fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, modifiers: Modifiers, _: RawModifiers, _: u32) {
+        let alt = self.mods.alt != modifiers.alt;
         self.mods = modifiers;
+        if alt && self.inside {
+            self.dirty = true;
+            self.draw();
+        }
     }
 }
 
