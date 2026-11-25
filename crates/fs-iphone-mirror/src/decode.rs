@@ -4,16 +4,20 @@
 //! where it does not. In process, because the ffmpeg CLI holds every frame
 //! until the next one arrives, which on a still screen is forever.
 //!
-//! Only the newest frame is kept, so a slow present drops frames instead of
-//! queueing them. Units that arrive together (Wi-Fi hands over a stall's
-//! worth at once) are all decoded, since each predicts from the last, and
-//! only the newest picture is copied out. A decoder that cannot keep up,
+//! Decoded frames wait for the window in a queue of HELD: Wi-Fi hands
+//! frames over in twos as often as singly, and showing only the newer of
+//! a pair drops every other step of a scroll, where one a refresh shows
+//! both and is caught up by the next gap. Past HELD the oldest goes, so a
+//! slow present never builds delay. A stall's worth of units arriving at
+//! once is all decoded, since each predicts from the last, and only its
+//! last pictures are copied out. A decoder that cannot keep up,
 //! with units waiting on it for BEHIND without a break, skips to the next
 //! key frame and asks the phone for one, which takes the phone seconds to
 //! send: the last resort, never the answer to a burst.
 
+use std::collections::VecDeque;
 use std::ffi::{CStr, CString, c_int, c_void};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -30,29 +34,40 @@ pub struct Frame {
     pub decoded: Instant,
 }
 
-/// The newest decoded frame and the hook that tells its reader one landed.
+/// Decoded frames a reader has yet to show, at most this many.
+const HELD: usize = 2;
+
+/// The decoded frames not yet shown, oldest first, and the hook that tells
+/// their reader one landed.
 pub struct Latest {
-    pub frame: Mutex<Option<Frame>>,
-    /// A shown frame's buffer, for the next picture: a fresh 4.5 MB one
+    frames: Mutex<VecDeque<Frame>>,
+    /// Shown frames' buffers, for the next pictures: a fresh 4.5 MB one
     /// each frame is zeroed and paged in before it is written.
-    spare: Mutex<Vec<u8>>,
+    spare: Mutex<Vec<Vec<u8>>>,
     notify: Box<dyn Fn() + Send + Sync>,
 }
 
 impl Latest {
     pub fn new(notify: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
-        Arc::new(Self { frame: Mutex::new(None), spare: Mutex::default(), notify: Box::new(notify) })
+        Arc::new(Self { frames: Mutex::default(), spare: Mutex::default(), notify: Box::new(notify) })
     }
 
     /// Hands back the buffer of a frame that has been shown.
     pub fn recycle(&self, frame: Frame) {
-        if let Ok(mut spare) = self.spare.lock() {
-            *spare = frame.data;
+        if let Ok(mut spare) = self.spare.lock()
+            && spare.len() <= HELD
+        {
+            spare.push(frame.data);
         }
     }
 
+    /// Whether a frame is waiting to be shown.
+    pub fn more(&self) -> bool {
+        self.frames.lock().is_ok_and(|f| !f.is_empty())
+    }
+
     pub fn take(&self) -> Option<Frame> {
-        self.frame.lock().ok()?.take()
+        self.frames.lock().ok()?.pop_front()
     }
 }
 
@@ -66,6 +81,8 @@ const BEHIND: Duration = Duration::from_secs(2);
 
 pub struct Decoder {
     tx: Option<SyncSender<(Vec<u8>, Instant)>>,
+    /// Units pushed and not yet taken up by the decoder.
+    queued: Arc<AtomicUsize>,
     thread: Option<std::thread::JoinHandle<()>>,
     /// Set when units were dropped: nothing decodes again until a key frame
     /// arrives, so the session asks the phone for one.
@@ -77,16 +94,22 @@ impl Decoder {
         let (tx, rx) = sync_channel(QUEUE);
         let wants_keyframe = Arc::new(AtomicBool::new(false));
         let wants = wants_keyframe.clone();
+        let queued = Arc::new(AtomicUsize::new(0));
+        let left = queued.clone();
         let thread = std::thread::Builder::new()
             .name("mirror-decode".into())
-            .spawn(move || run(rx, latest, wants))
+            .spawn(move || run(rx, latest, wants, left))
             .expect("spawn decoder");
-        Self { tx: Some(tx), thread: Some(thread), wants_keyframe }
+        Self { tx: Some(tx), queued, thread: Some(thread), wants_keyframe }
     }
 
     pub fn push(&self, au: Vec<u8>) {
-        if let Some(Err(TrySendError::Full(_))) = self.tx.as_ref().map(|tx| tx.try_send((au, Instant::now()))) {
-            self.wants_keyframe.store(true, Ordering::Relaxed);
+        match self.tx.as_ref().map(|tx| tx.try_send((au, Instant::now()))) {
+            Some(Ok(())) => {
+                self.queued.fetch_add(1, Ordering::Relaxed);
+            }
+            Some(Err(TrySendError::Full(_))) => self.wants_keyframe.store(true, Ordering::Relaxed),
+            _ => {}
         }
     }
 }
@@ -107,7 +130,7 @@ fn is_keyframe(au: &[u8]) -> bool {
         .any(|w| w[0] == 0 && w[1] == 0 && w[2] == 1 && (16..=23).contains(&((w[3] >> 1) & 0x3f)))
 }
 
-fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicBool>) {
+fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicBool>, queued: Arc<AtomicUsize>) {
     let av = match Av::load() {
         Ok(av) => av,
         Err(e) => {
@@ -131,6 +154,8 @@ fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicB
     let mut behind: Option<Instant> = None;
     while let Some((au, received)) = waiting.take().or_else(|| rx.recv().ok()) {
         waiting = rx.try_recv().ok();
+        // The units still behind this one.
+        let left = queued.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
         let key = is_keyframe(&au);
         if waiting.is_none() {
             behind = None;
@@ -170,9 +195,9 @@ fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicB
             }
         }
         let c = codec.as_mut().unwrap();
-        // A unit with another behind it is decoded for the next to predict
-        // from; its picture is never shown.
-        let show = waiting.is_none().then(|| latest.spare.lock().map(|mut s| std::mem::take(&mut *s)).unwrap_or_default());
+        // A unit with more behind it than the window would show is decoded
+        // for the next to predict from; its picture is never shown.
+        let show = (left < HELD).then(|| latest.spare.lock().ok().and_then(|mut s| s.pop()).unwrap_or_default());
         match c.decode(&au, received, show) {
             Ok(Some(frame)) => {
                 decoded_any = true;
@@ -182,8 +207,10 @@ fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicB
                     tracing::debug!("decode median {:?}, p95 {:?}", stats[150], stats[285]);
                     stats.clear();
                 }
-                // A frame nobody took gives its buffer to the next one.
-                let unseen = latest.frame.lock().ok().and_then(|mut slot| slot.replace(frame));
+                let unseen = latest.frames.lock().ok().and_then(|mut frames| {
+                    frames.push_back(frame);
+                    (frames.len() > HELD).then(|| frames.pop_front()).flatten()
+                });
                 if let Some(unseen) = unseen {
                     latest.recycle(unseen);
                 }

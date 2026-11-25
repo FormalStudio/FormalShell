@@ -149,9 +149,6 @@ pub struct Gpu {
     video: Option<(wgpu::Texture, wgpu::Texture, (u32, u32))>,
     overlay: wgpu::Texture,
     pub has_video: bool,
-    /// Present never waits for the compositor (Mailbox), so a frame can be
-    /// shown the moment it decodes.
-    pub prompt: bool,
 }
 
 impl Gpu {
@@ -194,9 +191,7 @@ impl Gpu {
             width: size.0.max(1),
             height: size.1.max(1),
             present_mode,
-            // Three images: one on screen, one queued, one to draw the next
-            // frame into without waiting for either to come back.
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 1,
             alpha_mode,
             view_formats: vec![],
         };
@@ -257,7 +252,7 @@ impl Gpu {
             mapped_at_creation: false,
         });
         let overlay = Self::overlay_texture(&device, size);
-        Ok(Self { surface, device, queue, config, pipeline, layout, sampler, uniforms, video: None, overlay, has_video: false, prompt: present_mode == wgpu::PresentMode::Mailbox })
+        Ok(Self { surface, device, queue, config, pipeline, layout, sampler, uniforms, video: None, overlay, has_video: false })
     }
 
     fn overlay_texture(device: &wgpu::Device, size: (u32, u32)) -> wgpu::Texture {
