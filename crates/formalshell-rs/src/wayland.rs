@@ -712,6 +712,7 @@ impl App {
     /// with them.
     fn refresh_bar(&mut self, topic: Option<Topic>) {
         let now = Instant::now();
+        let t = now;
         if matches!(topic, None | Some(Topic::State)) {
             self.sync_collapsed();
         }
@@ -722,6 +723,7 @@ impl App {
             }
             self.sync_hot_corners();
         }
+        let t = crate::trace::step("step.bar.chrome", t);
         let edge = live!(self).bar.edge();
         let height = if edge == Edge::Top { live!(self).bar.thickness() as u32 } else { 0 };
         appmenu::bar(fs_tray::BarState { height, revealed: self.reveal.shown });
@@ -731,18 +733,24 @@ impl App {
             sync_zone(&mut win.bar, win.surface.as_mut());
         }
         self.request_paint();
+        let t = crate::trace::step("step.bar.paint", t);
         live!(self).bar.read(&mut self.kit, &self.store, topic, now);
+        let t = crate::trace::step("step.bar.read", t);
         // The card hanging off the strip lays out again with it; a topic
         // reaches the panel through its own reads.
         if topic.is_none() {
             self.panel_dirty |= self.panel.is_some();
         }
         self.sync_bar_open(now);
+        let t = crate::trace::step("step.bar.open", t);
         self.refresh_spares(topic, now);
+        let t = crate::trace::step("step.bar.spares", t);
         self.update_backdrops();
+        let t = crate::trace::step("step.bar.backdrops", t);
         if matches!(topic, None | Some(Topic::Compositor | Topic::Wallpaper | Topic::Theme | Topic::Config | Topic::Display | Topic::State)) {
             self.sync_rims();
         }
+        crate::trace::step("step.bar.rims", t);
         live!(self).dirty = true;
     }
 
