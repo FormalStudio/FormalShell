@@ -76,8 +76,27 @@ pub enum Cmd {
 
 const CNAME: &str = "formalshell";
 
-pub fn spawn(sink: impl Fn(Event) + Send + 'static, decoder: Decoder, audio: Arc<Audio>) -> mpsc::UnboundedSender<Cmd> {
+pub struct Session {
+    cmds: mpsc::UnboundedSender<Cmd>,
+    done: std::sync::mpsc::Receiver<()>,
+}
+
+impl Session {
+    pub fn send(&self, cmd: Cmd) {
+        let _ = self.cmds.send(cmd);
+    }
+
+    /// Lets the phone have what is queued, then waits up to `wait` for the
+    /// session and the decoder to stop.
+    pub fn close(self, wait: Duration) {
+        drop(self.cmds);
+        let _ = self.done.recv_timeout(wait);
+    }
+}
+
+pub fn spawn(sink: impl Fn(Event) + Send + 'static, decoder: Decoder, audio: Arc<Audio>) -> Session {
     let (tx, rx) = mpsc::unbounded_channel();
+    let (done_tx, done) = std::sync::mpsc::channel();
     std::thread::Builder::new()
         .name("mirror-session".into())
         .spawn(move || {
@@ -87,9 +106,11 @@ pub fn spawn(sink: impl Fn(Event) + Send + 'static, decoder: Decoder, audio: Arc
                 .build()
                 .expect("tokio runtime");
             rt.block_on(run(sink, rx, decoder, audio));
+            drop(rt);
+            let _ = done_tx.send(());
         })
         .expect("spawn session");
-    tx
+    Session { cmds: tx, done }
 }
 
 async fn run(sink: impl Fn(Event), mut cmds: mpsc::UnboundedReceiver<Cmd>, decoder: Decoder, audio: Arc<Audio>) {

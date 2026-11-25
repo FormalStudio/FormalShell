@@ -35,7 +35,6 @@ use smithay_client_toolkit::shell::xdg::{XdgShell, XdgSurface};
 use smithay_client_toolkit::shell::xdg::window::{DecorationMode, Window, WindowConfigure, WindowDecorations, WindowHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use idevice::core_device::RotationDirection;
-use tokio::sync::mpsc::UnboundedSender;
 use vello_cpu::kurbo::{Point, Rect};
 
 use crate::audio::Audio;
@@ -82,7 +81,7 @@ pub fn run() -> Result<(), String> {
     let decoder = Decoder::start(latest.clone());
     let audio = Arc::new(Audio::start());
     let (event_tx, event_rx) = channel::channel::<Event>();
-    let cmds = session::spawn(move |e| { let _ = event_tx.send(e); }, decoder, audio.clone());
+    let session = session::spawn(move |e| { let _ = event_tx.send(e); }, decoder, audio.clone());
     handle
         .insert_source(frame_source, |_, _, app: &mut App| app.new_frame())
         .map_err(|e| e.to_string())?;
@@ -123,7 +122,7 @@ pub fn run() -> Result<(), String> {
         frame_pending: false,
         dirty: true,
         latest,
-        cmds,
+        session,
         audio,
         pointer: None,
         keyboard: None,
@@ -146,7 +145,7 @@ pub fn run() -> Result<(), String> {
         event_loop.dispatch(Some(timeout), &mut app).map_err(|e| e.to_string())?;
         app.tick();
     }
-    let _ = app.cmds.send(Cmd::Release);
+    app.send(Cmd::Release);
     // A phone left turned stays turned: stand it back up.
     let back = match app.turn {
         1 => vec![RotationDirection::Left],
@@ -154,12 +153,18 @@ pub fn run() -> Result<(), String> {
         3 => vec![RotationDirection::Right],
         _ => vec![],
     };
-    let wait = 150 + 250 * back.len() as u64;
+    let wait = Duration::from_millis(1000 + 500 * back.len() as u64);
     for d in back {
-        let _ = app.cmds.send(Cmd::Rotate(d));
+        app.send(Cmd::Rotate(d));
     }
-    // Give the session a moment to lift fingers and keys before the process goes.
-    std::thread::sleep(Duration::from_millis(wait));
+    // The window goes at once; the session finishes behind it.
+    let session = {
+        let app = app;
+        let App { session, .. } = app;
+        session
+    };
+    let _ = conn.flush();
+    session.close(wait);
     Ok(())
 }
 
@@ -223,7 +228,7 @@ struct App {
     frame_pending: bool,
     dirty: bool,
     latest: Arc<Latest>,
-    cmds: UnboundedSender<Cmd>,
+    session: session::Session,
     audio: Arc<Audio>,
     pointer: Option<wl_pointer::WlPointer>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -257,7 +262,7 @@ fn unturn(turn: u8, u: f64, v: f64) -> Point {
 
 impl App {
     fn send(&self, cmd: Cmd) {
-        let _ = self.cmds.send(cmd);
+        self.session.send(cmd);
     }
 
     fn landscape(&self) -> bool {

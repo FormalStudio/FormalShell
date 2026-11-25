@@ -131,10 +131,10 @@ fn drive() {
     });
     let decoder = decode::Decoder::start(latest.clone());
     let audio = Arc::new(audio::Audio::start());
-    let cmds = session::spawn(|e| eprintln!("event: {e:?}"), decoder, audio);
+    let session = session::spawn(|e| eprintln!("event: {e:?}"), decoder, audio);
     let start = Instant::now();
     let send = |c| {
-        let _ = cmds.send(c);
+        session.send(c);
     };
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
@@ -197,5 +197,5 @@ fn drive() {
         );
     }
     send(session::Cmd::Release);
-    std::thread::sleep(Duration::from_millis(300));
+    session.close(Duration::from_secs(2));
 }

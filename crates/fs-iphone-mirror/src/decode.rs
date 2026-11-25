@@ -46,7 +46,8 @@ impl Latest {
 const QUEUE: usize = 6;
 
 pub struct Decoder {
-    tx: SyncSender<(Vec<u8>, Instant)>,
+    tx: Option<SyncSender<(Vec<u8>, Instant)>>,
+    thread: Option<std::thread::JoinHandle<()>>,
     /// Set when units were dropped: nothing decodes again until a key frame
     /// arrives, so the session asks the phone for one.
     pub wants_keyframe: Arc<AtomicBool>,
@@ -57,16 +58,27 @@ impl Decoder {
         let (tx, rx) = sync_channel(QUEUE);
         let wants_keyframe = Arc::new(AtomicBool::new(false));
         let wants = wants_keyframe.clone();
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("mirror-decode".into())
             .spawn(move || run(rx, latest, wants))
             .expect("spawn decoder");
-        Self { tx, wants_keyframe }
+        Self { tx: Some(tx), thread: Some(thread), wants_keyframe }
     }
 
     pub fn push(&self, au: Vec<u8>) {
-        if let Err(TrySendError::Full(_)) = self.tx.try_send((au, Instant::now())) {
+        if let Some(Err(TrySendError::Full(_))) = self.tx.as_ref().map(|tx| tx.try_send((au, Instant::now()))) {
             self.wants_keyframe.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+/// The decoder finishes its unit before the process goes: libc's exit
+/// handlers tear CUDA down under a decode in flight, which crashes.
+impl Drop for Decoder {
+    fn drop(&mut self) {
+        self.tx.take();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
         }
     }
 }
