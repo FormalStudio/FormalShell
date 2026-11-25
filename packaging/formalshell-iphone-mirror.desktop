@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=iPhone Mirroring
+Comment=Use your iPhone from this computer
+Exec=formalshell-iphone-mirror
+Icon=phone
+Terminal=false
+Categories=Utility;
+Keywords=iphone;phone;mirror;ios;
+StartupWMClass=formalshell-iphone-mirror

@@ -138,7 +138,7 @@ if [ ! -f "$gls/lib/pkgconfig/gtk4-layer-shell-0.pc" ] && [ ! -f "$gls/lib/$host
 fi
 export PKG_CONFIG_PATH=$gls/lib/pkgconfig
 
-(cd "$repo/crates" && cargo build --locked --profile ship --package formalshell-rs)
+(cd "$repo/crates" && cargo build --locked --profile ship --package formalshell-rs --package fs-iphone-mirror)
 release=$CARGO_TARGET_DIR/ship
 
 # The x86-64 engine's asm objects call libc with PC32 relocations, which a
@@ -179,12 +179,14 @@ fi
 
 stage=$work/stage/formalshell
 rm -rf "$work/stage"
-mkdir -p "$stage/bin" "$stage/lib/formalshell/bin" "$stage/share/formalshell/fonts"
+mkdir -p "$stage/bin" "$stage/lib/formalshell/bin" "$stage/share/formalshell/fonts" "$stage/share/applications"
 lib=$stage/lib/formalshell
 share=$stage/share/formalshell
 
 install -m755 "$release/formalshell-rs" "$lib/formalshell-rs"
 install -m755 "$release/formalshell-ipc" "$stage/bin/formalshell-ipc"
+install -m755 "$release/formalshell-iphone-mirror" "$stage/bin/formalshell-iphone-mirror"
+install -m644 "$repo/packaging/formalshell-iphone-mirror.desktop" "$stage/share/applications/formalshell-iphone-mirror.desktop"
 install -m755 "$work/target-ttfx/$host/release/ttfx" "$lib/bin/ttfx"
 install -m755 "$CARGO_TARGET_DIR/release/tensaku" "$lib/bin/tensaku"
 install -m755 "$tp/tensaku/assets/tensaku-edit" "$lib/bin/tensaku-edit"

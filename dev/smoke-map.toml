@@ -53,6 +53,7 @@ paths = [
   ".gitignore",
   "crates/*/examples/**",
   "crates/formalshell-rs/src/ipc/golden.rs",
+  "crates/fs-iphone-mirror/**",
 ]
 
 # The kit every surface draws with, the theme tables, the wayland core, the
