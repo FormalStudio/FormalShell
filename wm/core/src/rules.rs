@@ -109,6 +109,9 @@ pub struct Effect {
     pub position: Option<Position>,
     pub opacity: Option<f64>,
     pub no_blur: Option<bool>,
+    /// `false` draws the client bare: no stroke, cast or rounding, for a
+    /// window that draws its own shape and shadow.
+    pub frame: Option<bool>,
     /// The content type it is treated as (`game` turns VRR on).
     pub content: Option<String>,
     pub confine_pointer: Option<bool>,
@@ -173,6 +176,7 @@ pub fn resolve(rules: &[Rule], facts: &Facts<'_>) -> Effect {
             position,
             opacity,
             no_blur,
+            frame,
             content,
             confine_pointer,
             idle_pointer

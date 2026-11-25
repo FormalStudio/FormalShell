@@ -40,6 +40,9 @@ pub static PIP: WindowStateKey<bool> = WindowStateKey::new("pip", |_| false);
 
 /// The desk behind this window is blurred.
 pub static BLUR: WindowStateKey<bool> = WindowStateKey::new("blur", |_| false);
+/// Drawn inside the stroke, cast and rounding; a rule's `frame: false`
+/// leaves the client bare.
+pub static FRAMED: WindowStateKey<bool> = WindowStateKey::new("framed", |_| true);
 /// Its rule keeps the pointer inside it while it has the keyboard.
 pub static CONFINE: WindowStateKey<bool> = WindowStateKey::new("confine", |_| false);
 
@@ -106,6 +109,9 @@ pub fn setup(signals: Signals) {
         // plane.
         if full {
             return managed.allow_tearing(true).child(ClientWindow::new());
+        }
+        if !window.state(&FRAMED).get() {
+            return managed.child(ClientWindow::new());
         }
 
         // Hyprland's `border` leaf: the stroke's colours cross over, they do
@@ -292,6 +298,7 @@ impl Engine {
         let floating = floating || pip;
         window.state(&FORCE).set(!floating || sized);
         window.state(&BLUR).set(self.blurs(&effect));
+        window.state(&FRAMED).set(effect.frame != Some(false));
         window
             .state(&CONFINE)
             .set(effect.confine_pointer == Some(true));

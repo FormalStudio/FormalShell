@@ -22,7 +22,7 @@ fn the_shared_file_loads_on_its_own() {
     assert_eq!(settings.workspaces.len(), 9);
     assert!(settings.workspaces[0].ends_with("web"));
     assert_eq!(settings.binds.len(), 73);
-    assert_eq!(settings.rules.len(), 20);
+    assert_eq!(settings.rules.len(), 21);
     assert_eq!(settings.layers.len(), 11);
     assert_eq!(settings.opacity, 1.0);
     assert_eq!(settings.input.keyboard.layout.as_deref(), Some("es"));
@@ -89,6 +89,8 @@ fn the_rules_place_the_apps_they_name() {
         sum("dev.formalshell.console", "", false).overlay.as_deref(),
         Some("formalshell-console")
     );
+    let mirror = sum("formalshell-iphone-mirror", "iPhone", true);
+    assert_eq!((mirror.float, mirror.frame, mirror.no_blur), (Some(true), Some(false), Some(true)));
     assert_eq!(
         sum("steam_app_730", "CS2", false).content.as_deref(),
         Some("game")
