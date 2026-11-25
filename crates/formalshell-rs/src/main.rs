@@ -97,6 +97,7 @@ fn main() {
     gpu::watch(&handle, App::gpu_up);
     ipc::listen(&handle);
 
+    ahead_of_batch_work();
     let signal = event_loop.get_signal();
     let mut cpu_mark = thread_cpu_us();
     let ended = event_loop.run(None, &mut app, |app| {
@@ -146,6 +147,21 @@ fn tune_malloc() {
     unsafe {
         libc::mallopt(libc::M_MMAP_THRESHOLD, 256 * 1024);
         libc::mallopt(libc::M_ARENA_MAX, 1);
+    }
+}
+
+/// Puts the calling thread, the one that draws, in the round-robin class
+/// at the lowest priority, where compositors put theirs: as a normal task
+/// it waits its turn behind a compile on every core, and a frame callback
+/// was answered 3 to 9ms late on g815 at a load of 17. Where the session's
+/// RLIMIT_RTPRIO allows none it stays as it was. Threads and children
+/// started after it are normal tasks again (SCHED_RESET_ON_FORK).
+fn ahead_of_batch_work() {
+    let param = libc::sched_param { sched_priority: 1 };
+    // SAFETY: a valid parameter block, for the calling thread alone.
+    let set = unsafe { libc::sched_setscheduler(0, libc::SCHED_RR | libc::SCHED_RESET_ON_FORK, &param) };
+    if set == 0 {
+        eprintln!("formalshell: the drawing thread runs SCHED_RR 1");
     }
 }
 
