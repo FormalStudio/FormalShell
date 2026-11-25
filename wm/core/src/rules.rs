@@ -112,6 +112,9 @@ pub struct Effect {
     /// `false` draws the client bare: no stroke, cast or rounding, for a
     /// window that draws its own shape and shadow.
     pub frame: Option<bool>,
+    /// A resize by hand keeps the shape it starts at, for a client that
+    /// draws itself at one aspect whatever it is told.
+    pub keep_aspect: Option<bool>,
     /// The content type it is treated as (`game` turns VRR on).
     pub content: Option<String>,
     pub confine_pointer: Option<bool>,
@@ -177,6 +180,7 @@ pub fn resolve(rules: &[Rule], facts: &Facts<'_>) -> Effect {
             opacity,
             no_blur,
             frame,
+            keep_aspect,
             content,
             confine_pointer,
             idle_pointer

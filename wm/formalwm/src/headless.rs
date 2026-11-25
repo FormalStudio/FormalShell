@@ -4514,3 +4514,107 @@ fn a_bare_float_is_its_window_geometry_and_what_it_draws_outside_it_takes_the_po
     assert_eq!(middle(MIRROR), centre);
     assert_eq!(session.configured(&top), (340, 260));
 }
+
+#[test]
+fn what_a_bare_float_draws_outside_its_geometry_takes_the_pointer_over_a_window_below() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("overhang-over", HOST, &[test_display("TEST-1")]);
+    let below = session.open("below");
+    session.draw(&below, 400, 300);
+    settle();
+    session.caught_up();
+    let (phone, xdg, _) = session.shell_surface(MIRROR);
+    session.commit(&phone);
+    let compositor: wl_compositor::WlCompositor = session.bind("wl_compositor");
+    let region = compositor.create_region(&session.queue.handle(), ());
+    region.add(0, 0, 300, 420);
+    phone.set_input_region(Some(&region));
+    xdg.set_window_geometry(20, 60, 260, 340);
+    session.draw(&phone, 300, 420);
+    settle();
+    session.caught_up();
+    let ((x, y), _) = placed(MIRROR);
+    let tile = tile_rect("below");
+    assert!(
+        tile.y < y - 30 && tile.x < x + 130 && x + 130 < tile.x + tile.width,
+        "the strip is over the tile: {tile:?} {x} {y}"
+    );
+
+    session.pointer_to(f64::from(x + 130), f64::from(y - 30));
+    let under = session.state.seat.get_pointer().unwrap().current_focus();
+    assert_eq!(
+        under.map(
+            |surface| smithay::reexports::wayland_server::Resource::id(&surface).protocol_id()
+        ),
+        Some(phone.id().protocol_id()),
+        "the strip takes the pointer from the tile below"
+    );
+}
+
+#[test]
+fn a_float_that_keeps_its_aspect_is_resized_at_its_shape() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("aspect", HOST, &[test_display("TEST-1")]);
+    rule(
+        "keep",
+        rules::Effect {
+            float: Some(true),
+            keep_aspect: Some(true),
+            ..Default::default()
+        },
+    );
+    let (keep, top) = session.bare("keep");
+    session.commit(&keep);
+    session.draw(&keep, 200, 400);
+    settle();
+    session.caught_up();
+    let ((x, y), (w, h)) = placed("keep");
+    assert_eq!((w, h), (200, 400));
+
+    // The right edge 50 px out: the height follows.
+    session.pointer_to(f64::from(x + w + 2), f64::from(y + h / 2));
+    session.button(ButtonState::Pressed);
+    session.pointer_by(50.0, 0.0);
+    session.caught_up();
+    assert_eq!(placed("keep"), ((x, y), (250, 500)), "a side drives it");
+    assert_eq!(session.configured(&top), (250, 500));
+    session.draw(&keep, 250, 500);
+    session.button(ButtonState::Released);
+    settle();
+    session.caught_up();
+    assert_eq!(placed("keep"), ((x, y), (250, 500)));
+}
+
+#[test]
+fn a_float_that_keeps_its_aspect_takes_the_smaller_pull_of_a_corner() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("aspect-corner", HOST, &[test_display("TEST-1")]);
+    rule(
+        "keep",
+        rules::Effect {
+            float: Some(true),
+            keep_aspect: Some(true),
+            ..Default::default()
+        },
+    );
+    let (keep, top) = session.bare("keep");
+    session.commit(&keep);
+    session.draw(&keep, 200, 400);
+    settle();
+    session.caught_up();
+    let ((x, y), (w, h)) = placed("keep");
+    // Mostly sideways: the downward pull is the smaller and drives it.
+    session.pointer_to(f64::from(x + w + 2), f64::from(y + h + 2));
+    session.button(ButtonState::Pressed);
+    session.pointer_by(100.0, 20.0);
+    session.caught_up();
+    assert_eq!(placed("keep"), ((x, y), (210, 420)));
+    assert_eq!(session.configured(&top), (210, 420));
+    session.button(ButtonState::Released);
+}

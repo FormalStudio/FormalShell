@@ -90,7 +90,15 @@ fn the_rules_place_the_apps_they_name() {
         Some("formalshell-console")
     );
     let mirror = sum("formalshell-iphone-mirror", "iPhone", true);
-    assert_eq!((mirror.float, mirror.frame, mirror.no_blur), (Some(true), Some(false), Some(true)));
+    assert_eq!(
+        (
+            mirror.float,
+            mirror.frame,
+            mirror.keep_aspect,
+            mirror.no_blur
+        ),
+        (Some(true), Some(false), Some(true), Some(true))
+    );
     assert_eq!(
         sum("steam_app_730", "CS2", false).content.as_deref(),
         Some("game")

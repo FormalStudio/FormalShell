@@ -6,8 +6,8 @@ use formalwm_core::{color::Rgba, geom::Rect as Box2, model::Layer};
 use shojiwm_rs::{
     prelude::*,
     ssd::{
-        WindowMoveEventSnapshot, WindowMovePhaseSnapshot, WindowResizeEventSnapshot,
-        WindowResizePhaseSnapshot,
+        WindowMoveEventSnapshot, WindowMovePhaseSnapshot, WindowPositionSnapshot,
+        WindowResizeEdgesSnapshot, WindowResizeEventSnapshot, WindowResizePhaseSnapshot,
     },
 };
 
@@ -412,17 +412,18 @@ impl Engine {
             event.phase,
             WindowResizePhaseSnapshot::End | WindowResizePhaseSnapshot::Cancel
         );
+        let mut keep = false;
         if let Some(win) = self.windows.get_mut(&id) {
             win.resizing = !ending;
+            keep = win.effect.keep_aspect == Some(true);
         }
         let border = self.frame_of(&id);
-        let rect = Box2::new(
-            event.current_rect.x,
-            event.current_rect.y,
-            event.current_rect.width,
-            event.current_rect.height,
-        )
-        .inset(border);
+        let box_of =
+            |at: &WindowPositionSnapshot| Box2::new(at.x, at.y, at.width, at.height).inset(border);
+        let mut rect = box_of(&event.current_rect);
+        if floating && keep {
+            rect = kept_aspect(rect, box_of(&event.start_rect), &event.edges);
+        }
         if floating {
             self.model.place(&id, rect);
         } else if event.edges.left || event.edges.right {
@@ -559,4 +560,31 @@ impl Engine {
 fn drawn_size(window: Window) -> (f64, f64) {
     let drawn = window.position().get_untracked();
     (drawn.width, drawn.height)
+}
+
+/// `rect` at the shape of `start`, its edges out of the hand where they
+/// were: a side drives the size along it, a corner the smaller of the two.
+fn kept_aspect(rect: Box2, start: Box2, edges: &WindowResizeEdgesSnapshot) -> Box2 {
+    if start.w < 1.0 || start.h < 1.0 {
+        return rect;
+    }
+    let aspect = start.w / start.h;
+    let across = edges.left || edges.right;
+    let down = edges.top || edges.bottom;
+    let (w, h) = if across && !down || down && across && rect.w / rect.h <= aspect {
+        (rect.w, rect.w / aspect)
+    } else {
+        (rect.h * aspect, rect.h)
+    };
+    let x = if edges.left {
+        rect.x + rect.w - w
+    } else {
+        rect.x
+    };
+    let y = if edges.top {
+        rect.y + rect.h - h
+    } else {
+        rect.y
+    };
+    Box2::new(x, y, w.round(), h.round())
 }
