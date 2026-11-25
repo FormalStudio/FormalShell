@@ -116,6 +116,9 @@ pub fn run() -> Result<(), String> {
         model: None,
         bounds: None,
         sized: false,
+        floating: false,
+        left: None,
+        snap: false,
         status: Status::Searching,
         asleep: false,
         frame_at: None,
@@ -223,6 +226,14 @@ struct App {
     bounds: Option<(u32, u32)>,
     /// The compositor has sized the window; it keeps that size.
     sized: bool,
+    /// Not tiled, maximized or fullscreen: the window is the phone, and it
+    /// sizes itself when the phone turns.
+    floating: bool,
+    /// The size the window last left of its own accord; a configure still
+    /// asking for it predates the change.
+    left: Option<(u32, u32)>,
+    /// The spin has settled and a float shrinks back to the phone.
+    snap: bool,
     status: Status,
     /// The phone's screen is dark: it sleeps, locked.
     asleep: bool,
@@ -304,9 +315,9 @@ impl App {
         m.corner_fraction() * self.phone.0.min(self.phone.1)
     }
 
-    /// A square of the phone's long side at its true size on the output the
-    /// window is on, or the first one (millimetres over the mode's pixels per
-    /// millimetre), as far as the compositor's room allows.
+    /// The phone at its true size on the output the window is on, or the
+    /// first one (millimetres over the mode's pixels per millimetre), turned
+    /// as it is shown, as far as the compositor's room allows.
     fn natural_room(&self) -> (f64, f64) {
         let m = self.model.unwrap_or_else(|| model::fallback(1206, 2622));
         let info = self.output();
@@ -327,8 +338,7 @@ impl App {
             None => (m.width as f64 / m.scale, m.height as f64 / m.scale),
         };
         tracing::info!("natural size {w:.0}x{h:.0} logical ({} on {:?})", m.name, info.map(|i| i.name));
-        let long = w.max(h);
-        self.within_bounds((long, long))
+        self.within_bounds(if self.landscape() { (h, w) } else { (w, h) })
     }
 
     /// The output the window is on, or the first one.
@@ -361,6 +371,32 @@ impl App {
         self.room = room;
         self.phone = (w.round(), h.round());
         self.size = ((room.0 + 2.0 * MARGIN) as u32, (room.1 + TOP_MARGIN + MARGIN) as u32);
+    }
+
+    /// The window as the compositor sizes, frames and places it. A float's
+    /// is the room, kept to the phone, with the shadow and the strip hanging
+    /// outside it; a tile's is all of it, so nothing spills on its neighbours.
+    fn geometry(&self) -> (u32, u32) {
+        if self.floating { (self.room.0 as u32, self.room.1 as u32) } else { self.size }
+    }
+
+    fn set_geometry(&self) {
+        let (w, h) = self.geometry();
+        let (x, y) = if self.floating { (MARGIN as i32, TOP_MARGIN as i32) } else { (0, 0) };
+        self.window.xdg_surface().set_window_geometry(x, y, w as i32, h as i32);
+    }
+
+    /// A float takes the size its phone needs: the compositor follows a
+    /// float's own size.
+    fn resize_self(&mut self, room: (f64, f64)) {
+        let was = self.geometry();
+        self.fit(room);
+        if self.geometry() != was {
+            self.left = Some(was);
+            self.set_geometry();
+        }
+        self.set_input_region();
+        self.dirty = true;
     }
 
     fn set_input_region(&self) {
@@ -450,11 +486,14 @@ impl App {
             }
             Err(e) => tracing::warn!("render: {e}"),
         }
+        if std::mem::take(&mut self.snap) {
+            self.resize_self(self.phone);
+        }
     }
 
     /// The smallest window.
     fn limits(&self) {
-        self.window.set_min_size(Some(((120.0 + 2.0 * MARGIN) as u32, (120.0 + TOP_MARGIN + MARGIN) as u32)));
+        self.window.set_min_size(Some((120, 120)));
     }
 
     fn new_frame(&mut self) {
@@ -480,9 +519,13 @@ impl App {
                     self.model = m;
                     if self.configured {
                         // Within the size the compositor gave, once it gave one.
-                        let room = if self.sized { self.room } else { self.natural_room() };
-                        self.fit(room);
-                        self.set_input_region();
+                        if self.sized {
+                            self.fit(self.room);
+                            self.set_input_region();
+                        } else {
+                            let room = self.natural_room();
+                            self.resize_self(room);
+                        }
                     }
                 }
             }
@@ -567,8 +610,16 @@ impl App {
         let flips = self.landscape() != (turn % 2 == 1);
         self.turn = turn;
         if self.configured && flips {
-            self.fit(self.room);
-            self.set_input_region();
+            if self.floating {
+                // A square of the phone's long side to spin in, centred where
+                // the phone was; the spin's end shrinks it to the phone.
+                let long = self.phone.0.max(self.phone.1);
+                self.snap = false;
+                self.resize_self((long, long));
+            } else {
+                self.fit(self.room);
+                self.set_input_region();
+            }
         }
     }
 
@@ -579,6 +630,7 @@ impl App {
         let angle = from * (1.0 - spring(t));
         if t > 1.0 || angle.abs() < 1e-3 {
             self.spin = None;
+            self.snap = self.floating;
             return (0.0, 1.0);
         }
         (angle, fit_turned(self.phone.0, self.phone.1, self.room, angle))
@@ -709,10 +761,17 @@ impl WindowHandler for App {
             self.bounds = configure.suggested_bounds;
         }
         self.configured = true;
-        match configure.new_size {
-            (Some(w), Some(h)) if !first => {
+        self.floating = !(configure.is_tiled() || configure.is_maximized() || configure.is_fullscreen());
+        let asked = configure.new_size.0.zip(configure.new_size.1).map(|(w, h)| (w.get(), h.get()));
+        let stale = self.floating && asked.is_some() && (asked == self.left || asked == Some(self.geometry()));
+        if !stale {
+            self.left = None;
+        }
+        match asked {
+            Some((w, h)) if !first && !stale => {
                 self.sized = true;
-                self.fit((w.get() as f64 - 2.0 * MARGIN, h.get() as f64 - TOP_MARGIN - MARGIN));
+                let (w, h) = (w as f64, h as f64);
+                self.fit(if self.floating { (w, h) } else { (w - 2.0 * MARGIN, h - TOP_MARGIN - MARGIN) });
             }
             _ if first || self.phone.0 == 0.0 => {
                 let room = self.natural_room();
@@ -721,7 +780,7 @@ impl WindowHandler for App {
             _ => {}
         }
         self.limits();
-        window.xdg_surface().set_window_geometry(0, 0, self.size.0 as i32, self.size.1 as i32);
+        self.set_geometry();
         self.set_input_region();
         if self.gpu.is_none() {
             let display = conn.backend().display_ptr() as *mut std::ffi::c_void;
