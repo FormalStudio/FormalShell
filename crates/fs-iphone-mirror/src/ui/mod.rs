@@ -47,21 +47,20 @@ pub const APP_ID: &str = "formalshell-iphone-mirror";
 
 /// A picture older than this while streaming reads as a stall.
 const STALL: Duration = Duration::from_millis(1500);
-/// A wheel tick flicks the finger this share of the phone, at most
-/// FLICK_MOST ticks to a flick; the finger lifts at speed so iOS carries the
-/// content on with its own momentum.
-const FLICK_TICK: f64 = 0.1;
-const FLICK_MOST: f64 = 4.0;
-const FLICK_TIME: Duration = Duration::from_millis(120);
-/// A flick starts inside this band of the phone along its way and ends
-/// inside the wider one: a drag from the bottom goes Home, one from the top
-/// opens Notification Center.
-const FLICK_START: (f64, f64) = (0.2, 0.8);
-const FLICK_END: (f64, f64) = (0.1, 0.9);
-/// A touchpad's finger lifts once its axis has been still this long.
-const SWIPE_IDLE: Duration = Duration::from_millis(120);
-/// How often a finger in motion reports.
-const FINGER_FRAME: Duration = Duration::from_millis(8);
+/// A wheel notch drags a finger this share of the phone, at most
+/// SCROLL_MOST notches to a drag. A drag is SCROLL_REPORTS reports
+/// SCROLL_STEP apart and lifts at speed, so iOS carries the content on with
+/// its own momentum; notches that come meanwhile make the next drag.
+const SCROLL_NOTCH: f64 = 0.1;
+const SCROLL_MOST: f64 = 4.0;
+const SCROLL_REPORTS: u32 = 9;
+const SCROLL_STEP: Duration = Duration::from_millis(15);
+/// A drag starts inside SCROLL_START along its way and SCROLL_ACROSS across
+/// it, and ends inside SCROLL_END: one from the bottom edge goes Home, one
+/// from the top opens Notification Center.
+const SCROLL_START: (f64, f64) = (0.2, 0.8);
+const SCROLL_ACROSS: (f64, f64) = (0.05, 0.95);
+const SCROLL_END: (f64, f64) = (0.1, 0.9);
 
 pub fn run() -> Result<(), String> {
     let conn = Connection::connect_to_env().map_err(|e| format!("wayland: {e}"))?;
@@ -150,10 +149,8 @@ pub fn run() -> Result<(), String> {
         touching: false,
         hover: None,
         pressed: None,
-        swipe: None,
-        flick: None,
-        ticks: Point::ZERO,
-        ticks_at: Point::ZERO,
+        drag: None,
+        scroll: 0.0,
         held: BTreeSet::new(),
         mods: Modifiers::default(),
         focused: false,
@@ -162,8 +159,7 @@ pub fn run() -> Result<(), String> {
         exit: false,
     };
     while !app.exit {
-        let moving = app.swipe.is_some() || app.flick.is_some();
-        let timeout = if moving { FINGER_FRAME } else { Duration::from_millis(500) };
+        let timeout = app.drag.as_ref().map_or(Duration::from_millis(500), |d| d.next.saturating_duration_since(Instant::now()));
         event_loop.dispatch(Some(timeout), &mut app).map_err(|e| e.to_string())?;
         app.tick();
     }
@@ -205,19 +201,12 @@ fn fit_turned(w: f64, h: f64, room: (f64, f64), angle: f64) -> f64 {
     (room.0 / (w * c + h * s)).min(room.1 / (w * s + h * c)).min(1.0)
 }
 
-/// A finger the touchpad drags across the phone, in the phone's portrait
-/// 0..1.
-struct Swipe {
-    at: Point,
-    moved: Point,
-    input: Instant,
-}
-
-/// A finger a wheel flicks across the phone, in the phone's portrait 0..1.
-struct Flick {
+/// A wheel's finger across the phone, in the phone's portrait 0..1.
+struct Drag {
     from: Point,
-    by: Point,
-    start: Instant,
+    to: Point,
+    sent: u32,
+    next: Instant,
 }
 
 struct App {
@@ -286,11 +275,10 @@ struct App {
     touching: bool,
     hover: Option<Control>,
     pressed: Option<Control>,
-    swipe: Option<Swipe>,
-    flick: Option<Flick>,
-    /// Wheel travel waiting for the next flick, and where the pointer was.
-    ticks: Point,
-    ticks_at: Point,
+    drag: Option<Drag>,
+    /// Wheel notches waiting for the next drag, positive for the finger
+    /// going down the picture as shown.
+    scroll: f64,
     held: BTreeSet<u8>,
     mods: Modifiers,
     focused: bool,
@@ -573,10 +561,10 @@ impl App {
         self.draw();
     }
 
-    /// Runs after every dispatch: lifts a wheel drag gone still, and shows
-    /// a stall once the picture has been quiet for a while.
+    /// Runs after every dispatch: moves a wheel's drag on, and shows a
+    /// stall once the picture has been quiet for a while.
     fn tick(&mut self) {
-        self.step_fingers();
+        self.step_drag();
         let stalled = self.frame_at.is_some_and(|t| t.elapsed() > STALL);
         if self.scene.as_ref().is_some_and(|s| s.screen != self.screen()) || (stalled && self.dirty) {
             self.draw();
@@ -592,108 +580,65 @@ impl App {
         unturn(self.turn, u, v)
     }
 
-    /// A move across the window as a move across the phone's portrait 0..1.
-    fn phone_delta(&self, dx: f64, dy: f64) -> Point {
-        let r = self.phone_rect();
-        let (o, d) = (unturn(self.turn, 0.0, 0.0), unturn(self.turn, dx / r.width(), dy / r.height()));
-        Point::new(d.x - o.x, d.y - o.y)
-    }
-
-    /// A touchpad's scroll by `dx`, `dy` window pixels with the pointer at
-    /// `p`: a finger goes down there, inside the bands, and drags the
-    /// content along.
-    fn swipe(&mut self, p: Point, dx: f64, dy: f64) {
-        if self.flick.is_some() {
+    /// Wheel `notches`, positive for wheel up, which moves the finger down
+    /// the picture as shown, whichever way the phone is turned.
+    fn wheel(&mut self, notches: f64) {
+        if !notches.is_finite() || notches == 0.0 {
             return;
         }
-        let d = self.phone_delta(-dx, -dy);
-        let swipe = match self.swipe.take() {
-            Some(s) => s,
-            None => {
-                let at = self.to_phone(p);
-                let at = Point::new(at.x.clamp(FLICK_END.0, FLICK_END.1), at.y.clamp(FLICK_START.0, FLICK_START.1));
-                self.send(Cmd::Touch(Phase::Down, at.x, at.y));
-                Swipe { at, moved: Point::ZERO, input: Instant::now() }
-            }
+        self.scroll = (self.scroll + notches.clamp(-SCROLL_MOST, SCROLL_MOST)).clamp(-SCROLL_MOST, SCROLL_MOST);
+        if self.drag.is_none() {
+            self.start_drag();
+        }
+    }
+
+    /// Puts a finger down where the pointer is for the notches waiting.
+    fn start_drag(&mut self) {
+        let notches = std::mem::take(&mut self.scroll);
+        if notches.abs() <= 1e-3 || !self.inside || !self.on_phone(self.cursor) {
+            return;
+        }
+        let at = self.to_phone(self.cursor);
+        let (o, e) = (unturn(self.turn, 0.5, 0.5), unturn(self.turn, 0.5, 0.5 + notches * SCROLL_NOTCH));
+        let (dx, dy) = (e.x - o.x, e.y - o.y);
+        let (from, to) = if dx.abs() > dy.abs() {
+            let from = Point::new(at.x.clamp(SCROLL_START.0, SCROLL_START.1), at.y.clamp(SCROLL_ACROSS.0, SCROLL_ACROSS.1));
+            (from, Point::new((from.x + dx).clamp(SCROLL_END.0, SCROLL_END.1), from.y))
+        } else {
+            let from = Point::new(at.x.clamp(SCROLL_ACROSS.0, SCROLL_ACROSS.1), at.y.clamp(SCROLL_START.0, SCROLL_START.1));
+            (from, Point::new(from.x, (from.y + dy).clamp(SCROLL_END.0, SCROLL_END.1)))
         };
-        let moved = Point::new(swipe.moved.x + d.x, swipe.moved.y + d.y);
-        let to = Point::new(swipe.at.x + moved.x, swipe.at.y + moved.y);
-        let inside = |v: f64| (FLICK_END.0..=FLICK_END.1).contains(&v);
-        if !inside(to.x) || !inside(to.y) {
-            // At the edge of the band: lift there, at speed, and go down
-            // again where the next stroke has room.
-            let last = Point::new(to.x.clamp(FLICK_END.0, FLICK_END.1), to.y.clamp(FLICK_END.0, FLICK_END.1));
-            self.send(Cmd::Touch(Phase::Up, last.x, last.y));
-            return;
-        }
-        self.send(Cmd::Touch(Phase::Move, to.x, to.y));
-        self.swipe = Some(Swipe { at: swipe.at, moved, input: Instant::now() });
-    }
-
-    /// A wheel's `ticks` (positive scrolls the content down or right) with
-    /// the pointer at `p`, flicked once the current flick ends.
-    fn wheel(&mut self, p: Point, vertical: f64, horizontal: f64) {
-        if self.swipe.is_some() {
-            return;
-        }
-        let r = self.phone_rect();
-        let d = self.phone_delta(-horizontal * FLICK_TICK * r.width(), -vertical * FLICK_TICK * r.height());
-        let most = FLICK_TICK * FLICK_MOST;
-        self.ticks = Point::new((self.ticks.x + d.x).clamp(-most, most), (self.ticks.y + d.y).clamp(-most, most));
-        self.ticks_at = self.to_phone(p);
-        if self.flick.is_none() {
-            self.start_flick();
-        }
-    }
-
-    fn start_flick(&mut self) {
-        let by = std::mem::replace(&mut self.ticks, Point::ZERO);
-        if by.x.abs() < 1e-4 && by.y.abs() < 1e-4 {
-            return;
-        }
-        // Inside the start band along the flick's way, anywhere but the
-        // very edge across it; the end stays inside the end band.
-        let along_x = by.x.abs() > by.y.abs();
-        let band = |v: f64, along: bool| if along { v.clamp(FLICK_START.0, FLICK_START.1) } else { v.clamp(FLICK_END.0, FLICK_END.1) };
-        let from = Point::new(band(self.ticks_at.x, along_x), band(self.ticks_at.y, !along_x));
-        let to = Point::new((from.x + by.x).clamp(FLICK_END.0, FLICK_END.1), (from.y + by.y).clamp(FLICK_END.0, FLICK_END.1));
         self.send(Cmd::Touch(Phase::Down, from.x, from.y));
-        self.flick = Some(Flick { from, by: Point::new(to.x - from.x, to.y - from.y), start: Instant::now() });
+        self.drag = Some(Drag { from, to, sent: 1, next: Instant::now() + SCROLL_STEP });
     }
 
-    /// Moves a flick's finger on, lifting it at the end and starting the
-    /// next one; lifts a touchpad's finger gone still.
-    fn step_fingers(&mut self) {
-        if let Some(f) = &self.flick {
-            let k = (f.start.elapsed().as_secs_f64() / FLICK_TIME.as_secs_f64()).min(1.0);
-            let at = Point::new(f.from.x + f.by.x * k, f.from.y + f.by.y * k);
-            if k < 1.0 {
-                self.send(Cmd::Touch(Phase::Move, at.x, at.y));
-            } else {
-                self.send(Cmd::Touch(Phase::Move, at.x, at.y));
-                self.send(Cmd::Touch(Phase::Up, at.x, at.y));
-                self.flick = None;
-                self.start_flick();
-            }
+    /// Sends a drag's next report once it is due, lifting the finger with
+    /// the last and going down again for the notches since.
+    fn step_drag(&mut self) {
+        let Some(d) = &mut self.drag else { return };
+        let now = Instant::now();
+        if now < d.next {
+            return;
         }
-        if self.swipe.as_ref().is_some_and(|s| s.input.elapsed() >= SWIPE_IDLE) {
-            self.lift_finger();
-        }
-    }
-
-    fn lift_finger(&mut self) {
-        if let Some(s) = self.swipe.take() {
-            self.send(Cmd::Touch(Phase::Up, s.at.x + s.moved.x, s.at.y + s.moved.y));
+        let k = d.sent as f64 / (SCROLL_REPORTS - 1) as f64;
+        let at = Point::new(d.from.x + (d.to.x - d.from.x) * k, d.from.y + (d.to.y - d.from.y) * k);
+        d.sent += 1;
+        d.next = now + SCROLL_STEP;
+        let last = d.sent == SCROLL_REPORTS;
+        self.send(Cmd::Touch(Phase::Move, at.x, at.y));
+        if last {
+            self.send(Cmd::Touch(Phase::Up, at.x, at.y));
+            self.drag = None;
+            self.start_drag();
         }
     }
 
-    /// A click or the pointer leaving ends any scroll under way.
+    /// A click or the keyboard leaving ends a drag where it is.
     fn end_scroll(&mut self) {
-        self.lift_finger();
-        self.ticks = Point::ZERO;
-        if let Some(f) = self.flick.take() {
-            let k = (f.start.elapsed().as_secs_f64() / FLICK_TIME.as_secs_f64()).min(1.0);
-            self.send(Cmd::Touch(Phase::Up, f.from.x + f.by.x * k, f.from.y + f.by.y * k));
+        self.scroll = 0.0;
+        if let Some(d) = self.drag.take() {
+            let k = (d.sent - 1) as f64 / (SCROLL_REPORTS - 1) as f64;
+            self.send(Cmd::Touch(Phase::Up, d.from.x + (d.to.x - d.from.x) * k, d.from.y + (d.to.y - d.from.y) * k));
         }
     }
 
@@ -1038,7 +983,6 @@ impl PointerHandler for App {
                     self.dirty = true;
                 }
                 PointerEventKind::Leave { .. } => {
-                    self.lift_finger();
                     if self.touching {
                         let at = self.to_phone(p);
                         self.send(Cmd::Touch(Phase::Up, at.x, at.y));
@@ -1088,26 +1032,21 @@ impl PointerHandler for App {
                         self.activate(c);
                     }
                 }
-                PointerEventKind::Axis { horizontal, vertical, .. } => {
+                PointerEventKind::Axis { vertical, .. } => {
                     if self.touching || !self.on_phone(p) {
                         continue;
                     }
-                    // A wheel's ticks flick; a touchpad's axis drags by its
-                    // own distance, and its fingers leaving lift the finger
-                    // at speed, so iOS flings the content the way it would
-                    // a real one.
-                    let ticks = |a: &smithay_client_toolkit::seat::pointer::AxisScroll| (a.discrete != 0 || a.value120 != 0).then(|| a.value120 as f64 / 120.0);
-                    match (ticks(&vertical), ticks(&horizontal)) {
-                        (None, None) => {
-                            if vertical.absolute != 0.0 || horizontal.absolute != 0.0 {
-                                self.swipe(p, horizontal.absolute, vertical.absolute);
-                            }
-                            if vertical.stop || horizontal.stop {
-                                self.lift_finger();
-                            }
-                        }
-                        (v, h) => self.wheel(p, v.unwrap_or(0.0), h.unwrap_or(0.0)),
-                    }
+                    // Read as mpv reads them: a wheel in notches, a
+                    // touchpad a tenth of its travel and at most a notch a
+                    // frame. Positive is down.
+                    let notches = if vertical.value120 != 0 {
+                        vertical.value120 as f64 / 120.0
+                    } else if vertical.discrete != 0 {
+                        vertical.discrete as f64
+                    } else {
+                        (vertical.absolute / 10.0).clamp(-1.0, 1.0)
+                    };
+                    self.wheel(-notches);
                 }
                 _ => {}
             }
@@ -1132,6 +1071,7 @@ impl KeyboardHandler for App {
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, surface: &wl_surface::WlSurface, _: u32) {
         if surface == self.window.wl_surface() {
             self.focused = false;
+            self.end_scroll();
             self.release_keys();
             self.send(Cmd::Release);
         }
