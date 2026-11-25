@@ -6,8 +6,8 @@
 //! as Wi-Fi allows: a cycle's worth of the graph plus a margin as long as
 //! the longest wait between packets, or what a run dry was short, easing
 //! back while neither comes. The phone's radio dozes, and its packets can
-//! come in bursts up to 150 ms apart. The stream's adaptive resampler leans
-//! its rate a little to hold the buffer there, which takes up the drift
+//! come in bursts up to 150 ms apart. The ring reads its samples a little
+//! faster or slower to hold the buffer there, which takes up the drift
 //! between the phone's clock and ours; a backlog past that goes at once,
 //! crossfaded. Never a sample dropped or a hard stop: either clicks.
 
@@ -33,7 +33,7 @@ const MARGIN_MOST: f64 = 7200.0;
 const QUIET: f64 = 24_000.0;
 /// Past the target by this many frames, the backlog goes at once.
 const BACKLOG: usize = 2400;
-/// The most the stream's rate leans to bring the buffer to its target: a
+/// The most the ring's reading leans to bring the buffer to its target: a
 /// percent, too little to hear.
 const LEAN: f64 = 0.01;
 /// Frames a start, a run dry or a cut fades over.
@@ -57,11 +57,15 @@ struct Ring {
     /// Frames buffered at the start of a cycle, smoothed over about a second.
     level: Option<f64>,
     pushed: Option<Instant>,
+    /// Input frames read per frame played, less one.
+    lean: f64,
+    /// Where between its first two frames the next read falls.
+    phase: f64,
 }
 
 impl Default for Ring {
     fn default() -> Self {
-        Self { samples: VecDeque::new(), playing: false, margin: MARGIN, cycle: 1024, level: None, pushed: None }
+        Self { samples: VecDeque::new(), playing: false, margin: MARGIN, cycle: 1024, level: None, pushed: None, lean: 0.0, phase: 0.0 }
     }
 }
 
@@ -101,9 +105,9 @@ impl Ring {
         self.level = None;
     }
 
-    /// Fills one cycle and says how far the buffer is over its target, as
-    /// a share of the rate to lean by.
-    fn fill(&mut self, out: &mut [f32]) -> f64 {
+    /// Fills one cycle, reading the buffer `1 + lean` frames a frame,
+    /// each played frame a line between the two it falls between.
+    fn fill(&mut self, out: &mut [f32]) {
         let frames = out.len() / CHANNELS;
         self.cycle = frames;
         let target = self.target();
@@ -111,31 +115,47 @@ impl Ring {
         if starting {
             if self.frames() < target {
                 out.fill(0.0);
-                return 0.0;
+                return;
             }
             self.playing = true;
             self.level = None;
+            self.lean = 0.0;
+            self.phase = 0.0;
         }
         let level = self.frames();
-        let have = level.min(frames);
-        for (o, s) in out.iter_mut().zip(self.samples.drain(..have * CHANNELS)) {
-            *o = s;
-        }
-        out[have * CHANNELS..].fill(0.0);
-        if starting {
-            fade(&mut out[..have * CHANNELS], true);
-        }
-        if have < frames {
+        let ratio = 1.0 + self.lean;
+        let end = self.phase + frames as f64 * ratio;
+        if level < end.floor() as usize + 1 {
+            let have = level.min(frames);
+            for (o, s) in out.iter_mut().zip(self.samples.drain(..have * CHANNELS)) {
+                *o = s;
+            }
+            out[have * CHANNELS..].fill(0.0);
             fade(&mut out[..have * CHANNELS], false);
             self.playing = false;
             self.margin = (self.margin + (frames - have) as f64).min(MARGIN_MOST);
-            return 0.0;
+            return;
+        }
+        for (i, frame) in out.chunks_exact_mut(CHANNELS).enumerate() {
+            let at = self.phase + i as f64 * ratio;
+            let j = at as usize;
+            let t = (at - j as f64) as f32;
+            for (c, o) in frame.iter_mut().enumerate() {
+                let a = self.samples[j * CHANNELS + c];
+                *o = if t == 0.0 { a } else { a + (self.samples[(j + 1) * CHANNELS + c] - a) * t };
+            }
+        }
+        let used = end.floor() as usize;
+        self.phase = end - used as f64;
+        self.samples.drain(..used * CHANNELS);
+        if starting {
+            fade(out, true);
         }
         // A millisecond a second.
         self.margin = (self.margin - frames as f64 / 1000.0).max(MARGIN);
         let level = self.level.map_or(level as f64, |l| l + (level as f64 - l) * 0.02);
         self.level = Some(level);
-        ((level - target as f64) / RATE as f64).clamp(-LEAN, LEAN)
+        self.lean = ((level - target as f64) / RATE as f64).clamp(-LEAN, LEAN);
     }
 }
 
@@ -371,21 +391,13 @@ fn play(ring: Arc<Mutex<Ring>>, muted: Arc<AtomicBool>, device_delay: Arc<Atomic
             let room = slice.len() / stride;
             let frames = if requested == 0 { room.min(480) } else { requested.min(room) };
             let out: &mut [f32] = bytemuck_f32(&mut slice[..frames * stride]);
-            let over = match ring.lock() {
+            match ring.lock() {
                 Ok(mut ring) => ring.fill(out),
-                Err(_) => {
-                    out.fill(0.0);
-                    0.0
-                }
-            };
+                Err(_) => out.fill(0.0),
+            }
             if muted.load(Ordering::Relaxed) {
                 out.fill(0.0);
             }
-            // Below one the resampler takes more of ours per cycle. Without
-            // one (-ENOTSUP) there is nothing to lean, and a cut or a run dry
-            // takes up the drift instead.
-            // SAFETY: the stream is alive for the call; RT safe per pipewire.
-            unsafe { pw::sys::pw_stream_set_rate(stream.as_raw_ptr(), 1.0 / (1.0 + over)) };
             let chunk = data.chunk_mut();
             *chunk.offset_mut() = 0;
             *chunk.stride_mut() = stride as _;
@@ -434,6 +446,45 @@ fn bytemuck_f32(bytes: &mut [u8]) -> &mut [f32] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 440 Hz tone from a clock 0.5% fast, in packets that come in bursts,
+    /// played a cycle at a time: no step between frames the tone cannot
+    /// make, and the buffer held near its target.
+    #[test]
+    fn a_fast_bursty_phone_plays_without_a_step() {
+        let mut ring = Ring::default();
+        let tone = |n: usize| (n as f64 * 440.0 * std::f64::consts::TAU / RATE as f64).sin() as f32 * 0.5;
+        let (mut made, mut owed, mut last) = (0usize, 0.0f64, None::<f32>);
+        let (mut steps, mut most) = (0, 0usize);
+        let mut out = vec![0.0f32; 1024 * CHANNELS];
+        for cycle in 0..3000 {
+            // Every fourth cycle's packets come late, with the next's.
+            owed += 1024.0 * 1.005;
+            if cycle % 4 != 3 {
+                while owed >= 480.0 {
+                    let pcm: Vec<f32> = (made..made + 480).flat_map(|n| [tone(n), tone(n)]).collect();
+                    ring.push(&pcm);
+                    made += 480;
+                    owed -= 480.0;
+                }
+            }
+            ring.fill(&mut out);
+            for frame in out.chunks_exact(CHANNELS) {
+                if let Some(prev) = last
+                    && ring.playing
+                    && (frame[0] - prev).abs() > 0.03
+                {
+                    steps += 1;
+                }
+                last = Some(frame[0]);
+            }
+            if cycle > 500 {
+                most = most.max(ring.frames());
+            }
+        }
+        assert_eq!(steps, 0);
+        assert!(most < ring.target() + BACKLOG, "{most} buffered");
+    }
 
     /// A second of 440 Hz through libfdk's AAC-ELD at 480 samples a frame,
     /// one access unit at a time as the phone sends them. Needs an ffmpeg
