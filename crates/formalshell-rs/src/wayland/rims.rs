@@ -18,11 +18,16 @@ use crate::paint::rim::{self, Lit};
 /// the model is asked again while a card is open.
 const POLL: Duration = Duration::from_millis(250);
 
+/// A sky's picture by address and size, and its output's size in bits.
+type SkyOf = (usize, usize, usize, u64, u64);
+
 #[derive(Default)]
 pub(super) struct Rims {
     pub lit: Option<Lit>,
-    /// The picture the sky was made from, by address, and the sky.
-    sky: Option<(usize, Arc<Sky>)>,
+    /// The skies made, newest last, each by its picture's address and
+    /// size and the output's: one an output, so the live bar going to
+    /// another output finds its sky made (7 to 10ms on g815 otherwise).
+    skies: Vec<(SkyOf, Arc<Sky>)>,
     polling: bool,
     /// What the sidebar's cards were last handed.
     sidebar: Option<(u64, u64, u64)>,
@@ -75,14 +80,16 @@ impl App {
         let bar = self.bar_wl()?;
         let (pw, ph) = self.bars.heads.iter().find(|h| &h.output == bar)?.backdrop.as_ref()?.pixels()?;
         let picture = self.store.wallpaper.sized(pw as u32, ph as u32).filter(|p| p.path == wanted)?.clone();
-        let at = Arc::as_ptr(&picture) as usize;
-        if let Some((seen, sky)) = &self.rims.sky
-            && *seen == at
-        {
+        let key = (Arc::as_ptr(&picture) as usize, picture.width as usize, picture.height as usize, logical.0.to_bits(), logical.1.to_bits());
+        if let Some((_, sky)) = self.rims.skies.iter().find(|(seen, _)| *seen == key) {
             return Some(sky.clone());
         }
         let sky = Arc::new(Sky::from_bgra(&picture.bgra, picture.width as usize, picture.height as usize, logical)?);
-        self.rims.sky = Some((at, sky.clone()));
+        // A picture no longer the wallpaper's is freed, and its address
+        // may be the next one's: only the skies of pictures still held stay.
+        let held: Vec<usize> = self.bars.heads.iter().filter_map(|h| h.backdrop.as_ref()?.pixels()).filter_map(|(w, h)| self.store.wallpaper.sized(w as u32, h as u32)).map(|p| Arc::as_ptr(p) as usize).collect();
+        self.rims.skies.retain(|(seen, _)| held.contains(&seen.0));
+        self.rims.skies.push((key, sky.clone()));
         Some(sky)
     }
 
