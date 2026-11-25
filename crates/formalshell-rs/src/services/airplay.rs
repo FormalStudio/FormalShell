@@ -24,6 +24,9 @@ use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(2);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
+/// A uxplay that cannot start (a library it links gone from the host) exits
+/// at once; only a run this long puts the backoff back on its floor.
+const STABLE: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
@@ -133,7 +136,7 @@ async fn run(ctx: Ctx) {
 
     let mut state = State { installed, ..State::default() };
     let mut settings = Settings::default();
-    let mut child = proc::Supervised::new(BASE_BACKOFF, MAX_BACKOFF, proc::Reset::OnStart);
+    let mut child = proc::Supervised::new(BASE_BACKOFF, MAX_BACKOFF, proc::Reset::After(STABLE));
     // The three files as last read, shown only while a client is connected:
     // UxPlay never clears `-md` and `-ca` on disconnect.
     let mut dacp_up = false;

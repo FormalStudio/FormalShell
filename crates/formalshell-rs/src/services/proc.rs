@@ -221,8 +221,6 @@ const DRAIN: Duration = Duration::from_millis(100);
 /// How a [`Supervised`] child's backoff goes back to its floor.
 #[derive(Clone, Copy, Debug)]
 pub enum Reset {
-    /// At every start.
-    OnStart,
     /// After a run that lasted at least this long.
     After(Duration),
     /// Only when the caller calls [`Supervised::reset`] (a health signal).
@@ -276,9 +274,6 @@ impl Supervised {
     /// Spawns `cmd` with `read` piped and killed on drop, handing back its
     /// stdin when `cmd` piped one. A start that fails waits out the backoff.
     pub fn start(&mut self, mut cmd: async_process::Command, read: Read) -> std::io::Result<Option<async_process::ChildStdin>> {
-        if let Reset::OnStart = self.reset {
-            self.backoff.reset();
-        }
         match read {
             Read::Stdout => cmd.stdout(async_process::Stdio::piped()),
             Read::Stderr => cmd.stderr(async_process::Stdio::piped()),
