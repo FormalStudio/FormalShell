@@ -183,8 +183,19 @@ pub fn drew(surface: &'static str, us: u128) {
     DREW.with(|d| d.borrow_mut().push((surface, us)));
 }
 
+/// A step of the turn's present that began at `since`, kept like a frame
+/// when it took a millisecond or more: `step.<name>:<us>` in the same list.
+pub fn step(name: &'static str, since: std::time::Instant) -> std::time::Instant {
+    let us = since.elapsed().as_micros();
+    if us >= 1000 {
+        DREW.with(|d| d.borrow_mut().push((name, us)));
+    }
+    std::time::Instant::now()
+}
+
 /// `event loop: slow present t=<ms>ms present_us=<us> drew=<surface>:<us>,...`
-/// for a present past the threshold, naming the frames it drew.
+/// for a present past the threshold, naming the frames it drew and the
+/// steps that took a millisecond or more (`step.owners` holds the frames).
 pub fn slow_present(took: Duration) {
     DREW.with(|d| {
         let mut d = d.borrow_mut();

@@ -1074,11 +1074,15 @@ impl App {
             self.present_lock();
             return;
         }
+        let t = Instant::now();
         self.released.sweep();
+        let t = crate::trace::step("step.sweep", t);
         self.preview_present();
         capture_host::flush(self);
+        let t = crate::trace::step("step.capture", t);
         let now = Instant::now();
         self.tick_notifications();
+        let t = crate::trace::step("step.notifications", t);
         for o in owner::LIFECYCLE {
             o.finished(self, now);
         }
@@ -1086,14 +1090,18 @@ impl App {
             self.modal_up = !self.modal_up;
             self.sync_shards();
         }
+        let t = crate::trace::step("step.finished", t);
         self.follow_focus();
+        let t = crate::trace::step("step.focus", t);
         self.light_cards(now);
         self.sync_rasters(now);
         let idle = self.saver.active || self.lock.locked;
         self.bars.each(|b| b.set_idle(idle));
+        let t = crate::trace::step("step.cards", t);
         for o in owner::LIFECYCLE {
             o.present(self, now);
         }
+        crate::trace::step("step.owners", t);
         // The rest of a sliced frame on the next turn, after whatever the
         // loop has waiting (the bar's callback first).
         let again = self.modals().any(Modal::rastering);
