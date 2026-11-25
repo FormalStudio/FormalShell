@@ -5,6 +5,7 @@
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use idevice::core_device::{
@@ -16,6 +17,7 @@ use idevice::core_device::{KeyboardUsage, PasteboardServiceClient};
 use idevice::{ReadWrite, RsdService};
 use tokio::sync::mpsc;
 
+use crate::audio::Audio;
 use crate::decode::Decoder;
 use crate::device::{image, pairing, stream, tunnel};
 
@@ -68,7 +70,7 @@ pub enum Cmd {
 
 const CNAME: &str = "formalshell";
 
-pub fn spawn(sink: impl Fn(Event) + Send + 'static, decoder: Decoder) -> mpsc::UnboundedSender<Cmd> {
+pub fn spawn(sink: impl Fn(Event) + Send + 'static, decoder: Decoder, audio: Arc<Audio>) -> mpsc::UnboundedSender<Cmd> {
     let (tx, rx) = mpsc::unbounded_channel();
     std::thread::Builder::new()
         .name("mirror-session".into())
@@ -78,18 +80,18 @@ pub fn spawn(sink: impl Fn(Event) + Send + 'static, decoder: Decoder) -> mpsc::U
                 .enable_all()
                 .build()
                 .expect("tokio runtime");
-            rt.block_on(run(sink, rx, decoder));
+            rt.block_on(run(sink, rx, decoder, audio));
         })
         .expect("spawn session");
     tx
 }
 
-async fn run(sink: impl Fn(Event), mut cmds: mpsc::UnboundedReceiver<Cmd>, decoder: Decoder) {
+async fn run(sink: impl Fn(Event), mut cmds: mpsc::UnboundedReceiver<Cmd>, decoder: Decoder, audio: Arc<Audio>) {
     let mut backoff = Duration::from_secs(1);
     let mut last_addr: Option<SocketAddr> = None;
     loop {
         let started = Instant::now();
-        let reason = match connect(&sink, &mut cmds, &decoder, &mut last_addr).await {
+        let reason = match connect(&sink, &mut cmds, &decoder, &audio, &mut last_addr).await {
             Ok(()) => return,
             Err(e) => e,
         };
@@ -121,6 +123,7 @@ async fn connect(
     sink: &impl Fn(Event),
     cmds: &mut mpsc::UnboundedReceiver<Cmd>,
     decoder: &Decoder,
+    audio: &Audio,
     last_addr: &mut Option<SocketAddr>,
 ) -> Result<(), String> {
     let mut record = pairing::all().into_iter().next().ok_or(UNPAIRED)?;
@@ -164,7 +167,8 @@ async fn connect(
         .await
         .map_err(|_| "screen stream did not start".to_string())??;
     let mut input = Input::default();
-    let result = pump(sink, cmds, decoder, &mut tunnel, &screen, &mut input).await;
+    audio.reset();
+    let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &mut input).await;
     input.release(&mut tunnel).await;
     let mut client = screen.client;
     let _ = tokio::time::timeout(Duration::from_secs(2), client.stop_media_stream()).await;
@@ -175,6 +179,7 @@ async fn pump(
     sink: &impl Fn(Event),
     cmds: &mut mpsc::UnboundedReceiver<Cmd>,
     decoder: &Decoder,
+    audio_out: &Audio,
     tunnel: &mut tunnel::Tunnel,
     screen: &stream::Screen,
     input: &mut Input,
@@ -195,6 +200,8 @@ async fn pump(
     let mut streaming = false;
     let mut clock: Option<(u32, u32)> = None;
     let mut lags: Vec<i64> = Vec::new();
+    let mut audio_clock: Option<(u32, u32)> = None;
+    let mut audio_lags: Vec<i64> = Vec::new();
     loop {
         tokio::select! {
             dg = screen.video.recv() => {
@@ -256,8 +263,29 @@ async fn pump(
             }
             dg = screen.audio.recv() => {
                 let dg = dg.map_err(|e| format!("audio: {e}"))?;
+                if idevice::core_device::is_rtcp(&dg.data) {
+                    if dg.data.len() >= 20 && dg.data[1] == 200 {
+                        let ntp = u32::from_be_bytes([dg.data[10], dg.data[11], dg.data[12], dg.data[13]]);
+                        let rtp = u32::from_be_bytes([dg.data[16], dg.data[17], dg.data[18], dg.data[19]]);
+                        audio_clock = Some((ntp, rtp));
+                    }
+                    continue;
+                }
                 if let Some(pkt) = RtpPacket::parse(&dg.data) {
                     audio_seq = pkt.sequence_number as u32;
+                    audio_out.push(pkt.payload);
+                    if let Some((ntp, rtp)) = audio_clock {
+                        let ticks = pkt.timestamp.wrapping_sub(rtp) as i32 as i64;
+                        audio_lags.push(ntp_lag_ms(ntp.wrapping_add((ticks * 65536 / 48000) as u32)));
+                        if audio_lags.len() == 200 {
+                            audio_lags.sort();
+                            tracing::debug!(
+                                "audio capture to received: p50 {} ms p95 {} ms; then {:.0} ms to the speaker",
+                                audio_lags[100], audio_lags[190], audio_out.playout_ms()
+                            );
+                            audio_lags.clear();
+                        }
+                    }
                 }
             }
             _ = rctl.tick() => {

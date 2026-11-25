@@ -1,3 +1,5 @@
+mod audio;
+mod av;
 mod decode;
 mod device;
 mod model;
@@ -119,7 +121,8 @@ fn drive() {
         count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     });
     let decoder = decode::Decoder::start(latest.clone());
-    let cmds = session::spawn(|e| eprintln!("event: {e:?}"), decoder);
+    let audio = Arc::new(audio::Audio::start());
+    let cmds = session::spawn(|e| eprintln!("event: {e:?}"), decoder, audio);
     let start = Instant::now();
     let send = |c| {
         let _ = cmds.send(c);

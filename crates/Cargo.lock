@@ -1226,6 +1226,7 @@ dependencies = [
  "idevice",
  "libloading",
  "mdns-sd",
+ "pipewire",
  "plist",
  "tokio",
  "tracing",

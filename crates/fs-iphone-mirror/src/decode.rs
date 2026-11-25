@@ -8,13 +8,13 @@
 //! queueing them, and a decoder that falls behind skips to the next key
 //! frame and asks the phone for one.
 
-use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::ffi::{CStr, CString, c_int, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use libloading::Library;
+use crate::av::{Av, AvFrameHead, AvPacketHead, EAGAIN};
 
 pub struct Frame {
     pub width: u32,
@@ -162,85 +162,6 @@ fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicB
 const AV_PIX_FMT_YUV420P: c_int = 0;
 const AV_PIX_FMT_YUVJ420P: c_int = 12;
 const AV_PIX_FMT_NV12: c_int = 23;
-const EAGAIN: c_int = -11;
-
-/// The leading fields of `AVFrame`, unchanged since libavutil 50.
-#[repr(C)]
-struct AvFrameHead {
-    data: [*mut u8; 8],
-    linesize: [c_int; 8],
-    extended_data: *mut *mut u8,
-    width: c_int,
-    height: c_int,
-    nb_samples: c_int,
-    format: c_int,
-}
-
-/// The leading fields of `AVPacket`, unchanged since libavcodec 57.
-#[repr(C)]
-struct AvPacketHead {
-    buf: *mut c_void,
-    pts: i64,
-    dts: i64,
-    data: *mut u8,
-    size: c_int,
-}
-
-struct Av {
-    _codec: Library,
-    _util: Library,
-    find_decoder_by_name: unsafe extern "C" fn(*const c_char) -> *const c_void,
-    alloc_context3: unsafe extern "C" fn(*const c_void) -> *mut c_void,
-    open2: unsafe extern "C" fn(*mut c_void, *const c_void, *mut c_void) -> c_int,
-    free_context: unsafe extern "C" fn(*mut *mut c_void),
-    send_packet: unsafe extern "C" fn(*mut c_void, *const c_void) -> c_int,
-    receive_frame: unsafe extern "C" fn(*mut c_void, *mut c_void) -> c_int,
-    packet_alloc: unsafe extern "C" fn() -> *mut c_void,
-    packet_free: unsafe extern "C" fn(*mut *mut c_void),
-    frame_alloc: unsafe extern "C" fn() -> *mut c_void,
-    frame_free: unsafe extern "C" fn(*mut *mut c_void),
-    opt_set: unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, c_int) -> c_int,
-    log_set_level: unsafe extern "C" fn(c_int),
-}
-
-fn open_any(names: &[&str]) -> Result<Library, String> {
-    for n in names {
-        // SAFETY: loading a system library by soname; its initialisers are libav's own.
-        if let Ok(lib) = unsafe { Library::new(n) } {
-            return Ok(lib);
-        }
-    }
-    Err(format!("none of {names:?} found"))
-}
-
-impl Av {
-    fn load() -> Result<Self, String> {
-        let util = open_any(&["libavutil.so.60", "libavutil.so.59", "libavutil.so.58", "libavutil.so.57"])?;
-        let codec = open_any(&["libavcodec.so.62", "libavcodec.so.61", "libavcodec.so.60", "libavcodec.so.59"])?;
-        macro_rules! sym {
-            ($lib:expr, $name:literal) => {
-                // SAFETY: the symbol's signature is libav's public C API.
-                *unsafe { $lib.get(concat!($name, "\0").as_bytes()) }.map_err(|e| format!("{}: {e}", $name))?
-            };
-        }
-        Ok(Self {
-            find_decoder_by_name: sym!(codec, "avcodec_find_decoder_by_name"),
-            alloc_context3: sym!(codec, "avcodec_alloc_context3"),
-            open2: sym!(codec, "avcodec_open2"),
-            free_context: sym!(codec, "avcodec_free_context"),
-            send_packet: sym!(codec, "avcodec_send_packet"),
-            receive_frame: sym!(codec, "avcodec_receive_frame"),
-            packet_alloc: sym!(codec, "av_packet_alloc"),
-            packet_free: sym!(codec, "av_packet_free"),
-            frame_alloc: sym!(util, "av_frame_alloc"),
-            frame_free: sym!(util, "av_frame_free"),
-            opt_set: sym!(util, "av_opt_set"),
-            log_set_level: sym!(util, "av_log_set_level"),
-            _codec: codec,
-            _util: util,
-        })
-    }
-}
 
 struct Codec<'a> {
     av: &'a Av,
