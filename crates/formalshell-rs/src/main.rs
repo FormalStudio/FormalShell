@@ -162,7 +162,32 @@ fn ahead_of_batch_work() {
     // SAFETY: a valid parameter block, for the calling thread alone.
     let set = unsafe { libc::sched_setscheduler(0, libc::SCHED_RR | libc::SCHED_RESET_ON_FORK, &param) };
     if set == 0 {
+        REALTIME.store(true, std::sync::atomic::Ordering::Relaxed);
         eprintln!("formalshell: the drawing thread runs SCHED_RR 1");
+    }
+}
+
+/// Whether [`ahead_of_batch_work`] took.
+static REALTIME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// NVIDIA's Vulkan driver runs a thread of its own (`[vkrt] Analysis`) that takes
+/// glibc's main arena lock as often as the drawing thread does (12,000
+/// times each in four minutes on g815). Left a normal task it is switched
+/// out holding it, and the drawing thread waits 4 to 13ms for the lock, so
+/// it joins the drawing thread's class once the device is up.
+pub(crate) fn driver_threads_ahead() {
+    if !REALTIME.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let Ok(tasks) = std::fs::read_dir("/proc/self/task") else { return };
+    for task in tasks.flatten() {
+        let comm = std::fs::read_to_string(task.path().join("comm")).unwrap_or_default();
+        let Some(tid) = task.file_name().to_str().and_then(|t| t.parse::<libc::pid_t>().ok()) else { continue };
+        if comm.starts_with("[vkrt]") {
+            let param = libc::sched_param { sched_priority: 1 };
+            // SAFETY: a valid parameter block, for a thread of this process.
+            unsafe { libc::sched_setscheduler(tid, libc::SCHED_RR | libc::SCHED_RESET_ON_FORK, &param) };
+        }
     }
 }
 

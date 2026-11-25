@@ -660,6 +660,7 @@ impl App {
     /// The GPU is up: every surface drawn so far draws once more, moving
     /// across to it on that present.
     pub fn gpu_up(&mut self) {
+        crate::driver_threads_ahead();
         for b in self.bars.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
             b.repaint(&self.qh);
         }
