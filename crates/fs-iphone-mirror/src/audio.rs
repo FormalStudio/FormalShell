@@ -25,9 +25,11 @@ const CHANNELS: usize = 2;
 const TARGET: usize = 1200;
 /// Past this the oldest sound goes at once.
 const CEILING: usize = 7200;
-/// AudioSpecificConfig the phone's encoder advertises: ER AAC ELD, 48 kHz,
-/// stereo, 480-sample frames.
-const ASC: [u8; 4] = [0xf8, 0xe6, 0x40, 0x00];
+/// AudioSpecificConfig for the phone's stream: ER AAC ELD, 48 kHz, stereo,
+/// 480-sample frames, LD SBR off. The `f8e64000` cookie AudioToolbox takes
+/// sets the resilience flags libavcodec then reads the units with, and
+/// almost none decode.
+const ASC: [u8; 4] = [0xf8, 0xe6, 0x50, 0x00];
 const AV_CODEC_ID_AAC: c_int = 0x15002;
 const AVMEDIA_TYPE_AUDIO: c_int = 1;
 const AV_SAMPLE_FMT_FLT: c_int = 3;
@@ -398,3 +400,4 @@ mod tests {
         AacEld::open(&av, &ASC).expect("the phone's config opens");
     }
 }
+
