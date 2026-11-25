@@ -4,7 +4,11 @@ cannot do (its `pointer click` presses and releases in one go), and a
 two-finger touchpad scroll, which wlrctl cannot do either (its `pointer
 scroll` carries no axis_source, so Hyprland reads it as a wheel).
 
-    vpointer.py down | up | move DX DY | wheel DY | finger DY | hfinger DX | lift | hlift | wait MS ...
+    vpointer.py down | up | move DX DY | at X Y W H | wheel DY | finger DY | hfinger DX | lift | hlift | wait MS ...
+
+`at X Y W H` puts the pointer at X, Y of a W by H extent laid over the
+outputs, where `move` is relative and goes through the compositor's
+acceleration (labwc's).
 
 `wheel DY` is one vertical axis frame of DY with no axis_source, which
 ShojiWM hands on as a wheel (wlrctl's `pointer scroll` names finger, which
@@ -73,6 +77,11 @@ def main(steps):
             w.send(pointer, 0, struct.pack("<I", stamp()) + fixed(dx) + fixed(dy))
             w.send(pointer, 4)
             i += 3
+        elif step == "at":
+            x, y, ext_w, ext_h = (int(v) for v in steps[i + 1:i + 5])
+            w.send(pointer, 1, struct.pack("<IIIII", stamp(), x, y, ext_w, ext_h))
+            w.send(pointer, 4)
+            i += 5
         elif step == "wheel":
             w.send(pointer, 3, struct.pack("<II", stamp(), AXIS_VERTICAL) + fixed(float(steps[i + 1])))
             w.send(pointer, 4)
