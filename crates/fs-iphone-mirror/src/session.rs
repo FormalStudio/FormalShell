@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use idevice::core_device::{
     ButtonState, HevcDepacketizer, IndigoHidClient, MainKeyboardService, ReportBlock, RtpPacket,
-    TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient,
+    TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, TouchscreenContact, UniversalHidServiceClient,
     build_frame_ack, build_keyframe_request, build_liveness, build_rctl,
 };
 use idevice::core_device::{
@@ -86,6 +86,9 @@ pub enum Button {
 pub enum Cmd {
     /// A finger on the screen, in 0..1 of the phone's portrait screen.
     Touch(Phase, f64, f64),
+    /// Two fingers at once, a pinch or a two-finger pan, both in every
+    /// report.
+    Fingers(Phase, [(f64, f64); 2]),
     /// The keys held, as HID keyboard usages; the phone's report follows it.
     Keys(BTreeSet<u8>),
     /// Chords pressed and released in turn: typing one character, dead key
@@ -436,9 +439,11 @@ async fn pump(
                     continue;
                 }
                 // Only the newest of a run of moves matters.
-                if matches!(cmd, Cmd::Touch(Phase::Move, ..)) {
+                if matches!(cmd, Cmd::Touch(Phase::Move, ..) | Cmd::Fingers(Phase::Move, _)) {
                     while let Ok(next) = cmds.try_recv() {
-                        if matches!(next, Cmd::Touch(Phase::Move, ..)) {
+                        if std::mem::discriminant(&next) == std::mem::discriminant(&cmd)
+                            && matches!(next, Cmd::Touch(Phase::Move, ..) | Cmd::Fingers(Phase::Move, _))
+                        {
                             cmd = next;
                         } else {
                             input.handle(tunnel, cmd).await;
@@ -499,10 +504,17 @@ struct Input {
     keyboard: Option<MainKeyboardService>,
     indigo: Option<IndigoHidClient<Box<dyn ReadWrite>>>,
     touch: Option<(u16, u16)>,
+    fingers: Option<[(u16, u16); 2]>,
     keys: BTreeSet<u8>,
     board: Option<PasteboardServiceClient<Box<dyn ReadWrite>>>,
     /// What both pasteboards hold, whichever side it came from.
     clip: Option<Clip>,
+}
+
+/// Two contacts with the same identities in every report, which is how the
+/// phone tells one finger moving from another landing.
+fn two(at: [(u16, u16); 2], touching: bool) -> [TouchscreenContact; 2] {
+    [0, 1].map(|i| TouchscreenContact { identity: i as u8, touching, x: at[i].0, y: at[i].1 })
 }
 
 fn hid_xy(x: f64, y: f64) -> (u16, u16) {
@@ -624,6 +636,7 @@ impl Input {
     async fn handle(&mut self, tunnel: &mut tunnel::Tunnel, cmd: Cmd) {
         let r = match cmd {
             Cmd::Touch(phase, x, y) => self.touch(tunnel, phase, hid_xy(x, y)).await,
+            Cmd::Fingers(phase, [a, b]) => self.fingers(tunnel, phase, [hid_xy(a.0, a.1), hid_xy(b.0, b.1)]).await,
             Cmd::Keys(keys) => self.keys(tunnel, keys).await,
             Cmd::Type(chords) => {
                 let mut r = Ok(());
@@ -686,6 +699,18 @@ impl Input {
             }
             Phase::Up => {}
         }
+        Ok(())
+    }
+
+    async fn fingers(&mut self, tunnel: &mut tunnel::Tunnel, phase: Phase, at: [(u16, u16); 2]) -> Result<(), String> {
+        let touching = match phase {
+            Phase::Down | Phase::Move => true,
+            Phase::Up if self.fingers.is_some() => false,
+            Phase::Up => return Ok(()),
+        };
+        let hid = self.hid(tunnel).await?;
+        hid.send_multitouch(&two(at, touching), None).await.map_err(|e| format!("{e:?}"))?;
+        self.fingers = touching.then_some(at);
         Ok(())
     }
 
@@ -795,6 +820,9 @@ impl Input {
     async fn release(&mut self, tunnel: &mut tunnel::Tunnel) {
         if let (Some(at), Some(hid)) = (self.touch.take(), self.hid.as_mut()) {
             let _ = tokio::time::timeout(Duration::from_secs(1), hid.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, at.0, at.1, None)).await;
+        }
+        if let (Some(at), Some(hid)) = (self.fingers.take(), self.hid.as_mut()) {
+            let _ = tokio::time::timeout(Duration::from_secs(1), hid.send_multitouch(&two(at, false), None)).await;
         }
         if !self.keys.is_empty() {
             let _ = tokio::time::timeout(Duration::from_secs(1), self.keys(tunnel, BTreeSet::new())).await;

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use parley::fontique::Blob;
 use parley::{FontContext, FontFamily, FontFamilyName, FontWeight, GenericFamily, Layout, LayoutContext, PositionedLayoutItem, StyleProperty};
 use vello_cpu::color::{AlphaColor, Srgb};
-use vello_cpu::kurbo::{Affine, BezPath, Rect, RoundedRect, Shape};
+use vello_cpu::kurbo::{Affine, BezPath, Circle, Point, Rect, RoundedRect, Shape};
 use vello_cpu::{Glyph, Pixmap, RenderContext, Resources};
 
 /// A button on the hover strip.
@@ -46,7 +46,13 @@ pub struct Scene {
     pub strip: bool,
     pub hover: Option<Control>,
     pub muted: bool,
+    /// Two fingers shown while Alt is held over the phone, and whether
+    /// they are down on it.
+    pub fingers: Option<([Point; 2], bool)>,
 }
+
+/// A finger dot's radius.
+const FINGER: f64 = 11.0;
 
 /// The strip's geometry: one pill above the phone, centred.
 pub fn strip_buttons(phone: Rect) -> Vec<(Control, Rect)> {
@@ -197,6 +203,14 @@ impl Overlay {
                     Control::Close => "x",
                 };
                 self.icon(&mut cx, name, 16.0, (r.center().x, r.center().y), rgba(255, 255, 255, 0.9));
+            }
+        }
+        if let Some((at, down)) = s.fingers {
+            for c in at {
+                cx.set_paint(rgba(0, 0, 0, 0.25));
+                cx.fill_path(&Circle::new(c, FINGER + 1.0).to_path(0.1));
+                cx.set_paint(rgba(255, 255, 255, if down { 0.7 } else { 0.45 }));
+                cx.fill_path(&Circle::new(c, FINGER).to_path(0.1));
             }
         }
         let mut pixmap = Pixmap::new(w.max(1), h.max(1));
