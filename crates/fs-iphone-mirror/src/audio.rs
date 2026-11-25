@@ -3,16 +3,20 @@
 //! PipeWire stream of our own.
 //!
 //! The picture is shown the moment it decodes, so the sound keeps as little
-//! as Wi-Fi allows: playback starts once `TARGET` is buffered, a run dry
-//! waits for `TARGET` again, and a backlog (the phone's clock running ahead
-//! of ours, or a burst after a stall) is shed a sample at a time, or at once
-//! past `CEILING`.
+//! as Wi-Fi allows: a cycle's worth of the graph plus a margin as long as
+//! the longest wait between packets, or what a run dry was short, easing
+//! back while neither comes. The phone's radio dozes, and its packets can
+//! come in bursts up to 150 ms apart. The stream's adaptive resampler leans
+//! its rate a little to hold the buffer there, which takes up the drift
+//! between the phone's clock and ours; a backlog past that goes at once,
+//! crossfaded. Never a sample dropped or a hard stop: either clicks.
 
 use std::collections::VecDeque;
 use std::ffi::{c_int, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use pipewire as pw;
 use pw::spa;
@@ -21,10 +25,19 @@ use crate::av::{Av, AvFrameHead, AvPacketHead, AvParametersHead, EAGAIN};
 
 const RATE: u32 = 48_000;
 const CHANNELS: usize = 2;
-/// Buffered before playing, in frames: two packets and a half.
-const TARGET: usize = 1200;
-/// Past this the oldest sound goes at once.
-const CEILING: usize = 7200;
+/// Kept beyond a cycle's worth, in frames, to start with and at least.
+const MARGIN: f64 = 960.0;
+const MARGIN_MOST: f64 = 7200.0;
+/// A wait between packets longer than this is the phone going quiet, not
+/// Wi-Fi.
+const QUIET: f64 = 24_000.0;
+/// Past the target by this many frames, the backlog goes at once.
+const BACKLOG: usize = 2400;
+/// The most the stream's rate leans to bring the buffer to its target: a
+/// percent, too little to hear.
+const LEAN: f64 = 0.01;
+/// Frames a start, a run dry or a cut fades over.
+const FADE: usize = 96;
 /// AudioSpecificConfig for the phone's stream: ER AAC ELD, 48 kHz, stereo,
 /// 480-sample frames, LD SBR off. The `f8e64000` cookie AudioToolbox takes
 /// sets the resilience flags libavcodec then reads the units with, and
@@ -35,15 +48,107 @@ const AVMEDIA_TYPE_AUDIO: c_int = 1;
 const AV_SAMPLE_FMT_FLT: c_int = 3;
 const AV_SAMPLE_FMT_FLTP: c_int = 8;
 
-#[derive(Default)]
 struct Ring {
     samples: VecDeque<f32>,
     playing: bool,
+    margin: f64,
+    /// Frames the graph takes a cycle, as of the last.
+    cycle: usize,
+    /// Frames buffered at the start of a cycle, smoothed over about a second.
+    level: Option<f64>,
+    pushed: Option<Instant>,
+}
+
+impl Default for Ring {
+    fn default() -> Self {
+        Self { samples: VecDeque::new(), playing: false, margin: MARGIN, cycle: 1024, level: None, pushed: None }
+    }
 }
 
 impl Ring {
     fn frames(&self) -> usize {
         self.samples.len() / CHANNELS
+    }
+
+    fn target(&self) -> usize {
+        self.cycle + self.margin as usize
+    }
+
+    fn push(&mut self, pcm: &[f32]) {
+        let now = Instant::now();
+        if let Some(then) = self.pushed.replace(now) {
+            let wait = (now - then).as_secs_f64() * RATE as f64;
+            if wait < QUIET {
+                self.margin = self.margin.max(wait.min(MARGIN_MOST));
+            }
+        }
+        self.samples.extend(pcm);
+        let target = self.target();
+        if self.frames() > target + BACKLOG {
+            self.cut(self.frames() - target);
+        }
+    }
+
+    /// Drops the oldest `n` frames, crossfading into what follows.
+    fn cut(&mut self, n: usize) {
+        let fade = FADE.min(self.frames() - n);
+        for i in 0..fade * CHANNELS {
+            let w = (i / CHANNELS) as f32 / fade as f32;
+            let j = n * CHANNELS + i;
+            self.samples[j] = self.samples[i] * (1.0 - w) + self.samples[j] * w;
+        }
+        self.samples.drain(..n * CHANNELS);
+        self.level = None;
+    }
+
+    /// Fills one cycle and says how far the buffer is over its target, as
+    /// a share of the rate to lean by.
+    fn fill(&mut self, out: &mut [f32]) -> f64 {
+        let frames = out.len() / CHANNELS;
+        self.cycle = frames;
+        let target = self.target();
+        let starting = !self.playing;
+        if starting {
+            if self.frames() < target {
+                out.fill(0.0);
+                return 0.0;
+            }
+            self.playing = true;
+            self.level = None;
+        }
+        let level = self.frames();
+        let have = level.min(frames);
+        for (o, s) in out.iter_mut().zip(self.samples.drain(..have * CHANNELS)) {
+            *o = s;
+        }
+        out[have * CHANNELS..].fill(0.0);
+        if starting {
+            fade(&mut out[..have * CHANNELS], true);
+        }
+        if have < frames {
+            fade(&mut out[..have * CHANNELS], false);
+            self.playing = false;
+            self.margin = (self.margin + (frames - have) as f64).min(MARGIN_MOST);
+            return 0.0;
+        }
+        // A millisecond a second.
+        self.margin = (self.margin - frames as f64 / 1000.0).max(MARGIN);
+        let level = self.level.map_or(level as f64, |l| l + (level as f64 - l) * 0.02);
+        self.level = Some(level);
+        ((level - target as f64) / RATE as f64).clamp(-LEAN, LEAN)
+    }
+}
+
+/// Ramps the start of `out` up from silence, or its end down to it.
+fn fade(out: &mut [f32], up: bool) {
+    let n = (out.len() / CHANNELS).min(FADE);
+    let len = out.len();
+    for i in 0..n {
+        let g = i as f32 / n as f32;
+        for c in 0..CHANNELS {
+            let j = if up { i * CHANNELS + c } else { len - (i + 1) * CHANNELS + c };
+            out[j] *= g;
+        }
     }
 }
 
@@ -128,12 +233,7 @@ fn decode(rx: Receiver<Vec<u8>>, ring: Arc<Mutex<Ring>>) {
             continue;
         }
         let Ok(mut ring) = ring.lock() else { return };
-        ring.samples.extend(&pcm);
-        let frames = ring.frames();
-        if frames > CEILING {
-            let shed = (frames - TARGET) * CHANNELS;
-            ring.samples.drain(..shed);
-        }
+        ring.push(&pcm);
     }
 }
 
@@ -258,8 +358,8 @@ fn play(ring: Arc<Mutex<Ring>>, muted: Arc<AtomicBool>, device_delay: Arc<Atomic
     )?;
     let stride = CHANNELS * std::mem::size_of::<f32>();
     let _listener = stream
-        .add_local_listener_with_user_data(0u64)
-        .process(move |stream, trimmed| {
+        .add_local_listener_with_user_data(())
+        .process(move |stream, _| {
             let Some(mut buffer) = stream.dequeue_buffer() else { return };
             let requested = buffer.requested() as usize;
             if let Ok(t) = stream.time() {
@@ -271,32 +371,21 @@ fn play(ring: Arc<Mutex<Ring>>, muted: Arc<AtomicBool>, device_delay: Arc<Atomic
             let room = slice.len() / stride;
             let frames = if requested == 0 { room.min(480) } else { requested.min(room) };
             let out: &mut [f32] = bytemuck_f32(&mut slice[..frames * stride]);
-            let mute = muted.load(Ordering::Relaxed);
-            if let Ok(mut ring) = ring.lock() {
-                if !ring.playing && ring.frames() >= TARGET {
-                    ring.playing = true;
-                }
-                if ring.playing {
-                    // Running long: drop one frame in a hundred, below hearing.
-                    if ring.frames() > TARGET + frames + 960 {
-                        let drop = (frames / 100).max(1) * CHANNELS;
-                        ring.samples.drain(..drop);
-                        *trimmed += drop as u64 / CHANNELS as u64;
-                    }
-                    let have = (ring.frames().min(frames)) * CHANNELS;
-                    for (o, s) in out.iter_mut().zip(ring.samples.drain(..have)) {
-                        *o = if mute { 0.0 } else { s };
-                    }
-                    out[have..].fill(0.0);
-                    if have < frames * CHANNELS {
-                        ring.playing = false;
-                    }
-                } else {
+            let over = match ring.lock() {
+                Ok(mut ring) => ring.fill(out),
+                Err(_) => {
                     out.fill(0.0);
+                    0.0
                 }
-            } else {
+            };
+            if muted.load(Ordering::Relaxed) {
                 out.fill(0.0);
             }
+            // Below one the resampler takes more of ours per cycle. Without
+            // one (-ENOTSUP) there is nothing to lean, and a cut or a run dry
+            // takes up the drift instead.
+            // SAFETY: the stream is alive for the call; RT safe per pipewire.
+            unsafe { pw::sys::pw_stream_set_rate(stream.as_raw_ptr(), 1.0 / (1.0 + over)) };
             let chunk = data.chunk_mut();
             *chunk.offset_mut() = 0;
             *chunk.stride_mut() = stride as _;
