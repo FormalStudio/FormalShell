@@ -297,6 +297,34 @@ pub struct Theme {
     pub reactive_rims: bool,
     pub frame_thickness: f64,
     pub frame_radius: f64,
+    boxes: Boxes,
+}
+
+/// Every box [`Theme::box_style`] has resolved, by role and state, with
+/// what they were resolved against: a layout asks for the same few dozen
+/// on every frame, and each is a walk of the table's JSON by key.
+#[derive(Default)]
+struct Boxes(std::sync::Mutex<Resolved>);
+
+#[derive(Default)]
+struct Resolved {
+    against: Option<(usize, Colors, f64, Radii)>,
+    boxes: std::collections::HashMap<Role, States>,
+}
+
+/// One role's resolved boxes by state.
+type States = Vec<(Option<String>, BoxStyle<Rgba>)>;
+
+impl Clone for Boxes {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl std::fmt::Debug for Boxes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Boxes")
+    }
 }
 
 impl Default for Theme {
@@ -337,6 +365,7 @@ impl Theme {
             reactive_rims: boolean(get("theme.reactiveRims"), true),
             frame_thickness,
             frame_radius,
+            boxes: Boxes::default(),
         }
     }
 
@@ -357,7 +386,21 @@ impl Theme {
 
     /// One role's box in the given state, drawable.
     pub fn box_style(&self, role: Role, state: Option<&str>) -> BoxStyle<Rgba> {
-        style::resolve(self.style, role, state, &self.ctx())
+        let mut resolved = self.boxes.0.lock().unwrap_or_else(|e| e.into_inner());
+        // The fields a box reads are public: one changed since drops them all.
+        let table = std::ptr::from_ref(self.style) as usize;
+        let same = resolved.against.as_ref().is_some_and(|(t, c, o, r)| *t == table && *c == self.colors && *o == self.surface_opacity && *r == self.radii);
+        if !same {
+            resolved.against = Some((table, self.colors.clone(), self.surface_opacity, self.radii));
+            resolved.boxes.clear();
+        }
+        let states = resolved.boxes.entry(role).or_default();
+        if let Some((_, b)) = states.iter().find(|(s, _)| s.as_deref() == state) {
+            return b.clone();
+        }
+        let b = style::resolve(self.style, role, state, &self.ctx());
+        states.push((state.map(str::to_owned), b.clone()));
+        b
     }
 
     pub fn has_state(&self, role: Role, state: &str) -> bool {

@@ -402,18 +402,19 @@ impl Owner for Bar {
             app.overview_action(super::overview::Action::Open);
         }
         let qh = app.qh.clone();
+        // A step in place is the frame's scene work as much as a layout is.
+        let (t0, c0) = (Instant::now(), crate::thread_cpu_us());
         let animating = live!(app).bar.animating(&app.kit, now);
         let stepping = animating || live!(app).bar.marquee_due(&app.kit, now);
         if live!(app).dirty || (stepping && !live!(app).bar.step_in_place(&mut app.kit, now)) {
-            let (t0, c0) = (Instant::now(), crate::thread_cpu_us());
             live!(app).bar.layout(&mut app.kit, &app.store, now);
-            if let Some(s) = &mut live!(app).surface {
-                s.built(t0, c0);
-            }
             live!(app).dirty = false;
             app.sync_sidebar_keys();
             app.sidebar_software();
             app.sync_bar_input();
+        }
+        if let Some(s) = &mut live!(app).surface {
+            s.built(t0, c0);
         }
         let win = &mut live!(app);
         if let Some(s) = &mut win.surface {

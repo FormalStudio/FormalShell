@@ -363,51 +363,70 @@ impl Renderer {
     }
 
     pub fn render(&mut self, scene: &Scene, rect: IRect) {
-        let rect = rect.intersect(&scene.size);
-        if rect.is_empty() {
-            return;
-        }
-        let device = self.device(rect);
-        if device.is_empty() {
-            return;
-        }
-        if matches!(self.target, Target::Gpu(_)) {
-            for tile in crate::gpu::tiles(device) {
-                self.draw(scene, rect, tile);
+        self.render_all(scene, &[rect]);
+    }
+
+    /// Every rect of `rects`, a frame's damage (no two touching), drawn.
+    /// On the GPU they share one scene and one render per tile of their
+    /// bounding box, since each render costs an encoder, its uploads and a
+    /// submit whatever it draws.
+    pub fn render_all(&mut self, scene: &Scene, rects: &[IRect]) {
+        let parts: Vec<IRect> = rects.iter().map(|r| self.device(r.intersect(&scene.size))).filter(|d| !d.is_empty()).collect();
+        if !matches!(self.target, Target::Gpu(_)) {
+            for device in parts {
+                self.draw(scene, device, &[device]);
             }
-        } else {
-            self.draw(scene, rect, device);
+            return;
+        }
+        let Some(bounds) = parts.iter().copied().reduce(|u, d| u.union(&d)) else { return };
+        let mut inside = Vec::new();
+        for tile in crate::gpu::tiles(bounds) {
+            inside.clear();
+            inside.extend(parts.iter().map(|d| d.intersect(&tile)).filter(|d| !d.is_empty()));
+            if !inside.is_empty() {
+                self.draw(scene, tile, &inside);
+            }
         }
     }
 
-    /// `device`, the canvas pixels `rect` touches or a tile of them, drawn.
-    fn draw(&mut self, scene: &Scene, rect: IRect, device: IRect) {
+    /// The scene rect whose nodes can reach the canvas pixels of `device`.
+    fn reach(&self, device: IRect) -> IRect {
         let s = self.scale;
-        let mut origin = Affine::translate((-device.x as f64, -device.y as f64));
-        let mut rect = if s == 1.0 { device } else { rect };
+        if s == 1.0 {
+            return device;
+        }
+        // Every node reaching a canvas pixel the rect only partly covers
+        // is drawn into it, or that pixel loses whatever it misses: the
+        // nodes whose own pixels touch it, and at a fractional scale the
+        // ones whose snapped draw reaches it from a pixel further on.
+        let (x0, y0) = ((f64::from(device.x) / s).floor() as i32, (f64::from(device.y) / s).floor() as i32);
+        let (x1, y1) = ((f64::from(device.right()) / s).ceil() as i32, (f64::from(device.bottom()) / s).ceil() as i32);
+        let k = if s.fract() == 0.0 { 0 } else { (f64::from(REACH + 1) / s).floor() as i32 + 1 };
+        IRect::new(x0 - k, y0 - k, x1 - x0 + k * 2, y1 - y0 + k * 2)
+    }
+
+    /// `parts`, canvas pixels inside `tile`, drawn with the tile's corner
+    /// as the origin.
+    fn draw(&mut self, scene: &Scene, tile: IRect, parts: &[IRect]) {
+        let s = self.scale;
+        let mut origin = Affine::translate((-tile.x as f64, -tile.y as f64));
         if s != 1.0 {
             origin *= Affine::scale(s);
-            // Every node reaching a canvas pixel the rect only partly covers
-            // is drawn into it, or that pixel loses whatever it misses: the
-            // nodes whose own pixels touch it, and at a fractional scale the
-            // ones whose snapped draw reaches it from a pixel further on.
-            let (x0, y0) = ((f64::from(device.x) / s).floor() as i32, (f64::from(device.y) / s).floor() as i32);
-            let (x1, y1) = ((f64::from(device.right()) / s).ceil() as i32, (f64::from(device.bottom()) / s).ceil() as i32);
-            let k = if s.fract() == 0.0 { 0 } else { (f64::from(REACH + 1) / s).floor() as i32 + 1 };
-            rect = IRect::new(x0 - k, y0 - k, x1 - x0 + k * 2, y1 - y0 + k * 2);
         }
+        let rects: Vec<IRect> = parts.iter().map(|d| self.reach(*d)).collect();
         let caches = &mut self.caches;
         caches.scale = s;
         match &mut self.target {
-            Target::Cpu { ctx, canvas, tile } => {
+            Target::Cpu { ctx, canvas, tile: drawn } => {
+                let device = tile;
                 let (w, h) = (device.w as u16, device.h as u16);
                 ctx.reset_and_resize(w, h);
-                caches.paint(&mut **ctx, scene, rect, origin);
+                caches.paint(&mut **ctx, scene, &rects, origin);
                 ctx.flush();
-                tile.resize(w, h);
-                ctx.render(&mut *tile, &mut caches.resources);
+                drawn.resize(w, h);
+                ctx.render(&mut *drawn, &mut caches.resources);
                 let stride = canvas.width() as usize;
-                let src = tile.data();
+                let src = drawn.data();
                 let dst = canvas.data_mut();
                 for row in 0..device.h as usize {
                     let d = (device.y as usize + row) * stride + device.x as usize;
@@ -415,21 +434,21 @@ impl Renderer {
                     dst[d..d + device.w as usize].copy_from_slice(&src[s..s + device.w as usize]);
                 }
             }
-            Target::Gpu(canvas) => canvas.draw(device, |frame| caches.paint(frame, scene, rect, origin)),
+            Target::Gpu(canvas) => canvas.draw(tile, parts, |frame| caches.paint(frame, scene, &rects, origin)),
         }
     }
 }
 
 impl Caches {
-    /// The nodes crossing `rect` into `ctx`, whose origin is `origin`.
-    fn paint(&mut self, ctx: &mut impl Raster, scene: &Scene, rect: IRect, origin: Affine) {
+    /// The nodes crossing any of `rects` into `ctx`, whose origin is `origin`.
+    fn paint(&mut self, ctx: &mut impl Raster, scene: &Scene, rects: &[IRect], origin: Affine) {
         let s = self.scale;
         // A clip is a layer composited on its own, so a run of nodes under
         // one clip shares a layer, and a node the clip cannot cut (its box
         // inside the clip, moved by a plain translation at most) needs none.
         // A launcher frame is a few hundred rows under the body's one clip.
         let mut active: Option<IRect> = None;
-        for node in scene.nodes().filter(|n| n.bounds.intersects(&rect) && !n.clip.is_some_and(|c| c.is_empty())) {
+        for node in scene.nodes().filter(|n| rects.iter().any(|r| n.bounds.intersects(r)) && !n.clip.is_some_and(|c| c.is_empty())) {
             // Casts and glows paint past their own box.
             let (paint, fade) = match &node.paint {
                 Paint::Faded { paint, fade } => (&**paint, Some(*fade)),

@@ -457,17 +457,17 @@ impl App {
         let mut moved = Vec::new();
         for (i, s) in self.bars.spares_mut() {
             let Some(surface) = &mut s.surface else { continue };
+            let (t0, c0) = (Instant::now(), crate::thread_cpu_us());
             let animating = s.bar.animating(&self.kit, now);
             let stepping = animating || s.bar.marquee_due(&self.kit, now);
             if all || s.dirty || (stepping && !s.bar.step_in_place(&mut self.kit, now)) {
-                let (t0, c0) = (Instant::now(), crate::thread_cpu_us());
                 s.bar.layout(&mut self.kit, &self.store, now);
-                surface.built(t0, c0);
                 s.dirty = false;
                 if Self::set_input_region_for(&self.compositor, &mut s.bar, surface) {
                     moved.push(i);
                 }
             }
+            surface.built(t0, c0);
             surface.present(&mut s.bar.scene, animating, &qh);
             for (_, z) in &mut s.zones {
                 z.present(0.0, false, &qh);

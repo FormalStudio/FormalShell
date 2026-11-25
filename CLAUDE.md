@@ -1608,8 +1608,9 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
   leaving and coming back, a window moving away, a workspace there and
   back, a window opening and closing, the network panel, a toast, and the
   fold to the rail and back: no frame past a step's first two over half
-  an interval (3.47ms) in `cpu_us`, the thread's CPU time over the layout,
-  the draw and the copy; both outputs' frames within an interval of each
+  an interval (3.47ms) in `frame_cpu_us`, the thread's CPU time from the
+  frame callback landing to the commit, or in `cpu_us` (the layout, the
+  draw and the copy alone) where that is more; both outputs' frames within an interval of each
   other under one together; no callback gap past two intervals. Each
   step's median, worst and its parts printed. Then the blends and the fold
   again under the stale audit. g815 only.

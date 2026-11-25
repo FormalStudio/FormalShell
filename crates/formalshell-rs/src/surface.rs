@@ -494,7 +494,11 @@ pub struct Surface<R: Role = LayerSurface> {
     /// in `event loop:` lines.
     asked: Option<Instant>,
     waited_us: u128,
-    landed_at: Option<Instant>,
+    /// The callback that lets the next frame go, with the thread's CPU
+    /// clock as it landed, until that frame's first work takes it.
+    landed_at: Option<(Instant, i64)>,
+    /// The callback the frame in progress started from.
+    frame_from: Option<(Instant, i64)>,
     /// No buffer has been dropped out of the pool, so every byte of it a
     /// new buffer gets is still the zero (clear) memfd fill.
     pool_clean: bool,
@@ -702,6 +706,7 @@ impl<R: Role> Surface<R> {
             asked: None,
             waited_us: 0,
             landed_at: None,
+            frame_from: None,
             pool_clean: true,
             drawn: None,
             raster_budget: None,
@@ -729,8 +734,19 @@ impl<R: Role> Surface<R> {
     /// clock at `cpu` ([`crate::thread_cpu_us`]), logged with the next commit
     /// as `build_us` and as part of `cpu_us`.
     pub fn built(&mut self, wall: Instant, cpu: i64) {
+        self.react(wall);
         self.build_us += wall.elapsed().as_micros();
         self.build_cpu_us += crate::thread_cpu_us() - cpu;
+    }
+
+    /// The frame's first work, at `at`: everything since the callback that
+    /// let it go was waiting (`react_us`), and the frame's span runs from
+    /// that callback to its commit (`frame_us`, `frame_cpu_us`).
+    fn react(&mut self, at: Instant) {
+        if let Some((landed, cpu)) = self.landed_at.take() {
+            self.react_us = at.saturating_duration_since(landed).as_micros();
+            self.frame_from = Some((landed, cpu));
+        }
     }
 
     /// The scale this surface draws at from its next present on: what the
@@ -943,8 +959,11 @@ impl<R: Role> Surface<R> {
     /// progress. False while a sliced frame still has bands left.
     fn draw(&mut self, scene: &mut Scene) -> bool {
         if self.raster.is_empty() {
-            // From the callback that let this frame go to the start of drawing it.
-            self.react_us = self.landed_at.take().map_or(0, |at| at.elapsed().as_micros());
+            self.react(Instant::now());
+            // An event started this frame, not a callback.
+            if self.frame_from.is_none() {
+                self.react_us = 0;
+            }
             self.render_us = 0;
             self.render_cpu_us = 0;
             self.slices = 0;
@@ -965,6 +984,12 @@ impl<R: Role> Surface<R> {
             }
         }
         let (t0, c0) = (Instant::now(), crate::thread_cpu_us());
+        // A render on the GPU costs its encoder, uploads and submit whatever
+        // it draws, so a frame not cut into bands draws its damage in one.
+        if self.renderer.is_gpu() && self.raster_budget.is_none() {
+            let rects: Vec<IRect> = self.left.drain(..).collect();
+            self.renderer.render_all(scene, &rects);
+        }
         while let Some(rect) = self.left.pop_front() {
             self.renderer.render(scene, rect);
             if self.raster_budget.is_some_and(|budget| t0.elapsed() >= budget) && !self.left.is_empty() {
@@ -1008,7 +1033,7 @@ impl<R: Role> Surface<R> {
         if let Some(asked) = self.asked.take() {
             self.waited_us = now.duration_since(asked).as_micros();
         }
-        self.landed_at = Some(now);
+        self.landed_at = Some((now, crate::thread_cpu_us()));
         !std::mem::replace(&mut self.mapped, true)
     }
 
@@ -1081,6 +1106,7 @@ impl<R: Role> Surface<R> {
             // The callback found nothing to draw, so it lets no frame go: a
             // frame an event starts later reacts to no callback.
             self.landed_at = None;
+            self.frame_from = None;
             self.clock.set(settling);
             if request && self.commits > 0 {
                 let surface = self.layer.role_surface();
@@ -1136,7 +1162,11 @@ impl<R: Role> Surface<R> {
         if !fill(self.renderer.canvas_bytes_mut(), pixels) {
             return false;
         }
-        (self.react_us, self.render_us, self.slices) = (self.landed_at.take().map_or(0, |at| at.elapsed().as_micros()), t0.elapsed().as_micros(), 1);
+        self.react(t0);
+        if self.frame_from.is_none() {
+            self.react_us = 0;
+        }
+        (self.render_us, self.slices) = (t0.elapsed().as_micros(), 1);
         self.left.clear();
         self.raster.clear();
         self.commit_frame(vec![size], size, true, qh);
@@ -1192,18 +1222,26 @@ impl<R: Role> Surface<R> {
         self.front_view = Some((scale, (size.w, size.h)));
 
         self.commits += 1;
+        let (frame_us, frame_cpu_us) = self.frame_from.take().map_or((0, 0), |(at, cpu)| (at.elapsed().as_micros(), crate::thread_cpu_us() - cpu));
         trace::drew(self.name, build_us + render_us + copy_us);
         if !trace::enabled() {
             return;
         }
         let area: i64 = damage.iter().map(IRect::area).sum();
         let rects: Vec<String> = damage.iter().map(|r| format!("{},{},{}x{}", r.x, r.y, r.w, r.h)).collect();
-        let scaled = if scale == 1.0 { String::new() } else { format!(" scale={scale} buffer_px={pw}x{ph}") };
+        let mut scaled = if scale == 1.0 { String::new() } else { format!(" scale={scale} buffer_px={pw}x{ph}") };
+        if self.renderer.is_gpu() {
+            let g = crate::gpu::take_stats();
+            scaled.push_str(&format!(
+                " gpu_renders={} gpu_submits={} gpu_uploads={} gpu_evicted={} gpu_paint_us={} gpu_encode_us={} gpu_finish_us={} gpu_submit_us={}",
+                g.renders, g.submits, g.uploads, g.evicted as u8, g.paint_us, g.encode_us, g.finish_us, g.submit_us
+            ));
+        }
         trace::commit(
             self.name,
             self.commits,
             format_args!(
-                "render_us={} copy_us={} build_us={} cpu_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} slices={}{scaled}",
+                "render_us={} copy_us={} build_us={} cpu_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} frame_us={} frame_cpu_us={} slices={}{scaled}",
                 render_us,
                 copy_us,
                 build_us,
@@ -1216,6 +1254,8 @@ impl<R: Role> Surface<R> {
                 request as u8,
                 self.waited_us,
                 react_us,
+                frame_us,
+                frame_cpu_us,
                 self.slices,
             ),
         );

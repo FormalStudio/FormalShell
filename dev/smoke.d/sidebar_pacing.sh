@@ -22,10 +22,15 @@
 # 1600 tall) and on the session's own:
 #   - every step's frames on the tall output: at least one commit;
 #   - no bar frame on the tall output past the first two of a step costs
-#     more than half its refresh interval (3.47ms at 144 Hz) in `cpu_us`,
-#     the shell thread's CPU time over the bar's layout, its draw and the
-#     copy into the buffer (the wall clock's `build_us + render_us +
-#     copy_us` carries the loaded rig's preemption too), with the shell
+#     more than half its refresh interval (3.47ms at 144 Hz) in
+#     `frame_cpu_us`, the shell thread's CPU time from the frame callback
+#     landing to the commit: whatever ran ahead of the bar that turn, its
+#     layout or step in place, its draw and the copy or GPU submit (the
+#     wall clock's `frame_us` carries the loaded rig's preemption too), or
+#     in `cpu_us` where that is more: the layout, draw and copy alone, part
+#     of which runs ahead of the callback when an event laid the bar out
+#     while its last frame was still out, and all of it for a frame no
+#     callback started. With the shell
 #     pinned to the performance cores `/sys/devices/cpu_core/cpus` lists
 #     (g815's 0-7, where its desktop runs the shell; a slot's slice otherwise
 #     lands it on the efficiency cores at under half the speed); the first
@@ -44,7 +49,8 @@
 # a blend's frames repaint the rims in place, with no layout.
 # FS_SIDEBAR_PACING_PERF=1 records the shell under perf through the timed
 # steps (LBR call stacks: the release build carries no frame pointers) and
-# pulls two reports, the whole shell's and the bar's present alone.
+# pulls three reports: the whole shell's, the bar's present alone, and each
+# hot function's own time under its callers.
 leg_sidebar_pacing_flag="--sidebar-pacing"
 leg_sidebar_pacing_order=128
 leg_sidebar_pacing_claims="session"
@@ -200,7 +206,9 @@ leg_sidebar_pacing_assert() {
   if [ -s "$sidebar_pacing_perf" ]; then
     perf report --stdio --children --sort sym -g none --percent-limit 0.8 -i "$sidebar_pacing_perf" > "$shot_dir/sidebar-pacing-perf.log" 2>/dev/null
     perf report --stdio --children --sort sym -g none --percent-limit 0.5 --parent "owner::Bar as" -x -i "$sidebar_pacing_perf" > "$shot_dir/sidebar-pacing-perf-bar.log" 2>/dev/null
+    perf report --stdio --no-children --sort sym -g caller,0.5,callee --percent-limit 1.5 -i "$sidebar_pacing_perf" > "$shot_dir/sidebar-pacing-perf-self.log" 2>/dev/null
     echo "SMOKE_SIDEBAR_PACING_PERF $shot_dir/sidebar-pacing-perf.log"
+    echo "SMOKE_SIDEBAR_PACING_PERF_SELF $shot_dir/sidebar-pacing-perf-self.log"
     echo "SMOKE_SIDEBAR_PACING_PERF_BAR $shot_dir/sidebar-pacing-perf-bar.log"
   fi
   awk 'FNR == NR { label[++nw] = $1; next } /^ipc t=[0-9]+ms call menu ping/ { w++; open = 1; next } /^ipc t=[0-9]+ms call sidebar status$/ { open = 0; next } open && /^commit surface=bar / { print label[w], $0 }' "$sidebar_pacing_windows" "$shell_log_path" > "$shot_dir/sidebar-pacing-commits.log"
@@ -215,8 +223,8 @@ leg_sidebar_pacing_assert() {
     open && /^commit surface=bar / {
       tall = ($0 ~ /buffer_px=[0-9]+x1600/) ? "tall" : "own"
       k = ++n[w, tall]; at[w, tall, k] = t($0)
-      c = num($0, "cpu_us")
-      cost[w, tall, k] = c; parts[w, tall, k] = sprintf("wall build_us %d render_us %d copy_us %d, px %d %s", num($0, "build_us"), num($0, "render_us"), num($0, "copy_us"), num($0, "px"), dmg($0))
+      c = num($0, "frame_cpu_us"); if (num($0, "cpu_us") > c) c = num($0, "cpu_us")
+      cost[w, tall, k] = c; parts[w, tall, k] = sprintf("wall react_us %d build_us %d render_us %d copy_us %d, cpu_us %d, px %d %s", num($0, "react_us"), num($0, "build_us"), num($0, "render_us"), num($0, "copy_us"), num($0, "cpu_us"), num($0, "px"), dmg($0))
       q[w, tall, k] = num($0, "request"); cb[w, tall, k] = num($0, "frame_callbacks"); lw[w, tall, k] = num($0, "last_wait_us"); re[w, tall, k] = num($0, "react_us")
     }
     END {

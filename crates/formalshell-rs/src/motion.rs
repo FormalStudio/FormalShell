@@ -406,7 +406,8 @@ mod tests {
     #[test]
     fn every_clock_runs_with_motion_on_and_none_with_it_off() {
         let on = fs_theme::theme::Theme::default();
-        let off = fs_theme::theme::Theme { motion_enabled: false, ..on.clone() };
+        let mut off = on.clone();
+        off.motion_enabled = false;
         for kind in KINDS {
             assert!(kind.ms(&on) > 0.0, "{kind:?}");
             assert_eq!(kind.ms(&off), 0.0, "{kind:?}");

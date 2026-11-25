@@ -38,8 +38,10 @@ use fs_types::IRect;
 
 /// The square every frame's damage is drawn in, a piece at a time: the
 /// renderer's depth target is made once at this size and every render
-/// pass has to match it.
-pub const TILE: i32 = 1024;
+/// pass has to match it. Each piece is a render and a submit of its own
+/// (about 0.5ms of the frame on g815's Intel), so the square holds a
+/// 1600 tall sidebar's damage whole, for 16 MB of tile and as much depth.
+pub const TILE: i32 = 2048;
 /// The atlas small pictures (glyph coverage, icons) are packed into.
 const ATLAS: u32 = 2048;
 /// Past this side a picture gets a texture of its own instead of atlas room:
@@ -50,12 +52,60 @@ const BIG: u16 = 256;
 /// of two atlases, so the allocator never runs out of room for one more
 /// (vello_hybrid panics when it does).
 const ATLAS_BUDGET: usize = (ATLAS * ATLAS * 4) as usize;
+/// Atlas bytes past which a frame that uploads also drops a few of the
+/// pictures unused longest, so the budget is rarely met: dropping down
+/// from it all at once is a render pass a picture, thousands of them in
+/// one frame (134ms on the rig's Intel).
+const ATLAS_TRIM: usize = ATLAS_BUDGET / 2;
+/// Pictures a frame's trim drops at most.
+const TRIM_STEP: usize = 16;
+/// Pictures of one size looked through, newest first, for one nothing
+/// holds any more.
+const REUSE_SCAN: usize = 16;
 
 const DRM_FORMAT_ABGR8888: u32 = u32::from_le_bytes(*b"AB24");
 const DRM_FORMAT_MOD_LINEAR: u64 = 0;
 
 thread_local! {
     static GPU: RefCell<Option<Gpu>> = const { RefCell::new(None) };
+}
+
+/// Where a frame's time on the GPU path went, summed over the renders and
+/// submits since the last [`take_stats`]: a commit's trace line names them.
+#[derive(Clone, Copy, Default)]
+pub struct Stats {
+    /// Scenes rendered, each with its own staging and command buffers.
+    pub renders: u32,
+    /// Queue submits.
+    pub submits: u32,
+    /// Pictures uploaded, and whether the atlas dropped old ones to fit them.
+    pub uploads: u32,
+    pub evicted: bool,
+    /// Walking the nodes into vello_hybrid's scene, its strips made there.
+    pub paint_us: u128,
+    /// vello_hybrid's render: staging written and passes recorded.
+    pub encode_us: u128,
+    /// The recorded passes and copies encoded into Vulkan command buffers.
+    pub finish_us: u128,
+    /// The queue's submit.
+    pub submit_us: u128,
+}
+
+thread_local! {
+    static STATS: Cell<Stats> = const { Cell::new(Stats { renders: 0, submits: 0, uploads: 0, evicted: false, paint_us: 0, encode_us: 0, finish_us: 0, submit_us: 0 }) };
+}
+
+fn stat(f: impl FnOnce(&mut Stats)) {
+    STATS.with(|s| {
+        let mut v = s.get();
+        f(&mut v);
+        s.set(v);
+    });
+}
+
+/// The stats since the last call, for the commit that ends a frame.
+pub fn take_stats() -> Stats {
+    STATS.with(Cell::take)
 }
 
 /// Set once the GPU path fails (the device lost, from whatever thread wgpu
@@ -325,10 +375,50 @@ enum Placed {
 
 struct Uploaded {
     /// Held so the address the table is keyed by is never reused under it.
-    _pixmap: Arc<Pixmap>,
+    /// The only reference left, nothing can draw the picture again.
+    pixmap: Arc<Pixmap>,
     placed: Placed,
     bytes: usize,
     used: u64,
+    /// An atlas picture's layer and corner, for the picture that takes its
+    /// room over.
+    at: Option<(u32, [u32; 2])>,
+}
+
+/// One frame's atlas uploads: their rows in one buffer written through the
+/// queue once (each `write_buffer` is a staging buffer of wgpu's own), and
+/// the copies out of it recorded after everything the uploads' encoder
+/// holds by then, an atlas grown or a picture's room cleared.
+#[derive(Default)]
+struct Staging {
+    buffer: Option<wgpu::Buffer>,
+    bytes: Vec<u8>,
+    copies: Vec<StagedCopy>,
+    /// Where the writer last put a picture, for [`Uploaded::at`].
+    last: Option<(u32, [u32; 2])>,
+}
+
+struct StagedCopy {
+    from: u64,
+    stride: u32,
+    layer: u32,
+    offset: [u32; 2],
+    size: (u32, u32),
+}
+
+impl Staging {
+    fn add(&mut self, pixmap: &Pixmap, layer: u32, offset: [u32; 2]) {
+        let (w, h) = (u32::from(pixmap.width()), u32::from(pixmap.height()));
+        let row = 4 * w as usize;
+        let stride = row.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize);
+        let from = self.bytes.len();
+        self.bytes.resize(from + stride * h as usize, 0);
+        for (src, dst) in pixmap.data_as_u8_slice().chunks_exact(row).zip(self.bytes[from..].chunks_exact_mut(stride)) {
+            dst[..row].copy_from_slice(src);
+        }
+        self.copies.push(StagedCopy { from: from as u64, stride: stride as u32, layer, offset, size: (w, h) });
+        self.last = Some((layer, offset));
+    }
 }
 
 pub struct Gpu {
@@ -350,10 +440,19 @@ pub struct Gpu {
     tile_view: wgpu::TextureView,
     bindings: vello_hybrid::TextureBindings,
     images: HashMap<usize, Uploaded>,
+    /// The atlas pictures' keys by size, oldest first.
+    sized: HashMap<(u16, u16), Vec<usize>>,
+    staging: RefCell<Staging>,
+    /// The frame that last trimmed the atlas, and the pictures it found
+    /// unused longest, with the frame each was last used in.
+    trimmed: u64,
+    oldest: std::collections::VecDeque<(u64, usize)>,
     atlas_bytes: usize,
     next_texture: u64,
     frame: u64,
     uploads: Option<wgpu::CommandEncoder>,
+    /// The last draw, recorded and not yet submitted.
+    drawn: Option<wgpu::CommandEncoder>,
     fade: Option<Fade>,
     blend: Option<Fade>,
     /// Where the fade and blend passes draw before their pixels are copied
@@ -611,10 +710,15 @@ impl Gpu {
             tile_view,
             bindings: vello_hybrid::TextureBindings::new(),
             images: HashMap::new(),
+            sized: HashMap::new(),
+            staging: RefCell::new(Staging::default()),
+            trimmed: 0,
+            oldest: std::collections::VecDeque::new(),
             atlas_bytes: 0,
             next_texture: 1,
             frame: 0,
             uploads: None,
+            drawn: None,
             fade: None,
             blend: None,
             scratch: None,
@@ -737,51 +841,160 @@ impl Gpu {
             }
             let bytes = usize::from(w) * usize::from(h) * 4;
             let big = w > BIG || h > BIG;
-            if !big && (self.atlas_bytes + bytes > ATLAS_BUDGET || LOSE.load(Ordering::Relaxed)) {
-                self.evict(bytes);
-                if LOST.load(Ordering::Relaxed) {
-                    return None;
+            stat(|s| s.uploads += 1);
+            // An armed loss waits for a real upload to meet.
+            let replaced = !big && !LOSE.load(Ordering::Relaxed) && self.replace(pixmap, key);
+            if !big && !replaced {
+                if self.atlas_bytes + bytes > ATLAS_BUDGET || LOSE.load(Ordering::Relaxed) {
+                    self.evict(bytes);
+                    if LOST.load(Ordering::Relaxed) {
+                        return None;
+                    }
+                } else if self.atlas_bytes + bytes > ATLAS_TRIM && self.trimmed != frame {
+                    self.trimmed = frame;
+                    self.trim(bytes);
                 }
             }
-            let placed = if big {
-                let size = wgpu::Extent3d { width: u32::from(w), height: u32::from(h), depth_or_array_layers: 1 };
-                let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("formalshell picture"),
-                    size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                    view_formats: &[],
-                });
-                self.queue.write_texture(
-                    texture.as_image_copy(),
-                    pixmap.data_as_u8_slice(),
-                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(u32::from(w) * 4), rows_per_image: None },
-                    size,
-                );
-                let id = vello_hybrid::TextureId(self.next_texture);
-                self.next_texture += 1;
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                self.bindings.insert(id, view);
-                Placed::Own(id)
-            } else {
-                let encoder = self.uploads.get_or_insert_with(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell uploads") }));
-                let id = guarded("an upload", || self.renderer.upload_image(&mut self.resources, &self.device, &self.queue, encoder, &Pixels(pixmap)))?;
-                self.atlas_bytes += bytes;
-                Placed::Atlas(id)
-            };
-            self.images.insert(key, Uploaded { _pixmap: pixmap.clone(), placed, bytes, used: frame });
+            if !replaced {
+                let (placed, at) = if big {
+                    let size = wgpu::Extent3d { width: u32::from(w), height: u32::from(h), depth_or_array_layers: 1 };
+                    let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("formalshell picture"),
+                        size,
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    });
+                    self.queue.write_texture(
+                        texture.as_image_copy(),
+                        pixmap.data_as_u8_slice(),
+                        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(u32::from(w) * 4), rows_per_image: None },
+                        size,
+                    );
+                    let id = vello_hybrid::TextureId(self.next_texture);
+                    self.next_texture += 1;
+                    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    self.bindings.insert(id, view);
+                    (Placed::Own(id), None)
+                } else {
+                    let encoder = self.uploads.get_or_insert_with(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell uploads") }));
+                    let writer = Pixels { pixmap, staging: &self.staging };
+                    let id = guarded("an upload", || self.renderer.upload_image(&mut self.resources, &self.device, &self.queue, encoder, &writer))?;
+                    self.atlas_bytes += bytes;
+                    self.sized.entry((w, h)).or_default().push(key);
+                    (Placed::Atlas(id), self.staging.borrow_mut().last.take())
+                };
+                self.images.insert(key, Uploaded { pixmap: pixmap.clone(), placed, bytes, used: frame, at });
+            }
         }
         let entry = self.images.get_mut(&key)?;
         entry.used = frame;
         Some(&entry.placed)
     }
 
+    /// `pixmap` into the room of an atlas picture its size that nothing
+    /// holds any more, under the key `key`: a picture made again every
+    /// frame (a rim's sweep through a blend) keeps one place in the atlas
+    /// instead of filling it. False when no such picture is there.
+    fn replace(&mut self, pixmap: &Arc<Pixmap>, key: usize) -> bool {
+        let size = (pixmap.width(), pixmap.height());
+        let Some(keys) = self.sized.get_mut(&size) else { return false };
+        // Nothing drawing it: the scene being painted holds every picture
+        // it draws, and the renders before it are submitted.
+        let free = |k: &usize| self.images.get(k).is_some_and(|u| u.at.is_some() && Arc::strong_count(&u.pixmap) == 1);
+        let Some(i) = keys.iter().rev().take(REUSE_SCAN).position(free).map(|back| keys.len() - 1 - back) else { return false };
+        let old = keys.remove(i);
+        keys.push(key);
+        let Some(mut entry) = self.images.remove(&old) else { return false };
+        let Some((layer, offset)) = entry.at else { return false };
+        self.staging.borrow_mut().add(pixmap, layer, offset);
+        entry.pixmap = pixmap.clone();
+        entry.used = self.frame;
+        self.images.insert(key, entry);
+        true
+    }
+
+    /// The frame's staged uploads written and their copies recorded.
+    fn stage(&mut self) {
+        let staging = self.staging.get_mut();
+        if staging.copies.is_empty() || LOST.load(Ordering::Relaxed) {
+            staging.copies.clear();
+            staging.bytes.clear();
+            return;
+        }
+        let need = staging.bytes.len() as u64;
+        if staging.buffer.as_ref().is_none_or(|b| b.size() < need) {
+            staging.buffer = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("formalshell upload"),
+                size: need.next_power_of_two().max(1 << 16),
+                usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+        let Some(buffer) = &staging.buffer else { return };
+        // Filled through the queue, not mapped: wgpu panics mapping a
+        // buffer made on a lost device.
+        self.queue.write_buffer(buffer, 0, &staging.bytes);
+        let encoder = self.uploads.get_or_insert_with(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell uploads") }));
+        let atlas = self.renderer.atlas_texture();
+        for c in staging.copies.drain(..) {
+            encoder.copy_buffer_to_texture(
+                wgpu::TexelCopyBufferInfo { buffer, layout: wgpu::TexelCopyBufferLayout { offset: c.from, bytes_per_row: Some(c.stride), rows_per_image: Some(c.size.1) } },
+                wgpu::TexelCopyTextureInfo { texture: atlas, mip_level: 0, origin: wgpu::Origin3d { x: c.offset[0], y: c.offset[1], z: c.layer }, aspect: wgpu::TextureAspect::All },
+                wgpu::Extent3d { width: c.size.0, height: c.size.1, depth_or_array_layers: 1 },
+            );
+        }
+        staging.bytes.clear();
+    }
+
+    /// Takes an atlas picture out of the tables, its room cleared by `encoder`.
+    fn drop_atlas(&mut self, key: usize, encoder: &mut wgpu::CommandEncoder) {
+        let Some(u) = self.images.remove(&key) else { return };
+        let Placed::Atlas(id) = u.placed else { return };
+        self.renderer.destroy_image(&mut self.resources, encoder, id);
+        self.atlas_bytes -= u.bytes;
+        let size = (u.pixmap.width(), u.pixmap.height());
+        if let Some(keys) = self.sized.get_mut(&size) {
+            keys.retain(|k| *k != key);
+            if keys.is_empty() {
+                self.sized.remove(&size);
+            }
+        }
+    }
+
+    /// Drops up to [`TRIM_STEP`] of the atlas pictures unused longest, until
+    /// `want` more bytes fit under [`ATLAS_TRIM`], the clears riding the
+    /// frame's own uploads.
+    fn trim(&mut self, want: usize) {
+        if self.oldest.is_empty() {
+            let mut old: Vec<(u64, usize)> = self.images.iter().filter(|(_, u)| matches!(u.placed, Placed::Atlas(_)) && u.used < self.frame).map(|(k, u)| (u.used, *k)).collect();
+            old.sort_unstable();
+            self.oldest = old.into();
+        }
+        let mut encoder = self.uploads.take().unwrap_or_else(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell uploads") }));
+        let mut dropped = 0;
+        while dropped < TRIM_STEP && self.atlas_bytes + want > ATLAS_TRIM {
+            let Some((used, key)) = self.oldest.pop_front() else { break };
+            // Drawn since the list was made: no longer among the oldest.
+            if self.images.get(&key).is_some_and(|u| u.used == used) {
+                self.drop_atlas(key, &mut encoder);
+                dropped += 1;
+            }
+        }
+        self.uploads = Some(encoder);
+        if dropped > 0 {
+            stat(|s| s.evicted = true);
+        }
+    }
+
     /// Drops the atlas pictures unused longest until `want` more bytes fit
     /// the budget; nothing this frame drew is dropped.
     fn evict(&mut self, want: usize) {
+        stat(|s| s.evicted = true);
+        self.oldest.clear();
         let mut old: Vec<(u64, usize)> = self.images.iter().filter(|(_, u)| matches!(u.placed, Placed::Atlas(_)) && u.used < self.frame).map(|(k, u)| (u.used, *k)).collect();
         old.sort_unstable();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell evict") });
@@ -789,10 +1002,7 @@ impl Gpu {
             if self.atlas_bytes + want <= ATLAS_BUDGET / 2 {
                 break;
             }
-            if let Some(Uploaded { placed: Placed::Atlas(id), bytes, .. }) = self.images.remove(&key) {
-                self.renderer.destroy_image(&mut self.resources, &mut encoder, id);
-                self.atlas_bytes -= bytes;
-            }
+            self.drop_atlas(key, &mut encoder);
         }
         self.queue.submit([encoder.finish()]);
         if LOSE.swap(false, Ordering::Relaxed) {
@@ -815,23 +1025,66 @@ impl Gpu {
         }
     }
 
-    /// Draws what `paint` puts in the tile's top-left `w` by `h` and copies
-    /// it to `at` on `canvas`.
-    fn draw(&mut self, canvas: &wgpu::Texture, at: (u32, u32), (w, h): (u32, u32), paint: impl FnOnce(&mut Frame)) {
+    /// Draws what `paint` puts in the tile, whose top-left is `at` on
+    /// `canvas`, and copies `parts` of it (canvas pixels) to their places.
+    /// The commands stay unsubmitted ([`Gpu::flush`]) so the present that
+    /// follows can ride the same submit.
+    fn draw(&mut self, canvas: &wgpu::Texture, at: (i32, i32), parts: &[IRect], paint: impl FnOnce(&mut Frame)) {
+        // vello_hybrid stages each render's strips and alphas through the
+        // queue into buffers every render shares: the last one's commands
+        // have to be submitted before the next one writes them.
+        self.flush();
+        let t0 = std::time::Instant::now();
         self.scene.reset();
         let mut frame = Frame { gpu: self, paint: Brush::Plain, paint_at: Affine::IDENTITY };
         paint(&mut frame);
+        self.stage();
+        let t1 = std::time::Instant::now();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell tile") });
-        if !render(&mut self.renderer, &self.scene, &mut self.resources, &self.device, &self.queue, &mut encoder, &self.tile_view, &self.bindings) {
+        let drew = render(&mut self.renderer, &self.scene, &mut self.resources, &self.device, &self.queue, &mut encoder, &self.tile_view, &self.bindings);
+        stat(|s| {
+            s.renders += 1;
+            s.paint_us += (t1 - t0).as_micros();
+            s.encode_us += t1.elapsed().as_micros();
+        });
+        if !drew {
             return;
         }
-        encoder.copy_texture_to_texture(
-            self.tile.as_image_copy(),
-            wgpu::TexelCopyTextureInfo { texture: canvas, mip_level: 0, origin: wgpu::Origin3d { x: at.0, y: at.1, z: 0 }, aspect: wgpu::TextureAspect::All },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-        );
+        for r in parts {
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo { texture: &self.tile, mip_level: 0, origin: wgpu::Origin3d { x: (r.x - at.0) as u32, y: (r.y - at.1) as u32, z: 0 }, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyTextureInfo { texture: canvas, mip_level: 0, origin: wgpu::Origin3d { x: r.x as u32, y: r.y as u32, z: 0 }, aspect: wgpu::TextureAspect::All },
+                wgpu::Extent3d { width: r.w as u32, height: r.h as u32, depth_or_array_layers: 1 },
+            );
+        }
+        self.drawn = Some(encoder);
+    }
+
+    /// The last draw's encoder with the uploads it needs ahead of it, or a
+    /// new one: what a present records its copy into.
+    fn encoder(&mut self, label: &'static str) -> (Option<wgpu::CommandBuffer>, wgpu::CommandEncoder) {
         let uploads = self.uploads.take().map(|e| e.finish());
-        self.queue.submit(uploads.into_iter().chain([encoder.finish()]));
+        let encoder = self.drawn.take().unwrap_or_else(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) }));
+        (uploads, encoder)
+    }
+
+    /// Submits a draw no present took with it. Anything written through
+    /// the queue runs ahead of every command of the submit it joins, so
+    /// whatever has to come after a draw (a clear of its canvas, the next
+    /// render's staging) flushes first.
+    fn flush(&mut self) {
+        if let Some(encoder) = self.drawn.take() {
+            let t0 = std::time::Instant::now();
+            let buffers = self.uploads.take().map(|e| e.finish()).into_iter().chain([encoder.finish()]);
+            let buffers: Vec<_> = buffers.collect();
+            let t1 = std::time::Instant::now();
+            self.queue.submit(buffers);
+            stat(|s| {
+                s.submits += 1;
+                s.finish_us += (t1 - t0).as_micros();
+                s.submit_us += t1.elapsed().as_micros();
+            });
+        }
     }
 }
 
@@ -878,44 +1131,29 @@ impl Gpu {
 
 /// A Pixmap from vello_cpu written into vello_hybrid's atlas: the same
 /// premultiplied RGBA8 bytes under another crate version's type.
-struct Pixels<'a>(&'a Arc<Pixmap>);
+struct Pixels<'a> {
+    pixmap: &'a Arc<Pixmap>,
+    staging: &'a RefCell<Staging>,
+}
 
 impl vello_hybrid::AtlasWriter for Pixels<'_> {
     fn width(&self) -> u32 {
-        u32::from(self.0.width())
+        u32::from(self.pixmap.width())
     }
 
     fn height(&self) -> u32 {
-        u32::from(self.0.height())
+        u32::from(self.pixmap.height())
     }
 
-    /// Through the encoder rather than `queue.write_texture`, which runs
-    /// ahead of every command buffer: an atlas grown in the same encoder
-    /// copies its old layers over after, and would overwrite the upload.
-    /// The staging buffer is filled by `queue.write_buffer`, not mapped at
-    /// creation: wgpu panics mapping a buffer made on a lost device.
-    fn write_to_atlas_layer(&self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, atlas: &wgpu::Texture, layer: u32, offset: [u32; 2], width: u32, height: u32) {
+    /// Staged, and copied by the uploads' encoder ([`Gpu::stage`]) rather
+    /// than written by `queue.write_texture`, which runs ahead of every
+    /// command buffer: an atlas grown in the same encoder copies its old
+    /// layers over after, and would overwrite the upload.
+    fn write_to_atlas_layer(&self, _: &wgpu::Device, _: &wgpu::Queue, _: &mut wgpu::CommandEncoder, _: &wgpu::Texture, layer: u32, offset: [u32; 2], _: u32, _: u32) {
         if LOST.load(Ordering::Relaxed) {
             return;
         }
-        let row = 4 * width as usize;
-        let stride = row.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize);
-        let mut padded = vec![0; stride * height as usize];
-        for (src, dst) in self.0.data_as_u8_slice().chunks_exact(row).zip(padded.chunks_exact_mut(stride)) {
-            dst[..row].copy_from_slice(src);
-        }
-        let staging = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("formalshell upload"),
-            size: padded.len() as u64,
-            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&staging, 0, &padded);
-        encoder.copy_buffer_to_texture(
-            wgpu::TexelCopyBufferInfo { buffer: &staging, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(stride as u32), rows_per_image: Some(height) } },
-            wgpu::TexelCopyTextureInfo { texture: atlas, mip_level: 0, origin: wgpu::Origin3d { x: offset[0], y: offset[1], z: layer }, aspect: wgpu::TextureAspect::All },
-            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
-        );
+        self.staging.borrow_mut().add(self.pixmap, layer, offset);
     }
 }
 
@@ -1271,19 +1509,19 @@ impl Canvas {
         self.size
     }
 
-    /// One tile's worth of `device` pixels drawn by `paint`, its origin at
-    /// the tile's top-left.
-    pub fn draw(&mut self, device: IRect, paint: impl FnOnce(&mut Frame)) {
+    /// `parts`, canvas pixels inside `tile`, drawn by `paint` with the
+    /// tile's top-left as its origin.
+    pub fn draw(&mut self, tile: IRect, parts: &[IRect], paint: impl FnOnce(&mut Frame)) {
         let texture = &self.texture;
-        with(|g| g.draw(texture, (device.x as u32, device.y as u32), (device.w as u32, device.h as u32), paint));
+        with(|g| g.draw(texture, (tile.x, tile.y), parts, paint));
     }
 
     /// Every pixel back on the CPU, premultiplied RGBA rows.
     pub fn read(&self) -> Option<Vec<u8>> {
         with(|g| {
-            let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell read") });
+            let (uploads, mut encoder) = g.encoder("formalshell read");
             let out = copy_out(g, &mut encoder, &self.texture);
-            g.queue.submit([encoder.finish()]);
+            g.queue.submit(uploads.into_iter().chain([encoder.finish()]));
             mapped(g, &out, self.size)
         })
         .flatten()
@@ -1296,6 +1534,7 @@ impl Canvas {
         }
         let texture = &self.texture;
         with(|g| {
+            g.flush();
             let zero = vec![0u8; device.w as usize * device.h as usize * 4];
             g.queue.write_texture(
                 wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d { x: device.x as u32, y: device.y as u32, z: 0 }, aspect: wgpu::TextureAspect::All },
@@ -1355,7 +1594,7 @@ impl Buffer {
     /// GPU path given up, when the GPU did not finish.
     pub fn fill(&self, canvas: &mut Canvas, rects: &[IRect], opacity: u16) -> bool {
         with(|g| {
-            let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell present") });
+            let (uploads, mut encoder) = g.encoder("formalshell present");
             let layout = if opacity >= 256 {
                 for r in rects {
                     copy_rect(&mut encoder, &canvas.texture, &self.texture, *r);
@@ -1392,7 +1631,7 @@ impl Buffer {
                 }
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL
             };
-            self.hand_over(g, encoder, layout)
+            self.hand_over(g, uploads, encoder, layout)
         })
         .unwrap_or(false)
     }
@@ -1402,9 +1641,9 @@ impl Buffer {
     /// None when the GPU did not give it back in time.
     pub fn read(&self) -> Option<Vec<u8>> {
         with(|g| {
-            let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell read") });
+            let (uploads, mut encoder) = g.encoder("formalshell read");
             let out = copy_out(g, &mut encoder, &self.texture);
-            if !self.hand_over(g, encoder, vk::ImageLayout::TRANSFER_SRC_OPTIMAL) {
+            if !self.hand_over(g, uploads, encoder, vk::ImageLayout::TRANSFER_SRC_OPTIMAL) {
                 return None;
             }
             mapped(g, &out, (self.texture.width(), self.texture.height()))
@@ -1416,7 +1655,7 @@ impl Buffer {
     /// handed over as [`Buffer::fill`] hands its copy over.
     pub fn blend(&self, from: &Picture, to: &Picture, a: f32) -> bool {
         with(|g| {
-            let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell blend") });
+            let (uploads, mut encoder) = g.encoder("formalshell blend");
             let blend = g.blend.get_or_insert_with(|| Fade::with(&g.device, "formalshell blend", BLEND_WGSL, 2));
             g.queue.write_buffer(&blend.uniform, 0, &a.clamp(0.0, 1.0).to_le_bytes());
             let group = blend.group(&g.device, &[&from.texture, &to.texture]);
@@ -1442,7 +1681,7 @@ impl Buffer {
             pass.draw(0..3, 0..1);
             drop(pass);
             copy_rect(&mut encoder, scratch, &self.texture, IRect::new(0, 0, size.width as i32, size.height as i32));
-            self.hand_over(g, encoder, vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+            self.hand_over(g, uploads, encoder, vk::ImageLayout::TRANSFER_DST_OPTIMAL)
         })
         .unwrap_or(false)
     }
@@ -1456,11 +1695,19 @@ impl Buffer {
     /// layout wgpu last left it in, which is where its own tracking starts
     /// from. False once the device is lost, wherever that is learnt, so the
     /// buffer is never attached after it.
-    fn hand_over(&self, g: &mut Gpu, encoder: wgpu::CommandEncoder, layout: vk::ImageLayout) -> bool {
+    fn hand_over(&self, g: &mut Gpu, uploads: Option<wgpu::CommandBuffer>, encoder: wgpu::CommandEncoder, layout: vk::ImageLayout) -> bool {
+        let t0 = std::time::Instant::now();
         let acquire = self.held.take().map(|was| g.ownership(self.image, false, was));
         let release = g.ownership(self.image, true, layout);
         self.held.set(Some(layout));
-        let index = g.queue.submit(acquire.into_iter().chain([encoder.finish(), release]));
+        let buffers: Vec<_> = acquire.into_iter().chain(uploads).chain([encoder.finish(), release]).collect();
+        let t1 = std::time::Instant::now();
+        let index = g.queue.submit(buffers);
+        stat(|s| {
+            s.submits += 1;
+            s.finish_us += (t1 - t0).as_micros();
+            s.submit_us += t1.elapsed().as_micros();
+        });
         if LOST.load(Ordering::Relaxed) {
             return false;
         }
@@ -1818,7 +2065,8 @@ mod tests {
         device.destroy();
         let pixmap = Arc::new(Pixmap::new(16, 16));
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        super::Pixels(&pixmap).write_to_atlas_layer(&device, &queue, &mut encoder, &atlas, 0, [0, 0], 16, 16);
+        let staging = std::cell::RefCell::new(super::Staging::default());
+        super::Pixels { pixmap: &pixmap, staging: &staging }.write_to_atlas_layer(&device, &queue, &mut encoder, &atlas, 0, [0, 0], 16, 16);
         assert!(!super::LOST.load(Ordering::Relaxed));
         assert!(!draw(&mut renderer, &mut resources), "a render on a lost device went on");
         assert!(super::LOST.load(Ordering::Relaxed));
@@ -1884,7 +2132,7 @@ mod tests {
         };
         let kept = picture(64, 0x80);
         for tile in super::tiles(whole) {
-            canvas.draw(tile, |f| paint(f, &kept));
+            canvas.draw(tile, &[tile], |f| paint(f, &kept));
         }
         assert!(buffer.fill(&mut canvas, &[whole], 256), "{:?}", super::status().reason);
         assert!(buffer.fill(&mut canvas, &[whole], 128), "{:?}", super::status().reason);
@@ -1903,7 +2151,7 @@ mod tests {
 
         let (small, big) = (picture(64, 0x40), picture(super::BIG + 1, 0x20));
         for tile in super::tiles(whole) {
-            canvas.draw(tile, |f| {
+            canvas.draw(tile, &[tile], |f| {
                 // The next small picture evicts first.
                 f.gpu.atlas_bytes = f.gpu.atlas_bytes.max(super::ATLAS_BUDGET);
                 f.gpu.device.destroy();
