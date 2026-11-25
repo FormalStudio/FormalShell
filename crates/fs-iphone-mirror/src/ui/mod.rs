@@ -28,6 +28,9 @@ use smithay_client_toolkit::reexports::client::{Connection, Proxy, QueueHandle, 
 use smithay_client_toolkit::reexports::protocols::wp::presentation_time::client::wp_presentation_feedback;
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers};
+use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{Shape, WpCursorShapeDeviceV1};
+use smithay_client_toolkit::reexports::protocols::xdg::shell::client::xdg_toplevel::ResizeEdge;
+use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::pointer::{BTN_LEFT, PointerEvent, PointerEventKind, PointerHandler};
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
 use smithay_client_toolkit::shell::WaylandSurface;
@@ -61,6 +64,10 @@ const SCROLL_STEP: Duration = Duration::from_millis(15);
 const SCROLL_START: (f64, f64) = (0.2, 0.8);
 const SCROLL_ACROSS: (f64, f64) = (0.05, 0.95);
 const SCROLL_END: (f64, f64) = (0.1, 0.9);
+/// How far inside and outside the phone's rounded edge a press resizes a
+/// floating window, as the Simulator's device edge does.
+const EDGE_IN: f64 = 6.0;
+const EDGE_OUT: f64 = 10.0;
 
 pub fn run() -> Result<(), String> {
     let conn = Connection::connect_to_env().map_err(|e| format!("wayland: {e}"))?;
@@ -142,6 +149,10 @@ pub fn run() -> Result<(), String> {
         session,
         audio,
         pointer: None,
+        shapes: CursorShapeManager::bind(&globals, &qh).ok(),
+        shape_device: None,
+        entered: None,
+        shape: None,
         keyboard: None,
         seat: None,
         cursor: Point::ZERO,
@@ -268,6 +279,11 @@ struct App {
     session: session::Session,
     audio: Arc<Audio>,
     pointer: Option<wl_pointer::WlPointer>,
+    shapes: Option<CursorShapeManager>,
+    shape_device: Option<WpCursorShapeDeviceV1>,
+    /// The serial of the pointer's last enter, which a cursor is set with.
+    entered: Option<u32>,
+    shape: Option<Shape>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     seat: Option<wl_seat::WlSeat>,
     cursor: Point,
@@ -428,7 +444,9 @@ impl App {
     fn set_input_region(&self) {
         let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) else { return };
         let p = self.phone_rect();
-        region.add(p.x0 as i32, p.y0 as i32, p.width() as i32, p.height() as i32);
+        let reach = if self.floating { EDGE_OUT } else { 0.0 };
+        let q = p.inflate(reach, reach);
+        region.add(q.x0 as i32, q.y0 as i32, q.width() as i32, q.height() as i32);
         let s = overlay::strip_rect(p);
         region.add(s.x0 as i32, s.y0 as i32, s.width() as i32, s.height() as i32 + overlay::STRIP_GAP as i32);
         self.window.wl_surface().set_input_region(Some(region.wl_region()));
@@ -650,7 +668,59 @@ impl App {
     }
 
     fn on_phone(&self, p: Point) -> bool {
-        self.phone_rect().contains(p)
+        self.phone_rect().contains(p) && self.edge_at(p).is_none()
+    }
+
+    /// The edge a press at `p` resizes a floating window by: within a few
+    /// pixels of the phone's rounded outline, a corner where it curves.
+    fn edge_at(&self, p: Point) -> Option<ResizeEdge> {
+        if !self.floating || !self.inside {
+            return None;
+        }
+        let r = self.phone_rect();
+        let radius = self.radius();
+        let (cx, cy) = ((r.x0 + r.x1) / 2.0, (r.y0 + r.y1) / 2.0);
+        let qx = (p.x - cx).abs() - (r.width() / 2.0 - radius);
+        let qy = (p.y - cy).abs() - (r.height() / 2.0 - radius);
+        let out = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - radius;
+        if !(-EDGE_IN..=EDGE_OUT).contains(&out) {
+            return None;
+        }
+        let corner = radius.max(EDGE_IN + EDGE_OUT);
+        let (left, right) = (p.x < r.x0 + corner, p.x > r.x1 - corner);
+        let (top, bottom) = (p.y < r.y0 + corner, p.y > r.y1 - corner);
+        Some(match (left, right, top, bottom) {
+            (true, _, true, _) => ResizeEdge::TopLeft,
+            (_, true, true, _) => ResizeEdge::TopRight,
+            (true, _, _, true) => ResizeEdge::BottomLeft,
+            (_, true, _, true) => ResizeEdge::BottomRight,
+            (true, ..) => ResizeEdge::Left,
+            (_, true, ..) => ResizeEdge::Right,
+            (_, _, true, _) => ResizeEdge::Top,
+            _ => ResizeEdge::Bottom,
+        })
+    }
+
+    /// The pointer's shape for where it is: a resize arrow on the edge.
+    fn set_shape(&mut self, p: Point) {
+        let shape = match self.edge_at(p) {
+            Some(ResizeEdge::TopLeft) => Shape::NwResize,
+            Some(ResizeEdge::TopRight) => Shape::NeResize,
+            Some(ResizeEdge::BottomLeft) => Shape::SwResize,
+            Some(ResizeEdge::BottomRight) => Shape::SeResize,
+            Some(ResizeEdge::Left) => Shape::WResize,
+            Some(ResizeEdge::Right) => Shape::EResize,
+            Some(ResizeEdge::Top) => Shape::NResize,
+            Some(_) => Shape::SResize,
+            None => Shape::Default,
+        };
+        if self.shape == Some(shape) {
+            return;
+        }
+        if let (Some(device), Some(serial)) = (&self.shape_device, self.entered) {
+            device.set_shape(serial, shape);
+            self.shape = Some(shape);
+        }
     }
 
     fn activate(&mut self, control: Control) {
@@ -949,6 +1019,7 @@ impl SeatHandler for App {
         }
         if capability == Capability::Pointer && self.pointer.is_none() {
             self.pointer = self.seats.get_pointer(qh, &seat).ok();
+            self.shape_device = self.pointer.as_ref().zip(self.shapes.as_ref()).map(|(p, m)| m.get_shape_device(p, qh));
         }
     }
 
@@ -977,8 +1048,11 @@ impl PointerHandler for App {
             let p = Point::new(event.position.0, event.position.1);
             self.cursor = p;
             match event.kind {
-                PointerEventKind::Enter { .. } => {
+                PointerEventKind::Enter { serial } => {
                     self.inside = true;
+                    self.entered = Some(serial);
+                    self.shape = None;
+                    self.set_shape(p);
                     self.hover = self.control_at(p);
                     self.dirty = true;
                 }
@@ -998,6 +1072,9 @@ impl PointerHandler for App {
                         let at = self.to_phone(p);
                         self.send(Cmd::Touch(Phase::Move, at.x, at.y));
                     }
+                    if !self.touching {
+                        self.set_shape(p);
+                    }
                     let hover = self.control_at(p);
                     if hover != self.hover {
                         self.hover = hover;
@@ -1009,6 +1086,8 @@ impl PointerHandler for App {
                     self.serial = Some(serial);
                     if let Some(c) = self.control_at(p) {
                         self.pressed = Some(c);
+                    } else if let (Some(edge), Some(seat)) = (self.edge_at(p), &self.seat) {
+                        self.window.resize(seat, serial, edge);
                     } else if self.on_phone(p) && self.asleep {
                         self.send(Cmd::Button(Button::Side));
                     } else if self.on_phone(p) {
