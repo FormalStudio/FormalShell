@@ -1176,8 +1176,15 @@ impl DataDeviceHandler for App {
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice) {}
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice, _: f64, _: f64) {}
     /// This computer's clipboard changed, or the window got it on focus:
-    /// the phone gets a copy.
+    /// the phone gets a copy. A password manager marks a secret with KDE's
+    /// hint, and a secret only goes over on a paste.
     fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &smithay_client_toolkit::reexports::client::protocol::wl_data_device::WlDataDevice) {
+        let secret = self.data_device.as_ref().and_then(|d| d.data().selection_offer()).is_some_and(|offer| {
+            offer.with_mime_types(|m| m.iter().any(|t| t == "x-kde-passwordManagerHint"))
+        });
+        if secret {
+            return;
+        }
         self.read_selection(|app, clip| {
             if let Some(clip) = clip {
                 app.send(Cmd::Clip(clip));
