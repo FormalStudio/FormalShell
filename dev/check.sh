@@ -64,7 +64,7 @@ run_tests() {
 # The GPU backend's driver pick against lavapipe, which the rig carries
 # and lint's run cannot assume.
 if [ "$1" = gpu ]; then
-  exec fspec dev -- cargo test --locked --release --package formalshell-rs gpu:: -- --ignored
+  exec fspec dev -- cargo test --locked --release --package formalshell-rs gpu:: -- --ignored --test-threads=1
 fi
 
 if rig_is_session_check "$1"; then

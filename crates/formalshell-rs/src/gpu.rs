@@ -52,12 +52,20 @@ const BIG: u16 = 256;
 /// of two atlases, so the allocator never runs out of room for one more
 /// (vello_hybrid panics when it does).
 const ATLAS_BUDGET: usize = (ATLAS * ATLAS * 4) as usize;
-/// Atlas bytes past which a frame that uploads also drops a few of the
+/// Atlas bytes past which a draw that uploads nothing drops a few of the
 /// pictures unused longest, so the budget is rarely met: dropping down
 /// from it all at once is a render pass a picture, thousands of them in
 /// one frame (134ms on the rig's Intel).
 const ATLAS_TRIM: usize = ATLAS_BUDGET / 2;
-/// Pictures a frame's trim drops at most.
+/// Atlas bytes past which a frame that uploads drops some too. Each drop
+/// is a render pass (about 0.1ms on g815's NVIDIA, where a card's morph
+/// uploading 5 to 19 pictures a frame painted in 1.8ms with them against
+/// 0.5ms without), so an animation has the room between the two marks
+/// before it pays for any.
+const ATLAS_CROWDED: usize = ATLAS_BUDGET / 4 * 3;
+/// Pictures a draw without uploads drops at most.
+const IDLE_STEP: usize = 4;
+/// Pictures an uploading frame's trim drops at most.
 const TRIM_STEP: usize = 16;
 /// Pictures of one size looked through, newest first, for one nothing
 /// holds any more.
@@ -446,6 +454,8 @@ pub struct Gpu {
     /// The frame that last trimmed the atlas, and the pictures it found
     /// unused longest, with the frame each was last used in.
     trimmed: u64,
+    /// The draw being painted uploaded a picture.
+    uploaded: bool,
     oldest: std::collections::VecDeque<(u64, usize)>,
     atlas_bytes: usize,
     next_texture: u64,
@@ -713,6 +723,7 @@ impl Gpu {
             sized: HashMap::new(),
             staging: RefCell::new(Staging::default()),
             trimmed: 0,
+            uploaded: false,
             oldest: std::collections::VecDeque::new(),
             atlas_bytes: 0,
             next_texture: 1,
@@ -842,6 +853,7 @@ impl Gpu {
             let bytes = usize::from(w) * usize::from(h) * 4;
             let big = w > BIG || h > BIG;
             stat(|s| s.uploads += 1);
+            self.uploaded = true;
             // An armed loss waits for a real upload to meet.
             let replaced = !big && !LOSE.load(Ordering::Relaxed) && self.replace(pixmap, key);
             if !big && !replaced {
@@ -850,9 +862,9 @@ impl Gpu {
                     if LOST.load(Ordering::Relaxed) {
                         return None;
                     }
-                } else if self.atlas_bytes + bytes > ATLAS_TRIM && self.trimmed != frame {
+                } else if self.atlas_bytes + bytes > ATLAS_CROWDED && self.trimmed != frame {
                     self.trimmed = frame;
-                    self.trim(bytes);
+                    self.trim(bytes, ATLAS_CROWDED, TRIM_STEP);
                 }
             }
             if !replaced {
@@ -965,10 +977,10 @@ impl Gpu {
         }
     }
 
-    /// Drops up to [`TRIM_STEP`] of the atlas pictures unused longest, until
-    /// `want` more bytes fit under [`ATLAS_TRIM`], the clears riding the
-    /// frame's own uploads.
-    fn trim(&mut self, want: usize) {
+    /// Drops up to `step` of the atlas pictures unused longest, until
+    /// `want` more bytes fit under `mark`, the clears riding the frame's
+    /// own uploads.
+    fn trim(&mut self, want: usize, mark: usize, step: usize) {
         if self.oldest.is_empty() {
             let mut old: Vec<(u64, usize)> = self.images.iter().filter(|(_, u)| matches!(u.placed, Placed::Atlas(_)) && u.used < self.frame).map(|(k, u)| (u.used, *k)).collect();
             old.sort_unstable();
@@ -976,7 +988,7 @@ impl Gpu {
         }
         let mut encoder = self.uploads.take().unwrap_or_else(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell uploads") }));
         let mut dropped = 0;
-        while dropped < TRIM_STEP && self.atlas_bytes + want > ATLAS_TRIM {
+        while dropped < step && self.atlas_bytes + want > mark {
             let Some((used, key)) = self.oldest.pop_front() else { break };
             // Drawn since the list was made: no longer among the oldest.
             if self.images.get(&key).is_some_and(|u| u.used == used) {
@@ -1038,6 +1050,10 @@ impl Gpu {
         self.scene.reset();
         let mut frame = Frame { gpu: self, paint: Brush::Plain, paint_at: Affine::IDENTITY };
         paint(&mut frame);
+        if !std::mem::take(&mut self.uploaded) && self.atlas_bytes > ATLAS_TRIM && self.trimmed != self.frame && !LOST.load(Ordering::Relaxed) {
+            self.trimmed = self.frame;
+            self.trim(0, ATLAS_TRIM, IDLE_STEP);
+        }
         self.stage();
         let t1 = std::time::Instant::now();
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell tile") });
