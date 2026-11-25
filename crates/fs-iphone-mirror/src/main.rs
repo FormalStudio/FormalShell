@@ -4,6 +4,7 @@ mod decode;
 mod device;
 mod model;
 mod session;
+mod ui;
 
 use std::collections::BTreeSet;
 use std::io::BufRead;
@@ -20,6 +21,12 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("drive") => drive(),
+        None => {
+            if let Err(e) = ui::run() {
+                tracing::error!("{e}");
+                std::process::exit(1);
+            }
+        }
         _ => eprintln!("usage: formalshell-iphone-mirror [drive]"),
     }
 }

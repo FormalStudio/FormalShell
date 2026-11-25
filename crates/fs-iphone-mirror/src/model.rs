@@ -60,11 +60,13 @@ const TABLE: &[(&str, Model)] = &[
     ("iPhone16,2", m("iPhone 15 Pro Max", 1290, 2796, 460.0, 55.0, 3.0)),
     ("iPhone17,3", m("iPhone 16", 1179, 2556, 460.0, 55.0, 3.0)),
     ("iPhone17,4", m("iPhone 16 Plus", 1290, 2796, 460.0, 55.0, 3.0)),
-    ("iPhone17,1", m("iPhone 16 Pro", 1206, 2622, 460.0, 62.0, 3.0)),
+    // Measured on an iPhone 17, not the 62 often quoted for this panel: at
+    // 55 the dock's corners sit concentric inside the screen's.
+    ("iPhone17,1", m("iPhone 16 Pro", 1206, 2622, 460.0, 55.0, 3.0)),
     ("iPhone17,2", m("iPhone 16 Pro Max", 1320, 2868, 460.0, 62.0, 3.0)),
     ("iPhone17,5", m("iPhone 16e", 1170, 2532, 460.0, 47.33, 3.0)),
-    ("iPhone18,3", m("iPhone 17", 1206, 2622, 460.0, 62.0, 3.0)),
-    ("iPhone18,1", m("iPhone 17 Pro", 1206, 2622, 460.0, 62.0, 3.0)),
+    ("iPhone18,3", m("iPhone 17", 1206, 2622, 460.0, 55.0, 3.0)),
+    ("iPhone18,1", m("iPhone 17 Pro", 1206, 2622, 460.0, 55.0, 3.0)),
     ("iPhone18,2", m("iPhone 17 Pro Max", 1320, 2868, 460.0, 62.0, 3.0)),
     ("iPhone18,4", m("iPhone Air", 1260, 2736, 460.0, 62.0, 3.0)),
 ];
@@ -82,7 +84,7 @@ pub fn fallback(width: u32, height: u32) -> Model {
         width: w,
         height: h,
         ppi: 460.0,
-        corner_pt: 62.0 * w as f64 / 1206.0,
+        corner_pt: 55.0 * w as f64 / 1206.0,
         scale: 3.0,
     }
 }
@@ -97,6 +99,6 @@ mod tests {
         assert_eq!(m.name, "iPhone 17");
         let diag = (m.width_mm().powi(2) + m.height_mm().powi(2)).sqrt() / 25.4;
         assert!((diag - 6.27).abs() < 0.05, "{diag}");
-        assert!((m.corner_fraction() - 186.0 / 1206.0).abs() < 1e-9);
+        assert!((m.corner_fraction() - 165.0 / 1206.0).abs() < 1e-9);
     }
 }

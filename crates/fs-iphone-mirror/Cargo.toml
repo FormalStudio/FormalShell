@@ -12,10 +12,20 @@ path = "src/main.rs"
 idevice = { version = "0.1.68", default-features = false, features = ["ring", "core_device", "display_stream", "remote_pairing", "rsd", "tunnel_tcp_stack", "mobile_image_mounter", "tss", "xpc"] }
 mdns-sd = "0.13"
 ed25519-dalek = "2"
+fs-theme = { path = "../fs-theme" }
+futures-lite = "2"
+libc = "0.2"
 libloading = "0.8"
+parley = "0.11"
 pipewire = { version = "0.10.1", features = ["v0_3_49"] }
 plist = "1"
+raw-window-handle = "0.6"
+smithay-client-toolkit = { version = "0.21", default-features = false, features = ["calloop", "xkbcommon"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+vello_cpu = "0.3"
+# The raw display and surface pointers wgpu takes.
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wgpu = { version = "29", default-features = false, features = ["std", "wgsl", "vulkan"] }
 uuid = { version = "1", features = ["v3", "v4"] }
