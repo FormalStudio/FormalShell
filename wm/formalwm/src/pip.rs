@@ -403,7 +403,6 @@ impl Engine {
         if let Some(rect) = ruled.or_else(|| self.pip_open(&id, (width, width / aspect))) {
             self.model.place(&id, rect);
         }
-        window.state(&crate::windows::FORCE).set(true);
         if let Some(win) = self.windows.get_mut(&id) {
             win.sized = true;
             win.effect = effect;

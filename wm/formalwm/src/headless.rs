@@ -43,8 +43,8 @@ use wayland_client::{
     Connection, Dispatch, EventQueue, Proxy, QueueHandle,
     backend::ObjectId,
     protocol::{
-        wl_buffer, wl_compositor, wl_keyboard, wl_registry, wl_seat, wl_shm, wl_shm_pool,
-        wl_surface,
+        wl_buffer, wl_compositor, wl_keyboard, wl_region, wl_registry, wl_seat, wl_shm,
+        wl_shm_pool, wl_surface,
     },
 };
 use wayland_protocols::xdg::{
@@ -199,6 +199,14 @@ impl Session {
         I: Proxy + 'static,
         Client: Dispatch<I, ()>,
     {
+        self.bind_at(interface, 1)
+    }
+
+    fn bind_at<I>(&self, interface: &str, version: u32) -> I
+    where
+        I: Proxy + 'static,
+        Client: Dispatch<I, ()>,
+    {
         let name = self
             .client
             .globals
@@ -207,7 +215,7 @@ impl Session {
             .unwrap_or_else(|| panic!("{interface} not advertised"))
             .1;
         self.registry
-            .bind::<I, _, _>(name, 1, &self.queue.handle(), ())
+            .bind::<I, _, _>(name, version, &self.queue.handle(), ())
     }
 
     fn open(&mut self, app_id: &str) -> wl_surface::WlSurface {
@@ -231,16 +239,30 @@ impl Session {
 
     /// A toplevel before its first commit, for what a client says then.
     fn bare(&mut self, app_id: &str) -> (wl_surface::WlSurface, xdg_toplevel::XdgToplevel) {
+        let (surface, _, toplevel) = self.shell_surface(app_id);
+        (surface, toplevel)
+    }
+
+    /// `bare` with its xdg_surface, for a client that sets its window
+    /// geometry.
+    fn shell_surface(
+        &mut self,
+        app_id: &str,
+    ) -> (
+        wl_surface::WlSurface,
+        xdg_surface::XdgSurface,
+        xdg_toplevel::XdgToplevel,
+    ) {
         let qh = self.queue.handle();
         let compositor: wl_compositor::WlCompositor = self.bind("wl_compositor");
-        let shell: xdg_wm_base::XdgWmBase = self.bind("xdg_wm_base");
+        // Version 2 has the tiled states.
+        let shell: xdg_wm_base::XdgWmBase = self.bind_at("xdg_wm_base", 2);
         let surface = compositor.create_surface(&qh, ());
-        let toplevel = shell
-            .get_xdg_surface(&surface, &qh, ())
-            .get_toplevel(&qh, ());
+        let xdg = shell.get_xdg_surface(&surface, &qh, ());
+        let toplevel = xdg.get_toplevel(&qh, ());
         toplevel.set_app_id(app_id.into());
         toplevel.set_title(app_id.into());
-        (surface, toplevel)
+        (surface, xdg, toplevel)
     }
 
     /// `f` run on the engine as one of the compositor's turns: what it asks
@@ -265,6 +287,40 @@ impl Session {
         self.state.refresh_window_decorations().unwrap();
         self.roundtrip();
         self.client.configured[&toplevel.id()]
+    }
+
+    /// Turns the loop until the toplevel is configured to `size`: a change
+    /// the engine made outside the compositor's own turns reaches it on the
+    /// runtime's next poll, which runs on a timer.
+    fn told(&mut self, toplevel: &xdg_toplevel::XdgToplevel, size: (i32, i32)) -> bool {
+        for _ in 0..200 {
+            if self.configured(toplevel) == size {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
+    }
+
+    /// Whether the toplevel's last configure told it it is tiled, on every
+    /// edge or on none.
+    fn tiled(&mut self, toplevel: &xdg_toplevel::XdgToplevel) -> bool {
+        use xdg_toplevel::State;
+        self.state.refresh_window_decorations().unwrap();
+        self.roundtrip();
+        let states = &self.client.states[&toplevel.id()];
+        let edges = [
+            State::TiledLeft,
+            State::TiledRight,
+            State::TiledTop,
+            State::TiledBottom,
+        ]
+        .map(|edge| states.contains(&(edge as u32)));
+        assert!(
+            edges.iter().all(|&on| on == edges[0]),
+            "tiled on some edges: {edges:?}"
+        );
+        edges[0]
     }
 
     /// Every animation run to its end, and the compositor told where that
@@ -670,6 +726,8 @@ struct Client {
     /// The size each toplevel was last configured to; 0x0 leaves it to
     /// the client.
     configured: HashMap<ObjectId, (i32, i32)>,
+    /// The states of each toplevel's last configure.
+    states: HashMap<ObjectId, Vec<u32>>,
 }
 
 impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Client {
@@ -681,8 +739,20 @@ impl Dispatch<xdg_toplevel::XdgToplevel, ()> for Client {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let xdg_toplevel::Event::Configure { width, height, .. } = event {
+        if let xdg_toplevel::Event::Configure {
+            width,
+            height,
+            states,
+        } = event
+        {
             client.configured.insert(toplevel.id(), (width, height));
+            let states = states
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|state| u32::from_ne_bytes(*state))
+                .collect();
+            client.states.insert(toplevel.id(), states);
         }
     }
 }
@@ -765,6 +835,7 @@ impl Dispatch<xdg_surface::XdgSurface, ()> for Client {
 
 ignore_events!(
     wl_compositor::WlCompositor,
+    wl_region::WlRegion,
     wl_surface::WlSurface,
     wl_shm::WlShm,
     wl_shm_pool::WlShmPool,
@@ -4167,4 +4238,279 @@ fn a_moving_window_is_told_its_streak_and_its_stretch() {
         assert_eq!(at.smear, [0.0; 2]);
         assert_eq!(at.scale, (1.0, 1.0));
     }
+}
+
+/// The example's rule floats it bare, in the middle of its output.
+const MIRROR: &str = "formalshell-iphone-mirror";
+
+/// A window's rect in the state: where it is and its size.
+fn placed(app_id: &str) -> ((i32, i32), (i32, i32)) {
+    let rect = tile_rect(app_id);
+    ((rect.x, rect.y), (rect.width, rect.height))
+}
+
+fn middle(app_id: &str) -> (i32, i32) {
+    let ((x, y), (w, h)) = placed(app_id);
+    (x + w / 2, y + h / 2)
+}
+
+/// A rule the example's settings do not have, for one app.
+fn rule(app_id: &'static str, effect: rules::Effect) {
+    ask(move |engine| {
+        std::rc::Rc::make_mut(&mut engine.settings)
+            .rules
+            .push(rules::Rule {
+                matcher: rules::Matcher {
+                    app_id: Some(rules::Pattern::new(app_id)?),
+                    ..Default::default()
+                },
+                effect,
+            });
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn a_tile_is_told_it_is_tiled_and_a_float_is_not() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("tiled", HOST, &[test_display("TEST-1")]);
+    let (tile, tile_top) = session.bare("tiled");
+    session.commit(&tile);
+    session.draw(&tile, 400, 300);
+    assert!(session.tiled(&tile_top));
+
+    let (phone, phone_top) = session.bare(MIRROR);
+    session.commit(&phone);
+    assert!(!session.tiled(&phone_top), "a float's first configure");
+    session.draw(&phone, 300, 600);
+    settle();
+    session.caught_up();
+    assert!(!session.tiled(&phone_top), "a float at its own size");
+
+    let id = id_of_app("tiled");
+    let floating = |on: bool| {
+        let id = id.clone();
+        move |engine: &mut crate::engine::Engine| {
+            engine.model.set_floating(&id, Some(on));
+            engine.commit();
+            Ok(())
+        }
+    };
+    session.turn(floating(true));
+    settle();
+    session.caught_up();
+    assert!(!session.tiled(&tile_top), "floated by the bind");
+    session.turn(floating(false));
+    settle();
+    session.caught_up();
+    assert!(session.tiled(&tile_top), "tiled again");
+    session.turn(move |engine| {
+        engine.model.set_big(&id, Some(Big::Fullscreen));
+        engine.commit();
+        Ok(())
+    });
+    settle();
+    session.caught_up();
+    assert!(!session.tiled(&tile_top), "fullscreen");
+}
+
+#[test]
+fn a_float_that_draws_itself_at_a_new_size_takes_it_about_its_middle() {
+    use formalwm_core::geom::Rect;
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("redrawn", HOST, &[test_display("TEST-1")]);
+    let (phone, top) = session.bare(MIRROR);
+    session.commit(&phone);
+    session.draw(&phone, 300, 600);
+    settle();
+    session.caught_up();
+    assert_eq!(placed(MIRROR).1, (300, 600));
+    assert_eq!(session.configured(&top), (300, 600));
+    let centre = middle(MIRROR);
+
+    // The phone turned on its side: the client draws it so, unasked.
+    session.draw(&phone, 600, 300);
+    settle();
+    session.caught_up();
+    assert_eq!(placed(MIRROR).1, (600, 300), "takes the size it drew");
+    assert_eq!(middle(MIRROR), centre, "about the same middle");
+    assert_eq!(session.configured(&top), (600, 300), "and is told it");
+    session.draw(&phone, 600, 300);
+    assert_eq!(placed(MIRROR).1, (600, 300));
+    assert_eq!(middle(MIRROR), centre);
+
+    // Against the output's right edge, a wider one is kept on it.
+    let id = id_of_app(MIRROR);
+    let place = |rect: Rect| {
+        let id = id.clone();
+        move |engine: &mut crate::engine::Engine| {
+            engine.model.place(&id, rect);
+            engine.commit();
+            Ok(())
+        }
+    };
+    session.turn(place(Rect::new(WIDTH - 620.0, 100.0, 600.0, 300.0)));
+    settle();
+    session.draw(&phone, 900, 300);
+    settle();
+    session.caught_up();
+    assert_eq!(placed(MIRROR), ((WIDTH as i32 - 900, 100), (900, 300)));
+
+    // Told a size, the client first draws one it was told before: that is
+    // a buffer behind, not a size of its own.
+    session.turn(place(Rect::new(100.0, 100.0, 400.0, 500.0)));
+    settle();
+    session.caught_up();
+    assert!(session.told(&top, (400, 500)));
+    session.draw(&phone, 900, 300);
+    settle();
+    session.caught_up();
+    assert_eq!(placed(MIRROR), ((100, 100), (400, 500)), "a late buffer");
+    session.draw(&phone, 400, 500);
+    settle();
+    session.caught_up();
+    assert_eq!(placed(MIRROR), ((100, 100), (400, 500)));
+    assert_eq!(session.configured(&top), (400, 500));
+}
+
+#[test]
+fn a_float_in_a_resize_or_under_a_size_rule_keeps_the_size_it_is_told() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("told", HOST, &[test_display("TEST-1")]);
+    rule(
+        "float",
+        rules::Effect {
+            float: Some(true),
+            ..Default::default()
+        },
+    );
+    rule(
+        "ruled",
+        rules::Effect {
+            float: Some(true),
+            size: Some((rules::Length::Px(500.0), rules::Length::Px(300.0))),
+            ..Default::default()
+        },
+    );
+
+    // Its right edge in the hand, 100 px out.
+    let (float, top) = session.bare("float");
+    session.commit(&float);
+    session.draw(&float, 400, 300);
+    settle();
+    session.caught_up();
+    let ((x, y), (w, h)) = placed("float");
+    assert_eq!((w, h), (400, 300));
+    session.pointer_to(f64::from(x + w + 2), f64::from(y + h / 2));
+    session.button(ButtonState::Pressed);
+    session.pointer_by(100.0, 0.0);
+    session.caught_up();
+    assert_eq!(placed("float"), ((x, y), (500, 300)), "the hand resizes it");
+    assert_eq!(session.configured(&top), (500, 300));
+    // A client that keeps to steps of its own draws a size it was not told.
+    session.draw(&float, 480, 300);
+    session.caught_up();
+    assert_eq!(placed("float"), ((x, y), (500, 300)), "the hand's size");
+    session.draw(&float, 500, 300);
+    session.button(ButtonState::Released);
+    settle();
+    session.caught_up();
+    assert_eq!(
+        placed("float"),
+        ((x, y), (500, 300)),
+        "where the hand left it"
+    );
+
+    // A size rule's size is told from the first configure, and a buffer of
+    // another size changes nothing.
+    let (ruled, top) = session.bare("ruled");
+    session.commit(&ruled);
+    assert_eq!(session.configured(&top), (500, 300));
+    session.draw(&ruled, 640, 480);
+    settle();
+    session.caught_up();
+    assert_eq!(placed("ruled").1, (500, 300));
+    let at = placed("ruled");
+    session.draw(&ruled, 500, 300);
+    session.draw(&ruled, 700, 400);
+    settle();
+    session.caught_up();
+    assert_eq!(placed("ruled"), at, "the rule's size");
+    assert_eq!(session.configured(&top), (500, 300));
+}
+
+#[test]
+fn a_bare_float_is_its_window_geometry_and_what_it_draws_outside_it_takes_the_pointer() {
+    let _turn = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = Session::new("overhang", HOST, &[test_display("TEST-1")]);
+    let (phone, xdg, top) = session.shell_surface(MIRROR);
+    session.commit(&phone);
+    // The phone, under a strip of 60 px and inside a shadow of 20, all of
+    // the buffer taking input.
+    let compositor: wl_compositor::WlCompositor = session.bind("wl_compositor");
+    let region = compositor.create_region(&session.queue.handle(), ());
+    region.add(0, 0, 300, 420);
+    phone.set_input_region(Some(&region));
+    xdg.set_window_geometry(20, 60, 260, 340);
+    session.draw(&phone, 300, 420);
+    settle();
+    session.caught_up();
+    let ((x, y), size) = placed(MIRROR);
+    assert_eq!(size, (260, 340), "the window is its geometry");
+    assert_eq!(session.configured(&top), (260, 340), "and is told its size");
+
+    let id = id_of_app(MIRROR);
+    let (rings, cut) = rings(&session, &id);
+    assert!(rings.is_empty(), "no frame: {rings:?}");
+    assert_eq!(cut, None, "nothing of the client cut away");
+    let (window, decoration) = session
+        .state
+        .window_decorations
+        .iter()
+        .find(|(_, decoration)| decoration.snapshot.id == id)
+        .unwrap();
+    let root = decoration.layout.root.rect;
+    assert_eq!((root.x, root.y, root.width, root.height), (x, y, 260, 340));
+    // The compositor keeps the surface's origin as the element's location.
+    let origin = session.state.space.element_location(window).unwrap();
+    let drawn = smithay::desktop::space::SpaceElement::bbox(window);
+    assert_eq!(
+        (
+            origin.x + drawn.loc.x,
+            origin.y + drawn.loc.y,
+            drawn.size.w,
+            drawn.size.h
+        ),
+        (x - 20, y - 60, 300, 420),
+        "the strip and the shadow are drawn"
+    );
+
+    session.pointer_to(f64::from(x + 130), f64::from(y - 30));
+    let under = session.state.seat.get_pointer().unwrap().current_focus();
+    assert_eq!(
+        under.map(
+            |surface| smithay::reexports::wayland_server::Resource::id(&surface).protocol_id()
+        ),
+        Some(phone.id().protocol_id()),
+        "the strip takes the pointer"
+    );
+
+    // Turned on its side: the geometry's new size is the window's.
+    let centre = middle(MIRROR);
+    xdg.set_window_geometry(20, 60, 340, 260);
+    session.draw(&phone, 380, 340);
+    settle();
+    session.caught_up();
+    assert_eq!(placed(MIRROR).1, (340, 260));
+    assert_eq!(middle(MIRROR), centre);
+    assert_eq!(session.configured(&top), (340, 260));
 }

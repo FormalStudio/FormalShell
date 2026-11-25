@@ -238,7 +238,7 @@ impl Engine {
             Action::Maximize => {
                 focused.is_some_and(|id| self.model.toggle_big(&id, Big::Maximized))
             }
-            Action::Float => focused.is_some_and(|id| self.set_floating(&id, None)),
+            Action::Float => focused.is_some_and(|id| self.model.set_floating(&id, None)),
             Action::FocusColumn(side) => self.model.focus_column(*side),
             Action::FocusWindow(side) => self.model.focus_row(*side),
             Action::SwapColumn(side) => self.model.swap_column(*side),
@@ -331,18 +331,6 @@ impl Engine {
         } else {
             win.handle.fullscreen();
         }
-    }
-
-    /// `floating` absent toggles. A float is told its rect's size from
-    /// here on, whatever it was allowed to choose when it opened.
-    pub fn set_floating(&mut self, id: &str, floating: Option<bool>) -> bool {
-        if !self.model.set_floating(id, floating) {
-            return false;
-        }
-        if let Some(win) = self.windows.get(id) {
-            win.handle.state(&crate::windows::FORCE).set(true);
-        }
-        true
     }
 }
 

@@ -30,9 +30,13 @@ pub static IDLE: WindowStateKey<bool> = WindowStateKey::new("idle", |_| true);
 /// Takes input: on screen and not under the overview.
 pub static LIVE: WindowStateKey<bool> = WindowStateKey::new("live", |_| false);
 pub static FULL: WindowStateKey<bool> = WindowStateKey::new("full", |_| false);
-/// The client is told the rect's size; off for a float until it has shown
-/// the size it wants.
+/// The client is held to the rect's size. Off for a float, whose client
+/// may pick its own: it is still told the rect's size when that changes,
+/// and the compositor reports a size of its own only while it is not held.
 pub static FORCE: WindowStateKey<bool> = WindowStateKey::new("force", |_| true);
+/// Told it is tiled on all four edges, which a float must not be: a client
+/// takes that as its size being someone else's to pick.
+pub static TILED: WindowStateKey<bool> = WindowStateKey::new("tiled", |_| false);
 
 /// A picture in picture: over a fullscreen window without ending what
 /// fullscreen does to the layers.
@@ -100,7 +104,7 @@ pub fn setup(signals: Signals) {
             .motion_blur(window.state(&SMEAR))
             .z_index(window.state(&Z))
             .force_rect_size(window.state(&FORCE))
-            .tiled(true)
+            .tiled(window.state(&TILED))
             .idle(window.state(&IDLE))
             .interactive(window.state(&LIVE))
             .above_fullscreen(window.state(&PIP))
@@ -188,6 +192,14 @@ pub fn setup(signals: Signals) {
             let _ = window.size_constraints().get();
             enter(move |engine| engine.bounded(window));
         });
+        let drawn = Cell::new((0.0, 0.0));
+        scope.effect(move || {
+            let now = window.position().get();
+            let size = (now.width, now.height);
+            if drawn.replace(size) != size {
+                enter(move |engine| engine.redrawn(window, size));
+            }
+        });
         // An X11 player asks to stay above the rest once it is mapped.
         scope.effect(move || {
             if window.x11().get().is_some_and(|state| state.above) {
@@ -249,6 +261,8 @@ impl Engine {
                 held: None,
                 asked_fullscreen: false,
                 drawn: false,
+                told: Vec::new(),
+                resizing: false,
                 scope,
             },
         );
@@ -530,7 +544,6 @@ impl Engine {
         if let Some(win) = self.windows.get_mut(&id) {
             win.sized = true;
         }
-        window.state(&FORCE).set(true);
         let output = self
             .model
             .output_of(&id)
@@ -560,6 +573,58 @@ impl Engine {
             }
         }
         self.commit();
+    }
+
+    /// A settled float's client drew itself at a size it was not told, as a
+    /// mirror of a phone turned on its side does: Wayland leaves a float's
+    /// size to it, so the float takes it about the same middle, kept on its
+    /// output. A size rule, a picture's corner or a shell's overlay keeps
+    /// its own size, and a resize in hand is not fought.
+    pub(crate) fn redrawn(&mut self, window: Window, size: (f64, f64)) {
+        let id = window.id();
+        let Some(win) = self.windows.get_mut(&id) else {
+            return;
+        };
+        if !win.sized
+            || win.held.is_some()
+            || win.resizing
+            || win.effect.size.is_some()
+            || win.effect.overlay.is_some()
+            || size.0 < 1.0
+            || size.1 < 1.0
+            || win.drew_told(size)
+        {
+            return;
+        }
+        let Some(record) = self.model.window(&id) else {
+            return;
+        };
+        if !record.floating || record.pip || self.model.big_of(&id).is_some() {
+            return;
+        }
+        if self.drag.as_ref().is_some_and(|drag| drag.id == id)
+            || self.hold.window_drag.as_deref() == Some(id.as_str())
+        {
+            return;
+        }
+        let Some(output) = self
+            .model
+            .output_of(&id)
+            .and_then(|name| self.model.output(&name))
+            .map(|output| output.geo.rect)
+        else {
+            return;
+        };
+        let rest = record.float_rect.translate(output.x, output.y);
+        let (w, h) = (size.0.min(output.w), size.1.min(output.h));
+        let (cx, cy) = (rest.x + rest.w / 2.0, rest.y + rest.h / 2.0);
+        let x = (cx - w / 2.0).clamp(output.x, output.x + output.w - w);
+        let y = (cy - h / 2.0).clamp(output.y, output.y + output.h - h);
+        if self.model.place(&id, Box2::new(x.round(), y.round(), w, h)) {
+            self.scene.sync(&self.model);
+            self.scene.land(&id);
+            self.commit();
+        }
     }
 
     fn renamed(&mut self, window: Window, title: &str, app_id: &str) {

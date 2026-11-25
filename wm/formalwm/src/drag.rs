@@ -218,7 +218,7 @@ impl Engine {
         let Some(win) = self.windows.get(&drag.id) else {
             return;
         };
-        let border = self.signals.look.get_untracked().border;
+        let border = self.frame_of(&drag.id);
         let window = win.handle;
         let (w, h) = drag.size;
         let rect = self.drag_box(drag);
@@ -290,7 +290,7 @@ impl Engine {
             return;
         };
         let (floating, pip) = (record.floating, record.pip);
-        let border = self.signals.look.get_untracked().border;
+        let border = self.frame_of(&id);
         let pointer = (event.current_pointer.x, event.current_pointer.y);
         let client = Box2::new(
             event.start_rect.x + event.delta.x,
@@ -332,6 +332,7 @@ impl Engine {
             if ending {
                 self.commit();
                 self.regrab_overview();
+                self.redrawn(window, drawn_size(window));
             } else {
                 self.present();
             }
@@ -406,7 +407,15 @@ impl Engine {
         let Some(record) = self.model.window(&id) else {
             return;
         };
-        let border = self.signals.look.get_untracked().border;
+        let floating = record.floating;
+        let ending = matches!(
+            event.phase,
+            WindowResizePhaseSnapshot::End | WindowResizePhaseSnapshot::Cancel
+        );
+        if let Some(win) = self.windows.get_mut(&id) {
+            win.resizing = !ending;
+        }
+        let border = self.frame_of(&id);
         let rect = Box2::new(
             event.current_rect.x,
             event.current_rect.y,
@@ -414,7 +423,7 @@ impl Engine {
             event.current_rect.height,
         )
         .inset(border);
-        if record.floating {
+        if floating {
             self.model.place(&id, rect);
         } else if event.edges.left || event.edges.right {
             let column = rect.w + 2.0 * self.model.options.tile_inset();
@@ -424,14 +433,15 @@ impl Engine {
         // the view recentred or clamped, eases into place.
         self.scene.sync(&self.model);
         self.scene.finish();
-        if matches!(
-            event.phase,
-            WindowResizePhaseSnapshot::End | WindowResizePhaseSnapshot::Cancel
-        ) {
+        if ending {
             self.model.release_tile_edge(&id);
             self.scene.sync(&self.model);
         }
         self.commit();
+        // What it drew while the hand had it was not looked at.
+        if ending {
+            self.redrawn(window, drawn_size(window));
+        }
     }
 
     fn pointer_moved(&mut self, at: (f64, f64)) {
@@ -543,4 +553,10 @@ impl Engine {
             self.present_drag();
         }
     }
+}
+
+/// The size of the client's last buffer.
+fn drawn_size(window: Window) -> (f64, f64) {
+    let drawn = window.position().get_untracked();
+    (drawn.width, drawn.height)
 }

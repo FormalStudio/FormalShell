@@ -32,7 +32,43 @@ pub struct Win {
     pub asked_fullscreen: bool,
     /// The client has drawn it: Hyprland's mapped.
     pub drawn: bool,
+    /// The sizes its client was told since it last drew the newest of them:
+    /// a buffer at one of these is the client catching up, not a size of
+    /// its own.
+    pub told: Vec<(f64, f64)>,
+    /// An edge of it is in the pointer's hand.
+    pub resizing: bool,
     pub scope: Scope,
+}
+
+/// How many told sizes a client that never draws them is kept to.
+const TOLD: usize = 32;
+
+/// Within a pixel: the compositor rounds the rect's edges, not its size.
+fn same((w, h): (f64, f64), (tw, th): (f64, f64)) -> bool {
+    (w - tw).abs() <= 1.0 && (h - th).abs() <= 1.0
+}
+
+impl Win {
+    fn tell(&mut self, size: (f64, f64)) {
+        if self.told.last() == Some(&size) {
+            return;
+        }
+        if self.told.len() == TOLD {
+            self.told.remove(0);
+        }
+        self.told.push(size);
+    }
+
+    /// Whether a buffer of `size` is one the client was told. Once it draws
+    /// the newest, the older ones can no longer come.
+    pub fn drew_told(&mut self, size: (f64, f64)) -> bool {
+        if self.told.last().is_some_and(|&last| same(size, last)) {
+            self.told.drain(..self.told.len() - 1);
+            return true;
+        }
+        self.told.iter().any(|&told| same(size, told))
+    }
 }
 
 /// What a window's frame is drawn with. A change rebuilds every frame.
@@ -312,7 +348,7 @@ impl Engine {
     /// Writes this frame of the scene to the windows.
     pub fn present(&mut self) {
         let frame = self.scene.frame();
-        let border = self.signals.look.get_untracked().border;
+        let mut told = Vec::new();
         batch(|| {
             for visual in &frame {
                 let Some(win) = self.windows.get(&visual.id) else {
@@ -321,26 +357,43 @@ impl Engine {
                 if self.drag.as_ref().is_some_and(|drag| drag.id == visual.id) {
                     continue;
                 }
-                self.write(win, visual, border);
+                if let Some(size) = self.write(win, visual) {
+                    told.push((visual.id.clone(), size));
+                }
             }
         });
+        for (id, size) in told {
+            if let Some(win) = self.windows.get_mut(&id) {
+                win.tell(size);
+            }
+        }
         self.present_drag();
         crate::trace::frame(self, &frame);
         self.restage(&frame);
     }
 
-    fn write(&self, win: &Win, visual: &Visual, border: f64) {
+    /// The size the client is told, if any.
+    fn write(&self, win: &Win, visual: &Visual) -> Option<(f64, f64)> {
         let window = win.handle;
+        window.state(&windows::TILED).set(matches!(
+            visual.layer,
+            Layer::Tile | Layer::Maximized | Layer::Zen
+        ));
         // The core's first configure carries the rect's size whatever FORCE
         // says; no size at all is what lets the client pick its own.
         if !win.sized {
             let at = visual.rect;
-            return window
+            window
                 .state(&windows::RECT)
                 .set(Rect::new(at.x, at.y, 0.0, 0.0));
+            return None;
         }
+        let float = matches!(visual.layer, Layer::Float | Layer::Pinned);
+        window
+            .state(&windows::FORCE)
+            .set(!float || win.effect.size.is_some());
         let full = visual.layer == Layer::Fullscreen;
-        let grow = if full { 0.0 } else { border };
+        let grow = if full { 0.0 } else { self.frame_of(&visual.id) };
         let (w, h) = visual.size;
         // Under the overview the scene's box goes through its lens.
         // A picture in picture is the output's and not a workspace's: the
@@ -406,6 +459,21 @@ impl Engine {
         window
             .state(&windows::LIVE)
             .set(visual.visible && !overview && !held);
+        Some((w.round(), h.round()))
+    }
+
+    /// How far a window's frame reaches out of its client: nothing for one
+    /// drawn bare.
+    pub(crate) fn frame_of(&self, id: &str) -> f64 {
+        let framed = self
+            .windows
+            .get(id)
+            .is_none_or(|win| win.handle.state(&windows::FRAMED).get_untracked());
+        if framed {
+            self.signals.look.get_untracked().border
+        } else {
+            0.0
+        }
     }
 
     /// The scene's box with the stretch of its motion on it. What moves a

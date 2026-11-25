@@ -83,7 +83,7 @@ pub fn serve() -> Option<IpcServer> {
         method::WINDOW_FLOAT,
         |engine, request: proto::WindowFloat| {
             let id = engine.resolve(&request.id)?;
-            Ok(engine.set_floating(&id, request.floating))
+            Ok(engine.model.set_floating(&id, request.floating))
         },
     );
     command(
