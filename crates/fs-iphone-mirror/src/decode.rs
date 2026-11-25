@@ -5,8 +5,11 @@
 //! until the next one arrives, which on a still screen is forever.
 //!
 //! Only the newest frame is kept, so a slow present drops frames instead of
-//! queueing them, and a decoder that falls behind skips to the next key
-//! frame and asks the phone for one.
+//! queueing them. Units that arrive together (Wi-Fi hands over a stall's
+//! worth at once) are all decoded, since each predicts from the last, and
+//! only the newest picture is copied out. A decoder that cannot keep up,
+//! its units waiting past LATE, skips to the next key frame and asks the
+//! phone for one.
 
 use std::ffi::{CStr, CString, c_int, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,12 +32,22 @@ pub struct Frame {
 /// The newest decoded frame and the hook that tells its reader one landed.
 pub struct Latest {
     pub frame: Mutex<Option<Frame>>,
+    /// A shown frame's buffer, for the next picture: a fresh 4.5 MB one
+    /// each frame is zeroed and paged in before it is written.
+    spare: Mutex<Vec<u8>>,
     notify: Box<dyn Fn() + Send + Sync>,
 }
 
 impl Latest {
     pub fn new(notify: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
-        Arc::new(Self { frame: Mutex::new(None), notify: Box::new(notify) })
+        Arc::new(Self { frame: Mutex::new(None), spare: Mutex::default(), notify: Box::new(notify) })
+    }
+
+    /// Hands back the buffer of a frame that has been shown.
+    pub fn recycle(&self, frame: Frame) {
+        if let Ok(mut spare) = self.spare.lock() {
+            *spare = frame.data;
+        }
     }
 
     pub fn take(&self) -> Option<Frame> {
@@ -42,8 +55,12 @@ impl Latest {
     }
 }
 
-/// Access units waiting for the decoder; past this it is behind.
-const QUEUE: usize = 6;
+/// Access units the queue holds, a bound on memory alone: about eight
+/// seconds of picture.
+const QUEUE: usize = 512;
+/// A unit that waited this long for the decoder means decoding is slower
+/// than the stream, which no burst explains.
+const LATE: Duration = Duration::from_millis(250);
 
 pub struct Decoder {
     tx: Option<SyncSender<(Vec<u8>, Instant)>>,
@@ -108,8 +125,13 @@ fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicB
     let mut decoded_any = false;
     let mut skipping = true;
     let mut stats: Vec<Duration> = Vec::with_capacity(300);
-    while let Ok((au, received)) = rx.recv() {
+    let mut waiting: Option<(Vec<u8>, Instant)> = None;
+    while let Some((au, received)) = waiting.take().or_else(|| rx.recv().ok()) {
+        waiting = rx.try_recv().ok();
         let key = is_keyframe(&au);
+        if received.elapsed() > LATE {
+            wants.store(true, Ordering::Relaxed);
+        }
         if wants.load(Ordering::Relaxed) && !key {
             skipping = true;
         }
@@ -142,7 +164,10 @@ fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicB
             }
         }
         let c = codec.as_mut().unwrap();
-        match c.decode(&au, received) {
+        // A unit with another behind it is decoded for the next to predict
+        // from; its picture is never shown.
+        let show = waiting.is_none().then(|| latest.spare.lock().map(|mut s| std::mem::take(&mut *s)).unwrap_or_default());
+        match c.decode(&au, received, show) {
             Ok(Some(frame)) => {
                 decoded_any = true;
                 stats.push(frame.decoded - received);
@@ -151,8 +176,10 @@ fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicB
                     tracing::debug!("decode median {:?}, p95 {:?}", stats[150], stats[285]);
                     stats.clear();
                 }
-                if let Ok(mut slot) = latest.frame.lock() {
-                    *slot = Some(frame);
+                // A frame nobody took gives its buffer to the next one.
+                let unseen = latest.frame.lock().ok().and_then(|mut slot| slot.replace(frame));
+                if let Some(unseen) = unseen {
+                    latest.recycle(unseen);
                 }
                 (latest.notify)();
             }
@@ -214,8 +241,9 @@ impl<'a> Codec<'a> {
         }
     }
 
-    /// Decodes one access unit; the newest picture it yields, if any.
-    fn decode(&mut self, au: &[u8], received: Instant) -> Result<Option<Frame>, String> {
+    /// Decodes one access unit; the newest picture it yields, if any, copied
+    /// into `show`'s buffer where there is one to show it in.
+    fn decode(&mut self, au: &[u8], received: Instant, mut show: Option<Vec<u8>>) -> Result<Option<Frame>, String> {
         // SAFETY: the packet borrows `au` for the duration of send_packet,
         // which copies a packet that carries no buffer of its own.
         unsafe {
@@ -237,7 +265,10 @@ impl<'a> Codec<'a> {
                     }
                     return Err(format!("receive_frame {r}"));
                 }
-                out = nv12(&*(self.frame as *const AvFrameHead), received);
+                // One unit can yield two pictures; the later one reuses the buffer.
+                if let Some(data) = out.take().map(|f: Frame| f.data).or_else(|| show.take()) {
+                    out = nv12(&*(self.frame as *const AvFrameHead), received, data);
+                }
             }
             Ok(out)
         }
@@ -255,17 +286,17 @@ impl Drop for Codec<'_> {
     }
 }
 
-/// Copies a decoded picture out as tight NV12.
+/// Copies a decoded picture out as tight NV12, into `data`.
 ///
 /// # Safety
 /// `f` is a frame libavcodec just returned, its planes valid for its format.
-unsafe fn nv12(f: &AvFrameHead, received: Instant) -> Option<Frame> {
+unsafe fn nv12(f: &AvFrameHead, received: Instant, mut data: Vec<u8>) -> Option<Frame> {
     let (w, h) = (f.width as usize, f.height as usize);
     if w == 0 || h == 0 {
         return None;
     }
     let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
-    let mut data = vec![0u8; w * h + cw * ch * 2];
+    data.resize(w * h + cw * ch * 2, 0);
     let (luma, chroma) = data.split_at_mut(w * h);
     let row = |plane: usize, y: usize, len: usize| -> &[u8] {
         // SAFETY: inside the plane, per the caller's contract.

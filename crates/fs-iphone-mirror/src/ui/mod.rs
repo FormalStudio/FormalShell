@@ -145,6 +145,7 @@ pub fn run() -> Result<(), String> {
         configured: false,
         frame_pending: false,
         dirty: true,
+        fresh: false,
         latest,
         session,
         audio,
@@ -275,6 +276,8 @@ struct App {
     configured: bool,
     frame_pending: bool,
     dirty: bool,
+    /// A frame decoded since the last draw.
+    fresh: bool,
     latest: Arc<Latest>,
     session: session::Session,
     audio: Arc<Audio>,
@@ -473,7 +476,11 @@ impl App {
     }
 
     fn draw(&mut self) {
-        if !self.configured || self.frame_pending || self.gpu.is_none() {
+        // A decoded frame is shown at once where present does not block:
+        // waiting for the last draw's frame callback ages it by up to a
+        // refresh. Everything else keeps the compositor's pace.
+        let prompt = std::mem::take(&mut self.fresh) && self.gpu.as_ref().is_some_and(|g| g.prompt);
+        if !self.configured || (self.frame_pending && !prompt) || self.gpu.is_none() {
             self.dirty = true;
             return;
         }
@@ -482,6 +489,7 @@ impl App {
             self.gpu.as_mut().unwrap().set_frame(&frame);
             decoded = Some(frame.decoded);
             self.frame_at = Some(Instant::now());
+            self.latest.recycle(frame);
         }
         let device = self.device_size();
         let scene = Scene {
@@ -542,6 +550,7 @@ impl App {
 
     fn new_frame(&mut self) {
         self.dirty = true;
+        self.fresh = true;
         self.draw();
     }
 

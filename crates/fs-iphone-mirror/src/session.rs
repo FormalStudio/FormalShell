@@ -2,10 +2,15 @@
 //! upkeep and HID input, on a tokio runtime of its own. A failure anywhere
 //! tears the connection down and tries again with backoff; a quiet stream
 //! (the screen asleep) never does, only a tunnel that stops answering.
+//!
+//! Input is a future of its own beside the stream's, with its own
+//! connections to the phone: a held key, a rotation or a pasteboard write
+//! waits on the phone, and the loop that reads the picture's packets waits
+//! on nothing.
 
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use idevice::core_device::{
@@ -19,6 +24,8 @@ use idevice::core_device::{
 };
 use idevice::diagnostics_relay::DiagnosticsRelayClient;
 use idevice::springboardservices::{InterfaceOrientation, SpringBoardServicesClient};
+use idevice::rsd::RsdHandshake;
+use idevice::tcp::handle::AdapterHandle;
 use idevice::{ReadWrite, RsdService};
 use tokio::sync::mpsc;
 
@@ -233,26 +240,41 @@ async fn connect(
     }
     let mut lit = backlight(&mut tunnel).await;
     let mut copied = pasteboard(&mut tunnel).await;
-    let mut input = Input::default();
+    // What both pasteboards hold, whichever side it came from.
+    let held: Held = Arc::default();
+    let (to_input, input_cmds) = mpsc::unbounded_channel();
+    let (turns, mut turned) = mpsc::unbounded_channel();
+    let link = Link { adapter: tunnel.adapter.clone(), rsd: tunnel.rsd.clone() };
+    let input = input(link, input_cmds, turns, held.clone());
+    tokio::pin!(input);
     let mut awake = true;
     // A stalled picture starts the display stream again on the same tunnel:
     // input and the pasteboard carry on.
-    let result = loop {
-        let screen = match tokio::time::timeout(Duration::from_secs(15), stream::start(&mut tunnel.adapter, &mut tunnel.rsd)).await {
-            Ok(Ok(screen)) => screen,
-            Ok(Err(e)) => break Err(e),
-            Err(_) => break Err("screen stream did not start".to_string()),
-        };
-        audio.reset();
-        let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &mut input, &mut lit, &mut copied, &mut awake).await;
-        let mut client = screen.client;
-        let _ = tokio::time::timeout(Duration::from_secs(2), client.stop_media_stream()).await;
-        match result {
-            Err(e) if e == STALE => tracing::warn!("display stream: no picture for {STALE_AFTER:?} with the screen on; starting it again"),
-            other => break other,
+    let streams = async {
+        loop {
+            let screen = match tokio::time::timeout(Duration::from_secs(15), stream::start(&mut tunnel.adapter, &mut tunnel.rsd)).await {
+                Ok(Ok(screen)) => screen,
+                Ok(Err(e)) => break Err(e),
+                Err(_) => break Err("screen stream did not start".to_string()),
+            };
+            audio.reset();
+            let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &to_input, &mut turned, &held, &mut lit, &mut copied, &mut awake).await;
+            let mut client = screen.client;
+            let _ = tokio::time::timeout(Duration::from_secs(2), client.stop_media_stream()).await;
+            match result {
+                Err(e) if e == STALE => tracing::warn!("display stream: no picture for {STALE_AFTER:?} with the screen on; starting it again"),
+                other => break other,
+            }
         }
     };
-    input.release(&mut tunnel).await;
+    let result = tokio::select! {
+        result = streams => result,
+        // Its sender is still held here, so it has not ended.
+        _ = &mut input => return Err("input ended".into()),
+    };
+    // Input sends what is queued, lets go of what is held and ends.
+    drop(to_input);
+    let _ = tokio::time::timeout(Duration::from_secs(3), input).await;
     result
 }
 
@@ -263,7 +285,9 @@ async fn pump(
     audio_out: &Audio,
     tunnel: &mut tunnel::Tunnel,
     screen: &stream::Screen,
-    input: &mut Input,
+    input: &mpsc::UnboundedSender<Cmd>,
+    turned: &mut mpsc::UnboundedReceiver<u8>,
+    held: &Held,
     lit: &mut mpsc::UnboundedReceiver<bool>,
     copied: &mut mpsc::UnboundedReceiver<Clip>,
     awake: &mut bool,
@@ -290,6 +314,7 @@ async fn pump(
         tokio::select! {
             dg = screen.video.recv() => {
                 let dg = dg.map_err(|e| format!("video: {e}"))?;
+                tunnel.acks.now();
                 if idevice::core_device::is_rtcp(&dg.data) {
                     if let Some(sr) = idevice::core_device::rtcp::SenderReport::parse_first(&dg.data) {
                         tracing::debug!("video SR: phone clock behind ours by {} ms (transit included)", ntp_lag_ms(sr.ntp_middle));
@@ -352,6 +377,7 @@ async fn pump(
             }
             dg = screen.audio.recv() => {
                 let dg = dg.map_err(|e| format!("audio: {e}"))?;
+                tunnel.acks.now();
                 if idevice::core_device::is_rtcp(&dg.data) {
                     if dg.data.len() >= 20 && dg.data[1] == 200 {
                         let ntp = u32::from_be_bytes([dg.data[10], dg.data[11], dg.data[12], dg.data[13]]);
@@ -388,11 +414,18 @@ async fn pump(
             }
             Some(clip) = copied.recv() => {
                 // Our own copy coming back is not news.
-                if input.clip.as_ref() != Some(&clip) {
-                    input.clip = Some(clip.clone());
+                let news = held.lock().is_ok_and(|mut held| {
+                    let news = held.as_ref() != Some(&clip);
+                    if news {
+                        *held = Some(clip.clone());
+                    }
+                    news
+                });
+                if news {
                     sink(Event::Clip(clip));
                 }
             }
+            Some(turn) = turned.recv() => sink(Event::Turn(turn)),
             _ = rctl.tick() => {
                 let clock = epoch.elapsed().as_millis() as u16;
                 send(tunnel, &screen.video, video.port, build_rctl(video.ours, clock, frames, highest_seq as u16)).await;
@@ -421,36 +454,58 @@ async fn pump(
                 }
             }
             cmd = cmds.recv() => {
-                let Some(mut cmd) = cmd else { return Ok(()) };
-                if let Cmd::Rotate(direction) = cmd {
-                    let mut turned = rotate(tunnel, direction).await;
-                    // An iPhone has no upside-down interface: on to landscape.
-                    if let Ok(Some(2)) = turned {
-                        turned = rotate(tunnel, direction).await;
-                    }
-                    match turned {
-                        Ok(Some(turn)) => sink(Event::Turn(turn)),
-                        Ok(None) => {}
-                        Err(e) => tracing::warn!("{e}"),
-                    }
-                    continue;
-                }
-                // Only the newest of a run of moves matters.
-                if matches!(cmd, Cmd::Touch(Phase::Move, ..)) {
-                    while let Ok(next) = cmds.try_recv() {
-                        if matches!(next, Cmd::Touch(Phase::Move, ..)) {
-                            cmd = next;
-                        } else {
-                            input.handle(tunnel, cmd).await;
-                            cmd = next;
-                            break;
-                        }
-                    }
-                }
-                input.handle(tunnel, cmd).await;
+                let Some(cmd) = cmd else { return Ok(()) };
+                let _ = input.send(cmd);
             }
         }
     }
+}
+
+/// What the input task reaches the phone through: the tunnel's stack and
+/// its service list, both the session's own.
+struct Link {
+    adapter: AdapterHandle,
+    rsd: RsdHandshake,
+}
+
+type Held = Arc<Mutex<Option<Clip>>>;
+
+/// Every command in turn, until the session drops its sender. Polled beside
+/// the stream on the session's own task: `connect_rsd`'s future is not one
+/// tokio can prove `Send` for a spawned task.
+async fn input(mut link: Link, mut cmds: mpsc::UnboundedReceiver<Cmd>, turns: mpsc::UnboundedSender<u8>, held: Held) {
+    let mut input = Input { clip: held, ..Default::default() };
+    while let Some(mut cmd) = cmds.recv().await {
+        if let Cmd::Rotate(direction) = cmd {
+            let mut turned = rotate(&mut link, direction).await;
+            // An iPhone has no upside-down interface: on to landscape.
+            if let Ok(Some(2)) = turned {
+                turned = rotate(&mut link, direction).await;
+            }
+            match turned {
+                Ok(Some(turn)) => {
+                    let _ = turns.send(turn);
+                }
+                Ok(None) => {}
+                Err(e) => tracing::warn!("{e}"),
+            }
+            continue;
+        }
+        // Only the newest of a run of moves matters.
+        if matches!(cmd, Cmd::Touch(Phase::Move, ..)) {
+            while let Ok(next) = cmds.try_recv() {
+                if matches!(next, Cmd::Touch(Phase::Move, ..)) {
+                    cmd = next;
+                } else {
+                    input.handle(&mut link, cmd).await;
+                    cmd = next;
+                    break;
+                }
+            }
+        }
+        input.handle(&mut link, cmd).await;
+    }
+    input.release(&mut link).await;
 }
 
 /// Our wall clock minus an NTP short-format stamp, in ms.
@@ -501,8 +556,7 @@ struct Input {
     touch: Option<(u16, u16)>,
     keys: BTreeSet<u8>,
     board: Option<PasteboardServiceClient<Box<dyn ReadWrite>>>,
-    /// What both pasteboards hold, whichever side it came from.
-    clip: Option<Clip>,
+    clip: Held,
 }
 
 fn hid_xy(x: f64, y: f64) -> (u16, u16) {
@@ -600,7 +654,7 @@ async fn interface_turn(tunnel: &mut tunnel::Tunnel) -> Result<u8, String> {
 
 /// Turns the phone as if in the hand and returns the quarter turns
 /// clockwise that stand its picture up, or none while it reads as flat.
-async fn rotate(tunnel: &mut tunnel::Tunnel, direction: RotationDirection) -> Result<Option<u8>, String> {
+async fn rotate(tunnel: &mut Link, direction: RotationDirection) -> Result<Option<u8>, String> {
     let mut control = OrientationServiceClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd)
         .await
         .map_err(|e| format!("device control: {e:?}"))?;
@@ -621,7 +675,7 @@ async fn rotate(tunnel: &mut tunnel::Tunnel, direction: RotationDirection) -> Re
 }
 
 impl Input {
-    async fn handle(&mut self, tunnel: &mut tunnel::Tunnel, cmd: Cmd) {
+    async fn handle(&mut self, tunnel: &mut Link, cmd: Cmd) {
         let r = match cmd {
             Cmd::Touch(phase, x, y) => self.touch(tunnel, phase, hid_xy(x, y)).await,
             Cmd::Keys(keys) => self.keys(tunnel, keys).await,
@@ -661,7 +715,7 @@ impl Input {
         }
     }
 
-    async fn hid(&mut self, tunnel: &mut tunnel::Tunnel) -> Result<&mut UniversalHidServiceClient<Box<dyn ReadWrite>>, String> {
+    async fn hid(&mut self, tunnel: &mut Link) -> Result<&mut UniversalHidServiceClient<Box<dyn ReadWrite>>, String> {
         if self.hid.is_none() {
             self.hid = Some(
                 UniversalHidServiceClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd)
@@ -672,7 +726,7 @@ impl Input {
         Ok(self.hid.as_mut().unwrap())
     }
 
-    async fn touch(&mut self, tunnel: &mut tunnel::Tunnel, phase: Phase, at: (u16, u16)) -> Result<(), String> {
+    async fn touch(&mut self, tunnel: &mut Link, phase: Phase, at: (u16, u16)) -> Result<(), String> {
         let down = self.touch.is_some();
         let hid = self.hid(tunnel).await?;
         match phase {
@@ -692,7 +746,7 @@ impl Input {
     /// Modifiers change in a report of their own before the keys that need
     /// them, and keys let go before modifiers do: a receiver reading a
     /// letter and Shift in one report can take the letter first.
-    async fn keys(&mut self, tunnel: &mut tunnel::Tunnel, want: BTreeSet<u8>) -> Result<(), String> {
+    async fn keys(&mut self, tunnel: &mut Link, want: BTreeSet<u8>) -> Result<(), String> {
         if want == self.keys {
             return Ok(());
         }
@@ -720,7 +774,7 @@ impl Input {
         Ok(())
     }
 
-    async fn indigo(&mut self, tunnel: &mut tunnel::Tunnel) -> Result<&mut IndigoHidClient<Box<dyn ReadWrite>>, String> {
+    async fn indigo(&mut self, tunnel: &mut Link) -> Result<&mut IndigoHidClient<Box<dyn ReadWrite>>, String> {
         if self.indigo.is_none() {
             self.indigo = Some(
                 IndigoHidClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd)
@@ -731,14 +785,14 @@ impl Input {
         Ok(self.indigo.as_mut().unwrap())
     }
 
-    async fn press(&mut self, tunnel: &mut tunnel::Tunnel, page: u64, usage: u64, hold: Duration) -> Result<(), String> {
+    async fn press(&mut self, tunnel: &mut Link, page: u64, usage: u64, hold: Duration) -> Result<(), String> {
         let indigo = self.indigo(tunnel).await?;
         indigo.send_button(page, usage, ButtonState::Down).await.map_err(|e| format!("{e:?}"))?;
         tokio::time::sleep(hold).await;
         indigo.send_button(page, usage, ButtonState::Up).await.map_err(|e| format!("{e:?}"))
     }
 
-    async fn button(&mut self, tunnel: &mut tunnel::Tunnel, button: Button) -> Result<(), String> {
+    async fn button(&mut self, tunnel: &mut Link, button: Button) -> Result<(), String> {
         match button {
             // The consumer-page Menu button waits out the double-press window
             // (about 300 ms) before acting; the keyboard's Command+H does not.
@@ -755,8 +809,8 @@ impl Input {
         }
     }
 
-    async fn set_clip(&mut self, tunnel: &mut tunnel::Tunnel, clip: Clip) -> Result<(), String> {
-        if self.clip.as_ref() == Some(&clip) {
+    async fn set_clip(&mut self, tunnel: &mut Link, clip: Clip) -> Result<(), String> {
+        if self.clip.lock().is_ok_and(|held| held.as_ref() == Some(&clip)) {
             return Ok(());
         }
         if self.board.is_none() {
@@ -778,11 +832,13 @@ impl Input {
             self.board = None;
         }
         r.map_err(|_| "pasteboard timed out".to_string())?.map_err(|e| format!("pasteboard: {e:?}"))?;
-        self.clip = Some(clip);
+        if let Ok(mut held) = self.clip.lock() {
+            *held = Some(clip);
+        }
         Ok(())
     }
 
-    async fn paste(&mut self, tunnel: &mut tunnel::Tunnel) -> Result<(), String> {
+    async fn paste(&mut self, tunnel: &mut Link) -> Result<(), String> {
         // The phone's Command+V, not Control+V.
         let held = self.keys.clone();
         self.keys(tunnel, BTreeSet::from([0xe3])).await?;
@@ -792,7 +848,7 @@ impl Input {
         self.keys(tunnel, held).await
     }
 
-    async fn release(&mut self, tunnel: &mut tunnel::Tunnel) {
+    async fn release(&mut self, tunnel: &mut Link) {
         if let (Some(at), Some(hid)) = (self.touch.take(), self.hid.as_mut()) {
             let _ = tokio::time::timeout(Duration::from_secs(1), hid.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, at.0, at.1, None)).await;
         }

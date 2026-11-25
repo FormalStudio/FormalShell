@@ -4,6 +4,7 @@
 //! userspace TCP stack over it.
 
 use std::net::{IpAddr, SocketAddr};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::time::Duration;
 
 use idevice::IdeviceError;
@@ -22,8 +23,36 @@ pub struct Tunnel {
     pub adapter: AdapterHandle,
     pub rsd: RsdHandshake,
     pub phone: SocketAddr,
+    pub acks: QuickAck,
     /// The phone drops the tunnel listener when this connection closes.
     _control: RemotePairingClient<RpPairingSocket<TcpStream>>,
+}
+
+/// The tunnel's TCP socket, for acknowledging what the phone sent at once.
+/// The phone sends with Nagle on: a short segment (a small frame, a frame's
+/// tail, a sound packet) waits there until everything before it is
+/// acknowledged, and Linux holds an ACK up to 40 ms once we have sent data
+/// of our own, which the stream's upkeep always has. Measured on the
+/// socket, the picture's packets arrived 44 ms apart or right behind our
+/// own 50 ms report.
+pub struct QuickAck(Option<OwnedFd>);
+
+impl QuickAck {
+    fn of(stream: &TcpStream) -> Self {
+        Self(stream.as_fd().try_clone_to_owned().ok())
+    }
+
+    /// Sends the ACK the kernel is holding. The option does not stick: the
+    /// next data we send puts the socket back to delaying, so this is called
+    /// for every datagram the tunnel delivers.
+    pub fn now(&self) {
+        let Some(fd) = &self.0 else { return };
+        let on: libc::c_int = 1;
+        // SAFETY: a plain setsockopt on a socket this struct keeps open.
+        unsafe {
+            libc::setsockopt(fd.as_raw_fd(), libc::IPPROTO_TCP, libc::TCP_QUICKACK, (&raw const on).cast(), std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -106,6 +135,8 @@ pub async fn open(record: &mut Record, phone: SocketAddr) -> Result<Tunnel, Erro
         .await
         .map_err(|e| Error::Io(format!("tunnel port {port}: {e}")))?;
     let _ = tunnel_stream.set_nodelay(true);
+    let acks = QuickAck::of(&tunnel_stream);
+    acks.now();
     let tunnel = connect_tls_psk_tunnel_native(tunnel_stream, rpc.encryption_key()).await?;
     let client_ip: IpAddr = tunnel.info.client_address.parse().map_err(|_| Error::Io("bad tunnel address".into()))?;
     let server_ip: IpAddr = tunnel.info.server_address.parse().map_err(|_| Error::Io("bad tunnel address".into()))?;
@@ -120,5 +151,5 @@ pub async fn open(record: &mut Record, phone: SocketAddr) -> Result<Tunnel, Erro
     let mut adapter = Adapter::new(Box::new(tunnel.into_inner()), client_ip, server_ip).to_async_handle();
     let rsd_stream = adapter.connect(rsd_port).await.map_err(|e| Error::Io(format!("rsd: {e}")))?;
     let rsd = RsdHandshake::new(rsd_stream).await?;
-    Ok(Tunnel { adapter, rsd, phone, _control: rpc })
+    Ok(Tunnel { adapter, rsd, phone, acks, _control: rpc })
 }
