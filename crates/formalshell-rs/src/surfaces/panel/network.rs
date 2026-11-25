@@ -5,8 +5,9 @@
 //! in the soft fill with Disconnect at its end, a secured one carries a
 //! lock. Saved networks out of range wait behind a closed "Known networks"
 //! row, a secured network nobody knows opens its passphrase under its row,
-//! and Pond's dim footer rows hold sharing, the saved password and the
-//! speed test.
+//! a right click or `i` on a network opens its details under it (band,
+//! channel, rates, BSSID and while connected its addresses), and Pond's dim
+//! footer rows hold sharing, the saved password and the speed test.
 //!
 //! The panel wants the scanner while it is open; its close ends a running
 //! speed test (`Source::WifiScan`).
@@ -20,7 +21,7 @@ use crate::services::clipboard;
 use crate::services::devices::network as net;
 use crate::services::wants::Source;
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, On, Variant, What, w};
+use crate::ui::{Button, El, Event, Ink, On, Variant, What, w};
 
 /// A press on a network's row or its buttons, by the SSID or device name.
 /// A row's words are its cursor stop's.
@@ -65,6 +66,8 @@ pub struct Network {
     field: Option<Field>,
     /// The "Known networks" disclosure, closed on every open.
     known_open: bool,
+    /// The SSID whose details are open.
+    details: Option<String>,
 }
 
 impl Network {
@@ -76,6 +79,15 @@ impl Network {
     /// The SSID whose passphrase step is open.
     pub fn prompt(&self) -> Option<&str> {
         self.prompt.as_deref()
+    }
+
+    /// The SSID whose details are open.
+    pub fn details(&self) -> Option<&str> {
+        self.details.as_deref()
+    }
+
+    fn toggle_details(&mut self, ssid: &str) {
+        self.details = if self.details.as_deref() == Some(ssid) { None } else { Some(ssid.to_owned()) };
     }
 
     fn state<'a>(fx: &'a Effect) -> &'a net::Network {
@@ -200,6 +212,15 @@ impl Network {
             let error = n.failure.as_ref().filter(|f| failed && mine(&f.ssid)).map(|f| f.text.as_str());
             fields.push(w::input(&masked, "Passphrase", self.field == Some(Field::Password), error).caret(self.password.caret_chars()).key("passphrase"));
             parts.push(w::column(s.panel_gap, fields).pad(0.0, 0.0, 0.0, s.panel_gap));
+        }
+        if self.details.as_deref() == Some(r.ssid.as_str()) {
+            // Under the name, past the chip.
+            let lead = s.panel_mark * 2.0 + s.panel_gap;
+            let lines = fs_devices::network::wifi::details(r)
+                .into_iter()
+                .map(|d| w::row(s.panel_gap, vec![w::caption(d.label).fill(), w::value(d.value)]).fill().key(d.key))
+                .collect();
+            parts.push(w::column(s.panel_gap / 2.0, lines).pad(lead, 0.0, 0.0, s.panel_gap).key("details"));
         }
         let bare = parts.len() == 1;
         let cell = w::panel_cell(s, w::column(0.0, parts).fill()).stop(Press::Row(r.ssid.clone())).on(Press::Row(r.ssid.clone()));
@@ -347,6 +368,7 @@ impl Panel for Network {
 
     fn closed(&mut self) {
         self.known_open = false;
+        self.details = None;
         self.cancel_prompt();
     }
 
@@ -392,6 +414,12 @@ impl Panel for Network {
             ("share", What::Click) => net::send(net::Cmd::ToggleQr),
             ("password", What::Click) => net::send(net::Cmd::TogglePassword),
             ("known", What::Click) => self.known_open = !self.known_open,
+            (_, What::Click) if ev.button == Button::Right => {
+                if let Some(Press::Row(ssid)) = ev.on.get::<Press>() {
+                    let ssid = ssid.clone();
+                    self.toggle_details(&ssid);
+                }
+            }
             (_, What::Click) => match ev.on.get::<Press>() {
                 Some(Press::Row(ssid)) => self.activate_row(ssid, fx),
                 Some(Press::Forget(ssid)) => self.forget(ssid, fx),
@@ -423,6 +451,15 @@ impl Panel for Network {
     fn delete(&mut self, stop: &On, fx: &mut Effect) {
         if let Some(Press::Row(ssid)) = stop.get::<Press>() {
             self.forget(ssid, fx);
+        }
+    }
+
+    fn key(&mut self, stop: Option<&On>, text: &str, _: &mut Effect) {
+        if text == "i"
+            && let Some(Press::Row(ssid)) = stop.and_then(|k| k.get::<Press>())
+        {
+            let ssid = ssid.clone();
+            self.toggle_details(&ssid);
         }
     }
 }

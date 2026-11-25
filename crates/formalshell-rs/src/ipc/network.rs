@@ -37,10 +37,13 @@ fn state(app: &App) -> &Network {
 
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
-    // The panel's "Known networks" disclosure and the SSID whose passphrase
-    // step is open, both null while the panel is closed.
+    // The panel's "Known networks" disclosure, the SSID whose passphrase
+    // step is open and the one whose details are, null while it is closed.
     let panel = app.panel_ref::<NetworkPanel>(PanelId::Network);
-    Ok(state(app).status(panel.map_or(Json::Null, |p| json!(p.known_open())), panel.map_or(Json::Null, |p| json!(p.prompt()))))
+    let known = panel.map_or(Json::Null, |p| json!(p.known_open()));
+    let prompt = panel.map_or(Json::Null, |p| json!(p.prompt()));
+    let details = panel.map_or(Json::Null, |p| json!(p.details()));
+    Ok(state(app).status(known, prompt, details))
 }
 
 /// A network action already in flight is refused rather than queued.

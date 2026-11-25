@@ -1,4 +1,4 @@
-use fs_types::{Fraction, Percent};
+use fs_types::{Fraction, Kbps, Megahertz, Percent};
 use std::fmt;
 
 use zbus::zvariant::OwnedObjectPath;
@@ -189,9 +189,26 @@ pub struct WifiNetwork {
     pub hidden: bool,
     pub visible: bool,
     pub state: ConnectionState,
-    /// The device's IPv4 addresses as `address/prefix`, on the network it
-    /// is connected to; empty on every other.
+    /// The access point standing for the SSID: its hardware address, empty
+    /// for a saved network out of range.
+    pub bssid: String,
+    pub frequency: Option<Megahertz>,
+    /// The fastest rate the access point offers.
+    pub max_bitrate: Option<Kbps>,
+    /// The device's link on the network it is connected to; empty on every
+    /// other.
+    pub link: Link,
+}
+
+/// What a connected Wi-Fi device holds on its network.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Link {
+    /// IPv4 addresses as `address/prefix`.
     pub addresses: Vec<String>,
+    pub gateway: Option<String>,
+    pub dns: Vec<String>,
+    /// The rate the driver last negotiated.
+    pub bitrate: Option<Kbps>,
 }
 
 impl WifiNetwork {

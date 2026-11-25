@@ -13,9 +13,10 @@ use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
 use zbus::{Connection, MatchRule, Message, MessageStream, proxy};
 
 use crate::model::{
-    ConnectionState, Device, DeviceKind, FailReason, SavedSecret, Security, SignalStrength,
+    ConnectionState, Device, DeviceKind, FailReason, Link, SavedSecret, Security, SignalStrength,
     Snapshot, WepKeyType, WifiNetwork,
 };
+use fs_types::{Kbps, Megahertz};
 use crate::settings::{self, NewSettings, Profile, Settings};
 
 const SERVICE: &str = "org.freedesktop.NetworkManager";
@@ -235,6 +236,9 @@ struct AccessPoint {
     ssid: String,
     signal: SignalStrength,
     security: Security,
+    bssid: String,
+    frequency: Option<Megahertz>,
+    max_bitrate: Option<Kbps>,
 }
 
 struct WifiDevice {
@@ -243,8 +247,8 @@ struct WifiDevice {
     active_ap: Option<OwnedObjectPath>,
     /// The saved profile the device's active connection runs, with its state.
     active: Option<(OwnedObjectPath, ConnectionState)>,
-    /// Its IP4Config's addresses as `address/prefix`.
-    addresses: Vec<String>,
+    /// Its IP4Config and rate, for the network it is connected to.
+    link: Link,
 }
 
 impl NetworkManager {
@@ -726,6 +730,9 @@ impl NetworkManager {
                     prop(&props, "WpaFlags").unwrap_or(0),
                     prop(&props, "RsnFlags").unwrap_or(0),
                 ),
+                bssid: prop(&props, "HwAddress").unwrap_or_default(),
+                frequency: prop::<u32>(&props, "Frequency").filter(|f| *f > 0).map(Megahertz::from_mhz),
+                max_bitrate: prop::<u32>(&props, "MaxBitrate").filter(|b| *b > 0).map(Kbps::from_kbps),
             });
         }
         let wireless_props = self.props(&device.path, WIRELESS_INTERFACE).await?;
@@ -739,19 +746,24 @@ impl NetworkManager {
             let state = ConnectionState::from_active_state(prop(&props, "State").unwrap_or(0));
             active = Some((saved, state));
         }
-        let mut addresses = Vec::new();
+        let mut link = Link {
+            bitrate: prop::<u32>(&wireless_props, "Bitrate").filter(|b| *b > 0).map(Kbps::from_kbps),
+            ..Link::default()
+        };
         if let Some(path) = prop::<OwnedObjectPath>(&device_props, "Ip4Config")
             && path.as_str() != "/"
             && let Ok(props) = self.props(&path, IP4_INTERFACE).await
         {
-            addresses = address_data(&props);
+            link.addresses = address_data(&props);
+            link.gateway = prop::<String>(&props, "Gateway").filter(|g| !g.is_empty());
+            link.dns = nameserver_data(&props);
         }
         Ok(WifiDevice {
             device,
             access_points,
             active_ap: prop(&wireless_props, "ActiveAccessPoint").filter(|p: &OwnedObjectPath| p.as_str() != "/"),
             active,
-            addresses,
+            link,
         })
     }
 }
@@ -801,22 +813,28 @@ fn wifi_networks(wifi: &WifiDevice, profiles: &[(OwnedObjectPath, Profile)]) -> 
         let is_active = wifi.active_ap.as_ref() == Some(&ap.path);
         match rows.iter_mut().find(|r| r.ssid == ap.ssid) {
             Some(row) => {
-                if !is_active && ap.signal > row.signal && !row_is_active(row, wifi) {
-                    row.signal = ap.signal;
-                    row.security = ap.security;
+                if is_active || (ap.signal > row.signal && !row_is_active(row, wifi)) {
+                    stand_for(row, ap);
                 }
             }
-            None => rows.push(WifiNetwork {
-                device: wifi.device.path.clone(),
-                ssid: ap.ssid.clone(),
-                signal: ap.signal,
-                security: ap.security,
-                known: false,
-                hidden: false,
-                visible: true,
-                state: ConnectionState::Disconnected,
-                addresses: Vec::new(),
-            }),
+            None => {
+                let mut row = WifiNetwork {
+                    device: wifi.device.path.clone(),
+                    ssid: ap.ssid.clone(),
+                    signal: ap.signal,
+                    security: ap.security,
+                    known: false,
+                    hidden: false,
+                    visible: true,
+                    state: ConnectionState::Disconnected,
+                    bssid: String::new(),
+                    frequency: None,
+                    max_bitrate: None,
+                    link: Link::default(),
+                };
+                stand_for(&mut row, ap);
+                rows.push(row);
+            }
         }
     }
     for (path, profile) in profiles {
@@ -842,14 +860,44 @@ fn wifi_networks(wifi: &WifiDevice, profiles: &[(OwnedObjectPath, Profile)]) -> 
                 hidden: profile.hidden,
                 visible: false,
                 state: running.unwrap_or(ConnectionState::Disconnected),
-                addresses: Vec::new(),
+                bssid: String::new(),
+                frequency: None,
+                max_bitrate: None,
+                link: Link::default(),
             }),
         }
     }
     for row in rows.iter_mut().filter(|r| r.connected()) {
-        row.addresses = wifi.addresses.clone();
+        row.link = wifi.link.clone();
     }
     rows
+}
+
+/// `ap` becomes the access point a row reads.
+fn stand_for(row: &mut WifiNetwork, ap: &AccessPoint) {
+    row.signal = ap.signal;
+    row.security = ap.security;
+    row.bssid = ap.bssid.clone();
+    row.frequency = ap.frequency;
+    row.max_bitrate = ap.max_bitrate;
+}
+
+/// An IP4Config's `NameserverData` (`aa{sv}`): each server's `address`.
+fn nameserver_data(props: &Props) -> Vec<String> {
+    let Some(Value::Array(items)) = props.get("NameserverData").map(|v| plain(v)) else {
+        return Vec::new();
+    };
+    items
+        .inner()
+        .iter()
+        .filter_map(|item| {
+            let Value::Dict(d) = plain(item) else { return None };
+            d.iter().find_map(|(k, v)| match (plain(k), plain(v)) {
+                (Value::Str(k), Value::Str(a)) if k.as_str() == "address" => Some(a.to_string()),
+                _ => None,
+            })
+        })
+        .collect()
 }
 
 /// An IP4Config's `AddressData` (`aa{sv}`) as `address/prefix`, in its
@@ -951,6 +999,9 @@ mod tests {
             ssid: ssid.into(),
             signal: SignalStrength::from_percent(strength),
             security: Security::Wpa2Psk,
+            bssid: format!("14:EB:B6:1E:A6:{n:02X}"),
+            frequency: Some(Megahertz::from_mhz(5180)),
+            max_bitrate: Some(Kbps::from_kbps(1_170_000)),
         }
     }
 
@@ -977,7 +1028,7 @@ mod tests {
             access_points: vec![ap(1, "home", 40), ap(2, "cafe", 55)],
             active_ap: None,
             active: None,
-            addresses: Vec::new(),
+            link: Link::default(),
         };
         let mut reading = Reading { wifi_enabled: true, profiles: Vec::new(), devices: vec![ReadDevice::Wifi(wifi)] };
         let ap1 = "/org/freedesktop/NetworkManager/AccessPoint/1";
@@ -997,7 +1048,7 @@ mod tests {
             access_points: vec![ap(1, "home", 40), ap(2, "home", 77), ap(3, "cafe", 55)],
             active_ap: None,
             active: None,
-            addresses: Vec::new(),
+            link: Link::default(),
         };
         let rows = wifi_networks(&wifi, &[]);
         assert_eq!(rows.len(), 2);
@@ -1012,10 +1063,13 @@ mod tests {
             active_ap: Some(active.path.clone()),
             access_points: vec![active, ap(2, "home", 90)],
             active: None,
-            addresses: Vec::new(),
+            link: Link::default(),
         };
         let rows = wifi_networks(&wifi, &[]);
         assert_eq!(rows[0].signal.to_percent().rounded(), 40);
+        assert_eq!(rows[0].bssid, "14:EB:B6:1E:A6:01");
+        let flipped = WifiDevice { access_points: vec![ap(2, "home", 90), ap(1, "home", 40)], ..wifi };
+        assert_eq!(wifi_networks(&flipped, &[])[0].bssid, "14:EB:B6:1E:A6:01");
     }
 
     #[test]
@@ -1026,7 +1080,7 @@ mod tests {
             access_points: vec![ap(1, "cafe", 55)],
             active_ap: None,
             active: Some((saved.clone(), ConnectionState::Connecting)),
-            addresses: Vec::new(),
+            link: Link::default(),
         };
         let rows = wifi_networks(&wifi, &[(saved, profile("home"))]);
         let home = rows.iter().find(|r| r.ssid == "home").unwrap();
@@ -1044,7 +1098,7 @@ mod tests {
             access_points: vec![ap(1, "cafe", 30), ap(2, "home", 20), ap(3, "street", 70)],
             active_ap: None,
             active: None,
-            addresses: Vec::new(),
+            link: Link::default(),
         };
         let profiles = vec![
             (path("/org/freedesktop/NetworkManager/Settings/1"), profile("home")),
@@ -1063,12 +1117,14 @@ mod tests {
             access_points: vec![ap(1, "home", 60)],
             active_ap: None,
             active: Some((saved.clone(), ConnectionState::Connected)),
-            addresses: vec!["10.0.0.5/24".into()],
+            link: Link { addresses: vec!["10.0.0.5/24".into()], gateway: Some("10.0.0.1".into()), ..Link::default() },
         };
         let rows = wifi_networks(&WifiDevice { access_points: vec![ap(1, "home", 60), ap(2, "cafe", 70)], ..wifi }, &[(saved, profile("home"))]);
         assert!(rows[0].known && rows[0].connected());
-        assert_eq!(rows[0].addresses, ["10.0.0.5/24"]);
-        assert!(rows[1].addresses.is_empty());
+        assert_eq!(rows[0].link.addresses, ["10.0.0.5/24"]);
+        assert_eq!(rows[0].link.gateway.as_deref(), Some("10.0.0.1"));
+        assert_eq!(rows[0].bssid, "14:EB:B6:1E:A6:01");
+        assert_eq!(rows[1].link, Link::default());
     }
 
     #[test]
@@ -1083,6 +1139,19 @@ mod tests {
         let props: Props = [("AddressData".to_owned(), OwnedValue::try_from(data).unwrap())].into();
         assert_eq!(address_data(&props), ["192.168.4.20/24", "10.1.2.3/8"]);
         assert!(address_data(&HashMap::new()).is_empty());
+    }
+
+    #[test]
+    fn nameserver_data_reads_each_server() {
+        let entry = |a: &str| {
+            let mut m: HashMap<String, Value<'static>> = HashMap::new();
+            m.insert("address".into(), Value::Value(Box::new(Value::from(a.to_owned()))));
+            m
+        };
+        let data = Value::from(vec![entry("192.168.4.1"), entry("1.1.1.1")]);
+        let props: Props = [("NameserverData".to_owned(), OwnedValue::try_from(data).unwrap())].into();
+        assert_eq!(nameserver_data(&props), ["192.168.4.1", "1.1.1.1"]);
+        assert!(nameserver_data(&HashMap::new()).is_empty());
     }
 
     #[test]

@@ -70,6 +70,64 @@ impl Fraction {
     }
 }
 
+/// A radio's centre frequency in MHz, as NetworkManager's
+/// `AccessPoint.Frequency` and nl80211 report it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Megahertz(u32);
+
+impl Megahertz {
+    pub const fn from_mhz(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub fn as_mhz(self) -> u32 {
+        self.0
+    }
+
+    /// The Wi-Fi band it falls in, or None off every one.
+    pub fn band(self) -> Option<&'static str> {
+        match self.0 {
+            2400..=2500 => Some("2.4 GHz"),
+            // 5.925 GHz on is 6 GHz (Wi-Fi 6E), past UNII-4's 5.9.
+            4900..=5924 => Some("5 GHz"),
+            5925..=7125 => Some("6 GHz"),
+            57000..=71000 => Some("60 GHz"),
+            _ => None,
+        }
+    }
+
+    /// IEEE 802.11's channel number for it: 2.4 GHz's 14 sits apart from
+    /// the 5 MHz grid, and 6 GHz counts from 5950.
+    pub fn channel(self) -> Option<u32> {
+        match self.0 {
+            2484 => Some(14),
+            2412..=2472 => Some((self.0 - 2407) / 5),
+            5955..=7115 => Some((self.0 - 5950) / 5),
+            4910..=5924 => Some((self.0 - 5000) / 5),
+            _ => None,
+        }
+    }
+}
+
+/// A data rate in kbit/s, as NetworkManager's `Bitrate` and `MaxBitrate`
+/// report it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
+pub struct Kbps(u32);
+
+impl Kbps {
+    pub const fn from_kbps(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub fn as_kbps(self) -> u32 {
+        self.0
+    }
+
+    pub fn as_mbps(self) -> f64 {
+        f64::from(self.0) / 1000.0
+    }
+}
+
 /// A Bluetooth device address, six octets. Parsed once from BlueZ's or a
 /// helper's text; it prints as BlueZ does, upper-case with colons.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -166,6 +224,18 @@ mod tests {
         assert_eq!(f.to_percent().rounded(), 42);
         assert_eq!(Fraction::from_fraction(1.5).as_fraction(), 1.0);
         assert_eq!(Fraction::from_fraction(f64::NAN).as_fraction(), 0.0);
+    }
+
+    #[test]
+    fn a_frequency_names_its_band_and_channel() {
+        let f = Megahertz::from_mhz;
+        assert_eq!((f(2412).band(), f(2412).channel()), (Some("2.4 GHz"), Some(1)));
+        assert_eq!(f(2484).channel(), Some(14));
+        assert_eq!((f(5180).band(), f(5180).channel()), (Some("5 GHz"), Some(36)));
+        assert_eq!(f(5825).channel(), Some(165));
+        assert_eq!((f(5955).band(), f(5955).channel()), (Some("6 GHz"), Some(1)));
+        assert_eq!((f(900).band(), f(900).channel()), (None, None));
+        assert_eq!(Kbps::from_kbps(866_700).as_mbps(), 866.7);
     }
 
     #[test]

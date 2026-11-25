@@ -13,5 +13,5 @@ pub use backoff::Backoff;
 pub use compositor::{Bind, MAC_TAG, Window, WindowId, Workspace, WorkspaceId};
 pub use notification::NotificationId;
 pub use geometry::{Edge, IRect, Insets, Rect, Region};
-pub use units::{BtAddress, Fraction, Percent};
+pub use units::{BtAddress, Fraction, Kbps, Megahertz, Percent};
 pub use urgency::Urgency;

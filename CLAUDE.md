@@ -1802,6 +1802,9 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
   false in `network status`, left out of the Networks list and its count,
   and under the closed "Known networks" disclosure until real Down, Up,
   Up and Return open it (`knownOpen`), read off tesseract over both frames.
+  Connected, `i` on FORMALTEST's row (the keyboard's right click) opens
+  its details: `details` in `network status`, the row's band, channel,
+  frequency, BSSID and address, and the frame read for those lines.
 - `wheel.sh` `--wheel`: a virtual-pointer scroll moves the picker grid
   (`menu status` `scrollTop`) without moving the cursor or the cell the
   pointer tints (`hover`), and a wheel over the

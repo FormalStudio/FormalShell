@@ -75,9 +75,9 @@ impl Network {
         self.rows.iter().find(|r| r.ssid == ssid)
     }
 
-    /// The IPC `status` reply. `known_open` and `prompt` are the panel's own
-    /// state, null while it is shut.
-    pub fn status(&self, known_open: serde_json::Value, prompt: serde_json::Value) -> serde_json::Value {
+    /// The IPC `status` reply. `known_open`, `prompt` and `details` are the
+    /// panel's own state, null while it is shut.
+    pub fn status(&self, known_open: serde_json::Value, prompt: serde_json::Value, details: serde_json::Value) -> serde_json::Value {
         let rows: Vec<serde_json::Value> = self
             .rows
             .iter()
@@ -90,10 +90,19 @@ impl Network {
                     "secured": r.secured,
                     "signal": fs_js::json_number(r.signal.as_fraction()),
                     "inRange": r.in_range,
+                    "bssid": r.bssid,
+                    "frequencyMhz": r.frequency.map(|f| f.as_mhz()),
+                    "band": r.frequency.and_then(|f| f.band()),
+                    "channel": r.frequency.and_then(|f| f.channel()),
+                    "maxMbps": r.max_rate.map(|b| fs_js::json_number(b.as_mbps())),
+                    "linkMbps": r.link_rate.map(|b| fs_js::json_number(b.as_mbps())),
+                    "addresses": r.addresses,
+                    "gateway": r.gateway,
+                    "dns": r.dns,
                 })
             })
             .collect();
-        serde_json::json!({"wifiEnabled": self.wifi_enabled, "knownOpen": known_open, "prompt": prompt, "networks": rows})
+        serde_json::json!({"wifiEnabled": self.wifi_enabled, "knownOpen": known_open, "prompt": prompt, "details": details, "networks": rows})
     }
 
     pub fn speed_status(&self) -> serde_json::Value {
@@ -169,7 +178,13 @@ fn view(i: &Inner) -> Network {
             in_range: w.visible || w.connected(),
             signal: w.signal.to_fraction(),
             security: w.security.label().to_owned(),
-            addresses: w.addresses.clone(),
+            addresses: w.link.addresses.clone(),
+            bssid: w.bssid.clone(),
+            frequency: w.frequency,
+            max_rate: w.max_bitrate,
+            link_rate: w.link.bitrate,
+            gateway: w.link.gateway.clone(),
+            dns: w.link.dns.clone(),
         })
         .collect();
     n

@@ -15,6 +15,6 @@ mod settings;
 
 pub use manager::{ConnectError, NetworkManager};
 pub use model::{
-    ConnectionState, Device, DeviceKind, FailReason, SavedSecret, Security, SignalStrength,
+    ConnectionState, Device, DeviceKind, FailReason, Link, SavedSecret, Security, SignalStrength,
     Snapshot, WepKeyType, WifiNetwork,
 };

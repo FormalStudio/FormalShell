@@ -21,6 +21,11 @@
 # keys walk the cursor onto it and press Enter. Read off `network status`
 # (`inRange`, `knownOpen`) and off tesseract over the two frames.
 #
+# Connected, the row's details opened on real keys (`i` on its stop, the
+# keyboard's right click): `network status`'s `details` naming FORMALTEST,
+# its row carrying the radio's band, channel, frequency and BSSID and the
+# address hostapd's dnsmasq gave, and the frame reading the lines.
+#
 # Everything is strictly ordered, so it is one script. Each poll writes over
 # its own path, so what the loop last saw is exactly what the assertions read
 # back, never a stale earlier snapshot passing by accident.
@@ -42,6 +47,8 @@ wifi_wrong_path="$shot_dir/wifi-wrong.png"
 wifi_wrong_status_path="$shot_dir/wifi-wrong-status.json"
 wifi_connected_path="$shot_dir/wifi-connected.png"
 wifi_connected_status_path="$shot_dir/wifi-connected-status.json"
+wifi_details_path="$shot_dir/wifi-details.png"
+wifi_details_status_path="$shot_dir/wifi-details-status.json"
 wifi_forget_status_path="$shot_dir/wifi-forget-status.json"
 wifi_eap_connected_path="$shot_dir/wifi-eap-connected.png"
 wifi_eap_status_path="$shot_dir/wifi-eap-status.json"
@@ -54,7 +61,7 @@ wifi_eap_permissions_path="$shot_dir/wifi-eap-permissions.txt"
 leg_wifi_timing() {
   # Every ceiling below is a poll that breaks the moment the state settles;
   # the sum is the worst case NetworkManager and hostapd can genuinely take.
-  leg_timing 230
+  leg_timing 245
 }
 
 leg_wifi_drive() {
@@ -125,6 +132,17 @@ until_jq 45 "$wifi_wrong_status_path" 'any(.networks[]; .name == "FORMALTEST" an
 $ipc call network connect FORMALTEST formaltest-psk > /dev/null 2>&1
 until_jq 25 "$wifi_connected_status_path" 'any(.networks[]; .name == "FORMALTEST" and .known == true and .connected == true)' call network status
 "$grim_bin" "$wifi_connected_path" > /dev/null 2>&1
+# From the top, one stop at a time, until \`i\` lands on FORMALTEST's row.
+"$wtype_bin" \$(printf -- '-k Up %.0s' \$(seq 1 40))
+for _ in \$(seq 1 12); do
+  "$wtype_bin" i
+  sleep 0.3
+  $ipc call network status > "$wifi_details_status_path" 2>&1
+  "$jq_bin" -e '.details == "FORMALTEST"' "$wifi_details_status_path" > /dev/null 2>&1 && break
+  "$wtype_bin" -k Down
+done
+until_settled
+"$grim_bin" "$wifi_details_path" > /dev/null 2>&1
 nmcli --escape no -g connection.permissions connection show FORMALTEST > "$wifi_psk_permissions_path" 2>&1
 
 $ipc call network forget FORMALTEST > /dev/null 2>&1
@@ -166,6 +184,7 @@ leg_wifi_assert() {
   cat "$wifi_connected_status_path"; echo
   [ -f "$wifi_connected_path" ] || fail "no wifi-connected screenshot produced"
   echo "SMOKE_WIFI_CONNECTED $wifi_connected_path"
+  leg_wifi_assert_details
   expect_jq "$wifi_forget_status_path" 'any(.networks[]; .name == "FORMALTEST" and .known == false and .connected == false and .stateChanging == false)' \
     "forget did not settle FORMALTEST to known:false/stateChanging:false within the poll budget" '.networks'
   cat "$wifi_forget_status_path"; echo
@@ -202,6 +221,25 @@ leg_wifi_assert_owned() {
   if grep -F "uid=$(id -u)," "$wifi_auth_path" | grep -qF 'settings.modify.system)'; then
     fail "NetworkManager asked polkit for settings.modify.system for the shell"
   fi
+}
+
+leg_wifi_assert_details() {
+  local text
+  [ -s "$wifi_details_status_path" ] || fail "no network status produced at $wifi_details_status_path"
+  [ -f "$wifi_details_path" ] || fail "no wifi-details screenshot produced"
+  echo "SMOKE_WIFI_DETAILS $wifi_details_path"
+  cat "$wifi_details_status_path"; echo
+  "$jq_bin" -e '.details == "FORMALTEST"' "$wifi_details_status_path" > /dev/null \
+    || fail "i on FORMALTEST's row never opened its details"
+  expect_jq "$wifi_details_status_path" \
+    'any(.networks[]; .name == "FORMALTEST" and .connected and (.band | type) == "string" and .channel > 0 and .frequencyMhz > 0 and (.bssid | length) > 0 and (.addresses | length) > 0)' \
+    "FORMALTEST's row lacks its band, channel, frequency, BSSID or address" '.networks[] | select(.name == "FORMALTEST")'
+  text=$(wifi_ocr "$wifi_details_path")
+  printf 'details frame text:\n%s\n' "$text"
+  # Tesseract reads the mono BSSID's middle letters lowercase.
+  for word in Band Channel BSSID "IP address"; do
+    grep -qiF "$word" <<< "$text" || fail "the details frame does not read $word"
+  done
 }
 
 # The host's tesseract, the one `capture text` runs.

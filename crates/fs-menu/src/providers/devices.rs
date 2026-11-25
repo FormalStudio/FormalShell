@@ -119,21 +119,13 @@ pub fn is_wifi_network(node: &Node) -> bool {
     node.kind == Kind::Action && node.id.starts_with(WIFI_NET_PREFIX)
 }
 
-/// What → on a network lists: its security, its signal while an access
-/// point broadcasts it, and each address the device holds on it while
-/// connected. Each a line with its value trailing, nothing to run.
+/// What → on a network lists: `wifi::details`, each a line with its
+/// value trailing, nothing to run.
 pub fn wifi_details(n: &Row) -> Vec<Node> {
-    let line = |key: &str, label: &str, icon: &str, value: String| Node {
-        icon_name: icon.to_owned(),
-        meta: Some(value),
-        ..Node::new(format!("wifi.details.{key}"), label, Kind::Note)
-    };
-    let signal = if n.in_range { format!("{}%", n.signal.as_percent().round()) } else { "Not in range".to_owned() };
-    let mut rows = vec![line("security", "Security", "shield", n.security.clone()), line("signal", "Signal", "signal", signal)];
-    if n.connected {
-        rows.extend(n.addresses.iter().enumerate().map(|(i, a)| line(&format!("address.{i}"), "IP address", "network", a.clone())));
-    }
-    rows
+    fs_devices::network::wifi::details(n)
+        .into_iter()
+        .map(|d| Node { icon_name: d.icon.to_owned(), meta: Some(d.value), ..Node::new(format!("wifi.details.{}", d.key), d.label, Kind::Note) })
+        .collect()
 }
 
 /// `LiveMenuSources.bluetooth`.
