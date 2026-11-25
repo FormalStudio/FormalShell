@@ -8,8 +8,9 @@
 //! queueing them. Units that arrive together (Wi-Fi hands over a stall's
 //! worth at once) are all decoded, since each predicts from the last, and
 //! only the newest picture is copied out. A decoder that cannot keep up,
-//! its units waiting past LATE, skips to the next key frame and asks the
-//! phone for one.
+//! with units waiting on it for BEHIND without a break, skips to the next
+//! key frame and asks the phone for one, which takes the phone seconds to
+//! send: the last resort, never the answer to a burst.
 
 use std::ffi::{CStr, CString, c_int, c_void};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,9 +59,10 @@ impl Latest {
 /// Access units the queue holds, a bound on memory alone: about eight
 /// seconds of picture.
 const QUEUE: usize = 512;
-/// A unit that waited this long for the decoder means decoding is slower
-/// than the stream, which no burst explains.
-const LATE: Duration = Duration::from_millis(250);
+/// A queue that has not been empty for this long means decoding is slower
+/// than the stream: a burst, however long the stall before it, is decoded
+/// through several times faster than it was sent.
+const BEHIND: Duration = Duration::from_secs(2);
 
 pub struct Decoder {
     tx: Option<SyncSender<(Vec<u8>, Instant)>>,
@@ -126,11 +128,15 @@ fn run(rx: Receiver<(Vec<u8>, Instant)>, latest: Arc<Latest>, wants: Arc<AtomicB
     let mut skipping = true;
     let mut stats: Vec<Duration> = Vec::with_capacity(300);
     let mut waiting: Option<(Vec<u8>, Instant)> = None;
+    let mut behind: Option<Instant> = None;
     while let Some((au, received)) = waiting.take().or_else(|| rx.recv().ok()) {
         waiting = rx.try_recv().ok();
         let key = is_keyframe(&au);
-        if received.elapsed() > LATE {
+        if waiting.is_none() {
+            behind = None;
+        } else if behind.get_or_insert_with(Instant::now).elapsed() > BEHIND {
             wants.store(true, Ordering::Relaxed);
+            behind = None;
         }
         if wants.load(Ordering::Relaxed) && !key {
             skipping = true;

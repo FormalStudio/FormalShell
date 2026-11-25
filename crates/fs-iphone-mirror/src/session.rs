@@ -468,7 +468,7 @@ async fn pump(
                 }
                 // The screen asleep sends nothing; the tunnel going away
                 // shows as the display service not answering.
-                if quiet > Duration::from_secs(5) {
+                if quiet > Duration::from_secs(5) && last_report.elapsed() > Duration::from_secs(5) {
                     alive(tunnel).await?;
                     last_packet = Instant::now();
                 }
@@ -704,8 +704,32 @@ async fn rotate(tunnel: &mut Link, direction: RotationDirection) -> Result<Optio
 }
 
 impl Input {
+    /// A service connection the phone closed while it sat idle shows only
+    /// when it is written to: the command goes again on a new one, so the
+    /// first touch after a pause is not lost.
     async fn handle(&mut self, tunnel: &mut Link, cmd: Cmd) {
-        let r = match cmd {
+        if let Err(e) = self.run(tunnel, cmd.clone()).await {
+            tracing::debug!("input: {e}; connecting again");
+            self.forget();
+            if let Err(e) = self.run(tunnel, cmd).await {
+                tracing::warn!("input: {e}");
+                self.forget();
+            }
+        }
+    }
+
+    fn forget(&mut self) {
+        self.hid = None;
+        self.keyboard = None;
+        self.indigo = None;
+        self.board = None;
+        self.keys.clear();
+        self.touch = None;
+        self.fingers = None;
+    }
+
+    async fn run(&mut self, tunnel: &mut Link, cmd: Cmd) -> Result<(), String> {
+        match cmd {
             Cmd::Touch(phase, x, y) => self.touch(tunnel, phase, hid_xy(x, y)).await,
             Cmd::Fingers(phase, [a, b]) => self.fingers(tunnel, phase, [hid_xy(a.0, a.1), hid_xy(b.0, b.1)]).await,
             Cmd::Keys(keys) => self.keys(tunnel, keys).await,
@@ -727,21 +751,12 @@ impl Input {
             Cmd::Button(b) => self.button(tunnel, b).await,
             Cmd::Clip(clip) => self.set_clip(tunnel, clip).await,
             Cmd::Paste => self.paste(tunnel).await,
-            // The stream loop turns the phone: it reports where it landed.
+            // `input` turns the phone itself: it reports where it landed.
             Cmd::Rotate(_) => Ok(()),
             Cmd::Release => {
                 self.release(tunnel).await;
                 Ok(())
             }
-        };
-        if let Err(e) = r {
-            tracing::warn!("input: {e}");
-            // A broken service connection is opened again on next use.
-            self.hid = None;
-            self.keyboard = None;
-            self.indigo = None;
-            self.keys.clear();
-            self.touch = None;
         }
     }
 
