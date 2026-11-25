@@ -168,7 +168,7 @@ impl Overlay {
                 let c = s.phone.center();
                 self.icon(&mut cx, "lock", 40.0, (c.x, c.y - 44.0), rgba(255, 255, 255, 0.85));
                 self.text(&mut cx, "iPhone is locked", 17.0, FontWeight::SEMI_BOLD, (c.x, c.y + 10.0), rgba(255, 255, 255, 0.92), s.phone.width() - 48.0);
-                self.text(&mut cx, "Unlock your iPhone to continue", 13.0, FontWeight::NORMAL, (c.x, c.y + 36.0), rgba(255, 255, 255, 0.55), s.phone.width() - 48.0);
+                self.text(&mut cx, "Click to wake it", 13.0, FontWeight::NORMAL, (c.x, c.y + 36.0), rgba(255, 255, 255, 0.55), s.phone.width() - 48.0);
             }
             Screen::Stalled => {
                 // A small pill near the bottom: the picture is not live.

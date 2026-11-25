@@ -117,6 +117,7 @@ pub fn run() -> Result<(), String> {
         bounds: None,
         sized: false,
         status: Status::Searching,
+        asleep: false,
         frame_at: None,
         configured: false,
         frame_pending: false,
@@ -223,6 +224,8 @@ struct App {
     /// The compositor has sized the window; it keeps that size.
     sized: bool,
     status: Status,
+    /// The phone's screen is dark: it sleeps, locked.
+    asleep: bool,
     frame_at: Option<Instant>,
     configured: bool,
     frame_pending: bool,
@@ -376,6 +379,7 @@ impl App {
     fn screen(&self) -> Screen {
         let has_video = self.gpu.as_ref().is_some_and(|g| g.has_video);
         match &self.status {
+            _ if self.asleep => Screen::Locked,
             Status::Streaming if has_video && self.frame_at.is_some_and(|t| t.elapsed() < STALL) => Screen::Live,
             Status::Streaming if has_video => Screen::Live,
             _ if has_video => Screen::Stalled,
@@ -462,9 +466,13 @@ impl App {
         match e {
             Event::Status(s) => {
                 tracing::info!("status: {s:?}");
+                if s != Status::Streaming {
+                    self.asleep = false;
+                }
                 self.status = s;
             }
             Event::Turn(turn) => self.set_turn(turn),
+            Event::Asleep(asleep) => self.asleep = asleep,
             Event::Phone { product_type } => {
                 let m = model::lookup(&product_type);
                 tracing::info!("phone: {product_type} ({})", m.map(|m| m.name).unwrap_or("unknown"));
@@ -813,6 +821,8 @@ impl PointerHandler for App {
                 PointerEventKind::Press { button, serial, .. } if button == BTN_LEFT => {
                     if let Some(c) = self.control_at(p) {
                         self.pressed = Some(c);
+                    } else if self.on_phone(p) && self.asleep {
+                        self.send(Cmd::Button(Button::Side));
                     } else if self.on_phone(p) {
                         let at = self.to_phone(p);
                         self.send(Cmd::Touch(Phase::Down, at.x, at.y));

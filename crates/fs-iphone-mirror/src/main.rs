@@ -162,7 +162,7 @@ fn drive() {
             Some("home") => send(session::Cmd::Button(session::Button::Home)),
             Some("switcher") => send(session::Cmd::Button(session::Button::AppSwitcher)),
             Some("rotate") => send(session::Cmd::Rotate(if w.get(1) == Some(&"left") { RotationDirection::Left } else { RotationDirection::Right })),
-            Some("lock") => send(session::Cmd::Button(session::Button::Lock)),
+            Some("side") => send(session::Cmd::Button(session::Button::Side)),
             Some("key") => {
                 let keys: BTreeSet<u8> = w[1..].iter().filter_map(|k| k.parse().ok()).collect();
                 send(session::Cmd::Type(vec![keys]));

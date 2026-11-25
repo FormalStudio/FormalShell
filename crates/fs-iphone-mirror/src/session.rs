@@ -14,6 +14,7 @@ use idevice::core_device::{
     build_frame_ack, build_keyframe_request, build_liveness, build_rctl,
 };
 use idevice::core_device::{KeyboardUsage, Orientation, OrientationServiceClient, PasteboardServiceClient, RotationDirection};
+use idevice::diagnostics_relay::DiagnosticsRelayClient;
 use idevice::springboardservices::{InterfaceOrientation, SpringBoardServicesClient};
 use idevice::{ReadWrite, RsdService};
 use tokio::sync::mpsc;
@@ -41,6 +42,8 @@ pub enum Event {
     /// The phone turned: quarter turns clockwise that stand its picture
     /// up. The stream is always the portrait panel, whichever way it faces.
     Turn(u8),
+    /// The phone's screen went dark (it sleeps locked) or lit up again.
+    Asleep(bool),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -54,7 +57,8 @@ pub enum Phase {
 pub enum Button {
     Home,
     AppSwitcher,
-    Lock,
+    /// Locks the phone, or wakes it while its screen is dark.
+    Side,
 }
 
 #[derive(Clone, Debug)]
@@ -199,9 +203,10 @@ async fn connect(
     let screen = tokio::time::timeout(Duration::from_secs(15), stream::start(&mut tunnel.adapter, &mut tunnel.rsd))
         .await
         .map_err(|_| "screen stream did not start".to_string())??;
+    let mut lit = backlight(&mut tunnel).await;
     let mut input = Input::default();
     audio.reset();
-    let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &mut input).await;
+    let result = pump(sink, cmds, decoder, audio, &mut tunnel, &screen, &mut input, &mut lit).await;
     input.release(&mut tunnel).await;
     let mut client = screen.client;
     let _ = tokio::time::timeout(Duration::from_secs(2), client.stop_media_stream()).await;
@@ -216,6 +221,7 @@ async fn pump(
     tunnel: &mut tunnel::Tunnel,
     screen: &stream::Screen,
     input: &mut Input,
+    lit: &mut mpsc::UnboundedReceiver<bool>,
 ) -> Result<(), String> {
     let video = screen.video_rtcp;
     let audio = screen.audio_rtcp;
@@ -321,6 +327,7 @@ async fn pump(
                     }
                 }
             }
+            Some(on) = lit.recv() => sink(Event::Asleep(!on)),
             _ = rctl.tick() => {
                 let clock = epoch.elapsed().as_millis() as u16;
                 send(tunnel, &screen.video, video.port, build_rctl(video.ours, clock, frames, highest_seq as u16)).await;
@@ -421,6 +428,44 @@ struct Input {
 
 fn hid_xy(x: f64, y: f64) -> (u16, u16) {
     ((x.clamp(0.0, 1.0) * 65535.0).round() as u16, (y.clamp(0.0, 1.0) * 65535.0).round() as u16)
+}
+
+/// Whether the screen is lit, each time that changes. A dark screen sends
+/// no picture at all, and a still one hardly any, so the stream cannot tell
+/// them apart; the backlight's brightness is 0 only while the screen is off.
+async fn backlight(tunnel: &mut tunnel::Tunnel) -> mpsc::UnboundedReceiver<bool> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let mut relay = match DiagnosticsRelayClient::connect_rsd(&mut tunnel.adapter, &mut tunnel.rsd).await {
+        Ok(relay) => relay,
+        Err(e) => {
+            tracing::debug!("backlight: {e:?}");
+            return rx;
+        }
+    };
+    tokio::spawn(async move {
+        let mut was = None;
+        loop {
+            let tree = tokio::time::timeout(Duration::from_secs(3), relay.ioregistry(None, None, Some("AppleARMBacklight"))).await;
+            let Ok(Ok(Some(tree))) = tree else { return };
+            let brightness = tree
+                .get("IODisplayParameters")
+                .and_then(|p| p.as_dictionary())
+                .and_then(|p| p.get("brightness"))
+                .and_then(|b| b.as_dictionary())
+                .and_then(|b| b.get("value"))
+                .and_then(|v| v.as_unsigned_integer());
+            let Some(brightness) = brightness else { return };
+            let on = brightness > 0;
+            if was != Some(on) {
+                was = Some(on);
+                if tx.send(on).is_err() {
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    });
+    rx
 }
 
 async fn interface_turn(tunnel: &mut tunnel::Tunnel) -> Result<u8, String> {
@@ -592,7 +637,7 @@ impl Input {
             // Apple's vendor keyboard page, Expose All. A double Home press
             // and edge swipes over the HID touchscreen do not reach SpringBoard.
             Button::AppSwitcher => self.press(tunnel, 0xff01, 0x10, Duration::from_millis(40)).await,
-            Button::Lock => self.press(tunnel, 0x0c, 0x30, Duration::from_millis(60)).await,
+            Button::Side => self.press(tunnel, 0x0c, 0x30, Duration::from_millis(60)).await,
         }
     }
 
