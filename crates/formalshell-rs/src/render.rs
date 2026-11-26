@@ -164,18 +164,15 @@ struct Caches {
     /// canvas pixel; the entry holds the line so its glyphs' addresses are
     /// never reused under it. A scrolling marquee only moves it.
     glows: HashMap<GlowKey, (ShapedText, Arc<Pixmap>)>,
-    /// A cast's blurred rect drawn once into a pixmap of its own (a
-    /// notification's five wide blurs were most of a stack's frame), by
-    /// `BlurKey`.
-    blurs: HashMap<BlurKey, Arc<Pixmap>>,
-    /// The bytes `blurs`' pixmaps hold.
-    blur_bytes: usize,
     #[cfg(test)]
     no_glow_cache: bool,
     #[cfg(test)]
     no_cast_cache: bool,
     #[cfg(test)]
     no_cast_clip: bool,
+    /// Every cast's pixmap worked out whole, for a test to compare.
+    #[cfg(test)]
+    no_cast_stretch: bool,
 }
 
 /// The glyphs' outline addresses and places, the glow's colour, offset and
@@ -190,8 +187,40 @@ const GLOWS_LIMIT: usize = 64;
 /// the canvas's scale.
 type BlurKey = (u64, u64, u32, u32, [u8; 4], u64);
 
-/// An unfolding card makes one entry a frame, at a few kilobytes each.
-const BLURS_BYTES: usize = 4 << 20;
+/// An unfolding card makes one entry a frame.
+const BLURS_BYTES: usize = 8 << 20;
+
+/// A cast's blurred rect drawn once into a pixmap of its own (a
+/// notification's five wide blurs were most of a stack's frame), by
+/// `BlurKey`. Every surface on the thread shares them: a card's look is
+/// drawn on four surfaces, all made again each time it opens.
+#[derive(Default)]
+struct Blurs {
+    made: HashMap<BlurKey, Arc<Pixmap>>,
+    bytes: usize,
+}
+
+thread_local! {
+    static BLURS: std::cell::RefCell<Blurs> = std::cell::RefCell::default();
+}
+
+fn kept_blur(key: &BlurKey) -> Option<Arc<Pixmap>> {
+    BLURS.with_borrow(|b| b.made.get(key).cloned())
+}
+
+fn keep_blur(key: BlurKey, pixmap: Pixmap) -> Arc<Pixmap> {
+    let bytes = usize::from(pixmap.width()) * usize::from(pixmap.height()) * 4;
+    let pixmap = Arc::new(pixmap);
+    BLURS.with_borrow_mut(|b| {
+        if b.bytes + bytes > BLURS_BYTES {
+            b.made.clear();
+            b.bytes = 0;
+        }
+        b.made.insert(key, pixmap.clone());
+        b.bytes += bytes;
+    });
+    pixmap
+}
 
 /// The pixels a cast's pixmap spends on its deviation. The blur has no
 /// detail finer than its deviation, so sampling it up from pixels a third
@@ -237,14 +266,14 @@ impl Renderer {
                 scaled: HashMap::new(),
                 colors: HashMap::new(),
                 glows: HashMap::new(),
-                blurs: HashMap::new(),
-                blur_bytes: 0,
                 #[cfg(test)]
                 no_glow_cache: false,
                 #[cfg(test)]
                 no_cast_cache: false,
                 #[cfg(test)]
                 no_cast_clip: false,
+                #[cfg(test)]
+                no_cast_stretch: false,
             },
             size: (width, height),
             scale: 1.0,
@@ -275,8 +304,6 @@ impl Renderer {
             self.caches.scaled.clear();
             self.caches.colors.clear();
             self.caches.glows.clear();
-            self.caches.blurs.clear();
-            self.caches.blur_bytes = 0;
             self.resize(self.size.0, self.size.1);
         }
     }
@@ -387,6 +414,30 @@ impl Renderer {
                 self.draw(scene, tile, &inside);
             }
         }
+    }
+
+    /// The part of `rect` the scene's nodes draw into, none when no node
+    /// does. A node draws inside its bounds and those under its transform,
+    /// as the scene's own damage has it, and at a fractional scale a
+    /// snapped pixel further.
+    pub fn extent(&self, scene: &Scene, rect: IRect) -> Option<IRect> {
+        let rect = rect.intersect(&scene.size);
+        let device = self.device(rect);
+        if device.is_empty() {
+            return None;
+        }
+        let reach = self.reach(device);
+        let pad = (reach.w - rect.w).max(reach.h - rect.h).max(0) + 1;
+        let mut all: Option<IRect> = None;
+        for n in scene.nodes().filter(|n| !n.clip.is_some_and(|c| c.is_empty())) {
+            let b = n.bounds;
+            let moved = (n.transform != Affine::IDENTITY).then(|| Scene::cover(Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64), n.transform, 1.0));
+            for at in [Some(b), moved].into_iter().flatten().filter(|at| at.intersects(&reach)) {
+                let at = IRect::new(at.x - pad, at.y - pad, at.w + pad * 2, at.h + pad * 2);
+                all = Some(all.map_or(at, |all| all.union(&at)));
+            }
+        }
+        all.map(|all| all.intersect(&rect)).filter(|r| !r.is_empty())
     }
 
     /// The scene rect whose nodes can reach the canvas pixels of `device`.
@@ -787,6 +838,36 @@ impl Caches {
     }
 }
 
+/// A blurred side `len` long as the pixmap is made: no longer than `flat`
+/// plus a part pixel, and the whole pixmap pixels left out of its middle,
+/// so both ends sit on the pixels the whole side's would.
+fn short(len: f64, flat: f64, s: f64) -> (f64, usize) {
+    let k = ((len - flat) * s).floor();
+    if k >= 1.0 { (len - k / s, k as usize) } else { (len, 0) }
+}
+
+/// `from` with column `sx` drawn `kx` more times and row `sy` `ky` more.
+fn stretch(from: &Pixmap, (sx, kx): (usize, usize), (sy, ky): (usize, usize)) -> Pixmap {
+    let (w, h) = (usize::from(from.width()), usize::from(from.height()));
+    let mut to = Pixmap::new((w + kx) as u16, (h + ky) as u16);
+    let (src, wide, cut) = (from.data_as_u8_slice(), (w + kx) * 4, (sx + 1) * 4);
+    let dst = to.data_as_u8_slice_mut();
+    for y in 0..h + ky {
+        if y > sy && y <= sy + ky {
+            dst.copy_within((y - 1) * wide..y * wide, y * wide);
+            continue;
+        }
+        let row = &src[(if y > sy { y - ky } else { y }) * w * 4..][..w * 4];
+        let out = &mut dst[y * wide..][..wide];
+        out[..cut].copy_from_slice(&row[..cut]);
+        for px in out[cut..cut + kx * 4].as_chunks_mut::<4>().0 {
+            px.copy_from_slice(&row[cut - 4..cut]);
+        }
+        out[cut + kx * 4..].copy_from_slice(&row[cut..]);
+    }
+    to
+}
+
 impl Caches {
     /// A card's casts, filled and cut out of the card, under `origin` and
     /// the node's `transform`.
@@ -863,29 +944,43 @@ impl Caches {
         let reach = f64::from(deviation) * 2.5 + 1.0;
         let s = self.scale * (BLUR_SAMPLES / (f64::from(deviation) * self.scale)).min(1.0);
         let full = ink.with_alpha(1.0);
-        let key = (r.width().to_bits(), r.height().to_bits(), radius.to_bits(), deviation.to_bits(), full.to_u8(), self.scale.to_bits());
-        let pixmap = match self.blurs.get(&key) {
-            Some(p) => p.clone(),
+        let scale = self.scale.to_bits();
+        let key = |w: f64, h: f64| (w.to_bits(), h.to_bits(), radius.to_bits(), deviation.to_bits(), full.to_u8(), scale);
+        let whole = key(r.width(), r.height());
+        let pixmap = match kept_blur(&whole) {
+            Some(p) => p,
             None => {
-                // A pixel clear round it, for the sampler's edge to pad.
-                let w = ((r.width() + reach * 2.0) * s).ceil() as u16 + 2;
-                let h = ((r.height() + reach * 2.0) * s).ceil() as u16 + 2;
-                let bytes = usize::from(w) * usize::from(h) * 4;
-                if self.blur_bytes + bytes > BLURS_BYTES {
-                    self.blurs.clear();
-                    self.blur_bytes = 0;
+                // Three deviations and the corner in from an edge the blur
+                // no longer changes along that edge, so a long side is one
+                // pixmap column or row repeated: the pixels are worked out
+                // for a rect just past that, whatever size the card is.
+                let flat = (f64::from(radius) + f64::from(deviation) * 3.0 + 1.0) * 2.0 + 8.0 / s;
+                let ((cw, kx), (ch, ky)) = (short(r.width(), flat, s), short(r.height(), flat, s));
+                #[cfg(test)]
+                let ((cw, kx), (ch, ky)) = if self.no_cast_stretch { ((r.width(), 0), (r.height(), 0)) } else { ((cw, kx), (ch, ky)) };
+                let made = key(cw, ch);
+                let canon = match kept_blur(&made) {
+                    Some(p) => p,
+                    None => {
+                        // A pixel clear round it, for the sampler's edge to pad.
+                        let w = ((cw + reach * 2.0) * s).ceil() as u16 + 2;
+                        let h = ((ch + reach * 2.0) * s).ceil() as u16 + 2;
+                        let mut blur = RenderContext::new(w, h);
+                        blur.set_transform(Affine::translate((1.0, 1.0)) * Affine::scale(s) * Affine::translate((reach, reach)));
+                        blur.set_paint(color(full));
+                        blur.fill_blurred_rounded_rect(&Rect::new(0.0, 0.0, cw, ch), radius, deviation, false);
+                        blur.flush();
+                        let mut pixmap = Pixmap::new(w, h);
+                        blur.render(&mut pixmap, &mut self.resources);
+                        keep_blur(made, pixmap)
+                    }
+                };
+                if kx == 0 && ky == 0 {
+                    canon
+                } else {
+                    let middle = |len: f64| (1.0 + s * (reach + len / 2.0)) as usize;
+                    keep_blur(whole, stretch(&canon, (middle(cw), kx), (middle(ch), ky)))
                 }
-                let mut blur = RenderContext::new(w, h);
-                blur.set_transform(Affine::translate((1.0, 1.0)) * Affine::scale(s) * Affine::translate((reach - r.x0, reach - r.y0)));
-                blur.set_paint(color(full));
-                blur.fill_blurred_rounded_rect(&r, radius, deviation, false);
-                blur.flush();
-                let mut pixmap = Pixmap::new(w, h);
-                blur.render(&mut pixmap, &mut self.resources);
-                let pixmap = Arc::new(pixmap);
-                self.blurs.insert(key, pixmap.clone());
-                self.blur_bytes += bytes;
-                pixmap
             }
         };
         let (w, h) = (f64::from(pixmap.width()), f64::from(pixmap.height()));
@@ -1557,14 +1652,73 @@ mod tests {
                     let want = draw(&mut direct);
                     let mut cached = Renderer::new(140, 120);
                     cached.set_scale(scale);
+                    super::BLURS.take();
                     assert!(want.iter().any(|v| *v > 0), "the casts drew nothing");
                     for pass in ["made", "cached"] {
                         let got = draw(&mut cached);
-                        assert_eq!(cached.caches.blurs.len(), layers.len(), "{pass}: one pixmap a layer");
+                        assert_eq!(super::BLURS.with_borrow(|b| b.made.len()), layers.len(), "{pass}: one pixmap a layer");
                         let worst = want.iter().zip(&got).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
                         assert!(worst <= 2, "{pass} at scale {scale} fade {fade} under {at:?}: a channel off by {worst}");
                     }
                 }
+            }
+        }
+    }
+
+    /// A whole surface's first damage comes down to what its nodes draw
+    /// into: a node's box and where its transform puts it, and nothing of
+    /// an empty scene.
+    #[test]
+    fn a_rects_extent_is_what_its_nodes_reach() {
+        let whole = IRect::new(0, 0, 400, 300);
+        let mut scene = Scene::new(400, 300);
+        let r = Renderer::new(400, 300);
+        assert_eq!(r.extent(&scene, whole), None);
+        let id = scene.add(IRect::new(100, 80, 50, 40), Paint::Rect { fill: Rgba::BLACK, radius: 0.0 });
+        assert_eq!(r.extent(&scene, whole), Some(IRect::new(99, 79, 52, 42)));
+        scene.set_transform(id, Affine::translate((200.0, 0.0)));
+        let moved = r.extent(&scene, whole).expect("a node in the rect");
+        assert!(moved.contains(&IRect::new(100, 80, 250, 40)) && moved.right() <= 353, "{moved:?}");
+        assert_eq!(r.extent(&scene, IRect::new(0, 200, 400, 100)), None);
+    }
+
+    /// A card longer than its casts' blur changes along its sides draws
+    /// them from a short rect's pixmap with its middle repeated, within a
+    /// step of a pixmap worked out for the whole card.
+    #[test]
+    fn long_casts_stretch_a_short_blur() {
+        use crate::scene::{Cast, Fit, Outline, Snap};
+        let layers = vec![
+            Cast { x: 0.0, y: 1.0, blur: 3.0, spread: 0.0, color: Rgba::BLACK.with_alpha(0.3) },
+            Cast { x: 0.0, y: 6.0, blur: 10.0, spread: -2.0, color: Rgba::BLACK.with_alpha(0.19) },
+            Cast { x: 0.0, y: -6.0, blur: 24.5, spread: 0.0, color: Rgba::BLACK.with_alpha(0.12) },
+        ];
+        for scale in [1.0, 1.25] {
+            for (w, h) in [(300.0, 200.0), (300.4, 200.7), (260.0, 30.0)] {
+                let card = Rect::new(0.0, 0.0, w, h);
+                let cutout = Fit { outline: Outline::Box { rect: card, radius: 10.0, border: 1.0 }, snap: Snap::Edges };
+                let draw = |r: &mut Renderer| {
+                    let mut scene = Scene::new(400, 300);
+                    let id = scene.add(IRect::new(0, 0, 400, 300), Paint::Casts { rect: card, radius: 10.0, layers: layers.clone(), cutout });
+                    scene.set_transform(id, Affine::translate((40.3, 35.6)));
+                    r.render(&scene, IRect::new(0, 0, 400, 300));
+                    r.canvas().data_as_u8_slice().to_vec()
+                };
+                let mut whole = Renderer::new(400, 300);
+                whole.set_scale(scale);
+                whole.caches.no_cast_stretch = true;
+                super::BLURS.take();
+                let mut cached = Renderer::new(400, 300);
+                cached.set_scale(scale);
+                let want = draw(&mut whole);
+                super::BLURS.take();
+                let got = draw(&mut cached);
+                assert!(want.iter().any(|v| *v > 0), "the casts drew nothing");
+                let worst = want.iter().zip(&got).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
+                assert!(worst <= 1, "{w}x{h} at scale {scale}: a channel off by {worst}");
+                // The sharp cast's pixmap for the whole card, and the short one it came from.
+                let sharp: Vec<f64> = super::BLURS.with_borrow(|b| b.made.keys().filter(|k| f32::from_bits(k.3) == 1.5).map(|k| f64::from_bits(k.0)).collect());
+                assert!(sharp.len() == 2 && sharp.iter().any(|v| *v < 100.0), "{w}x{h} at scale {scale}: made {sharp:?} wide");
             }
         }
     }

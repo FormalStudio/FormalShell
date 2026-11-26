@@ -505,6 +505,12 @@ pub struct Surface<R: Role = LayerSurface> {
     /// Everything the renderer has drawn since its canvas was cleared: all
     /// a buffer cut from a clean pool lacks.
     drawn: Option<IRect>,
+    /// Damage of the frame in progress over canvas nothing has drawn on,
+    /// with the part of it the scene's nodes draw into, if any. The rest
+    /// is clear in the canvas and in every buffer already, so only that
+    /// part is drawn and copied: a full-output surface's first frame is
+    /// its card's box, and none of it under a look the compositor carries.
+    fresh: Vec<(IRect, Option<IRect>)>,
     /// Set, a frame is drawn in bands across loop turns, each turn stopping
     /// once it has run this long, so a large first frame never holds
     /// another surface's due frame (the bar's) behind it.
@@ -709,6 +715,7 @@ impl<R: Role> Surface<R> {
             frame_from: None,
             pool_clean: true,
             drawn: None,
+            fresh: Vec::new(),
             raster_budget: None,
             raster: Vec::new(),
             left: std::collections::VecDeque::new(),
@@ -967,6 +974,7 @@ impl<R: Role> Surface<R> {
             self.render_us = 0;
             self.render_cpu_us = 0;
             self.slices = 0;
+            self.fresh.clear();
             // A surface made again for a scene that has drawn before (the
             // bar re-placed when its framing moves, a spare bar on another
             // output) starts on a blank canvas: the scene's damage covers
@@ -977,7 +985,16 @@ impl<R: Role> Surface<R> {
         }
         // Damage that came in while a sliced frame was being drawn joins it.
         for rect in scene.take_damage() {
+            let clear = !self.renderer.is_gpu() && self.drawn.is_none_or(|d| !d.intersects(&rect)) && !self.raster.iter().any(|r| r.intersects(&rect));
             self.raster.push(rect);
+            let rect = if clear {
+                let part = self.renderer.extent(scene, rect);
+                self.fresh.push((rect, part));
+                let Some(part) = part else { continue };
+                part
+            } else {
+                rect
+            };
             match self.raster_budget {
                 Some(_) => self.left.extend(bands(rect)),
                 None => self.left.push_back(rect),
@@ -1169,6 +1186,7 @@ impl<R: Role> Surface<R> {
         (self.render_us, self.slices) = (t0.elapsed().as_micros(), 1);
         self.left.clear();
         self.raster.clear();
+        self.fresh.clear();
         self.commit_frame(vec![size], size, true, qh);
         self.clock.set(true);
         true
@@ -1181,11 +1199,13 @@ impl<R: Role> Surface<R> {
         if std::mem::take(&mut self.refade) {
             damage.extend(self.drawn);
         }
-        self.drawn = damage.iter().fold(self.drawn, |u, r| Some(u.map_or(*r, |u| u.union(r))));
+        let fresh = std::mem::take(&mut self.fresh);
+        let inked: Vec<IRect> = damage.iter().filter_map(|r| fresh.iter().find(|f| f.0 == *r).map_or(Some(*r), |f| f.1)).collect();
+        self.drawn = inked.iter().fold(self.drawn, |u, r| Some(u.map_or(*r, |u| u.union(r))));
 
         let (t1, c1) = (Instant::now(), crate::thread_cpu_us());
         let (pw, ph) = self.renderer.pixels();
-        let at = if self.renderer.is_gpu() { self.fill_dmabuf(&damage, size) } else { Some(self.fill_shm(&damage, size)) };
+        let at = if self.renderer.is_gpu() { self.fill_dmabuf(&damage, size) } else { Some(self.fill_shm(&inked, size)) };
         let Some(at) = at else {
             // No buffer to draw into: the frame waits for the next present.
             self.raster = damage;
@@ -1297,13 +1317,16 @@ impl<R: Role> Surface<R> {
                 let start = (row as usize * stride + rect.x as usize) * 4;
                 let end = start + rect.w as usize * 4;
                 let (from, to) = (&src[start..end], &mut canvas[start..end]);
-                if k == 256 && format == Format::Rgba {
+                if k == 256 {
                     to.copy_from_slice(from);
-                    continue;
+                } else {
+                    // Byte for byte, so the compiler makes it sixteen at a
+                    // time: a fade copies the whole card on every step.
+                    for (dst, c) in to.iter_mut().zip(from) {
+                        *dst = fade(*c);
+                    }
                 }
-                for (px, dst) in from.as_chunks::<4>().0.iter().zip(to.as_chunks_mut::<4>().0) {
-                    *dst = format.pixel(if k < 256 { px.map(fade) } else { *px });
-                }
+                format.swizzle(to);
             }
         }
         if let Some(reference) = self.audit.take() {
