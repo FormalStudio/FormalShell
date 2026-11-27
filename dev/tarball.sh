@@ -89,7 +89,10 @@ for entry in "${sources[@]}"; do
 done
 
 # Radio Atlas's satellite globe, cut into tiles by packaging/earth-tiles.py.
-earth_url=https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x21600x10800.jpg
+# NASA's Blue Marble (eoimages.gsfc.nasa.gov, imagerecords/73000/73751),
+# fetched from this repo's build-assets release: NASA's host times out for
+# hours at a stretch.
+earth_url=https://github.com/FormalStudio/FormalShell/releases/download/build-assets/world.topo.bathy.200407.3x21600x10800.jpg
 earth_sum=d225f1f35a6448a4d1d8f6de6e48f3433e470085b70a35800e64f384f269a7b0
 earth=$dl/blue-marble-${earth_url##*/}
 if ! { [ -f "$earth" ] && echo "$earth_sum  $earth" | sha256sum -c --quiet 2>/dev/null; }; then
