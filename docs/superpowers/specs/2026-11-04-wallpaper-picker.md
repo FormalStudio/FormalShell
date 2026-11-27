@@ -145,9 +145,8 @@ settings.json still sits under the picker's choice as it does today
 | Picked | Written |
 | --- | --- |
 | a pair | `wallpaper` the light half, `wallpaperDark` the dark half, `wallpaperColor` false; mode untouched |
-| an unfiled single | `wallpaper` the picture, `wallpaperDark` empty, `wallpaperColor` false; mode untouched |
-| a filed single | that slot only (filing the light slot while `wallpaperDark` is empty first copies the old `wallpaper` into `wallpaperDark`, so the dark slot keeps what it showed); the mode switches to the filing, as 34215d23 does today, unless settings.json pins `theme.mode`. Under `auto` the switch is the one-cycle snooze `theme mode` already writes |
-| "Use in light mode only", "Use in dark mode only" on any single | that slot only, mode untouched |
+| a single, filed or not | `wallpaper` the picture, `wallpaperDark` empty, `wallpaperColor` false; mode untouched (owner, 2026-11-27: a filed pick used to take its slot alone and switch the mode, so going back to dark showed the previous picture) |
+| "Use in light mode only", "Use in dark mode only" on any single | that slot only (filing the light slot while `wallpaperDark` is empty first copies the old `wallpaper` into `wallpaperDark`, so the dark slot keeps what it showed), mode untouched |
 | the Sky | `wallpaperColor` `sky`, slots kept under it |
 | any slot pick while a colour or the sky is up | both slots, so a stale picture never comes back under the other mode |
 
@@ -455,8 +454,8 @@ change here.
   credits. Read off `picker status`: sections, kinds, counts, titles,
   nothing hidden. The pair tile's two halves read off the frame on either
   side of its diagonal; the badge and the current mark in their corners;
-  Enter on a pair writing both slots; a dark-only pick writing one slot
-  and the mode; Use in light mode only writing one slot and no mode; the
+  Enter on a pair writing both slots; a filed single's pick writing both
+  slots and no mode; Use in light mode only writing one slot and no mode; the
   cursor opening on the current tile; Ctrl+Tab to Included; the Sky; the
   empty Your wallpapers state; select mode flat; the stale audit over the
   cursor's walk. Dark and `--light`.

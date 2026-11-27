@@ -207,11 +207,7 @@ impl Model {
                 ItemKind::Mode { .. } => return false,
                 ItemKind::Sky => self.ask(Request::Wallpaper(state::Choice::Both(fs_theme::theme::SKY.into()), None)),
                 ItemKind::Pair { light, dark } => self.ask(Request::Wallpaper(state::Choice::Pair(light.clone(), dark.clone()), None)),
-                ItemKind::Single { path, filed: None } => self.ask(Request::Wallpaper(state::Choice::Both(path.clone()), None)),
-                ItemKind::Single { path, filed: Some(filed) } => {
-                    let mode = crate::services::theme::mode_for(store, crate::services::theme::Ask::Set(*filed)).ok();
-                    self.ask(Request::Wallpaper(state::Choice::Slot(*filed, path.clone()), mode));
-                }
+                ItemKind::Single { path, .. } => self.ask(Request::Wallpaper(state::Choice::Both(path.clone()), None)),
             }
         }
         self.close();

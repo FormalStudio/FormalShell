@@ -1292,8 +1292,8 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
   theme's `ring` on the mode in effect. Enter on a pair writing both slots
   and the next summon opening on it, Return on the Light and Dark previews
   flipping `theme status`'s mode with the card left open (refused, the
-  heading saying so, under a pinned `theme.mode`), a light-only and a dark-only pick writing their slot and the mode
-  (the slot alone under a pinned `theme.mode`), `chooseFor` one slot and
+  heading saying so, under a pinned `theme.mode`), a light-only and a dark-only pick each writing both slots and no mode,
+  `chooseFor` one slot and
   no mode, the Sky, Ctrl+Tab and Ctrl+Shift+Tab between sections, a query,
   the empty Your wallpapers, `picker select` listing the files flat, the
   `wide` thumbnail cache, and the cursor's walk under the stale audit.

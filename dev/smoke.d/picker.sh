@@ -27,8 +27,7 @@
 # and Return, then Right and Return on Dark, each flipping `theme status`'s
 # mode with the card left open and the ring moving to it (under `--light`
 # both refused, the heading saying "Set in settings.json"), a light-only and a dark-only pick each
-# writing its slot and the mode (under `--light`, which pins theme.mode,
-# the slot alone), `chooseFor` (the column's Use in light mode only)
+# writing both slots and no mode, `chooseFor` (the column's Use in light mode only)
 # writing one slot and no mode, and the Sky. Ctrl+Tab and Ctrl+Shift+Tab
 # step between the sections' first tiles, a query filters by title, the
 # empty Your wallpapers state says so, and `picker select` lists the
@@ -378,19 +377,21 @@ PY
       || fail "after Return on the $step preview: $("$jq_bin" -c '{open, cursor, style: [.items[] | select(.kind == "mode") | {id, current}], far: [.sections[] | select(.id == "style") | .far]}' "$status_f")"
   done
   echo "SMOKE_PICKER_STYLE Return on Light then Dark: mode $want_light then $want_dark, the card open (theme.mode '${style_key}')"
-  # A light-only then a dark-only pick: their slot, and the mode unless
-  # settings.json pins it.
+  # A light-only then a dark-only pick: each the picture for both modes,
+  # the mode left where the Dark preview put it.
   local pinned
   pinned=$("$jq_bin" -r '.modeKey' "$picker_light_theme")
-  local light_mode=light dark_mode=dark
-  if [ "$pinned" = light ] || [ "$pinned" = dark ]; then light_mode=$pinned; dark_mode=$pinned; fi
-  "$jq_bin" -e --arg l "$picker_dir/Light/noon.png" --arg d "$picker_dir/Dark/dusk.png" --arg m "$light_mode" '.wallpaper == $l and .wallpaperDark == $d and .mode == $m' "$picker_light_state" > /dev/null \
-    || fail "a light-only pick did not write the light slot and mode $light_mode: $("$jq_bin" -c '{wallpaper, wallpaperDark, mode}' "$picker_light_state")"
-  "$jq_bin" -e --arg l "$picker_dir/Light/noon.png" --arg d "$picker_dir/Dark/night.png" --arg m "$dark_mode" '.wallpaper == $l and .wallpaperDark == $d and .mode == $m' "$picker_dark_state" > /dev/null \
-    || fail "a dark-only pick did not write the dark slot and mode $dark_mode: $("$jq_bin" -c '{wallpaper, wallpaperDark, mode}' "$picker_dark_state")"
-  "$jq_bin" -e --arg d "$picker_dir/Dark/night.png" --arg m "$dark_mode" '.desktop == (if $m == "dark" then $d else .wallpaper end)' "$picker_dark_theme" > /dev/null \
-    || fail "the desktop is not the mode's slot after the dark-only pick: $("$jq_bin" -c '{desktop, wallpaper, wallpaperDark, mode}' "$picker_dark_theme")"
-  echo "SMOKE_PICKER_FILED light-only to mode $light_mode, dark-only to mode $dark_mode (theme.mode '${pinned}')"
+  local dark_mode=dark
+  if [ "$pinned" = light ] || [ "$pinned" = dark ]; then dark_mode=$pinned; fi
+  "$jq_bin" -e --arg l "$picker_dir/Light/noon.png" --arg m "$dark_mode" '.wallpaper == $l and .wallpaperDark == "" and .mode == $m' "$picker_light_state" > /dev/null \
+    || fail "a light-only pick did not write both slots with the mode left at $dark_mode: $("$jq_bin" -c '{wallpaper, wallpaperDark, mode}' "$picker_light_state")"
+  "$jq_bin" -e --arg l "$picker_dir/Light/noon.png" '.desktop == $l' "$picker_light_theme" > /dev/null \
+    || fail "the desktop is not the light-only pick in mode $dark_mode: $("$jq_bin" -c '{desktop, mode}' "$picker_light_theme")"
+  "$jq_bin" -e --arg d "$picker_dir/Dark/night.png" --arg m "$dark_mode" '.wallpaper == $d and .wallpaperDark == "" and .mode == $m' "$picker_dark_state" > /dev/null \
+    || fail "a dark-only pick did not write both slots with the mode left at $dark_mode: $("$jq_bin" -c '{wallpaper, wallpaperDark, mode}' "$picker_dark_state")"
+  "$jq_bin" -e --arg d "$picker_dir/Dark/night.png" '.desktop == $d' "$picker_dark_theme" > /dev/null \
+    || fail "the desktop is not the dark-only pick: $("$jq_bin" -c '{desktop, wallpaper, wallpaperDark, mode}' "$picker_dark_theme")"
+  echo "SMOKE_PICKER_FILED a light-only and a dark-only pick each both slots, mode $dark_mode kept (theme.mode '${pinned}')"
   grep -qx ok "$picker_for_reply" || fail "picker chooseFor was refused: $(cat "$picker_for_reply")"
   "$jq_bin" -e --arg l "$picker_dir/root-a.png" --arg d "$picker_dir/Dark/night.png" --arg m "$dark_mode" '.wallpaper == $l and .wallpaperDark == $d and .mode == $m' "$picker_for_state" > /dev/null \
     || fail "Use in light mode only did not write the light slot alone: $("$jq_bin" -c '{wallpaper, wallpaperDark, mode}' "$picker_for_state")"
