@@ -163,7 +163,68 @@ fn ahead_of_batch_work() {
     let set = unsafe { libc::sched_setscheduler(0, libc::SCHED_RR | libc::SCHED_RESET_ON_FORK, &param) };
     if set == 0 {
         REALTIME.store(true, std::sync::atomic::Ordering::Relaxed);
+        // SAFETY: a plain syscall.
+        REALTIME_TIDS[0].store(unsafe { libc::syscall(libc::SYS_gettid) } as i32, std::sync::atomic::Ordering::Relaxed);
+        stay_under_rttime();
         eprintln!("formalshell: the drawing thread runs SCHED_RR 1");
+    }
+}
+
+/// The drawing thread's id, then NVIDIA's once [`driver_threads_ahead`] ran.
+static REALTIME_TIDS: [std::sync::atomic::AtomicI32; 2] = [std::sync::atomic::AtomicI32::new(0), std::sync::atomic::AtomicI32::new(0)];
+
+/// RLIMIT_RTTIME's soft and hard values while [`on_rttime`] is installed.
+static RTTIME: [std::sync::atomic::AtomicU64; 2] = [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)];
+
+/// A session that allows SCHED_RR caps it with RLIMIT_RTTIME (200ms where
+/// rtkit's defaults apply, soft and hard alike): a round-robin thread that
+/// runs that long without a blocking call is sent SIGKILL, and frames drawn
+/// back to back never block (Radio Atlas's globe under a drag killed the
+/// shell within seconds). The soft limit goes to a quarter of the hard one,
+/// where the kernel sends SIGXCPU instead, and [`on_rttime`] answers it.
+fn stay_under_rttime() {
+    let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: a valid out pointer.
+    if unsafe { libc::getrlimit(libc::RLIMIT_RTTIME, &mut limit) } != 0 || limit.rlim_max == libc::RLIM_INFINITY {
+        return;
+    }
+    limit.rlim_cur = limit.rlim_max / 4;
+    RTTIME[0].store(limit.rlim_cur, std::sync::atomic::Ordering::Relaxed);
+    RTTIME[1].store(limit.rlim_max, std::sync::atomic::Ordering::Relaxed);
+    // SAFETY: a zeroed sigaction is valid, and the handler makes
+    // async-signal-safe calls only.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_rttime as *const () as libc::sighandler_t;
+        action.sa_flags = libc::SA_SIGINFO | libc::SA_RESTART;
+        libc::sigaction(libc::SIGXCPU, &action, std::ptr::null_mut());
+        libc::setrlimit(libc::RLIMIT_RTTIME, &limit);
+    }
+}
+
+/// The kernel counts a round-robin thread's time from its last wakeup, so
+/// a sleep of any length starts the count again. Its SIGXCPU goes to the
+/// process, to whichever thread takes it: that one puts the soft limit
+/// back (the kernel adds a second to it with each signal, past the hard
+/// one) and passes the signal to the round-robin threads, which sleep.
+/// 100us, since a 1ns sleep returns without leaving the run queue and the
+/// count went on to the hard limit.
+extern "C" fn on_rttime(_sig: libc::c_int, info: *mut libc::siginfo_t, _context: *mut libc::c_void) {
+    use std::sync::atomic::Ordering::Relaxed;
+    // SAFETY: async-signal-safe calls only, errno put back after them.
+    unsafe {
+        let errno = *libc::__errno_location();
+        let me = libc::syscall(libc::SYS_gettid) as i32;
+        if (*info).si_code != libc::SI_TKILL {
+            let limit = libc::rlimit { rlim_cur: RTTIME[0].load(Relaxed), rlim_max: RTTIME[1].load(Relaxed) };
+            libc::setrlimit(libc::RLIMIT_RTTIME, &limit);
+            for tid in REALTIME_TIDS.iter().map(|t| t.load(Relaxed)).filter(|&t| t != 0 && t != me) {
+                libc::syscall(libc::SYS_tgkill, libc::getpid(), tid, libc::SIGXCPU);
+            }
+        }
+        let moment = libc::timespec { tv_sec: 0, tv_nsec: 100_000 };
+        libc::nanosleep(&moment, std::ptr::null_mut());
+        *libc::__errno_location() = errno;
     }
 }
 
@@ -187,6 +248,7 @@ pub(crate) fn driver_threads_ahead() {
             let param = libc::sched_param { sched_priority: 1 };
             // SAFETY: a valid parameter block, for a thread of this process.
             unsafe { libc::sched_setscheduler(tid, libc::SCHED_RR | libc::SCHED_RESET_ON_FORK, &param) };
+            REALTIME_TIDS[1].store(tid, std::sync::atomic::Ordering::Relaxed);
         }
     }
 }
@@ -233,5 +295,27 @@ fn reap_children() {
             libc::signal(libc::SIGTERM, libc::SIG_IGN);
             libc::kill(0, libc::SIGTERM);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A second of unbroken work on the drawing thread, five times the
+    /// session's RLIMIT_RTTIME, which the kernel answers with SIGKILL
+    /// unless the thread sleeps in between.
+    #[test]
+    #[ignore = "needs RLIMIT_RTPRIO 1 and RLIMIT_RTTIME 200000"]
+    fn the_drawing_thread_outlives_its_realtime_limit() {
+        ahead_of_batch_work();
+        assert!(REALTIME.load(std::sync::atomic::Ordering::Relaxed), "RLIMIT_RTPRIO allows no SCHED_RR");
+        let start = thread_cpu_us();
+        while thread_cpu_us() - start < 1_000_000 {
+            std::hint::spin_loop();
+        }
+        // SAFETY: a plain syscall for the calling thread.
+        let policy = unsafe { libc::sched_getscheduler(0) };
+        assert_eq!(policy & !libc::SCHED_RESET_ON_FORK, libc::SCHED_RR);
     }
 }
