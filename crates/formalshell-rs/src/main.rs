@@ -118,6 +118,7 @@ fn main() {
         if app.exit {
             signal.stop();
         }
+        hold_rttime();
         cpu_mark = thread_cpu_us();
     });
     app.report_exit();
@@ -173,24 +174,16 @@ fn ahead_of_batch_work() {
 /// The drawing thread's id, then NVIDIA's once [`driver_threads_ahead`] ran.
 static REALTIME_TIDS: [std::sync::atomic::AtomicI32; 2] = [std::sync::atomic::AtomicI32::new(0), std::sync::atomic::AtomicI32::new(0)];
 
-/// RLIMIT_RTTIME's soft and hard values while [`on_rttime`] is installed.
+/// RLIMIT_RTTIME's soft and hard values as [`hold_rttime`] last set them.
 static RTTIME: [std::sync::atomic::AtomicU64; 2] = [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)];
 
-/// A session that allows SCHED_RR caps it with RLIMIT_RTTIME (200ms where
-/// rtkit's defaults apply, soft and hard alike): a round-robin thread that
-/// runs that long without a blocking call is sent SIGKILL, and frames drawn
-/// back to back never block (Radio Atlas's globe under a drag killed the
-/// shell within seconds). The soft limit goes to a quarter of the hard one,
-/// where the kernel sends SIGXCPU instead, and [`on_rttime`] answers it.
+/// A round-robin thread under a finite RLIMIT_RTTIME that runs that long
+/// without a blocking call is sent SIGKILL, and frames drawn back to back
+/// never block (Radio Atlas's globe under a drag killed the shell within
+/// seconds). The kernel sends SIGXCPU at the soft limit first, which
+/// [`on_rttime`] answers; [`hold_rttime`] keeps that limit under the hard
+/// one.
 fn stay_under_rttime() {
-    let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
-    // SAFETY: a valid out pointer.
-    if unsafe { libc::getrlimit(libc::RLIMIT_RTTIME, &mut limit) } != 0 || limit.rlim_max == libc::RLIM_INFINITY {
-        return;
-    }
-    limit.rlim_cur = limit.rlim_max / 4;
-    RTTIME[0].store(limit.rlim_cur, std::sync::atomic::Ordering::Relaxed);
-    RTTIME[1].store(limit.rlim_max, std::sync::atomic::Ordering::Relaxed);
     // SAFETY: a zeroed sigaction is valid, and the handler makes
     // async-signal-safe calls only.
     unsafe {
@@ -198,6 +191,28 @@ fn stay_under_rttime() {
         action.sa_sigaction = on_rttime as *const () as libc::sighandler_t;
         action.sa_flags = libc::SA_SIGINFO | libc::SA_RESTART;
         libc::sigaction(libc::SIGXCPU, &action, std::ptr::null_mut());
+    }
+    hold_rttime();
+}
+
+/// Puts the soft RLIMIT_RTTIME at a quarter of the hard one. Every turn of
+/// the loop, since the limit is not the session's: PipeWire's client
+/// library sets both to 200ms from a thread of its own once it connects,
+/// some time after the shell starts and again whenever it reconnects.
+fn hold_rttime() {
+    use std::sync::atomic::Ordering::Relaxed;
+    if !REALTIME.load(Relaxed) {
+        return;
+    }
+    let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: a valid out pointer, then a valid limit.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_RTTIME, &mut limit) != 0 || limit.rlim_max == libc::RLIM_INFINITY || limit.rlim_cur == limit.rlim_max / 4 {
+            return;
+        }
+        limit.rlim_cur = limit.rlim_max / 4;
+        RTTIME[0].store(limit.rlim_cur, Relaxed);
+        RTTIME[1].store(limit.rlim_max, Relaxed);
         libc::setrlimit(libc::RLIMIT_RTTIME, &limit);
     }
 }
@@ -217,7 +232,9 @@ extern "C" fn on_rttime(_sig: libc::c_int, info: *mut libc::siginfo_t, _context:
         let me = libc::syscall(libc::SYS_gettid) as i32;
         if (*info).si_code != libc::SI_TKILL {
             let limit = libc::rlimit { rlim_cur: RTTIME[0].load(Relaxed), rlim_max: RTTIME[1].load(Relaxed) };
-            libc::setrlimit(libc::RLIMIT_RTTIME, &limit);
+            if limit.rlim_max != 0 {
+                libc::setrlimit(libc::RLIMIT_RTTIME, &limit);
+            }
             for tid in REALTIME_TIDS.iter().map(|t| t.load(Relaxed)).filter(|&t| t != 0 && t != me) {
                 libc::syscall(libc::SYS_tgkill, libc::getpid(), tid, libc::SIGXCPU);
             }
@@ -306,10 +323,15 @@ mod tests {
     /// session's RLIMIT_RTTIME, which the kernel answers with SIGKILL
     /// unless the thread sleeps in between.
     #[test]
-    #[ignore = "needs RLIMIT_RTPRIO 1 and RLIMIT_RTTIME 200000"]
+    #[ignore = "needs RLIMIT_RTPRIO 1"]
     fn the_drawing_thread_outlives_its_realtime_limit() {
         ahead_of_batch_work();
         assert!(REALTIME.load(std::sync::atomic::Ordering::Relaxed), "RLIMIT_RTPRIO allows no SCHED_RR");
+        // PipeWire's write, landing after the thread went round-robin.
+        let late = libc::rlimit { rlim_cur: 200_000, rlim_max: 200_000 };
+        // SAFETY: a valid limit.
+        unsafe { libc::setrlimit(libc::RLIMIT_RTTIME, &late) };
+        hold_rttime();
         let start = thread_cpu_us();
         while thread_cpu_us() - start < 1_000_000 {
             std::hint::spin_loop();
